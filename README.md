@@ -66,6 +66,8 @@ The Mu Gateway is the component that routes incoming requests to nodes in order 
 
 ### MuDB
 
-MuDB is the serverless database of the Mu ecosystem. MuDB is a simple, fast, key/value storage that can be accessed easily from inside the Mu runtime. With this it is possible to write complete, stateful serverless applications, running entirely on Mu.
+MuDB is the serverless database of the Mu ecosystem. MuDB is a simple and fast, key/value store that can be accessed easily from inside the Mu runtime. With this it is possible to write complete, stateful serverless applications, running entirely on Mu.
+
+The runtime implements a special endpoint 
 
 ## The Mu Toolkit 

@@ -1,0 +1,17 @@
+{
+	"name": "Solana",
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+	"settings": {},
+	"extensions": [
+		"rust-lang.rust",
+		"serayuzgur.crates",
+		"bungcip.better-toml"
+	],
+	"postCreateCommand": "solana-keygen new --no-bip39-passphrase"
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+	// Replace when using a ptrace-based debugger like C++, Go, and Rust
+	// "runArgs": [ "--init", "--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined" ],
+}
