@@ -9,7 +9,11 @@
 		"serayuzgur.crates",
 		"bungcip.better-toml"
 	],
-	"postCreateCommand": "solana-keygen new --no-bip39-passphrase"
+	"postCreateCommand": "solana-keygen new --no-bip39-passphrase",
+	"remoteUser": "vscode",
+	"features": {
+		"git": "latest"
+	}
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
 	// Replace when using a ptrace-based debugger like C++, Go, and Rust
