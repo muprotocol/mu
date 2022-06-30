@@ -7,7 +7,8 @@
 	"extensions": [
 		"rust-lang.rust",
 		"serayuzgur.crates",
-		"bungcip.better-toml"
+		"bungcip.better-toml",
+		"yzhang.markdown-all-in-one"
 	],
 	"postCreateCommand": "solana-keygen new --no-bip39-passphrase",
 	"remoteUser": "vscode",
