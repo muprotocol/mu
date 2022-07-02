@@ -12,6 +12,8 @@ tokio-util = { version = "0.7", features = ["codec"]}
 serde = "1"
 tokio-serde = {version = "0.8", features = ["bincode"]}
 futures = "0.3"
+pin-project = "1.0"
+rand = "0.8"
 
 [lib]
 name = "mu"

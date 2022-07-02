@@ -4,11 +4,7 @@ use mu::gossip::{Gossip, Node};
 async fn main() {
     println!("Hello, world!");
 
-    let n = Node {
-        hash: "Tato".to_owned(),
-        address: "pito".to_owned(),
-        port: 5,
-    };
-    let mut g = Gossip::new(n);
-    g.start("0.0.0.0:8080".to_owned()).await.unwrap();
+    let n = Node::new("0.0.0.0", 59999);
+    //    let mut g = Gossip::new(n, Default::default());
+    //    g.start().await.unwrap();
 }
