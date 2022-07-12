@@ -6,3 +6,18 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+wasmer = "2.3"
+tokio = { version = "1.0", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"]}
+serde = "1"
+tokio-serde = {version = "0.8", features = ["bincode"]}
+futures = "0.3"
+pin-project = "1.0"
+rand = "0.8"
+
+[lib]
+name = "mu"
+
+[[bin]]
+path = "src/main.rs"
+name = "mu-executor"

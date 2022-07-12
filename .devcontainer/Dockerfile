@@ -3,7 +3,7 @@ FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update
-RUN apt-get install -y build-essential curl libssl-dev libudev-dev pkg-config zlib1g-dev llvm clang cmake make git zsh language-pack-en
+RUN apt-get install -y build-essential curl libssl-dev libudev-dev pkg-config zlib1g-dev llvm clang cmake make git zsh language-pack-en sudo netcat
 RUN useradd vscode; mkdir /home/vscode; chown vscode.vscode /home/vscode
 
 USER vscode

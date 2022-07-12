@@ -48,11 +48,11 @@ Running the executor on a server is extremely easy, all it is needed to provide 
 
 The executor currently supports three services:
 
-* The Mu WASI Runtime
+* The Mu Runtime
 * MuGateway
 * MuDB
 
-### The Mu WASI Runtime
+### The Mu Runtime
 
 This is where the jobs are executed. It is a WASI compatible runtime with a few extra features to better integrate with the Mu ecosystem.
 
@@ -71,3 +71,7 @@ MuDB is the serverless database of the Mu ecosystem. MuDB is a simple and fast, 
 The runtime implements a special endpoint 
 
 ## The Mu Toolkit 
+
+The Mu toolkit is a series of tools designed to simplify the development, testing and deployment of Mu applications. The Mu toolkit is intended to be used by developers targetting the Mu platform.
+
+The Mu toolkit includes the `mu` command, that contains a series of subcommands, useful for developers.
