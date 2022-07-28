@@ -2,6 +2,8 @@ use tokio::time::Duration;
 
 use mu::gossip::{Gossip, GossipConfig, Node};
 
+mod runtime;
+
 #[tokio::test]
 async fn test_network() {
     let mut gossip1 = Gossip::new(
