@@ -1,18 +1,10 @@
-#[allow(unused)]
+use thiserror::Error;
 use uuid::Uuid;
-use wasmer::{CompileError, ExportError, InstantiationError, RuntimeError};
-use wasmer_wasi::{WasiError, WasiStateCreationError};
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum Error {
-    IOError(std::io::Error),
+    #[error("Can not find function with id {0}")]
     FunctionNotFound(Uuid),
-    CompileError(CompileError),
-    WasiStateCreationError(WasiStateCreationError),
-    WasiError(WasiError),
-    InstantiationError(InstantiationError),
-    ExportError(ExportError),
-    RuntimeError(RuntimeError),
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = anyhow::Result<T>;

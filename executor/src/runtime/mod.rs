@@ -45,10 +45,10 @@ struct Function {
 
 impl Function {
     pub async fn load(config: Config) -> Result<Self> {
-        let src = read(&config.path).await.map_err(|e| Error::IOError(e))?;
+        let src = read(&config.path).await?;
 
         let store = Store::default();
-        let module = Module::from_binary(&store, &src).map_err(|e| Error::CompileError(e))?;
+        let module = Module::from_binary(&store, &src)?;
 
         let pipes = FunctionPipes {
             stdin: Pipe::new(),
@@ -66,14 +66,11 @@ impl Function {
     }
 
     async fn write_stdin(&mut self, buf: &[u8]) -> Result<usize> {
-        self.pipes.stdin.write(buf).map_err(|e| Error::IOError(e))
+        self.pipes.stdin.write(buf).map_err(Into::into)
     }
 
     async fn read_stdout(&mut self, buf: &mut String) -> Result<usize> {
-        self.pipes
-            .stdout
-            .read_to_string(buf)
-            .map_err(|e| Error::IOError(e))
+        self.pipes.stdout.read_to_string(buf).map_err(Into::into)
     }
 
     pub async fn run(&mut self, request: &[u8]) -> Result<String> {
@@ -83,40 +80,29 @@ impl Function {
             .stdout(Box::new(self.pipes.stdout.clone()))
             .stderr(Box::new(self.pipes.stderr.clone()))
             .envs(self.config.envs.clone())
-            .finalize(&mut self.store)
-            .map_err(|e| Error::WasiStateCreationError(e))?;
+            .finalize(&mut self.store)?;
 
-        let import_object = wasi_env
-            .import_object(&mut self.store, &self.module)
-            .map_err(|e| Error::WasiError(e))?;
+        let import_object = wasi_env.import_object(&mut self.store, &self.module)?;
 
-        let instance = Instance::new(&mut self.store, &self.module, &import_object)
-            .map_err(|e| Error::InstantiationError(e))?;
+        let instance = Instance::new(&mut self.store, &self.module, &import_object)?;
 
-        let memory = instance
-            .exports
-            .get_memory("memory")
-            .map_err(|e| Error::ExportError(e))?;
+        let memory = instance.exports.get_memory("memory")?;
 
         wasi_env
             .data_mut(&mut self.store)
             .set_memory(memory.clone());
 
-        let start = instance
-            .exports
-            .get_function("_start")
-            .map_err(|e| Error::ExportError(e))?;
+        let start = instance.exports.get_function("_start")?;
 
         //TODO: We can check if all of request was written
         self.write_stdin(request).await?;
 
-        match start.call(&mut self.store, &[]) {
-            Ok(_) => {
-                let mut buf = String::new();
-                self.read_stdout(&mut buf).await.unwrap(); //TODO: handle error
-                Ok(buf)
-            }
-            Err(e) => Err(Error::RuntimeError(e)),
+        if let Err(e) = start.call(&mut self.store, &[]) {
+            Err(e.into())
+        } else {
+            let mut buf = String::new();
+            self.read_stdout(&mut buf).await.unwrap(); //TODO: handle error
+            Ok(buf)
         }
     }
 }
@@ -148,7 +134,7 @@ impl MuRuntime {
         if let Some(f) = self.instances.get_mut(&id) {
             f.run(request).await
         } else {
-            Err(Error::FunctionNotFound(id))
+            Err(Error::FunctionNotFound(id).into())
         }
     }
 }
