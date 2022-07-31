@@ -13,7 +13,7 @@ async fn test_simple_func() {
         .await
         .expect("compile wasm project");
 
-    let mut runtime = MuRuntime::new();
+    let mut runtime = MuRuntime::default();
 
     let id = Uuid::new_v4();
     let path = target_dir.join("hello-wasm.wasm");

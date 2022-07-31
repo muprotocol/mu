@@ -1,4 +1,5 @@
-use error::{Error, Result};
+use anyhow::Result;
+use error::Error;
 use serde::Deserialize;
 use std::{
     collections::HashMap,
@@ -108,6 +109,7 @@ impl Function {
 }
 
 //TODO: use metrics and MemoryUsage so we can report usage of memory and CPU time.
+#[derive(Default)]
 pub struct MuRuntime {
     //TODO: use Vec<Function> and hold more than one function at a time so we can load balance
     // over funcs.
@@ -115,14 +117,8 @@ pub struct MuRuntime {
 }
 
 impl MuRuntime {
-    pub fn new() -> Self {
-        Self {
-            instances: HashMap::new(),
-        }
-    }
-
     pub async fn load_function(&mut self, config: Config) -> Result<()> {
-        if let None = self.instances.get(&config.id) {
+        if self.instances.get(&config.id).is_none() {
             let id = config.id;
             let function = Function::load(config).await?;
             self.instances.insert(id, function);

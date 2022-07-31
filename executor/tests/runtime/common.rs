@@ -13,8 +13,18 @@ fn ensure_project_dir(project_dir: &Path) -> Result<PathBuf> {
     Ok(project_dir)
 }
 
+async fn install_wasm32_wasi_target() -> Result<()> {
+    Command::new("rustup")
+        .args(["target", "add", "wasm32-wasi"])
+        .spawn()?
+        .wait()
+        .await?;
+    Ok(())
+}
+
 pub async fn compile_wasm_project(project_dir: &Path) -> Result<PathBuf> {
     let project_dir = ensure_project_dir(project_dir)?;
+    install_wasm32_wasi_target().await?;
 
     Command::new("cargo")
         .current_dir(&project_dir)
