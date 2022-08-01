@@ -12,13 +12,13 @@ jobs:
         override: true
     - name: Check style
       run: cargo fmt -- --check
-      working-directory: backend
+      working-directory: executor
     - name: Run Lints
       run: cargo clippy -- -D warnings
-      working-directory: backend
+      working-directory: executor
     - name: Run tests
       run: cargo test --verbose
-      working-directory: backend
+      working-directory: executor
       env:
         RUST_BACKTRACE: 1
 
