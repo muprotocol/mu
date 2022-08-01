@@ -10,6 +10,7 @@ jobs:
       with:
         toolchain: 1.62.1
         override: true
+        components: rustfmt, clippy
     - name: Check style
       run: cargo fmt -- --check
       working-directory: executor
