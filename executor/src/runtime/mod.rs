@@ -16,6 +16,7 @@ mod error;
 type FunctionID = Uuid;
 type InstanceID = Uuid;
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 pub struct Config {
     pub id: FunctionID,
@@ -24,18 +25,21 @@ pub struct Config {
     path: PathBuf,
 }
 
+#[allow(dead_code)]
 impl Config {
     pub fn new(id: FunctionID, envs: HashMap<String, String>, path: PathBuf) -> Self {
         Self { id, envs, path }
     }
 }
 
+#[allow(dead_code)]
 struct FunctionPipes {
     pub stdin: Pipe,
     pub stdout: Pipe,
     pub stderr: Pipe,
 }
 
+#[allow(dead_code)]
 struct Function {
     pub instance_id: InstanceID,
     pipes: FunctionPipes,
@@ -44,6 +48,7 @@ struct Function {
     module: Module,
 }
 
+#[allow(dead_code)]
 impl Function {
     pub async fn load(config: Config) -> Result<Self> {
         let src = read(&config.path).await?;
@@ -109,14 +114,16 @@ impl Function {
 }
 
 //TODO: use metrics and MemoryUsage so we can report usage of memory and CPU time.
+#[allow(dead_code)]
 #[derive(Default)]
-pub struct MuRuntime {
+pub struct Runtime {
     //TODO: use Vec<Function> and hold more than one function at a time so we can load balance
     // over funcs.
     instances: HashMap<InstanceID, Function>,
 }
 
-impl MuRuntime {
+#[allow(dead_code)]
+impl Runtime {
     pub async fn load_function(&mut self, config: Config) -> Result<()> {
         if self.instances.get(&config.id).is_none() {
             let id = config.id;

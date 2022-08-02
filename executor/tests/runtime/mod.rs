@@ -1,5 +1,5 @@
 use common::{clean_wasm_project, compile_wasm_project};
-use mu::runtime::{Config, MuRuntime};
+use mu::runtime::{Config, Runtime};
 use std::{collections::HashMap, path::Path};
 use uuid::Uuid;
 
@@ -13,7 +13,7 @@ async fn test_simple_func() {
         .await
         .expect("compile wasm project");
 
-    let mut runtime = MuRuntime::default();
+    let mut runtime = Runtime::default();
 
     let id = Uuid::new_v4();
     let path = target_dir.join("hello-wasm.wasm");
