@@ -3,7 +3,7 @@ use futures::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 
-use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::channel::mpsc::{self, UnboundedSender};
 use futures::future;
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -96,6 +96,7 @@ impl<T> LinkedPeer<T> {
         &self.peer.node
     }
 
+    #[allow(dead_code)] //This is used in the tests
     fn seen_from(&self) -> &HashSet<NodeHash> {
         &self.peer.seen_from
     }
@@ -170,8 +171,8 @@ where
             if r.is_err() {
                 return;
             }
-            let node_hash = node.hash.clone();
-            let peer = LinkedPeer::new(node, vec![node_hash.clone()], Some(peer_link));
+            let node_hash = node.hash;
+            let peer = LinkedPeer::new(node, vec![node_hash], Some(peer_link));
             self.peers.insert(node_hash, peer);
         }
     }
@@ -199,7 +200,7 @@ where
                     let mut peer =
                         LinkedPeer::new(h.node.clone(), vec![sender_hash.to_owned()], None);
                     *peer.last_heartbeat_mut() = h.seq;
-                    self.peers.insert(h.node.hash.clone(), peer);
+                    self.peers.insert(h.node.hash, peer);
                 }
 
                 for peer in self
@@ -218,7 +219,7 @@ where
     }
     async fn get_next_message(&mut self) -> (NodeHash, MuMessage) {
         // Otherwise select_all will fail
-        if self.peers.len() == 0 {
+        if self.peers.is_empty() {
             future::pending::<()>().await;
         }
 
@@ -226,7 +227,7 @@ where
             let selected = future::select_all(self.linked_peers().into_iter().map(|peer| {
                 Box::pin(async {
                     (
-                        peer.node().hash.clone(),
+                        peer.node().hash,
                         peer.link.as_mut().unwrap().try_next().await,
                     )
                 })
@@ -254,14 +255,10 @@ impl GossipState<MuFramed> {
                         self.send_heartbeat().await;
                     }
                     conn = listener.accept().fuse() => {
-                        match conn {
-                            Ok((socket, _addr)) => {
-                                println!("recibo connecto");
-                                let framed = Framed::new(socket, LengthDelimitedCodec::new());
-                                let peer_link = SymmetricallyFramed::new(framed, SymmetricalBincode::default());
-                                self.proc_incoming_conn(peer_link).await;
-                            }
-                            _ => {}
+                        if let Ok((socket, _addr)) = conn {
+                            let framed = Framed::new(socket, LengthDelimitedCodec::new());
+                            let peer_link = SymmetricallyFramed::new(framed, SymmetricalBincode::default());
+                            self.proc_incoming_conn(peer_link).await;
                         }
                     }
                     event = self.get_next_message().fuse() => {
@@ -301,8 +298,8 @@ impl GossipState<MuFramed> {
 
         let reply = peer_link.try_next().await?;
         if let Some(MuMessage::Hello(node)) = reply {
-            let node_hash = node.hash.clone();
-            let peer = LinkedPeer::new(node, vec![node_hash.clone()], Some(peer_link));
+            let node_hash = node.hash;
+            let peer = LinkedPeer::new(node, vec![node_hash], Some(peer_link));
             self.peers.insert(node_hash, peer);
         }
         Ok(())

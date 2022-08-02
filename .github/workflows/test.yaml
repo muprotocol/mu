@@ -1,0 +1,25 @@
+on: [pull_request]
+
+jobs:
+  lint_and_test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install rust stable
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: 1.62.1
+        override: true
+        components: rustfmt, clippy
+    - name: Check style
+      run: cargo fmt -- --check
+      working-directory: executor
+    - name: Run Lints
+      run: cargo clippy -- -D warnings
+      working-directory: executor
+    - name: Run tests
+      run: cargo test --verbose
+      working-directory: executor
+      env:
+        RUST_BACKTRACE: 1
+
