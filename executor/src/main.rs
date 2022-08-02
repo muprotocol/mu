@@ -1,5 +1,7 @@
 use mu::gossip::Node;
 
+mod runtime;
+
 #[tokio::main]
 async fn main() {
     println!("Hello, world!");
