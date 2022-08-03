@@ -21,6 +21,10 @@ thiserror = "1.0"
 log = { version = "0.4", features = ["release_max_level_info"] }
 env_logger = "0.9"
 config = { version = "0.13", features = ["yaml"], default-features = false }
+async-trait = "0.1"
+bytes = "1.2"
+tokio_mailbox_processor = { path = "../../tokio_mailbox_processor" }
+quinn = "0.8"
 
 [lib]
 name = "mu"

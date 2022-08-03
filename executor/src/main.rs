@@ -1,12 +1,12 @@
-pub mod config;
+mod config;
+mod connection_manager;
 
-use std::net::{Ipv4Addr, SocketAddr};
-
-use anyhow::{Context, Result};
+use anyhow::Result;
 use env_logger::Env;
-use mu::gossip::{Gossip, Node};
 
-use log::{info, LevelFilter};
+use log::info;
+
+use connection_manager::ConnectionID;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,6 +17,16 @@ async fn main() -> Result<()> {
     )
     .init();
 
+    let connection_manager = connection_manager::start(
+        config
+            .get_string("connection-manager.listen-address")?
+            .parse()?,
+        config
+            .get_string("connection-manager.listen-port")?
+            .parse()?,
+        Box::new(CB {}),
+    );
+
     info!("Initializing Mu...");
 
     // do something!
@@ -24,4 +34,60 @@ async fn main() -> Result<()> {
     info!("Goodbye!");
 
     Ok(())
+}
+
+struct CB {}
+
+impl connection_manager::ConnectionManagerCallbacks for CB {
+    fn new_connection_available<'life0, 'async_trait>(
+        &'life0 self,
+        id: ConnectionID,
+    ) -> core::pin::Pin<
+        Box<dyn core::future::Future<Output = ()> + core::marker::Send + 'async_trait>,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        todo!()
+    }
+
+    fn connection_closed<'life0, 'async_trait>(
+        &'life0 self,
+        id: ConnectionID,
+    ) -> core::pin::Pin<
+        Box<dyn core::future::Future<Output = ()> + core::marker::Send + 'async_trait>,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        todo!()
+    }
+
+    fn datagram_received<'life0, 'async_trait>(
+        &'life0 self,
+        data: bytes::Bytes,
+    ) -> core::pin::Pin<
+        Box<dyn core::future::Future<Output = ()> + core::marker::Send + 'async_trait>,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        todo!()
+    }
+
+    fn req_rep_received<'life0, 'async_trait>(
+        &'life0 self,
+        data: bytes::Bytes,
+    ) -> core::pin::Pin<
+        Box<dyn core::future::Future<Output = bytes::Bytes> + core::marker::Send + 'async_trait>,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        todo!()
+    }
 }

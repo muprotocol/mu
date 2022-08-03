@@ -2,6 +2,12 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "../tokio_mailbox_processor"
 		}
-	]
+	],
+	"settings": {
+		"powershell.cwd": "c:\\Users\\arshi\\source\\repos\\InnovationBerlin\\muprotocol"
+	}
 }
