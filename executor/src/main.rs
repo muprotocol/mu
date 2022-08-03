@@ -1,19 +1,27 @@
+pub mod config;
+
 use std::net::{Ipv4Addr, SocketAddr};
 
+use anyhow::{Context, Result};
 use env_logger::Env;
 use mu::gossip::{Gossip, Node};
 
 use log::{info, LevelFilter};
 
 #[tokio::main]
-async fn main() {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+async fn main() -> Result<()> {
+    let config = config::initialize_config()?;
 
-    info!("Hello, logging!");
+    env_logger::Builder::from_env(
+        Env::default().default_filter_or(config.get_string("log-level")?),
+    )
+    .init();
 
-    // println!("Hello, world!");
+    info!("Initializing Mu...");
 
-    // let n = Node::new("0.0.0.0", 59999);
-    //    let mut g = Gossip::new(n, Default::default());
-    //    g.start().await.unwrap();
+    // do something!
+
+    info!("Goodbye!");
+
+    Ok(())
 }
