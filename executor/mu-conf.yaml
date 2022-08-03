@@ -1,4 +1,4 @@
-log-level: warn
-connection-manager:
-  listen-address: 0.0.0.0
-  listen-port: 5550
+log_level: debug
+connection_manager:
+  listen_address: 0.0.0.0
+  listen_port: 5550

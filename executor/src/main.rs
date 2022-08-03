@@ -13,16 +13,16 @@ async fn main() -> Result<()> {
     let config = config::initialize_config()?;
 
     env_logger::Builder::from_env(
-        Env::default().default_filter_or(config.get_string("log-level")?),
+        Env::default().default_filter_or(config.get_string("log_level")?),
     )
     .init();
 
     let connection_manager = connection_manager::start(
         config
-            .get_string("connection-manager.listen-address")?
+            .get_string("connection_manager.listen_address")?
             .parse()?,
         config
-            .get_string("connection-manager.listen-port")?
+            .get_string("connection_manager.listen_port")?
             .parse()?,
         Box::new(CB {}),
     );
@@ -67,6 +67,7 @@ impl connection_manager::ConnectionManagerCallbacks for CB {
 
     fn datagram_received<'life0, 'async_trait>(
         &'life0 self,
+        id: ConnectionID,
         data: bytes::Bytes,
     ) -> core::pin::Pin<
         Box<dyn core::future::Future<Output = ()> + core::marker::Send + 'async_trait>,
@@ -80,6 +81,7 @@ impl connection_manager::ConnectionManagerCallbacks for CB {
 
     fn req_rep_received<'life0, 'async_trait>(
         &'life0 self,
+        id: ConnectionID,
         data: bytes::Bytes,
     ) -> core::pin::Pin<
         Box<dyn core::future::Future<Output = bytes::Bytes> + core::marker::Send + 'async_trait>,
