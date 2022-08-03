@@ -1,11 +1,19 @@
-use mu::gossip::Node;
+use std::net::{Ipv4Addr, SocketAddr};
 
-mod runtime;
+use env_logger::Env;
+use mu::gossip::{Gossip, Node};
+
+use log::{info, LevelFilter};
 
 #[tokio::main]
 async fn main() {
-    println!("Hello, world!");
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    let _n = Node::new("0.0.0.0", 59999);
-    //    let mut g = Gossip::new(n, Default::default()).await.unwrap();
+    info!("Hello, logging!");
+
+    // println!("Hello, world!");
+
+    // let n = Node::new("0.0.0.0", 59999);
+    //    let mut g = Gossip::new(n, Default::default());
+    //    g.start().await.unwrap();
 }
