@@ -25,6 +25,8 @@ async-trait = "0.1"
 bytes = "1.2"
 tokio_mailbox_processor = { path = "../../tokio_mailbox_processor" }
 quinn = "0.8"
+rustls = { version = "0.20", features = ["dangerous_configuration"] }
+rcgen = "0.9"
 
 [lib]
 name = "mu"
