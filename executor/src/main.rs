@@ -10,7 +10,11 @@ use connection_manager::ConnectionID;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let config = config::initialize_config()?;
+    let config = config::initialize_config(vec![
+        ("log_level", "warn"),
+        ("connection_manager.listen_ip", "0.0.0.0"),
+        ("connection_manager.listen_port", "12012"),
+    ])?;
 
     env_logger::Builder::from_env(
         Env::default().default_filter_or(config.get_string("log_level")?),
