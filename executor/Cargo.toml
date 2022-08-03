@@ -10,8 +10,9 @@ wasmer = { git = "https://github.com/wasmerio/wasmer" }
 wasmer-wasi = { git = "https://github.com/wasmerio/wasmer" }
 tokio = { version = "1.0", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec"]}
-serde = "1"
 tokio-serde = {version = "0.8", features = ["bincode"]}
+serde = "1"
+serde_json = "1"
 futures = "0.3"
 pin-project = "1.0"
 rand = "0.8"
