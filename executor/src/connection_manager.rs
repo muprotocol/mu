@@ -4,18 +4,23 @@
 use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
+    sync::Arc,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
-use futures::{FutureExt, StreamExt};
+use futures::{FutureExt, SinkExt, StreamExt};
 use log::*;
-use quinn::{Connecting, Endpoint, Incoming, NewConnection, RecvStream, SendStream, ServerConfig};
+use quinn::{
+    ClientConfig, Connecting, Endpoint, Incoming, NewConnection, RecvStream, SendStream,
+    ServerConfig,
+};
 use tokio_mailbox_processor::{
     plain::{MessageReceiver, PlainMailboxProcessor},
     ReplyChannel,
 };
+use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 pub type ConnectionID = u32;
 
@@ -36,10 +41,11 @@ pub trait ConnectionManager {
 }
 
 enum ConnectionManagerMessage {
-    Connect(IpAddr, u16, ReplyChannel<ConnectionID>),
-    SendDatagram(ConnectionID, Bytes, ReplyChannel<()>),
-    SendReqRep(ConnectionID, Bytes, ReplyChannel<Bytes>),
+    Connect(IpAddr, u16, ReplyChannel<Result<ConnectionID>>),
+    SendDatagram(ConnectionID, Bytes, ReplyChannel<Result<()>>),
+    SendReqRep(ConnectionID, Bytes, ReplyChannel<Result<Bytes>>),
     Disconnect(ConnectionID, ReplyChannel<()>),
+    Stop(ReplyChannel<()>),
 }
 
 struct ConnectionManagerImpl {
@@ -49,24 +55,27 @@ struct ConnectionManagerImpl {
 #[async_trait]
 impl ConnectionManager for ConnectionManagerImpl {
     async fn connect(&self, address: IpAddr, port: u16) -> Result<ConnectionID> {
-        self.mailbox
-            .post_and_reply(|r| ConnectionManagerMessage::Connect(address, port, r))
-            .await
-            .map_err(Into::into)
+        flatten_and_map_result(
+            self.mailbox
+                .post_and_reply(|r| ConnectionManagerMessage::Connect(address, port, r))
+                .await,
+        )
     }
 
     async fn send_datagram(&self, id: ConnectionID, data: Bytes) -> Result<()> {
-        self.mailbox
-            .post_and_reply(|r| ConnectionManagerMessage::SendDatagram(id, data, r))
-            .await
-            .map_err(Into::into)
+        flatten_and_map_result(
+            self.mailbox
+                .post_and_reply(|r| ConnectionManagerMessage::SendDatagram(id, data, r))
+                .await,
+        )
     }
 
     async fn send_req_rep(&self, id: ConnectionID, data: Bytes) -> Result<Bytes> {
-        self.mailbox
-            .post_and_reply(|r| ConnectionManagerMessage::SendReqRep(id, data, r))
-            .await
-            .map_err(Into::into)
+        flatten_and_map_result(
+            self.mailbox
+                .post_and_reply(|r| ConnectionManagerMessage::SendReqRep(id, data, r))
+                .await,
+        )
     }
 
     async fn disconnect(&self, id: ConnectionID) -> Result<()> {
@@ -74,6 +83,14 @@ impl ConnectionManager for ConnectionManagerImpl {
             .post_and_reply(|r| ConnectionManagerMessage::Disconnect(id, r))
             .await
             .map_err(Into::into)
+    }
+}
+
+fn flatten_and_map_result<T>(r: Result<Result<T>, tokio_mailbox_processor::Error>) -> Result<T> {
+    match r {
+        Ok(Ok(x)) => Ok(x),
+        Ok(Err(f)) => Err(f),
+        Err(f) => Err(f.into()),
     }
 }
 
@@ -87,9 +104,12 @@ pub async fn start(
     let server_config = ServerConfig::with_single_cert(cert_chain, private_key)
         .context("Failed to configure server")?;
 
-    let (endpoint, incoming) =
+    let (mut endpoint, incoming) =
         Endpoint::server(server_config, SocketAddr::new(listen_address, listen_port))
             .context("Failed to start server")?;
+
+    let client_config = make_client_configuration();
+    endpoint.set_default_client_config(client_config);
 
     let mailbox = PlainMailboxProcessor::start(|r| body(r, callbacks, endpoint, incoming), 10000);
 
@@ -100,13 +120,25 @@ fn make_self_signed_certificate() -> (rustls::PrivateKey, Vec<rustls::Certificat
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
     let cert_der = cert.serialize_der().unwrap();
     let priv_key = cert.serialize_private_key_der();
-    println!("{}", priv_key.len());
     let priv_key = rustls::PrivateKey(priv_key);
-    let cert_chain = vec![rustls::Certificate(cert_der.clone())];
+    let cert_chain = vec![rustls::Certificate(cert_der)];
     (priv_key, cert_chain)
 }
 
-type OpenConnection = (NewConnection, SendStream, RecvStream);
+fn make_client_configuration() -> ClientConfig {
+    let crypto = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_custom_certificate_verifier(SkipServerVerification::new())
+        .with_no_client_auth();
+
+    ClientConfig::new(Arc::new(crypto))
+}
+
+type OpenConnection = (
+    NewConnection,
+    FramedRead<RecvStream, LengthDelimitedCodec>,
+    FramedWrite<SendStream, LengthDelimitedCodec>,
+);
 type ConnectionMap = HashMap<ConnectionID, OpenConnection>;
 
 async fn body(
@@ -117,7 +149,13 @@ async fn body(
 ) {
     let mut next_connection_id = 0;
     let mut connections: ConnectionMap = HashMap::new();
+    let mut stop_reply_channel = None;
+
+    // TODO: this code is not async enough. For example, if connecting to
+    // a peer takes a long time, incoming messages won't be processed until
+    // it's done.
     'main_loop: loop {
+        // TODO select! requires all futures to be cancellation-safe. Are they?
         tokio::select! {
             msg = message_receiver.receive() => {
                 match msg {
@@ -127,19 +165,31 @@ async fn body(
                     }
 
                     Some(ConnectionManagerMessage::Connect(ip, port, rep)) => {
-
+                        rep.reply(
+                            connect(ip, port, &mut next_connection_id, &mut endpoint, &mut connections).await
+                        );
                     }
 
                     Some(ConnectionManagerMessage::SendDatagram(id, bytes, rep)) => {
-
+                        rep.reply(
+                            send_datagram(id, bytes, &mut connections)
+                        );
                     }
 
                     Some(ConnectionManagerMessage::SendReqRep(id, bytes, rep)) => {
-
+                        rep.reply(
+                            send_req_rep(id, bytes, &mut connections).await
+                        );
                     }
 
                     Some(ConnectionManagerMessage::Disconnect(id, rep)) => {
+                        disconnect(id, &mut connections);
+                        rep.reply(());
+                    }
 
+                    Some(ConnectionManagerMessage::Stop(rep)) => {
+                        stop_reply_channel = Some(rep);
+                        break 'main_loop;
                     }
                 }
             }
@@ -152,9 +202,98 @@ async fn body(
             }
 
             message = get_next_message(&mut connections).fuse() => {
-                process_message(message, callbacks.as_ref(), &mut connections);
+                if let Err(f) = process_message(message, callbacks.as_ref(), &mut connections).await {
+                    warn!("Failed to handle message due to {}", f);
+                }
             }
         };
+    }
+
+    // Drop everything, then reply to whoever asked us to stop
+    drop(connections);
+    drop(incoming);
+
+    endpoint.wait_idle().await;
+    drop(endpoint);
+
+    if let Some(x) = stop_reply_channel {
+        x.reply(());
+    }
+}
+
+async fn connect(
+    addr: IpAddr,
+    port: u16,
+    next_connection_id: &mut u32,
+    endpoint: &mut Endpoint,
+    connections: &mut ConnectionMap,
+) -> Result<ConnectionID> {
+    let connection = endpoint
+        .connect(SocketAddr::new(addr, port), "mu_peer")
+        .context("Failed to connect to peer")?
+        .await
+        .context("Failed to establish connection")?;
+
+    let (send, recv) = connection
+        .connection
+        .open_bi()
+        .await
+        .context("Failed to open bi-directional stream")?;
+
+    // TODO: unify codec builder creation between this and process_incoming
+    let mut codec_builder = LengthDelimitedCodec::builder();
+    codec_builder.max_frame_length(8 * 1024); // TODO: make this configurable;
+
+    let id = *next_connection_id;
+    *next_connection_id += 1;
+
+    info!("Connected to {}:{} with ID {}", addr, port, id);
+
+    connections.insert(
+        id,
+        (
+            connection,
+            codec_builder.new_read(recv),
+            codec_builder.new_write(send),
+        ),
+    );
+
+    Ok(id)
+}
+
+fn send_datagram(id: ConnectionID, data: Bytes, connections: &mut ConnectionMap) -> Result<()> {
+    if let Some(connection) = connections.get_mut(&id) {
+        connection.0.connection.send_datagram(data)?;
+        return Ok(());
+    }
+
+    bail!("Unknown connection ID {}", id);
+}
+
+async fn send_req_rep(
+    id: ConnectionID,
+    data: Bytes,
+    connections: &mut ConnectionMap,
+) -> Result<Bytes> {
+    // TODO: If both peers send a req/rep message at the same time, they'll mistake
+    // the request for the other's reply, and the requests will never be processed at all.
+    // The easiest solution is to grab two channels per pair of peers instead of one.
+    if let Some(connection) = connections.get_mut(&id) {
+        connection.2.send(data).await?;
+        match connection.1.next().await {
+            Some(Ok(bytes)) => return Ok(bytes.freeze()),
+            Some(Err(f)) => return Err(f.into()),
+            None => bail!("Failed to read response because the connection was closed"),
+        }
+    }
+
+    bail!("Unknown connection ID {}", id);
+}
+
+fn disconnect(id: ConnectionID, connections: &mut ConnectionMap) {
+    if let Some(connection) = connections.remove(&id) {
+        // This does nothing really, but it's good to be explicit
+        std::mem::drop(connection);
     }
 }
 
@@ -191,17 +330,27 @@ async fn process_incoming(
         Some(Ok(x)) => x,
         Some(Err(f)) => {
             info!(
-                "Failed to accept bi-directional stream from {}, won't connect",
-                id
+                "Failed to accept bi-directional stream from {}, won't connect, error is: {}",
+                id, f
             );
             return true;
         }
     };
 
-    connections.insert(id, (new_connection, send, recv));
+    let mut codec_builder = LengthDelimitedCodec::builder();
+    codec_builder.max_frame_length(8 * 1024); // TODO: make this configurable;
+
+    connections.insert(
+        id,
+        (
+            new_connection,
+            codec_builder.new_read(recv),
+            codec_builder.new_write(send),
+        ),
+    );
     callbacks.new_connection_available(id).await;
 
-    return true;
+    true
 }
 
 enum IncomingMessage {
@@ -210,7 +359,41 @@ enum IncomingMessage {
 }
 
 async fn get_next_message(connections: &mut ConnectionMap) -> IncomingMessage {
-    todo!();
+    // TODO: this discards all the futures every time.
+    // leaving the matter of performance aside, is this even a correct thing to do?
+    // essentially, the question is: are all the futures cancellation-safe? I think not.
+    // what happens if a LengthDelimited is in the middle of reading a message and
+    // it gets cancelled?
+    futures::future::select_all(
+        connections
+            .iter_mut()
+            .map(|(id, connection)| Box::pin(get_next_message_single(*id, connection))),
+    )
+    .await
+    .0
+}
+
+async fn get_next_message_single(
+    id: ConnectionID,
+    connection: &mut OpenConnection,
+) -> IncomingMessage {
+    loop {
+        tokio::select! {
+            bi = connection.1.next() => {
+                match bi {
+                    Some(Ok(bytes)) => return IncomingMessage::ReqRep(id, bytes.freeze()),
+                    _ => warn!("Failed to read message") // TODO: handle Nones and Errs
+                }
+            }
+
+            datagram = connection.0.datagrams.next() => {
+                match datagram {
+                    Some(Ok(bytes)) => return IncomingMessage::Datagram(id, bytes),
+                    _ => warn!("Failed to read message") // TODO: handle Nones and Errs
+                }
+            }
+        }
+    }
 }
 
 async fn process_message(
@@ -224,12 +407,35 @@ async fn process_message(
         }
 
         IncomingMessage::ReqRep(id, bytes) => {
-            let (_, send, _) = connections.get_mut(&id).unwrap();
-            // TODO: handle errors
+            let (_, _, send) = connections.get_mut(&id).unwrap();
+            // TODO: handle errors returned by user code
             let result = callbacks.req_rep_received(id, bytes).await;
-            send.write_all(result.as_ref()).await?;
+            // TODO: what happens if we lose the connection before writing a reply?
+            send.send(result).await?;
         }
     }
 
     Ok(())
+}
+
+struct SkipServerVerification;
+
+impl SkipServerVerification {
+    fn new() -> Arc<Self> {
+        Arc::new(Self)
+    }
+}
+
+impl rustls::client::ServerCertVerifier for SkipServerVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::Certificate,
+        _intermediates: &[rustls::Certificate],
+        _server_name: &rustls::ServerName,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _ocsp_response: &[u8],
+        _now: std::time::SystemTime,
+    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::ServerCertVerified::assertion())
+    }
 }
