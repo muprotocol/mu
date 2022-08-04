@@ -129,7 +129,8 @@ pub async fn start(
     let client_config = make_client_configuration();
     endpoint.set_default_client_config(client_config);
 
-    let mailbox = PlainMailboxProcessor::start(|r| body(r, callbacks, endpoint, incoming), 10000);
+    let mailbox =
+        PlainMailboxProcessor::start(|mb, r| body(mb, r, callbacks, endpoint, incoming), 10000);
 
     Ok(Box::new(ConnectionManagerImpl { mailbox }))
 }
@@ -160,6 +161,7 @@ type OpenConnection = (
 type ConnectionMap = HashMap<ConnectionID, OpenConnection>;
 
 async fn body(
+    mailbox: PlainMailboxProcessor<ConnectionManagerMessage>,
     mut message_receiver: MessageReceiver<ConnectionManagerMessage>,
     callbacks: Box<dyn ConnectionManagerCallbacks>,
     mut endpoint: Endpoint,
@@ -387,36 +389,60 @@ async fn get_next_message(connections: &mut ConnectionMap) -> IncomingMessage {
     // essentially, the question is: are all the futures cancellation-safe? I think not.
     // what happens if a LengthDelimited is in the middle of reading a message and
     // it gets cancelled?
-    futures::future::select_all(
-        connections
-            .iter_mut()
-            .map(|(id, connection)| Box::pin(get_next_message_single(*id, connection))),
-    )
-    .await
-    .0
+    let mut to_disconnect = vec![];
+    let result = loop {
+        match futures::future::select_all(
+            connections
+                .iter_mut()
+                .filter(|(k, _)| !to_disconnect.contains(*k))
+                .map(|(id, connection)| Box::pin(get_next_message_single(*id, connection))),
+        )
+        .await
+        .0
+        {
+            Ok(msg) => break msg,
+            Err(id) => to_disconnect.push(id),
+        }
+    };
+
+    for id in to_disconnect {
+        disconnect(id, connections);
+    }
+
+    result
 }
 
 async fn get_next_message_single(
     id: ConnectionID,
     connection: &mut OpenConnection,
-) -> IncomingMessage {
+) -> Result<IncomingMessage, ConnectionID> {
     loop {
         tokio::select! {
             bi = connection.1.next() => {
                 match bi {
-                    Some(Ok(bytes)) => return IncomingMessage::ReqRep(id, bytes.freeze()),
-                    Some(Err(f)) => warn!("Failed to read message due to {}", f),
-                    _ => warn!("Failed to read message") // TODO: handle Nones and Errs
-                    // Best way to handle these would be to send a Disconnect message to the mailbox.
-                    // We'd need to update the mailbox processor to do that though.
+                    Some(Ok(bytes)) => return Ok(IncomingMessage::ReqRep(id, bytes.freeze())),
+                    Some(Err(f)) => {
+                        info!("Failed to read message from connection {} due to {}, removing connection", id, f);
+                        return Err(id);
+                    }
+                    None => {
+                        info!("Failed to read message from connection {}, removing connection", id);
+                        return Err(id);
+                    }
                 }
             }
 
             datagram = connection.0.datagrams.next() => {
                 match datagram {
-                    Some(Ok(bytes)) => return IncomingMessage::Datagram(id, bytes),
-                    Some(Err(f)) => warn!("Failed to read message due to {}", f),
-                    _ => warn!("Failed to read message") // TODO: handle Nones and Errs
+                    Some(Ok(bytes)) => return Ok(IncomingMessage::Datagram(id, bytes)),
+                    Some(Err(f)) => {
+                        info!("Failed to read message from connection {} due to {}, removing connection", id, f);
+                        return Err(id);
+                    }
+                    None => {
+                        info!("Failed to read message from connection {}, removing connection", id);
+                        return Err(id);
+                    }
                 }
             }
         }
