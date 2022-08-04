@@ -34,7 +34,7 @@ impl<T: Send + 'static> MessageReceiver<T> {
 ///     Get(ReplyChannel<i32>),
 /// }
 ///
-/// async fn body(mut recv: MessageReceiver<Message>) {
+/// async fn body(mailbox: PlainMailboxProcessor<Message>, mut recv: MessageReceiver<Message>) {
 ///     let mut state = 0;
 ///     loop {
 ///         let msg = recv.receive().await;
@@ -83,15 +83,18 @@ impl<T: Send + 'static> PlainMailboxProcessor<T> {
     pub fn start<Body, Fut>(body: Body, buffer_size: usize) -> PlainMailboxProcessor<T>
     where
         Fut: Future<Output = ()> + Send + 'static,
-        Body: FnOnce(MessageReceiver<T>) -> Fut + Send + Sync + 'static,
+        Body: FnOnce(PlainMailboxProcessor<T>, MessageReceiver<T>) -> Fut + Send + Sync + 'static,
     {
         let (tx, rx) = mpsc::channel(buffer_size);
 
+        let result = Self { sender: tx };
+        let mailbox_clone = result.clone();
+
         tokio::spawn(async move {
-            body(MessageReceiver { receiver: rx }).await;
+            body(mailbox_clone, MessageReceiver { receiver: rx }).await;
         });
 
-        Self { sender: tx }
+        result
     }
 
     /// Posts a message to the mailbox without waiting for the response. Note than
@@ -147,9 +150,15 @@ mod tests {
         Get(ReplyChannel<i32>),
         Stop(ReplyChannel<()>),
         DelayAndFail,
+        SendMessageToSelf(i32, ReplyChannel<()>),
+        ReceiveMessageFromSelf(i32),
     }
 
-    async fn body(mut recv: MessageReceiver<Message>, state: MailboxState) {
+    async fn body(
+        mb: PlainMailboxProcessor<Message>,
+        mut recv: MessageReceiver<Message>,
+        state: MailboxState,
+    ) {
         loop {
             let msg = recv.receive().await;
             match msg {
@@ -177,6 +186,14 @@ mod tests {
                     tokio::time::sleep(Duration::from_secs(10)).await;
                     panic!("OH MY GOD WE'RE DEAD");
                 }
+                Some(Message::SendMessageToSelf(i, r)) => {
+                    mb.post_and_forget(Message::ReceiveMessageFromSelf(i));
+                    r.reply(());
+                }
+                Some(Message::ReceiveMessageFromSelf(i)) => {
+                    let mut m = state.lock().unwrap();
+                    *m += i;
+                }
             }
         }
     }
@@ -184,7 +201,7 @@ mod tests {
     fn make_mb() -> (PlainMailboxProcessor<Message>, MailboxState) {
         let state = Arc::new(Mutex::new(0));
         let state_clone = state.clone();
-        let mb = PlainMailboxProcessor::start(|r| body(r, state_clone), 100);
+        let mb = PlainMailboxProcessor::start(|m, r| body(m, r, state_clone), 100);
         (mb, state)
     }
 
@@ -252,6 +269,17 @@ mod tests {
             mb.post_and_reply(|r| Message::Increment(10, r)).await,
             Err(Error::MailboxStopped)
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_send_message_to_self() -> Result<()> {
+        let (mb, _) = make_mb();
+
+        mb.post_and_reply(|r| Message::SendMessageToSelf(5, r))
+            .await?;
+        assert_eq!(mb.post_and_reply(|tx| Message::Get(tx)).await?, 5);
 
         Ok(())
     }

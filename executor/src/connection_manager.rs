@@ -4,6 +4,7 @@
 // TODO list:
 // 1. handle disconnections
 // 2. separate out the send and receive channels between each pair of peers
+// 3. don't fail the entire mailbox when a connect() request fails
 
 use std::{
     collections::HashMap,
@@ -404,13 +405,17 @@ async fn get_next_message_single(
             bi = connection.1.next() => {
                 match bi {
                     Some(Ok(bytes)) => return IncomingMessage::ReqRep(id, bytes.freeze()),
+                    Some(Err(f)) => warn!("Failed to read message due to {}", f),
                     _ => warn!("Failed to read message") // TODO: handle Nones and Errs
+                    // Best way to handle these would be to send a Disconnect message to the mailbox.
+                    // We'd need to update the mailbox processor to do that though.
                 }
             }
 
             datagram = connection.0.datagrams.next() => {
                 match datagram {
                     Some(Ok(bytes)) => return IncomingMessage::Datagram(id, bytes),
+                    Some(Err(f)) => warn!("Failed to read message due to {}", f),
                     _ => warn!("Failed to read message") // TODO: handle Nones and Errs
                 }
             }

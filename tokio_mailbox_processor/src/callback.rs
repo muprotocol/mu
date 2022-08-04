@@ -40,7 +40,7 @@ enum ControlMessage<T> {
 ///     Get(ReplyChannel<i32>),
 /// }
 ///
-/// async fn step(msg: Message, state: i32) -> i32 {
+/// async fn step(mb: CallbackMailboxProcessor<Message>, msg: Message, state: i32) -> i32 {
 ///     match msg {
 ///         Message::Set(i) => i,
 ///         Message::Get(rpl) => {
@@ -86,9 +86,12 @@ impl<T: Send + 'static> CallbackMailboxProcessor<T> {
     ) -> CallbackMailboxProcessor<T>
     where
         Fut: Future<Output = State> + Send + 'static,
-        Step: Fn(T, State) -> Fut + Send + Sync + 'static,
+        Step: Fn(CallbackMailboxProcessor<T>, T, State) -> Fut + Send + Sync + 'static,
     {
         let (tx, mut rx) = mpsc::channel(buffer_size);
+
+        let result = Self { sender: tx };
+        let mailbox_clone = result.clone();
 
         tokio::spawn(async move {
             let mut state = init_state;
@@ -107,7 +110,7 @@ impl<T: Send + 'static> CallbackMailboxProcessor<T> {
                     }
 
                     ControlMessage::UserMessageAndAck(msg, tx) => {
-                        state = step(msg, state).await;
+                        state = step(mailbox_clone.clone(), msg, state).await;
 
                         match tx.send(()) {
                             // If the rx end panics while we process the message (which shouldn't happen),
@@ -117,13 +120,13 @@ impl<T: Send + 'static> CallbackMailboxProcessor<T> {
                     }
 
                     ControlMessage::UserMessage(msg) => {
-                        state = step(msg, state).await;
+                        state = step(mailbox_clone.clone(), msg, state).await;
                     }
                 }
             }
         });
 
-        Self { sender: tx }
+        result
     }
 
     /// Stops (and consumes) the mailbox processor without waiting for it to be stopped.
@@ -211,9 +214,15 @@ mod tests {
         Decrement(i32),
         Get(ReplyChannel<i32>),
         DelayAndFail,
+        SendMessageToSelf(i32),
+        ReceiveMessageFromSelf(i32),
     }
 
-    async fn step(msg: Message, state: MailboxState) -> MailboxState {
+    async fn step(
+        mb: CallbackMailboxProcessor<Message>,
+        msg: Message,
+        state: MailboxState,
+    ) -> MailboxState {
         match msg {
             Message::Increment(i) => {
                 let mut m = state.lock().unwrap();
@@ -230,6 +239,11 @@ mod tests {
             Message::DelayAndFail => {
                 tokio::time::sleep(Duration::from_secs(10)).await;
                 panic!("OH MY GOD WE'RE DEAD");
+            }
+            Message::SendMessageToSelf(i) => mb.post_and_forget(Message::ReceiveMessageFromSelf(i)),
+            Message::ReceiveMessageFromSelf(i) => {
+                let mut m = state.lock().unwrap();
+                *m += i;
             }
         }
 
@@ -337,6 +351,16 @@ mod tests {
             mb5.post(Message::Increment(10)).await,
             Err(Error::MailboxStopped)
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_send_message_to_self() -> Result<()> {
+        let (mb, _) = make_mb();
+
+        mb.post(Message::SendMessageToSelf(5)).await?;
+        assert_eq!(mb.post_and_reply(|tx| Message::Get(tx)).await?, 5);
 
         Ok(())
     }
