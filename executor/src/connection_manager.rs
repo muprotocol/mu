@@ -10,7 +10,7 @@ use std::{
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
-use futures::{FutureExt, SinkExt, StreamExt};
+use futures::{future, FutureExt, SinkExt, StreamExt};
 use log::*;
 use quinn::{
     ClientConfig, Connecting, Endpoint, Incoming, NewConnection, RecvStream, SendStream,
@@ -99,6 +99,11 @@ pub async fn start(
     listen_port: u16,
     callbacks: Box<dyn ConnectionManagerCallbacks>,
 ) -> Result<Box<dyn ConnectionManager>> {
+    info!(
+        "Starting connection manager on {}:{}",
+        listen_address, listen_port
+    );
+
     // TODO: make self-signed certificates optional
     let (private_key, cert_chain) = make_self_signed_certificate();
     let server_config = ServerConfig::with_single_cert(cert_chain, private_key)
@@ -359,6 +364,11 @@ enum IncomingMessage {
 }
 
 async fn get_next_message(connections: &mut ConnectionMap) -> IncomingMessage {
+    if connections.len() == 0 {
+        // TODO: This will need be re-worked if we move away from select!, since it
+        // essentially creates a future that never completes.
+        future::pending::<()>().await;
+    }
     // TODO: this discards all the futures every time.
     // leaving the matter of performance aside, is this even a correct thing to do?
     // essentially, the question is: are all the futures cancellation-safe? I think not.

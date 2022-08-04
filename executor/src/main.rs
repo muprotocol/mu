@@ -1,7 +1,9 @@
 mod config;
 mod connection_manager;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use async_trait::async_trait;
+use bytes::Bytes;
 use env_logger::Env;
 
 use log::info;
@@ -21,19 +23,41 @@ async fn main() -> Result<()> {
     )
     .init();
 
+    info!("Initializing Mu...");
+
     let connection_manager = connection_manager::start(
         config
             .get_string("connection_manager.listen_address")?
-            .parse()?,
+            .parse()
+            .context("Failed to parse listen address")?,
         config
             .get_string("connection_manager.listen_port")?
-            .parse()?,
+            .parse()
+            .context("Failed to parse listen port")?,
         Box::new(CB {}),
-    );
-
-    info!("Initializing Mu...");
+    )
+    .await
+    .context("Failed to start connection manager")?;
 
     // do something!
+    let port = config
+        .get_string("connection_manager.listen_port")?
+        .parse::<i32>()?;
+    if port == 12012 {
+        loop {}
+    } else {
+        let id = connection_manager
+            .connect("127.0.0.1".parse()?, 12012)
+            .await
+            .context("Failed to connect")?;
+
+        let data = "Hello!".into();
+        connection_manager.send_datagram(id, data).await?;
+
+        let data = "Hello!".into();
+        let rep = connection_manager.send_req_rep(id, data).await?;
+        info!("Received reply: {}", String::from_utf8_lossy(&rep));
+    }
 
     info!("Goodbye!");
 
@@ -42,58 +66,30 @@ async fn main() -> Result<()> {
 
 struct CB {}
 
+#[async_trait]
 impl connection_manager::ConnectionManagerCallbacks for CB {
-    fn new_connection_available<'life0, 'async_trait>(
-        &'life0 self,
-        id: ConnectionID,
-    ) -> core::pin::Pin<
-        Box<dyn core::future::Future<Output = ()> + core::marker::Send + 'async_trait>,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
+    async fn new_connection_available(&self, id: ConnectionID) {
+        info!("New connection available: {}", id);
     }
 
-    fn connection_closed<'life0, 'async_trait>(
-        &'life0 self,
-        id: ConnectionID,
-    ) -> core::pin::Pin<
-        Box<dyn core::future::Future<Output = ()> + core::marker::Send + 'async_trait>,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
+    async fn connection_closed(&self, id: ConnectionID) {
+        info!("Connection closed: {}", id);
     }
 
-    fn datagram_received<'life0, 'async_trait>(
-        &'life0 self,
-        id: ConnectionID,
-        data: bytes::Bytes,
-    ) -> core::pin::Pin<
-        Box<dyn core::future::Future<Output = ()> + core::marker::Send + 'async_trait>,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
+    async fn datagram_received(&self, id: ConnectionID, data: Bytes) {
+        info!(
+            "Datagram received from {}: {}",
+            id,
+            String::from_utf8_lossy(&data)
+        );
     }
 
-    fn req_rep_received<'life0, 'async_trait>(
-        &'life0 self,
-        id: ConnectionID,
-        data: bytes::Bytes,
-    ) -> core::pin::Pin<
-        Box<dyn core::future::Future<Output = bytes::Bytes> + core::marker::Send + 'async_trait>,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        todo!()
+    async fn req_rep_received(&self, id: ConnectionID, data: Bytes) -> Bytes {
+        info!(
+            "Req/Rep received from {}: {}",
+            id,
+            String::from_utf8_lossy(&data)
+        );
+        data
     }
 }
