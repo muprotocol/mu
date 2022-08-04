@@ -57,6 +57,8 @@ async fn main() -> Result<()> {
         let data = "Hello!".into();
         let rep = connection_manager.send_req_rep(id, data).await?;
         info!("Received reply: {}", String::from_utf8_lossy(&rep));
+
+        connection_manager.stop().await?;
     }
 
     info!("Goodbye!");

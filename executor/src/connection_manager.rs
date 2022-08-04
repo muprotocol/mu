@@ -1,6 +1,10 @@
 //TODO
 #![allow(dead_code)]
 
+// TODO list:
+// 1. handle disconnections
+// 2. separate out the send and receive channels between each pair of peers
+
 use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
@@ -38,6 +42,7 @@ pub trait ConnectionManager {
     async fn send_datagram(&self, id: ConnectionID, data: Bytes) -> Result<()>;
     async fn send_req_rep(&self, id: ConnectionID, data: Bytes) -> Result<Bytes>;
     async fn disconnect(&self, id: ConnectionID) -> Result<()>;
+    async fn stop(&self) -> Result<()>;
 }
 
 enum ConnectionManagerMessage {
@@ -81,6 +86,13 @@ impl ConnectionManager for ConnectionManagerImpl {
     async fn disconnect(&self, id: ConnectionID) -> Result<()> {
         self.mailbox
             .post_and_reply(|r| ConnectionManagerMessage::Disconnect(id, r))
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn stop(&self) -> Result<()> {
+        self.mailbox
+            .post_and_reply(|r| ConnectionManagerMessage::Stop(r))
             .await
             .map_err(Into::into)
     }
