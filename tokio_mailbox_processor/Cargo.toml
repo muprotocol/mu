@@ -1,0 +1,13 @@
+[package]
+name = "tokio_mailbox_processor"
+version = "0.2.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+thiserror = "1.0.31"
+tokio = { version = "1.20.1", features = ["sync", "rt", "macros", "time"] }
+
+[dev-dependencies]
+tokio-test = "0.4.2"
