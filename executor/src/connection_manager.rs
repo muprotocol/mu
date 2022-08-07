@@ -395,7 +395,8 @@ async fn get_next_message(
     connections: &mut ConnectionMap,
     callbacks: &dyn ConnectionManagerCallbacks,
 ) -> IncomingMessage {
-    if connections.len() == 0 {
+    let num_connections = connections.len();
+    if num_connections == 0 {
         // TODO: This will need be re-worked if we move away from select!, since it
         // essentially creates a future that never completes.
         future::pending::<()>().await;
@@ -416,8 +417,13 @@ async fn get_next_message(
         .await
         .0
         {
-            Ok(msg) => break msg,
-            Err(id) => to_disconnect.push(id),
+            Ok(msg) => break Some(msg),
+            Err(id) => {
+                to_disconnect.push(id);
+                if to_disconnect.len() == num_connections {
+                    break None;
+                }
+            }
         }
     };
 
@@ -425,7 +431,11 @@ async fn get_next_message(
         disconnect(id, connections, callbacks).await;
     }
 
-    result
+    if result.is_none() {
+        future::pending::<()>().await;
+    }
+
+    result.unwrap()
 }
 
 async fn get_next_message_single(
