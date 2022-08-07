@@ -1,10 +1,7 @@
-//TODO
-#![allow(dead_code)]
-
 // TODO list:
-// 1. handle disconnections
-// 2. separate out the send and receive channels between each pair of peers
-// 3. don't fail the entire mailbox when a connect() request fails
+// * don't raise callbacks on the mailbox's task
+// * separate out the send and receive channels between each pair of peers
+// * don't fail the entire mailbox when a connect() request fails
 
 use std::{
     collections::HashMap,
@@ -161,7 +158,7 @@ type OpenConnection = (
 type ConnectionMap = HashMap<ConnectionID, OpenConnection>;
 
 async fn body(
-    mailbox: PlainMailboxProcessor<ConnectionManagerMessage>,
+    _mailbox: PlainMailboxProcessor<ConnectionManagerMessage>,
     mut message_receiver: MessageReceiver<ConnectionManagerMessage>,
     callbacks: Box<dyn ConnectionManagerCallbacks>,
     mut endpoint: Endpoint,
@@ -186,7 +183,14 @@ async fn body(
 
                     Some(ConnectionManagerMessage::Connect(ip, port, rep)) => {
                         rep.reply(
-                            connect(ip, port, &mut next_connection_id, &mut endpoint, &mut connections).await
+                            connect(
+                                ip,
+                                port,
+                                &mut next_connection_id,
+                                &mut endpoint,
+                                &mut connections,
+                                callbacks.as_ref()
+                            ).await
                         );
                     }
 
@@ -203,7 +207,7 @@ async fn body(
                     }
 
                     Some(ConnectionManagerMessage::Disconnect(id, rep)) => {
-                        disconnect(id, &mut connections);
+                        disconnect(id, &mut connections, callbacks.as_ref()).await;
                         rep.reply(());
                     }
 
@@ -221,7 +225,7 @@ async fn body(
                 }
             }
 
-            message = get_next_message(&mut connections).fuse() => {
+            message = get_next_message(&mut connections, callbacks.as_ref()).fuse() => {
                 if let Err(f) = process_message(message, callbacks.as_ref(), &mut connections).await {
                     warn!("Failed to handle message due to {}", f);
                 }
@@ -247,6 +251,7 @@ async fn connect(
     next_connection_id: &mut u32,
     endpoint: &mut Endpoint,
     connections: &mut ConnectionMap,
+    callbacks: &dyn ConnectionManagerCallbacks,
 ) -> Result<ConnectionID> {
     let connection = endpoint
         .connect(SocketAddr::new(addr, port), "mu_peer")
@@ -277,6 +282,8 @@ async fn connect(
             codec_builder.new_write(send),
         ),
     );
+
+    callbacks.new_connection_available(id).await;
 
     Ok(id)
 }
@@ -310,10 +317,16 @@ async fn send_req_rep(
     bail!("Unknown connection ID {}", id);
 }
 
-fn disconnect(id: ConnectionID, connections: &mut ConnectionMap) {
+async fn disconnect(
+    id: ConnectionID,
+    connections: &mut ConnectionMap,
+    callbacks: &dyn ConnectionManagerCallbacks,
+) {
     if let Some(connection) = connections.remove(&id) {
         // This does nothing really, but it's good to be explicit
         std::mem::drop(connection);
+
+        callbacks.connection_closed(id).await;
     }
 }
 
@@ -378,7 +391,10 @@ enum IncomingMessage {
     ReqRep(ConnectionID, Bytes),
 }
 
-async fn get_next_message(connections: &mut ConnectionMap) -> IncomingMessage {
+async fn get_next_message(
+    connections: &mut ConnectionMap,
+    callbacks: &dyn ConnectionManagerCallbacks,
+) -> IncomingMessage {
     if connections.len() == 0 {
         // TODO: This will need be re-worked if we move away from select!, since it
         // essentially creates a future that never completes.
@@ -386,7 +402,7 @@ async fn get_next_message(connections: &mut ConnectionMap) -> IncomingMessage {
     }
     // TODO: this discards all the futures every time.
     // leaving the matter of performance aside, is this even a correct thing to do?
-    // essentially, the question is: are all the futures cancellation-safe? I think not.
+    // essentially, the question is: are all the futures cancellation-safe?
     // what happens if a LengthDelimited is in the middle of reading a message and
     // it gets cancelled?
     let mut to_disconnect = vec![];
@@ -406,7 +422,7 @@ async fn get_next_message(connections: &mut ConnectionMap) -> IncomingMessage {
     };
 
     for id in to_disconnect {
-        disconnect(id, connections);
+        disconnect(id, connections, callbacks).await;
     }
 
     result
