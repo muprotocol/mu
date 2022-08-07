@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use env_logger::Env;
 
-use log::info;
+use log::*;
 
 use connection_manager::ConnectionID;
 
@@ -35,7 +35,7 @@ pub async fn run() -> Result<()> {
             .get_string("connection_manager.listen_port")?
             .parse()
             .context("Failed to parse listen port")?,
-        Box::new(CB {}),
+        CB {},
     )
     .await
     .context("Failed to start connection manager")?;
@@ -47,10 +47,15 @@ pub async fn run() -> Result<()> {
     if port == 12012 {
         loop {}
     } else {
-        let id = connection_manager
-            .connect("127.0.0.1".parse()?, 12012)
-            .await
-            .context("Failed to connect")?;
+        let id = loop {
+            match connection_manager
+                .connect("127.0.0.1".parse()?, 12012)
+                .await
+            {
+                Ok(x) => break x,
+                Err(f) => error!("Failed to connect due to {}, will retry", f),
+            }
+        };
 
         let data = "Hello!".into();
         connection_manager.send_datagram(id, data).await?;
@@ -67,6 +72,7 @@ pub async fn run() -> Result<()> {
     Ok(())
 }
 
+#[derive(Clone)]
 struct CB {}
 
 #[async_trait]
