@@ -12,6 +12,8 @@ use log::*;
 
 use connection_manager::ConnectionID;
 
+use crate::connection_manager::ConnectionManager;
+
 pub async fn run() -> Result<()> {
     let config = config::initialize_config(vec![
         ("log_level", "warn"),
@@ -26,19 +28,29 @@ pub async fn run() -> Result<()> {
 
     info!("Initializing Mu...");
 
-    let connection_manager = connection_manager::start(
-        config
+    let connection_manager_config = connection_manager::ConnectionManagerConfig {
+        listen_address: config
             .get_string("connection_manager.listen_address")?
             .parse()
             .context("Failed to parse listen address")?,
-        config
+        listen_port: config
             .get_string("connection_manager.listen_port")?
             .parse()
             .context("Failed to parse listen port")?,
-        CB {},
-    )
-    .await
-    .context("Failed to start connection manager")?;
+        max_request_response_size: 8 * 1024,
+    };
+
+    let mut connection_manager = connection_manager::new();
+
+    connection_manager.set_callbacks(CB(
+        // connection_manager,
+        connection_manager_config.listen_port == 12012,
+    ));
+
+    connection_manager
+        .start(connection_manager_config)
+        .await
+        .context("Failed to start connection manager")?;
 
     // do something!
     let port = config
@@ -64,6 +76,8 @@ pub async fn run() -> Result<()> {
         let rep = connection_manager.send_req_rep(id, data).await?;
         info!("Received reply: {}", String::from_utf8_lossy(&rep));
 
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
         connection_manager.stop().await?;
     }
 
@@ -73,7 +87,7 @@ pub async fn run() -> Result<()> {
 }
 
 #[derive(Clone)]
-struct CB {}
+struct CB(bool);
 
 #[async_trait]
 impl connection_manager::ConnectionManagerCallbacks for CB {
@@ -99,6 +113,7 @@ impl connection_manager::ConnectionManagerCallbacks for CB {
             id,
             String::from_utf8_lossy(&data)
         );
+
         data
     }
 }
