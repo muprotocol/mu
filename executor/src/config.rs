@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use anyhow::{Context, Result};
-use config::{Config, Environment, File, FileFormat};
+use config::{Config, Environment, File, FileFormat, Value};
 
 pub fn initialize_config(defaults: Vec<(&str, &str)>) -> Result<Config> {
     let env = Environment::default()
@@ -31,4 +33,15 @@ pub fn initialize_config(defaults: Vec<(&str, &str)>) -> Result<Config> {
     builder
         .build()
         .context("Failed to initialize configuration")
+}
+
+pub trait ConfigExt {
+    fn get_mandatory(&self, key: &str, path: &str) -> Result<&Value>;
+}
+
+impl ConfigExt for HashMap<String, Value> {
+    fn get_mandatory(&self, key: &str, path: &str) -> Result<&Value> {
+        self.get(key)
+            .context(format!("Missing mandatory config value {path}.{key}"))
+    }
 }

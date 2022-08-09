@@ -1,4 +1,8 @@
-log_level: debug
+log:
+  level: info
+  filters:
+    - module: quinn::connection
+      level: off
 connection_manager:
   listen_address: 0.0.0.0
   listen_port: 12012

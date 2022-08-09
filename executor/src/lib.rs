@@ -1,12 +1,12 @@
 mod config;
 mod connection_manager;
 pub mod gossip;
+mod log_setup;
 pub mod runtime;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
-use env_logger::Env;
 
 use log::*;
 
@@ -21,10 +21,7 @@ pub async fn run() -> Result<()> {
         ("connection_manager.listen_port", "12012"),
     ])?;
 
-    env_logger::Builder::from_env(
-        Env::default().default_filter_or(config.get_string("log_level")?),
-    )
-    .init();
+    log_setup::setup(&config)?;
 
     info!("Initializing Mu...");
 
