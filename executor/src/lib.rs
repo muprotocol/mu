@@ -42,8 +42,10 @@ pub async fn run() -> Result<()> {
 
     let mut connection_manager = connection_manager::new();
 
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+
     connection_manager.set_callbacks(CB(
-        // connection_manager,
+        tx.clone(),
         connection_manager_config.listen_port == 12012,
     ));
 
@@ -57,7 +59,17 @@ pub async fn run() -> Result<()> {
         .get_string("connection_manager.listen_port")?
         .parse::<i32>()?;
     if port == 12012 {
-        loop {}
+        loop {
+            if let Ok(id) = rx.try_recv() {
+                dbg!("################################ ML1");
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                let b = connection_manager
+                    .send_req_rep(id, Bytes::copy_from_slice(b"OOOOOOH!"))
+                    .await?;
+                println!("Received looped req-rep {}", String::from_utf8_lossy(&b));
+                dbg!("################################ ML2");
+            }
+        }
     } else {
         let id = loop {
             match connection_manager
@@ -76,7 +88,8 @@ pub async fn run() -> Result<()> {
         let rep = connection_manager.send_req_rep(id, data).await?;
         info!("Received reply: {}", String::from_utf8_lossy(&rep));
 
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        info!("Sleeping for 6 seconds in case the server has something to say");
+        tokio::time::sleep(std::time::Duration::from_secs(6)).await;
 
         connection_manager.stop().await?;
     }
@@ -87,7 +100,7 @@ pub async fn run() -> Result<()> {
 }
 
 #[derive(Clone)]
-struct CB(bool);
+struct CB(tokio::sync::mpsc::Sender<ConnectionID>, bool);
 
 #[async_trait]
 impl connection_manager::ConnectionManagerCallbacks for CB {
@@ -108,12 +121,20 @@ impl connection_manager::ConnectionManagerCallbacks for CB {
     }
 
     async fn req_rep_received(&self, id: ConnectionID, data: Bytes) -> Bytes {
+        dbg!("################################ RR1");
         info!(
             "Req/Rep received from {}: {}",
             id,
             String::from_utf8_lossy(&data)
         );
 
+        if self.1 {
+            self.0.send(id).await.unwrap();
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        dbg!("################################ RR2");
         data
     }
 }

@@ -39,3 +39,9 @@ impl<T> ReplyChannel<T> {
         ignore_error(self.sender.send(val));
     }
 }
+
+impl<T> std::fmt::Debug for ReplyChannel<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<ReplyChannel of {}>", std::any::type_name::<T>())
+    }
+}

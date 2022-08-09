@@ -1,11 +1,10 @@
 // Post-prototype:
 // * Handle disconnections (automatic reconnect, message queueing, etc.)
-// * Retry failed connections
 
 // Future improvements:
 // * use polling instead of async and select_all to improve performance
 // * separate out time-consuming operations, e.g. accepting connections into their own tasks
-// * pool bidirectional streams for each connection?
+// * pool bi-directional streams for each connection?
 
 use std::{
     collections::HashMap,
@@ -13,7 +12,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, format_err, Context, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::{future, FutureExt, SinkExt, StreamExt};
@@ -63,13 +62,17 @@ pub trait ConnectionManager: Sync + Send {
     async fn stop(&self) -> Result<()>;
 }
 
+#[derive(Debug)]
 enum ConnectionManagerMessage {
+    // Publicly available commands (via ConnectionManager trait)
     Connect(IpAddr, u16, ReplyChannel<Result<ConnectionID>>),
     SendDatagram(ConnectionID, Bytes, ReplyChannel<Result<()>>),
     SendReqRep(ConnectionID, Bytes, ReplyChannel<Result<Bytes>>),
-    ReplyAvailable(ConnectionID, RequestID, Bytes),
     Disconnect(ConnectionID, ReplyChannel<()>),
     Stop(ReplyChannel<()>),
+
+    // Private commands
+    ReplyAvailable(ConnectionID, RequestID, Bytes),
 }
 
 #[derive(Clone)]
@@ -81,6 +84,7 @@ pub struct ConnectionManagerImpl<CB: ConnectionManagerCallbacks> {
 #[async_trait]
 impl<CB: ConnectionManagerCallbacks> ConnectionManager for ConnectionManagerImpl<CB> {
     async fn connect(&self, address: IpAddr, port: u16) -> Result<ConnectionID> {
+        debug!("Sending connect {}:{}", address, port);
         flatten_and_map_result(
             self.mailbox
                 .as_ref()
@@ -91,6 +95,7 @@ impl<CB: ConnectionManagerCallbacks> ConnectionManager for ConnectionManagerImpl
     }
 
     async fn send_datagram(&self, id: ConnectionID, data: Bytes) -> Result<()> {
+        debug!("Sending datagram {} <- {:?}", id, data);
         flatten_and_map_result(
             self.mailbox
                 .as_ref()
@@ -101,6 +106,7 @@ impl<CB: ConnectionManagerCallbacks> ConnectionManager for ConnectionManagerImpl
     }
 
     async fn send_req_rep(&self, id: ConnectionID, data: Bytes) -> Result<Bytes> {
+        debug!("Sending req-rep {} <- {:?}", id, data);
         // TODO: special handling when reply channel is dropped due to errors?
         flatten_and_map_result(
             self.mailbox
@@ -112,6 +118,7 @@ impl<CB: ConnectionManagerCallbacks> ConnectionManager for ConnectionManagerImpl
     }
 
     async fn disconnect(&self, id: ConnectionID) -> Result<()> {
+        debug!("Sending disconnect {}", id);
         self.mailbox
             .as_ref()
             .unwrap()
@@ -121,6 +128,7 @@ impl<CB: ConnectionManagerCallbacks> ConnectionManager for ConnectionManagerImpl
     }
 
     async fn stop(&self) -> Result<()> {
+        debug!("Sending stop");
         self.mailbox
             .as_ref()
             .unwrap()
@@ -241,8 +249,10 @@ async fn body<CB: ConnectionManagerCallbacks>(
     // it's done.
     'main_loop: loop {
         // TODO select! requires all futures to be cancellation-safe. Are they?
+        debug!("Waiting for activity");
         tokio::select! {
             msg = message_receiver.receive() => {
+                debug!("Received control message {:?}", msg);
                 match msg {
                     None => {
                         warn!("Mailbox was stopped, stopping connection manager");
@@ -251,6 +261,7 @@ async fn body<CB: ConnectionManagerCallbacks>(
 
                     Some(ConnectionManagerMessage::Connect(ip, port, rep)) => {
                         rep.reply(
+                            // TODO await
                             connect(
                                 ip,
                                 port,
@@ -269,16 +280,20 @@ async fn body<CB: ConnectionManagerCallbacks>(
                     }
 
                     Some(ConnectionManagerMessage::SendReqRep(id, bytes, rep)) => {
-                        rep.reply(
-                            send_req_rep(id, bytes, &mut connections, &req_rep_codec_builder).await
-                        );
+                        // TODO this call only waits until a new channel is opened, which
+                        // looks like a relatively instantaneous operation, which is good
+                        // enough, but it can be made completely async with the main task
+                        // if we move each connection to its mailbox and handle it there.
+                        send_req_rep(id, bytes, &mut connections, &req_rep_codec_builder, rep).await;
                     }
 
                     Some(ConnectionManagerMessage::ReplyAvailable(id, req_id, bytes)) => {
+                        // TODO await
                         send_reply(id, req_id, bytes, &mut connections).await;
                     }
 
                     Some(ConnectionManagerMessage::Disconnect(id, rep)) => {
+                        // TODO await
                         disconnect(id, &mut connections, &callbacks).await;
                         rep.reply(());
                     }
@@ -291,6 +306,8 @@ async fn body<CB: ConnectionManagerCallbacks>(
             }
 
             maybe_connecting = incoming.next() => {
+                debug!("Received incoming connection: {:?}", maybe_connecting);
+                // TODO await
                 if !process_incoming(&mut next_connection_id, &mut connections, &callbacks, maybe_connecting).await {
                     warn!("Local endpoint was stopped, stopping connection manager");
                     break 'main_loop;
@@ -298,6 +315,8 @@ async fn body<CB: ConnectionManagerCallbacks>(
             }
 
             message = get_next_message(&mut connections, &callbacks, &req_rep_codec_builder).fuse() => {
+                debug!("Received incoming message: {:?}", message);
+                // TODO await
                 if let Err(f) = process_message(message, &callbacks, &mailbox, &mut connections).await {
                     warn!("Failed to handle message due to {}", f);
                 }
@@ -325,16 +344,16 @@ async fn connect<CB: ConnectionManagerCallbacks>(
     connections: &mut ConnectionMap,
     callbacks: &CB,
 ) -> Result<ConnectionID> {
+    debug!("Connecting to {addr}:{port}");
     let new_connection = endpoint
         .connect(SocketAddr::new(addr, port), "mu_peer")
         .context("Failed to connect to peer")?
         .await
         .context("Failed to establish connection")?;
 
-    let id = *next_connection_id;
-    *next_connection_id += 1;
+    let id = get_and_increment(next_connection_id);
 
-    info!("Connected to {}:{} with ID {}", addr, port, id);
+    info!("Connected to {addr}:{port} with ID {id}");
 
     connections.insert(
         id,
@@ -355,11 +374,12 @@ async fn connect<CB: ConnectionManagerCallbacks>(
 
 fn send_datagram(id: ConnectionID, data: Bytes, connections: &mut ConnectionMap) -> Result<()> {
     if let Some(connection) = connections.get_mut(&id) {
+        debug!("Sending datagram {id} <- {data:?}");
         connection.new_connection.connection.send_datagram(data)?;
         return Ok(());
     }
 
-    bail!("Unknown connection ID {}", id);
+    bail!("Unknown connection ID {id}");
 }
 
 async fn send_req_rep(
@@ -367,29 +387,57 @@ async fn send_req_rep(
     data: Bytes,
     connections: &mut ConnectionMap,
     codec_builder: &length_delimited::Builder,
-) -> Result<Bytes> {
+    reply_channel: ReplyChannel<Result<Bytes>>,
+) {
     if let Some(connection) = connections.get_mut(&id) {
-        // TODO: handle waiting for a reply outside the main Task
-        let (send, recv) = connection
+        debug!("Sending req-rep message to {} <- {:?}", id, data);
+
+        debug!("Opening req-rep stream");
+        let (send, recv) = match connection
             .new_connection
             .connection
             .open_bi()
             .await
-            .context("Failed to open bi-directional stream")?;
+            .context("Failed to open bi-directional stream")
+        {
+            Ok(x) => x,
+            Err(f) => {
+                reply_channel.reply(Err(f.into()));
+                return;
+            }
+        };
 
         let mut write = codec_builder.new_write(send);
         let mut read = codec_builder.new_read(recv);
 
-        write.send(data).await?;
+        tokio::spawn(async move {
+            let reply = async move {
+                debug!("Writing req-rep request");
+                write
+                    .send(data)
+                    .await
+                    .context("Failed to write req-rep request")?;
 
-        match read.next().await {
-            Some(Ok(bytes)) => return Ok(bytes.freeze()),
-            Some(Err(f)) => return Err(f.into()),
-            None => bail!("Failed to read response because the connection was closed"),
-        }
+                debug!("Waiting for req-rep reply");
+                let reply = read
+                    .next()
+                    .await
+                    .map(|r| r.context("Failed to receive req-rep reply"));
+                debug!("Received reply: {:?}", reply);
+
+                match reply {
+                    Some(Ok(bytes)) => return Ok(bytes.freeze()),
+                    Some(Err(f)) => return Err(f.into()),
+                    None => bail!("Failed to read response because the connection was closed"),
+                }
+            }
+            .await;
+
+            reply_channel.reply(reply);
+        });
+    } else {
+        reply_channel.reply(Err(format_err!("Unknown connection ID {}", id)));
     }
-
-    bail!("Unknown connection ID {}", id);
 }
 
 async fn send_reply(
@@ -398,6 +446,7 @@ async fn send_reply(
     data: Bytes,
     connections: &mut ConnectionMap,
 ) {
+    debug!("Sending reply {id}.{req_id} <- {data:?}");
     if let Some(connection) = connections.get_mut(&id) {
         if let Some(channel) = connection.pending_writes.get_mut(&req_id) {
             if let Err(f) = channel.write.send(data).await {
@@ -415,6 +464,7 @@ async fn disconnect<CB: ConnectionManagerCallbacks>(
     callbacks: &CB,
 ) {
     if let Some(connection) = connections.remove(&id) {
+        debug!("Disconnecting {id}");
         // This does nothing really, but it's good to be explicit
         std::mem::drop(connection);
 
@@ -429,6 +479,7 @@ async fn process_incoming<CB: ConnectionManagerCallbacks>(
     callbacks: &CB,
     maybe_connecting: Option<Connecting>,
 ) -> bool {
+    debug!("Accepting new connection");
     let connecting = match maybe_connecting {
         None => return false,
         Some(x) => x,
@@ -443,8 +494,7 @@ async fn process_incoming<CB: ConnectionManagerCallbacks>(
         }
     };
 
-    let id = *next_connection_id;
-    *next_connection_id += 1;
+    let id = get_and_increment(next_connection_id);
 
     info!(
         "New connection available from {}, assigning id {}",
@@ -469,6 +519,7 @@ async fn process_incoming<CB: ConnectionManagerCallbacks>(
     true
 }
 
+#[derive(Debug)]
 enum IncomingMessage {
     Datagram(ConnectionID, Bytes),
     ReqRep(ConnectionID, RequestID, Bytes),
@@ -506,6 +557,7 @@ async fn get_next_message<CB: ConnectionManagerCallbacks>(
             Ok(Some(msg)) => break Some(msg),
             Ok(None) => continue,
             Err(id) => {
+                debug!("Failed to receive messages from {id}, disconnecting");
                 to_disconnect.push(id);
                 if to_disconnect.len() == num_connections {
                     break None;
@@ -533,18 +585,21 @@ async fn get_next_message_single(
     for channel in connection.just_received.drain(..) {
         let req_id = get_and_increment(&mut connection.next_request_id);
         connection.pending_reads.insert(req_id, channel);
+        debug!("Moved channel from {id} to pending_read and assigned request id P{req_id}");
     }
 
     tokio::select! {
         // Req-Rep messages are handled in two steps.
-        // This is step 1, where we accept a bidirectional stream...
+        // This is step 1, where we accept a bi-directional stream...
         bi = connection.new_connection.bi_streams.next() => {
+            debug!("New incoming bi-directional stream from {id}: {bi:?}");
             match bi {
                 Some(Ok((send, recv))) => {
                     let write = codec_builder.new_write(send);
                     let read = codec_builder.new_read(recv);
                     let channel = ReqRepChannel { write, read };
                     connection.just_received.push(channel);
+                    debug!("Adding new channel to {id}, now have {}", connection.just_received.len());
                     return Ok(None);
                 },
                 Some(Err(f)) => {
@@ -566,6 +621,7 @@ async fn get_next_message_single(
                 .iter_mut()
                 .map(|(k, v)| Box::pin(async move { (k, v.read.next().await) })),
         ) => {
+            debug!("Received request in {id}.{req_id}: {bytes:?}");
             match bytes {
                 Some(Ok(bytes)) => {
                     return Ok(Some(IncomingMessage::ReqRep(id, *req_id, bytes.freeze())));
@@ -583,6 +639,7 @@ async fn get_next_message_single(
         }
 
         datagram = connection.new_connection.datagrams.next() => {
+            debug!("Received datagram from {id}: {datagram:?}");
             match datagram {
                 Some(Ok(bytes)) => return Ok(Some(IncomingMessage::Datagram(id, bytes))),
                 Some(Err(f)) => {
@@ -606,11 +663,13 @@ async fn process_message<CB: ConnectionManagerCallbacks>(
 ) -> Result<()> {
     match message {
         IncomingMessage::Datagram(id, bytes) => {
+            debug!("Raising callback for datagram: {id} <- {bytes:?}");
             let cb = callbacks.clone();
             tokio::spawn(async move { cb.datagram_received(id, bytes.clone()).await });
         }
 
         IncomingMessage::ReqRep(id, req_id, bytes) => {
+            debug!("Processing req-rep: {id}.{req_id} <- {bytes:?}");
             let connection = match connections.get_mut(&id) {
                 Some(x) => x,
                 None => bail!("Failed to find connection when it was supposed to be there"),
@@ -623,6 +682,7 @@ async fn process_message<CB: ConnectionManagerCallbacks>(
                 ),
             };
 
+            debug!("Moving channel {id}.{req_id} to pending_writes");
             connection.pending_writes.insert(req_id, channel);
 
             let cb = callbacks.clone();
@@ -630,7 +690,9 @@ async fn process_message<CB: ConnectionManagerCallbacks>(
 
             // TODO: handle errors returned by user code
             tokio::spawn(async move {
+                debug!("Raising callback for req-rep {id}.{req_id} <- {bytes:?}");
                 let result = cb.req_rep_received(id, bytes).await;
+                debug!("Received reply for req-rep, will send to main task: {id}.{req_id} <- {result:?}");
                 mb.post_and_forget(ConnectionManagerMessage::ReplyAvailable(id, req_id, result));
             });
         }
