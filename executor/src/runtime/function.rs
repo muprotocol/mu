@@ -1,8 +1,8 @@
-use super::message::message::{FuncInput, FuncOutput, Message};
+use super::message::message::{Message, MessageReader, MessageWriter};
 use anyhow::Result;
 use serde::Deserialize;
-use serde_json::Deserializer;
-use std::{collections::HashMap, io::BufReader, path::PathBuf, sync::Arc};
+
+use std::{collections::HashMap, path::PathBuf};
 use tokio::{fs::read, select, sync::mpsc};
 use uuid::Uuid;
 use wasmer::{Instance, Module, Store};
@@ -15,7 +15,7 @@ pub type InstanceID = Uuid;
 #[derive(Deserialize)]
 pub struct Config {
     pub id: FunctionID,
-    //TODO: key must not contain `=` and both must not contain `null` byte
+    // TODO: key must not contain `=` and both must not contain `null` byte
     envs: HashMap<String, String>,
     path: PathBuf,
 }
@@ -50,6 +50,9 @@ pub struct Function {
     module: Module,
 }
 
+type Input = mpsc::UnboundedSender<Message>;
+type Output = mpsc::UnboundedReceiver<Message>;
+
 #[allow(dead_code)]
 impl Function {
     pub async fn load(config: Config) -> Result<Self> {
@@ -74,30 +77,27 @@ impl Function {
         })
     }
 
-    //fn create_std_io(
-    //    &mut self,
-    //) -> Result<(
-    //    mpsc::UnboundedSender<Message>,
-    //    mpsc::UnboundedReceiver<Message>,
-    //)> {
-    //    let buf = BufReader::new(self.pipes.stdout.clone());
-    //    let stream = Deserializer::from_reader(buf).into_iter::<Message>();
+    fn create_std_io(&mut self) -> Result<(Input, Output)> {
+        let stdout_reader = MessageReader::new(self.pipes.stdout.clone());
+        let stdin_writer = MessageWriter::new(self.pipes.stdin.clone());
 
-    //    let (in_tx, mut in_rx) = mpsc::unbounded_channel::<Message>();
-    //    let (out_tx, out_rx) = mpsc::unbounded_channel::<Message>();
+        let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Message>();
+        let (output_tx, mut output_rx) = mpsc::unbounded_channel::<Message>();
 
-    //    let a = async {
-    //        while self.status == FunctionStatus::Running {
-    //            if let Some(input) = in_rx.recv().await {
-    //                input.to_writer(self.pipes.stdin);
-    //            }
-    //            Some(output) = stream.next() => {
-    //                todo!()
-    //            };
-    //        }
-    //    };
-    //    Ok((in_tx, out_rx))
-    //}
+        let a = async move {
+            while self.status == FunctionStatus::Running {
+                select! {
+                    Some(input) = input_rx.recv() => {
+                        // TODO: write to stdin_writer
+                        todo!()
+                    }
+                    // TODO: read from stdout streams and write to output_tx
+                }
+            }
+        };
+
+        Ok((input_tx, output_rx))
+    }
 
     pub async fn start(
         &mut self,

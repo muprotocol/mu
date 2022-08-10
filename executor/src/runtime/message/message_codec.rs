@@ -1,6 +1,6 @@
 use bytes::BufMut;
 use bytes::{Buf, BytesMut};
-use std::{cmp, fmt, io, str, usize};
+use std::{cmp, fmt, io, usize};
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
 
@@ -77,11 +77,6 @@ impl MessageCodec {
     }
 }
 
-fn utf8(buf: &[u8]) -> Result<&str, io::Error> {
-    str::from_utf8(buf)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Unable to decode input as UTF8"))
-}
-
 impl Decoder for MessageCodec {
     type Item = Message;
     type Error = MessageCodecError;
@@ -155,7 +150,7 @@ where
     type Error = MessageCodecError;
 
     fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let message = item.to_message().map_err(|e| Self::Error::Encoding(e))?;
+        let message = item.to_message().map_err(Self::Error::Encoding)?;
         let bytes = serde_json::to_string(&message).map_err(|e| Self::Error::Encoding(e.into()))?;
         let bytes = bytes.as_bytes();
         dst.reserve(bytes.len());

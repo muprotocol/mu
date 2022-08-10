@@ -32,9 +32,9 @@ impl Runtime {
     async fn run_with_gateway_request(
         &mut self,
         id: Uuid,
-        request: GatewayRequest,
+        _request: GatewayRequest,
     ) -> Result<GatewayResponse> {
-        if let Some(f) = self.instances.get_mut(&id) {
+        if let Some(_f) = self.instances.get_mut(&id) {
             //let output = f.run(request).await?;
             //GatewayResponse::parse(output)?
             todo!()
@@ -49,7 +49,7 @@ impl Runtime {
         })
         .await;
 
-        while let Some((request, resposne_sender)) = gateway.recv().await {
+        while let Some((_request, _resposne_sender)) = gateway.recv().await {
             todo!();
         }
     }
