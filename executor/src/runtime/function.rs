@@ -1,12 +1,9 @@
-use super::message::message::{InputMessage, OutputMessage};
-use anyhow::{bail, Result};
+use super::message::message::{FuncInput, FuncOutput, Message};
+use anyhow::Result;
 use serde::Deserialize;
-use std::{
-    collections::HashMap,
-    io::{Read, Write},
-    path::PathBuf,
-};
-use tokio::fs::read;
+use serde_json::Deserializer;
+use std::{collections::HashMap, io::BufReader, path::PathBuf, sync::Arc};
+use tokio::{fs::read, select, sync::mpsc};
 use uuid::Uuid;
 use wasmer::{Instance, Module, Store};
 use wasmer_wasi::{Pipe, WasiState};
@@ -30,16 +27,23 @@ impl Config {
     }
 }
 
-#[allow(dead_code)]
 struct FunctionPipes {
     pub stdin: Pipe,
     pub stdout: Pipe,
     pub stderr: Pipe,
 }
 
+#[derive(PartialEq)]
+enum FunctionStatus {
+    Loaded,
+    Running, // TODO: add started time here
+}
+
+// TODO: Add status for storing current status of the function
 #[allow(dead_code)]
 pub struct Function {
     pub instance_id: InstanceID,
+    status: FunctionStatus,
     pipes: FunctionPipes,
     config: Config,
     store: Store,
@@ -62,6 +66,7 @@ impl Function {
 
         Ok(Self {
             instance_id: Uuid::new_v4(),
+            status: FunctionStatus::Loaded,
             pipes,
             config,
             store,
@@ -69,27 +74,37 @@ impl Function {
         })
     }
 
-    async fn write_stdin(&mut self, input: InputMessage) -> Result<()> {
-        let message = serde_json::to_string(&input)?;
-        let bytes_written = self.pipes.stdin.write(message.as_bytes())?;
-        let message_bytes = message.as_bytes().len();
-        if bytes_written == message_bytes {
-            Ok(())
-        } else {
-            bail!(format!(
-                "can not write the whole input message, only {} of {} was written.",
-                bytes_written, message_bytes
-            ))
-        }
-    }
+    //fn create_std_io(
+    //    &mut self,
+    //) -> Result<(
+    //    mpsc::UnboundedSender<Message>,
+    //    mpsc::UnboundedReceiver<Message>,
+    //)> {
+    //    let buf = BufReader::new(self.pipes.stdout.clone());
+    //    let stream = Deserializer::from_reader(buf).into_iter::<Message>();
 
-    async fn read_stdout(&mut self) -> Result<OutputMessage> {
-        let mut buf = String::new();
-        self.pipes.stdout.read_to_string(&mut buf)?;
-        serde_json::from_str(&buf).map_err(Into::into)
-    }
+    //    let (in_tx, mut in_rx) = mpsc::unbounded_channel::<Message>();
+    //    let (out_tx, out_rx) = mpsc::unbounded_channel::<Message>();
 
-    pub async fn run<'a>(&mut self, request: InputMessage) -> Result<OutputMessage> {
+    //    let a = async {
+    //        while self.status == FunctionStatus::Running {
+    //            if let Some(input) = in_rx.recv().await {
+    //                input.to_writer(self.pipes.stdin);
+    //            }
+    //            Some(output) = stream.next() => {
+    //                todo!()
+    //            };
+    //        }
+    //    };
+    //    Ok((in_tx, out_rx))
+    //}
+
+    pub async fn start(
+        &mut self,
+    ) -> Result<(
+        mpsc::UnboundedSender<Message>,
+        mpsc::UnboundedReceiver<Message>,
+    )> {
         let name = self.module.name().unwrap_or("module");
         let wasi_env = WasiState::new(name)
             .stdin(Box::new(self.pipes.stdin.clone()))
@@ -109,14 +124,8 @@ impl Function {
             .set_memory(memory.clone());
 
         let start = instance.exports.get_function("_start")?;
+        start.call(&mut self.store, &[])?;
 
-        //TODO: We can check if all of request was written
-        self.write_stdin(request).await?;
-
-        if let Err(e) = start.call(&mut self.store, &[]) {
-            Err(e.into())
-        } else {
-            self.read_stdout().await
-        }
+        todo!()
     }
 }

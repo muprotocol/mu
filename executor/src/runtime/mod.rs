@@ -4,7 +4,7 @@ use function::{Config, Function, InstanceID};
 use std::{collections::HashMap, time::Duration};
 use uuid::Uuid;
 
-use self::message::gateway::{GatewayRequest, GatewayResponse};
+use message::gateway::{GatewayRequest, GatewayResponse};
 
 pub mod error;
 mod function;
@@ -35,8 +35,9 @@ impl Runtime {
         request: GatewayRequest,
     ) -> Result<GatewayResponse> {
         if let Some(f) = self.instances.get_mut(&id) {
-            let output = f.run(request).await?;
-            GatewayResponse::parse(output)?
+            //let output = f.run(request).await?;
+            //GatewayResponse::parse(output)?
+            todo!()
         } else {
             Err(Error::FunctionNotFound(id).into())
         }
@@ -44,7 +45,7 @@ impl Runtime {
 
     pub async fn listen(&mut self) {
         let mut gateway = mock::gateway::start(Duration::from_secs(1), 10, |i| {
-            GatewayRequest::new(Uuid::new_v4(), format!("Test Request Number {}", i))
+            GatewayRequest::new(rand::random(), format!("Test Request Number {}", i))
         })
         .await;
 

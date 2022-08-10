@@ -1,65 +1,44 @@
-use anyhow::{bail, Result};
-use serde::{Deserialize, Serialize};
 use std::any::type_name;
-use uuid::Uuid;
 
-use crate::runtime::error::Error;
+use super::message::{FuncInput, FuncOutput, Message};
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
 
-use super::message::{Input, InputMessage, OutputMessage};
-
-//TODO: change type acording to gateway actual request
+// TODO: Change type based on actual gateway request
 #[derive(Serialize, Debug)]
 pub struct GatewayRequest {
-    id: Uuid,
+    id: u64,
     request: String,
 }
 
-impl Input for GatewayRequest {}
-
-impl GatewayRequest {
-    pub fn new(id: Uuid, request: String) -> Self {
-        GatewayRequest { id, request }
-    }
-
-    pub fn from_input_message(input: InputMessage) -> Result<Self> {
-        if input.get_type() == type_name::<Self>() {
-            InputMessage::new_with_id(input.id, input.message)
-        } else {
-            bail!(Error::IncorrectInputMessage(type_name::<Self>()))
-        }
+impl FuncInput for GatewayRequest {
+    fn to_message(&self) -> Result<Message> {
+        Ok(Message {
+            id: self.id,
+            r#type: type_name::<Self>().to_owned(),
+            message: serde_json::to_string(&self.request)?,
+        })
     }
 }
 
+impl GatewayRequest {
+    pub fn new(id: u64, request: String) -> Self {
+        GatewayRequest { id, request }
+    }
+}
+
+// TODO: Change type based on actual gateway response
 #[derive(Deserialize, Debug)]
 pub struct GatewayResponse {
-    id: Uuid,
+    id: u64,
     response: String,
 }
 
-impl GatewayResponse {
-    pub fn parse(message: OutputMessage) -> Result<Self> {
-        let r#type = type_name::<Self>();
-        if message.r#type == r#type {
-            Ok(Self {
-                id: message.id,
-                response: serde_json::from_str(&message.message)?,
-            })
-        } else {
-            bail!("can not deserialize as {}.", r#type)
-        }
+impl<'a> FuncOutput<'a> for GatewayResponse {
+    fn from_message(m: Message) -> Result<Self> {
+        Ok(Self {
+            id: m.id,
+            response: serde_json::from_str(&m.message)?,
+        })
     }
-}
-
-#[derive(Deserialize)]
-pub struct Log {
-    category: String,
-    r#type: LogType,
-    content: String,
-}
-
-#[derive(Deserialize)]
-pub enum LogType {
-    Error,
-    Debug,
-    //TODO: add more log types here
 }

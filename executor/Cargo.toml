@@ -15,10 +15,12 @@ serde = "1"
 serde_json = "1"
 futures = "0.3"
 pin-project = "1.0"
+async-trait = "0.1.57"
 rand = "0.8"
 uuid = { version = "1.1.2", features = ["fast-rng", "v4", "serde"]}
 anyhow = "1.0"
 thiserror = "1.0"
+bytes = "1.2.1"
 
 [lib]
 name = "mu"
