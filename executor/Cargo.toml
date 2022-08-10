@@ -30,6 +30,7 @@ tokio_mailbox_processor = { path = "../../tokio_mailbox_processor" }
 quinn = "0.8"
 rustls = { version = "0.20", features = ["dangerous_configuration"] }
 rcgen = "0.9"
+ctrlc = "3.2.2"
 
 [lib]
 name = "mu"
