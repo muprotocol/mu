@@ -16,8 +16,9 @@ pub fn setup(config: &Config) -> Result<()> {
     builder.filter_level(parse_level(&table, "level", "log")?);
 
     let module_filters = table
-        .get_mandatory("filters", "log")?
-        .clone()
+        .get("filters")
+        .map(|o| o.clone())
+        .unwrap_or_else(|| Value::new(None, Vec::<String>::new()))
         .into_array()
         .context("Expected log.filters to be an array")?;
 

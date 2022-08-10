@@ -31,10 +31,68 @@ pub type ConnectionID = u32;
 
 #[async_trait]
 pub trait ConnectionManagerCallbacks: Clone + Send + Sync + 'static {
-    async fn new_connection_available(&self, id: ConnectionID);
-    async fn connection_closed(&self, id: ConnectionID);
-    async fn datagram_received(&self, id: ConnectionID, data: Bytes);
-    async fn req_rep_received(&self, id: ConnectionID, data: Bytes) -> Bytes;
+    async fn new_connection_available(
+        &self,
+        connection_manager: &dyn ConnectionManager,
+        id: ConnectionID,
+    );
+    async fn connection_closed(&self, connection_manager: &dyn ConnectionManager, id: ConnectionID);
+    async fn datagram_received(
+        &self,
+        connection_manager: &dyn ConnectionManager,
+        id: ConnectionID,
+        data: Bytes,
+    );
+    async fn req_rep_received(
+        &self,
+        connection_manager: &dyn ConnectionManager,
+        id: ConnectionID,
+        data: Bytes,
+    ) -> Bytes;
+}
+
+// Useful when we only need to make a request, not accept any incoming connections
+#[derive(Clone)]
+pub struct EmptyConnectionManagerCallbacks();
+
+#[async_trait]
+impl ConnectionManagerCallbacks for EmptyConnectionManagerCallbacks {
+    async fn new_connection_available(
+        &self,
+        _connection_manager: &dyn ConnectionManager,
+        _id: ConnectionID,
+    ) {
+    }
+
+    async fn connection_closed(
+        &self,
+        _connection_manager: &dyn ConnectionManager,
+        _id: ConnectionID,
+    ) {
+    }
+
+    async fn datagram_received(
+        &self,
+        _connection_manager: &dyn ConnectionManager,
+        _id: ConnectionID,
+        _data: Bytes,
+    ) {
+    }
+
+    async fn req_rep_received(
+        &self,
+        _connection_manager: &dyn ConnectionManager,
+        _id: ConnectionID,
+        data: Bytes,
+    ) -> Bytes {
+        data
+    }
+}
+
+#[derive(Clone)]
+struct CallbackWrapper<CB: ConnectionManagerCallbacks> {
+    callbacks: CB,
+    connection_manager: ConnectionManagerImpl<CB>,
 }
 
 pub struct ConnectionManagerConfig {
@@ -244,6 +302,16 @@ async fn body<CB: ConnectionManagerCallbacks>(
     let mut connections: ConnectionMap = HashMap::new();
     let mut stop_reply_channel = None;
 
+    // We expose this as a `dyn ConnectionManager` only, and that only
+    // needs the mailbox.
+    let callbacks = CallbackWrapper {
+        callbacks: callbacks,
+        connection_manager: ConnectionManagerImpl {
+            callbacks: None,
+            mailbox: Some(mailbox.clone()),
+        },
+    };
+
     // TODO: this code is not async enough. For example, if connecting to
     // a peer takes a long time, incoming messages won't be processed until
     // it's done.
@@ -268,7 +336,7 @@ async fn body<CB: ConnectionManagerCallbacks>(
                                 &mut next_connection_id,
                                 &mut endpoint,
                                 &mut connections,
-                                &callbacks
+                                &callbacks,
                             ).await
                         );
                     }
@@ -342,7 +410,7 @@ async fn connect<CB: ConnectionManagerCallbacks>(
     next_connection_id: &mut u32,
     endpoint: &mut Endpoint,
     connections: &mut ConnectionMap,
-    callbacks: &CB,
+    callbacks: &CallbackWrapper<CB>,
 ) -> Result<ConnectionID> {
     debug!("Connecting to {addr}:{port}");
     let new_connection = endpoint
@@ -367,7 +435,11 @@ async fn connect<CB: ConnectionManagerCallbacks>(
     );
 
     let cb = callbacks.clone();
-    tokio::spawn(async move { cb.new_connection_available(id).await });
+    tokio::spawn(async move {
+        cb.callbacks
+            .new_connection_available(&cb.connection_manager, id)
+            .await
+    });
 
     Ok(id)
 }
@@ -461,7 +533,7 @@ async fn send_reply(
 async fn disconnect<CB: ConnectionManagerCallbacks>(
     id: ConnectionID,
     connections: &mut ConnectionMap,
-    callbacks: &CB,
+    callbacks: &CallbackWrapper<CB>,
 ) {
     if let Some(connection) = connections.remove(&id) {
         debug!("Disconnecting {id}");
@@ -469,14 +541,18 @@ async fn disconnect<CB: ConnectionManagerCallbacks>(
         std::mem::drop(connection);
 
         let cb = callbacks.clone();
-        tokio::spawn(async move { cb.connection_closed(id).await });
+        tokio::spawn(async move {
+            cb.callbacks
+                .connection_closed(&cb.connection_manager, id)
+                .await
+        });
     }
 }
 
 async fn process_incoming<CB: ConnectionManagerCallbacks>(
     next_connection_id: &mut u32,
     connections: &mut ConnectionMap,
-    callbacks: &CB,
+    callbacks: &CallbackWrapper<CB>,
     maybe_connecting: Option<Connecting>,
 ) -> bool {
     debug!("Accepting new connection");
@@ -514,7 +590,11 @@ async fn process_incoming<CB: ConnectionManagerCallbacks>(
     );
 
     let cb = callbacks.clone();
-    tokio::spawn(async move { cb.new_connection_available(id).await });
+    tokio::spawn(async move {
+        cb.callbacks
+            .new_connection_available(&cb.connection_manager, id)
+            .await
+    });
 
     true
 }
@@ -527,7 +607,7 @@ enum IncomingMessage {
 
 async fn get_next_message<CB: ConnectionManagerCallbacks>(
     connections: &mut ConnectionMap,
-    callbacks: &CB,
+    callbacks: &CallbackWrapper<CB>,
     codec_builder: &length_delimited::Builder,
 ) -> IncomingMessage {
     let num_connections = connections.len();
@@ -657,7 +737,7 @@ async fn get_next_message_single(
 
 async fn process_message<CB: ConnectionManagerCallbacks>(
     message: IncomingMessage,
-    callbacks: &CB,
+    callbacks: &CallbackWrapper<CB>,
     mailbox: &PlainMailboxProcessor<ConnectionManagerMessage>,
     connections: &mut ConnectionMap,
 ) -> Result<()> {
@@ -665,7 +745,11 @@ async fn process_message<CB: ConnectionManagerCallbacks>(
         IncomingMessage::Datagram(id, bytes) => {
             debug!("Raising callback for datagram: {id} <- {bytes:?}");
             let cb = callbacks.clone();
-            tokio::spawn(async move { cb.datagram_received(id, bytes.clone()).await });
+            tokio::spawn(async move {
+                cb.callbacks
+                    .datagram_received(&cb.connection_manager, id, bytes.clone())
+                    .await
+            });
         }
 
         IncomingMessage::ReqRep(id, req_id, bytes) => {
@@ -691,7 +775,10 @@ async fn process_message<CB: ConnectionManagerCallbacks>(
             // TODO: handle errors returned by user code
             tokio::spawn(async move {
                 debug!("Raising callback for req-rep {id}.{req_id} <- {bytes:?}");
-                let result = cb.req_rep_received(id, bytes).await;
+                let result = cb
+                    .callbacks
+                    .req_rep_received(&cb.connection_manager, id, bytes)
+                    .await;
                 debug!("Received reply for req-rep, will send to main task: {id}.{req_id} <- {result:?}");
                 mb.post_and_forget(ConnectionManagerMessage::ReplyAvailable(id, req_id, result));
             });
