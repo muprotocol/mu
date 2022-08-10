@@ -1,3 +1,6 @@
+//TODO
+#![allow(dead_code)]
+
 use thiserror::Error;
 use uuid::Uuid;
 

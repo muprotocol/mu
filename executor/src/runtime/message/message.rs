@@ -1,3 +1,6 @@
+//TODO
+#![allow(dead_code)]
+
 use super::{
     message_codec::MessageCodec,
     pipe_ext::{AsyncReadPipe, AsyncWritePipe},
@@ -16,7 +19,7 @@ const MESSAGE_LEN: usize = 1024 * 8;
 pub struct Message {
     pub id: u64,
     pub r#type: String,
-    pub message: String,
+    pub message: serde_json::Value,
 }
 
 //impl Message {

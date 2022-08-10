@@ -1,3 +1,6 @@
+//TODO
+#![allow(dead_code)]
+
 use super::super::message::gateway::{GatewayRequest, GatewayResponse};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};

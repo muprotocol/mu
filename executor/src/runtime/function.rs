@@ -1,3 +1,6 @@
+//TODO
+#![allow(dead_code)]
+
 use super::message::message::{Message, MessageReader, MessageWriter};
 use anyhow::Result;
 use serde::Deserialize;
@@ -11,7 +14,6 @@ use wasmer_wasi::{Pipe, WasiState};
 pub type FunctionID = Uuid;
 pub type InstanceID = Uuid;
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 pub struct Config {
     pub id: FunctionID,
@@ -20,7 +22,6 @@ pub struct Config {
     path: PathBuf,
 }
 
-#[allow(dead_code)]
 impl Config {
     pub fn new(id: FunctionID, envs: HashMap<String, String>, path: PathBuf) -> Self {
         Self { id, envs, path }
@@ -40,7 +41,6 @@ enum FunctionStatus {
 }
 
 // TODO: Add status for storing current status of the function
-#[allow(dead_code)]
 pub struct Function {
     pub instance_id: InstanceID,
     status: FunctionStatus,
@@ -53,7 +53,6 @@ pub struct Function {
 type Input = mpsc::UnboundedSender<Message>;
 type Output = mpsc::UnboundedReceiver<Message>;
 
-#[allow(dead_code)]
 impl Function {
     pub async fn load(config: Config) -> Result<Self> {
         let src = read(&config.path).await?;

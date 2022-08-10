@@ -1,3 +1,6 @@
+//TODO
+#![allow(dead_code)]
+
 use anyhow::Result;
 use error::Error;
 use function::{Config, Function, InstanceID};

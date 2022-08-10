@@ -43,7 +43,7 @@ impl AsyncRead for AsyncReadPipe {
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
         match self.pin_buffer().read(buf.initialized_mut()) {
-            Ok(0) => Poll::Pending,
+            Ok(0) => Poll::Pending, // will hang forever
             Ok(_) => Poll::Ready(Ok(())),
             Err(e) => Poll::Ready(Err(e)),
         }

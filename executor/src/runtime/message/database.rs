@@ -1,3 +1,6 @@
+//TODO
+#![allow(dead_code)]
+
 use super::message::{FuncInput, FuncOutput, Message};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -41,7 +44,7 @@ impl<'a> FuncOutput<'a> for DbRequest {
     fn from_message(m: Message) -> Result<Self> {
         Ok(Self {
             id: m.id,
-            request: serde_json::from_str(&m.message)?,
+            request: serde_json::from_value(m.message)?,
         })
     }
 }
@@ -66,7 +69,7 @@ impl FuncInput for DbResponse {
         Ok(Message {
             id: self.id,
             r#type: type_name::<Self>().to_owned(),
-            message: serde_json::to_string(&self.response)?,
+            message: serde_json::to_value(&self.response)?,
         })
     }
 }
