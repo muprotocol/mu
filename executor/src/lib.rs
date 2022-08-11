@@ -1,6 +1,6 @@
 pub mod gossip;
-mod infrastructure;
-mod network;
+pub mod infrastructure;
+pub mod network;
 pub mod runtime;
 
 use std::process;

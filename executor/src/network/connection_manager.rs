@@ -52,7 +52,7 @@ pub trait ConnectionManager: Sync + Send {
     async fn send_req_rep(&self, id: ConnectionID, data: Bytes) -> Result<Bytes>;
     async fn send_reply(&self, id: ConnectionID, req_id: RequestID, data: Bytes) -> Result<()>;
     async fn disconnect(&self, id: ConnectionID) -> Result<()>;
-    async fn stop(&self) -> Result<()>;
+    async fn stop(self) -> Result<()>;
 }
 
 #[derive(Debug)]
@@ -127,7 +127,7 @@ impl ConnectionManager for ConnectionManagerImpl {
             .map_err(Into::into)
     }
 
-    async fn stop(&self) -> Result<()> {
+    async fn stop(self) -> Result<()> {
         debug!("Sending stop");
         self.mailbox
             .post_and_reply(|r| ConnectionManagerMessage::Stop(r))
