@@ -23,77 +23,11 @@ use quinn::{
 };
 use tokio_mailbox_processor::{
     plain::{MessageReceiver, PlainMailboxProcessor},
-    ReplyChannel,
+    NotificationChannel, ReplyChannel,
 };
 use tokio_util::codec::{length_delimited, FramedRead, FramedWrite, LengthDelimitedCodec};
 
 pub type ConnectionID = u32;
-
-#[async_trait]
-pub trait ConnectionManagerCallbacks: Clone + Send + Sync + 'static {
-    async fn new_connection_available(
-        &self,
-        connection_manager: &dyn ConnectionManager,
-        id: ConnectionID,
-    );
-    async fn connection_closed(&self, connection_manager: &dyn ConnectionManager, id: ConnectionID);
-    async fn datagram_received(
-        &self,
-        connection_manager: &dyn ConnectionManager,
-        id: ConnectionID,
-        data: Bytes,
-    );
-    async fn req_rep_received(
-        &self,
-        connection_manager: &dyn ConnectionManager,
-        id: ConnectionID,
-        data: Bytes,
-    ) -> Bytes;
-}
-
-// Useful when we only need to make a request, not accept any incoming connections
-#[derive(Clone)]
-pub struct EmptyConnectionManagerCallbacks();
-
-#[async_trait]
-impl ConnectionManagerCallbacks for EmptyConnectionManagerCallbacks {
-    async fn new_connection_available(
-        &self,
-        _connection_manager: &dyn ConnectionManager,
-        _id: ConnectionID,
-    ) {
-    }
-
-    async fn connection_closed(
-        &self,
-        _connection_manager: &dyn ConnectionManager,
-        _id: ConnectionID,
-    ) {
-    }
-
-    async fn datagram_received(
-        &self,
-        _connection_manager: &dyn ConnectionManager,
-        _id: ConnectionID,
-        _data: Bytes,
-    ) {
-    }
-
-    async fn req_rep_received(
-        &self,
-        _connection_manager: &dyn ConnectionManager,
-        _id: ConnectionID,
-        data: Bytes,
-    ) -> Bytes {
-        data
-    }
-}
-
-#[derive(Clone)]
-struct CallbackWrapper<CB: ConnectionManagerCallbacks> {
-    callbacks: CB,
-    connection_manager: ConnectionManagerImpl<CB>,
-}
 
 pub struct ConnectionManagerConfig {
     pub listen_address: IpAddr,
@@ -116,37 +50,43 @@ pub trait ConnectionManager: Sync + Send {
     async fn connect(&self, address: IpAddr, port: u16) -> Result<ConnectionID>;
     async fn send_datagram(&self, id: ConnectionID, data: Bytes) -> Result<()>;
     async fn send_req_rep(&self, id: ConnectionID, data: Bytes) -> Result<Bytes>;
+    async fn send_reply(&self, id: ConnectionID, req_id: RequestID, data: Bytes) -> Result<()>;
     async fn disconnect(&self, id: ConnectionID) -> Result<()>;
     async fn stop(&self) -> Result<()>;
 }
 
 #[derive(Debug)]
 enum ConnectionManagerMessage {
-    // Publicly available commands (via ConnectionManager trait)
     Connect(IpAddr, u16, ReplyChannel<Result<ConnectionID>>),
     SendDatagram(ConnectionID, Bytes, ReplyChannel<Result<()>>),
     SendReqRep(ConnectionID, Bytes, ReplyChannel<Result<Bytes>>),
+    SendReply(ConnectionID, RequestID, Bytes, ReplyChannel<()>),
     Disconnect(ConnectionID, ReplyChannel<()>),
     Stop(ReplyChannel<()>),
-
-    // Private commands
-    ReplyAvailable(ConnectionID, RequestID, Bytes),
 }
 
+#[derive(Debug)]
+pub enum ConnectionManagerNotification {
+    NewConnectionAvailable(ConnectionID),
+    ConnectionClosed(ConnectionID),
+    DatagramReceived(ConnectionID, Bytes),
+    /// When receiving this notification, a reply must be provided using [`ConnectionManager.send_reply`].
+    ReqRepReceived(ConnectionID, RequestID, Bytes),
+}
+
+type NotificationSender = NotificationChannel<ConnectionManagerNotification>;
+
 #[derive(Clone)]
-pub struct ConnectionManagerImpl<CB: ConnectionManagerCallbacks> {
-    callbacks: Option<CB>,
-    mailbox: Option<PlainMailboxProcessor<ConnectionManagerMessage>>,
+pub struct ConnectionManagerImpl {
+    mailbox: PlainMailboxProcessor<ConnectionManagerMessage>,
 }
 
 #[async_trait]
-impl<CB: ConnectionManagerCallbacks> ConnectionManager for ConnectionManagerImpl<CB> {
+impl ConnectionManager for ConnectionManagerImpl {
     async fn connect(&self, address: IpAddr, port: u16) -> Result<ConnectionID> {
         debug!("Sending connect {}:{}", address, port);
         flatten_and_map_result(
             self.mailbox
-                .as_ref()
-                .unwrap()
                 .post_and_reply(|r| ConnectionManagerMessage::Connect(address, port, r))
                 .await,
         )
@@ -156,8 +96,6 @@ impl<CB: ConnectionManagerCallbacks> ConnectionManager for ConnectionManagerImpl
         debug!("Sending datagram {} <- {:?}", id, data);
         flatten_and_map_result(
             self.mailbox
-                .as_ref()
-                .unwrap()
                 .post_and_reply(|r| ConnectionManagerMessage::SendDatagram(id, data, r))
                 .await,
         )
@@ -168,18 +106,22 @@ impl<CB: ConnectionManagerCallbacks> ConnectionManager for ConnectionManagerImpl
         // TODO: special handling when reply channel is dropped due to errors?
         flatten_and_map_result(
             self.mailbox
-                .as_ref()
-                .unwrap()
                 .post_and_reply(|r| ConnectionManagerMessage::SendReqRep(id, data, r))
                 .await,
         )
     }
 
+    async fn send_reply(&self, id: ConnectionID, req_id: RequestID, data: Bytes) -> Result<()> {
+        debug!("Sending reply {}.{} <- {:?}", id, req_id, data);
+        self.mailbox
+            .post_and_reply(|r| ConnectionManagerMessage::SendReply(id, req_id, data, r))
+            .await
+            .map_err(Into::into)
+    }
+
     async fn disconnect(&self, id: ConnectionID) -> Result<()> {
         debug!("Sending disconnect {}", id);
         self.mailbox
-            .as_ref()
-            .unwrap()
             .post_and_reply(|r| ConnectionManagerMessage::Disconnect(id, r))
             .await
             .map_err(Into::into)
@@ -188,8 +130,6 @@ impl<CB: ConnectionManagerCallbacks> ConnectionManager for ConnectionManagerImpl
     async fn stop(&self) -> Result<()> {
         debug!("Sending stop");
         self.mailbox
-            .as_ref()
-            .unwrap()
             .post_and_reply(|r| ConnectionManagerMessage::Stop(r))
             .await
             .map_err(Into::into)
@@ -204,70 +144,38 @@ fn flatten_and_map_result<T>(r: Result<Result<T>, tokio_mailbox_processor::Error
     }
 }
 
-pub fn new<CB: ConnectionManagerCallbacks>() -> ConnectionManagerImpl<CB> {
-    ConnectionManagerImpl {
-        callbacks: None,
-        mailbox: None,
-    }
-}
+pub async fn start(
+    config: ConnectionManagerConfig,
+    notification_sender: NotificationSender,
+) -> Result<ConnectionManagerImpl> {
+    info!(
+        "Starting connection manager on {}:{}",
+        config.listen_address, config.listen_port
+    );
 
-impl<CB: ConnectionManagerCallbacks> ConnectionManagerImpl<CB> {
-    pub fn set_callbacks(&mut self, cb: CB) {
-        self.callbacks = Some(cb);
-    }
+    // TODO: make self-signed certificates optional
+    let (private_key, cert_chain) = make_self_signed_certificate();
+    let server_config = ServerConfig::with_single_cert(cert_chain, private_key)
+        .context("Failed to configure server")?;
 
-    pub async fn start(&mut self, config: ConnectionManagerConfig) -> Result<()> {
-        let callbacks = self.callbacks.as_ref().unwrap().clone();
+    let (mut endpoint, incoming) = Endpoint::server(
+        server_config,
+        SocketAddr::new(config.listen_address, config.listen_port),
+    )
+    .context("Failed to start server")?;
 
-        info!(
-            "Starting connection manager on {}:{}",
-            config.listen_address, config.listen_port
-        );
+    let client_config = make_client_configuration();
+    endpoint.set_default_client_config(client_config);
 
-        // TODO: make self-signed certificates optional
-        let (private_key, cert_chain) = make_self_signed_certificate();
-        let server_config = ServerConfig::with_single_cert(cert_chain, private_key)
-            .context("Failed to configure server")?;
+    let mut codec_builder = LengthDelimitedCodec::builder();
+    codec_builder.max_frame_length(config.max_request_response_size);
 
-        let (mut endpoint, incoming) = Endpoint::server(
-            server_config,
-            SocketAddr::new(config.listen_address, config.listen_port),
-        )
-        .context("Failed to start server")?;
+    let mailbox = PlainMailboxProcessor::start(
+        move |_mb, r| body(r, notification_sender, endpoint, incoming, codec_builder),
+        10000,
+    );
 
-        let client_config = make_client_configuration();
-        endpoint.set_default_client_config(client_config);
-
-        let mut codec_builder = LengthDelimitedCodec::builder();
-        codec_builder.max_frame_length(config.max_request_response_size);
-
-        let mailbox = PlainMailboxProcessor::start(
-            move |mb, r| body(mb, r, callbacks, endpoint, incoming, codec_builder),
-            10000,
-        );
-
-        self.mailbox = Some(mailbox);
-
-        Ok(())
-    }
-}
-
-fn make_self_signed_certificate() -> (rustls::PrivateKey, Vec<rustls::Certificate>) {
-    let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-    let cert_der = cert.serialize_der().unwrap();
-    let priv_key = cert.serialize_private_key_der();
-    let priv_key = rustls::PrivateKey(priv_key);
-    let cert_chain = vec![rustls::Certificate(cert_der)];
-    (priv_key, cert_chain)
-}
-
-fn make_client_configuration() -> ClientConfig {
-    let crypto = rustls::ClientConfig::builder()
-        .with_safe_defaults()
-        .with_custom_certificate_verifier(SkipServerVerification::new())
-        .with_no_client_auth();
-
-    ClientConfig::new(Arc::new(crypto))
+    Ok(ConnectionManagerImpl { mailbox })
 }
 
 type RequestID = u32;
@@ -290,10 +198,9 @@ struct OpenConnection {
 
 type ConnectionMap = HashMap<ConnectionID, OpenConnection>;
 
-async fn body<CB: ConnectionManagerCallbacks>(
-    mailbox: PlainMailboxProcessor<ConnectionManagerMessage>,
+async fn body(
     mut message_receiver: MessageReceiver<ConnectionManagerMessage>,
-    callbacks: CB,
+    notification_sender: NotificationSender,
     mut endpoint: Endpoint,
     mut incoming: Incoming,
     req_rep_codec_builder: length_delimited::Builder,
@@ -301,16 +208,6 @@ async fn body<CB: ConnectionManagerCallbacks>(
     let mut next_connection_id = 0;
     let mut connections: ConnectionMap = HashMap::new();
     let mut stop_reply_channel = None;
-
-    // We expose this as a `dyn ConnectionManager` only, and that only
-    // needs the mailbox.
-    let callbacks = CallbackWrapper {
-        callbacks: callbacks,
-        connection_manager: ConnectionManagerImpl {
-            callbacks: None,
-            mailbox: Some(mailbox.clone()),
-        },
-    };
 
     // TODO: this code is not async enough. For example, if connecting to
     // a peer takes a long time, incoming messages won't be processed until
@@ -336,7 +233,7 @@ async fn body<CB: ConnectionManagerCallbacks>(
                                 &mut next_connection_id,
                                 &mut endpoint,
                                 &mut connections,
-                                &callbacks,
+                                &notification_sender,
                             ).await
                         );
                     }
@@ -355,14 +252,15 @@ async fn body<CB: ConnectionManagerCallbacks>(
                         send_req_rep(id, bytes, &mut connections, &req_rep_codec_builder, rep).await;
                     }
 
-                    Some(ConnectionManagerMessage::ReplyAvailable(id, req_id, bytes)) => {
+                    Some(ConnectionManagerMessage::SendReply(id, req_id, bytes, r)) => {
                         // TODO await
                         send_reply(id, req_id, bytes, &mut connections).await;
+                        r.reply(());
                     }
 
                     Some(ConnectionManagerMessage::Disconnect(id, rep)) => {
                         // TODO await
-                        disconnect(id, &mut connections, &callbacks).await;
+                        disconnect(id, &mut connections, &notification_sender).await;
                         rep.reply(());
                     }
 
@@ -376,16 +274,16 @@ async fn body<CB: ConnectionManagerCallbacks>(
             maybe_connecting = incoming.next() => {
                 debug!("Received incoming connection: {:?}", maybe_connecting);
                 // TODO await
-                if !process_incoming(&mut next_connection_id, &mut connections, &callbacks, maybe_connecting).await {
+                if !process_incoming(&mut next_connection_id, &mut connections, &notification_sender, maybe_connecting).await {
                     warn!("Local endpoint was stopped, stopping connection manager");
                     break 'main_loop;
                 }
             }
 
-            message = get_next_message(&mut connections, &callbacks, &req_rep_codec_builder).fuse() => {
+            message = get_next_message(&mut connections, &notification_sender, &req_rep_codec_builder).fuse() => {
                 debug!("Received incoming message: {:?}", message);
                 // TODO await
-                if let Err(f) = process_message(message, &callbacks, &mailbox, &mut connections).await {
+                if let Err(f) = process_message(message, &notification_sender, &mut connections).await {
                     warn!("Failed to handle message due to {}", f);
                 }
             }
@@ -404,13 +302,13 @@ async fn body<CB: ConnectionManagerCallbacks>(
     }
 }
 
-async fn connect<CB: ConnectionManagerCallbacks>(
+async fn connect(
     addr: IpAddr,
     port: u16,
     next_connection_id: &mut u32,
     endpoint: &mut Endpoint,
     connections: &mut ConnectionMap,
-    callbacks: &CallbackWrapper<CB>,
+    notification_sender: &NotificationSender,
 ) -> Result<ConnectionID> {
     debug!("Connecting to {addr}:{port}");
     let new_connection = endpoint
@@ -434,12 +332,7 @@ async fn connect<CB: ConnectionManagerCallbacks>(
         },
     );
 
-    let cb = callbacks.clone();
-    tokio::spawn(async move {
-        cb.callbacks
-            .new_connection_available(&cb.connection_manager, id)
-            .await
-    });
+    notification_sender.send(ConnectionManagerNotification::NewConnectionAvailable(id));
 
     Ok(id)
 }
@@ -530,29 +423,24 @@ async fn send_reply(
     }
 }
 
-async fn disconnect<CB: ConnectionManagerCallbacks>(
+async fn disconnect(
     id: ConnectionID,
     connections: &mut ConnectionMap,
-    callbacks: &CallbackWrapper<CB>,
+    notification_sender: &NotificationSender,
 ) {
     if let Some(connection) = connections.remove(&id) {
         debug!("Disconnecting {id}");
         // This does nothing really, but it's good to be explicit
         std::mem::drop(connection);
 
-        let cb = callbacks.clone();
-        tokio::spawn(async move {
-            cb.callbacks
-                .connection_closed(&cb.connection_manager, id)
-                .await
-        });
+        notification_sender.send(ConnectionManagerNotification::ConnectionClosed(id));
     }
 }
 
-async fn process_incoming<CB: ConnectionManagerCallbacks>(
+async fn process_incoming(
     next_connection_id: &mut u32,
     connections: &mut ConnectionMap,
-    callbacks: &CallbackWrapper<CB>,
+    notification_sender: &NotificationSender,
     maybe_connecting: Option<Connecting>,
 ) -> bool {
     debug!("Accepting new connection");
@@ -589,12 +477,7 @@ async fn process_incoming<CB: ConnectionManagerCallbacks>(
         },
     );
 
-    let cb = callbacks.clone();
-    tokio::spawn(async move {
-        cb.callbacks
-            .new_connection_available(&cb.connection_manager, id)
-            .await
-    });
+    notification_sender.send(ConnectionManagerNotification::NewConnectionAvailable(id));
 
     true
 }
@@ -605,9 +488,9 @@ enum IncomingMessage {
     ReqRep(ConnectionID, RequestID, Bytes),
 }
 
-async fn get_next_message<CB: ConnectionManagerCallbacks>(
+async fn get_next_message(
     connections: &mut ConnectionMap,
-    callbacks: &CallbackWrapper<CB>,
+    notification_sender: &NotificationSender,
     codec_builder: &length_delimited::Builder,
 ) -> IncomingMessage {
     let num_connections = connections.len();
@@ -647,7 +530,7 @@ async fn get_next_message<CB: ConnectionManagerCallbacks>(
     };
 
     for id in to_disconnect {
-        disconnect(id, connections, callbacks).await;
+        disconnect(id, connections, notification_sender).await;
     }
 
     if result.is_none() {
@@ -735,21 +618,15 @@ async fn get_next_message_single(
     }
 }
 
-async fn process_message<CB: ConnectionManagerCallbacks>(
+async fn process_message(
     message: IncomingMessage,
-    callbacks: &CallbackWrapper<CB>,
-    mailbox: &PlainMailboxProcessor<ConnectionManagerMessage>,
+    notification_sender: &NotificationSender,
     connections: &mut ConnectionMap,
 ) -> Result<()> {
     match message {
         IncomingMessage::Datagram(id, bytes) => {
-            debug!("Raising callback for datagram: {id} <- {bytes:?}");
-            let cb = callbacks.clone();
-            tokio::spawn(async move {
-                cb.callbacks
-                    .datagram_received(&cb.connection_manager, id, bytes.clone())
-                    .await
-            });
+            debug!("Raising notification for datagram: {id} <- {bytes:?}");
+            notification_sender.send(ConnectionManagerNotification::DatagramReceived(id, bytes));
         }
 
         IncomingMessage::ReqRep(id, req_id, bytes) => {
@@ -769,19 +646,10 @@ async fn process_message<CB: ConnectionManagerCallbacks>(
             debug!("Moving channel {id}.{req_id} to pending_writes");
             connection.pending_writes.insert(req_id, channel);
 
-            let cb = callbacks.clone();
-            let mb = mailbox.clone();
-
-            // TODO: handle errors returned by user code
-            tokio::spawn(async move {
-                debug!("Raising callback for req-rep {id}.{req_id} <- {bytes:?}");
-                let result = cb
-                    .callbacks
-                    .req_rep_received(&cb.connection_manager, id, bytes)
-                    .await;
-                debug!("Received reply for req-rep, will send to main task: {id}.{req_id} <- {result:?}");
-                mb.post_and_forget(ConnectionManagerMessage::ReplyAvailable(id, req_id, result));
-            });
+            debug!("Raising notification for req-rep {id}.{req_id} <- {bytes:?}");
+            notification_sender.send(ConnectionManagerNotification::ReqRepReceived(
+                id, req_id, bytes,
+            ));
         }
     }
 
@@ -790,7 +658,24 @@ async fn process_message<CB: ConnectionManagerCallbacks>(
 
 // TODO: move the rest of this somewhere
 
-// TODO: use this everywhere
+fn make_self_signed_certificate() -> (rustls::PrivateKey, Vec<rustls::Certificate>) {
+    let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+    let cert_der = cert.serialize_der().unwrap();
+    let priv_key = cert.serialize_private_key_der();
+    let priv_key = rustls::PrivateKey(priv_key);
+    let cert_chain = vec![rustls::Certificate(cert_der)];
+    (priv_key, cert_chain)
+}
+
+fn make_client_configuration() -> ClientConfig {
+    let crypto = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_custom_certificate_verifier(SkipServerVerification::new())
+        .with_no_client_auth();
+
+    ClientConfig::new(Arc::new(crypto))
+}
+
 fn get_and_increment(x: &mut u32) -> u32 {
     let r = *x;
     *x += 1;

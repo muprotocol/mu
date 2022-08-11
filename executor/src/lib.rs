@@ -6,13 +6,13 @@ pub mod runtime;
 use std::process;
 
 use anyhow::{Context, Result};
-use async_trait::async_trait;
-use bytes::Bytes;
 use log::*;
+use tokio::{select, sync::mpsc};
+use tokio_mailbox_processor::NotificationChannel;
 use tokio_util::sync::CancellationToken;
 
 use infrastructure::{config, log_setup};
-use network::connection_manager::{self, ConnectionID, ConnectionManager};
+use network::connection_manager::{self, ConnectionManager, ConnectionManagerNotification};
 
 pub async fn run() -> Result<()> {
     let cancellation_token = CancellationToken::new();
@@ -23,16 +23,15 @@ pub async fn run() -> Result<()> {
 
     let (config, connection_manager_config) = config::initialize_config()?;
 
+    let port = connection_manager_config.listen_port; // TODO
+
     log_setup::setup(&config)?;
 
     info!("Initializing Mu...");
 
-    let mut connection_manager = connection_manager::new();
+    let (notif_channel, mut connection_manager_notification_receiver) = NotificationChannel::new();
 
-    connection_manager.set_callbacks(CB());
-
-    connection_manager
-        .start(connection_manager_config)
+    let connection_manager = connection_manager::start(connection_manager_config, notif_channel)
         .await
         .context("Failed to start connection manager")?;
 
@@ -45,8 +44,32 @@ pub async fn run() -> Result<()> {
 
     // TODO handle failures in components
 
+    if port != 12012 {
+        let id = connection_manager
+            .connect("127.0.0.1".parse().unwrap(), 12012)
+            .await?;
+        connection_manager
+            .send_datagram(id, "Hello!".into())
+            .await?;
+        let resp = connection_manager.send_req_rep(id, "Ooooh!".into()).await?;
+        println!("{resp:?}");
+    }
+
+    loop {
+        select! {
+            () = cancellation_token.cancelled() => {
+                info!("Received SIGINT, stopping");
+                break;
+            }
+
+            () = process_connection_manager_notifications(
+                &connection_manager,
+                &mut connection_manager_notification_receiver
+            ) => ()
+        }
+    }
+
     cancellation_token.cancelled().await;
-    info!("Received SIGINT, stopping");
 
     connection_manager
         .stop()
@@ -58,52 +81,32 @@ pub async fn run() -> Result<()> {
     Ok(())
 }
 
-#[derive(Clone)]
-struct CB();
-
-#[async_trait]
-impl connection_manager::ConnectionManagerCallbacks for CB {
-    async fn new_connection_available(
-        &self,
-        _connection_manager: &dyn ConnectionManager,
-        id: ConnectionID,
-    ) {
-        info!("New connection available: {}", id);
-    }
-
-    async fn connection_closed(
-        &self,
-        _connection_manager: &dyn ConnectionManager,
-        id: ConnectionID,
-    ) {
-        info!("Connection closed: {}", id);
-    }
-
-    async fn datagram_received(
-        &self,
-        _connection_manager: &dyn ConnectionManager,
-        id: ConnectionID,
-        data: Bytes,
-    ) {
-        debug!(
+async fn process_connection_manager_notifications(
+    connection_manager: &dyn ConnectionManager,
+    rx: &mut mpsc::UnboundedReceiver<ConnectionManagerNotification>,
+) {
+    match rx.recv().await {
+        None => (),
+        Some(ConnectionManagerNotification::NewConnectionAvailable(id)) => {
+            info!("New connection available: {}", id)
+        }
+        Some(ConnectionManagerNotification::ConnectionClosed(id)) => {
+            info!("Connection closed: {}", id)
+        }
+        Some(ConnectionManagerNotification::DatagramReceived(id, bytes)) => debug!(
             "Datagram received from {}: {}",
             id,
-            String::from_utf8_lossy(&data)
-        );
-    }
-
-    async fn req_rep_received(
-        &self,
-        _connection_manager: &dyn ConnectionManager,
-        id: ConnectionID,
-        data: Bytes,
-    ) -> Bytes {
-        debug!(
-            "Req-rep received from {}: {}",
-            id,
-            String::from_utf8_lossy(&data)
-        );
-
-        data
+            String::from_utf8_lossy(&bytes)
+        ),
+        Some(ConnectionManagerNotification::ReqRepReceived(id, req_id, bytes)) => {
+            debug!(
+                "Req-rep received from {}: {}",
+                id,
+                String::from_utf8_lossy(&bytes)
+            );
+            if let Err(f) = connection_manager.send_reply(id, req_id, bytes).await {
+                error!("Failed to send reply: {}", f);
+            }
+        }
     }
 }

@@ -1,5 +1,5 @@
 use thiserror::Error;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 pub mod callback;
 pub mod plain;
@@ -43,5 +43,32 @@ impl<T> ReplyChannel<T> {
 impl<T> std::fmt::Debug for ReplyChannel<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<ReplyChannel of {}>", std::any::type_name::<T>())
+    }
+}
+
+/// Can be used to raise notifications out of a mailbox. Notifications
+/// aren't guaranteed to arrive, and the mailbox has no way to know
+/// when (of if) they were received.
+///
+/// Use of this type is completely optional, but it implements the
+/// best practices for raising notifications from mailboxes and its
+/// use in this scenario is highly recommended.
+#[derive(Clone)]
+pub struct NotificationChannel<T> {
+    sender: mpsc::UnboundedSender<T>,
+}
+
+impl<T> NotificationChannel<T> {
+    pub fn new() -> (Self, mpsc::UnboundedReceiver<T>) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (Self { sender: tx }, rx)
+    }
+
+    pub fn send(&self, notification: T) {
+        // Notifications aren't guaranteed to arrive, and we don't need to handle
+        // closed receivers.
+        match self.sender.send(notification) {
+            _ => (),
+        };
     }
 }
