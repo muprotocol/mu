@@ -78,7 +78,7 @@ impl MessageCodec {
 }
 
 impl Decoder for MessageCodec {
-    type Item = Message;
+    type Item = Result<Message, Self::Error>;
     type Error = MessageCodecError;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -110,19 +110,18 @@ impl Decoder for MessageCodec {
                                 self.next_index = 0;
 
                                 let bytes = buf.split_to(idx + 1);
-                                if let Ok(message) = serde_json::from_slice(&bytes) {
-                                    return Ok(Some(message));
-                                }
-                                continue 'main_loop;
+                                return Ok(Some(
+                                    serde_json::from_slice(&bytes).map_err(Self::Error::Decoding),
+                                ));
                             }
                         }
 
-                        // Invalid Data found, discard invalid bytes and continue the loop
+                        // Invalid Data found
                         _ => {
                             self.current_pairs.clear();
                             self.next_index = 0;
                             buf.advance(self.next_index + idx + 1);
-                            continue 'main_loop;
+                            return Ok(Some(Err(Self::Error::InvalidBytes)));
                         }
                     },
                     _ => (),
@@ -143,15 +142,11 @@ impl Decoder for MessageCodec {
     }
 }
 
-impl<T> Encoder<T> for MessageCodec
-where
-    T: FuncInput,
-{
+impl Encoder<Message> for MessageCodec {
     type Error = MessageCodecError;
 
-    fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let message = item.to_message().map_err(Self::Error::Encoding)?;
-        let bytes = serde_json::to_string(&message).map_err(|e| Self::Error::Encoding(e.into()))?;
+    fn encode(&mut self, item: Message, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        let bytes = serde_json::to_string(&item).map_err(|e| Self::Error::Encoding(e.into()))?;
         let bytes = bytes.as_bytes();
         dst.reserve(bytes.len());
         dst.put(bytes);
@@ -172,8 +167,12 @@ pub enum MessageCodecError {
     MaxMessageLengthExceeded,
     /// An IO error occurred.
     Io(io::Error),
-    /// Encoding Error
+    /// Encoding error
     Encoding(anyhow::Error),
+    /// Serde decoding error
+    Decoding(serde_json::Error),
+    /// Invalid bytes while decoding
+    InvalidBytes,
 }
 
 impl fmt::Display for MessageCodecError {
@@ -182,6 +181,8 @@ impl fmt::Display for MessageCodecError {
             MessageCodecError::MaxMessageLengthExceeded => write!(f, "max message length exceeded"),
             MessageCodecError::Io(e) => write!(f, "{}", e),
             MessageCodecError::Encoding(e) => write!(f, "{}", e),
+            MessageCodecError::Decoding(e) => write!(f, "{}", e),
+            MessageCodecError::InvalidBytes => write!(f, "invalid bytes found"),
         }
     }
 }

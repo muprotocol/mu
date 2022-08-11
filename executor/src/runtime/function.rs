@@ -1,10 +1,10 @@
 //TODO
 #![allow(dead_code)]
 
-use super::message::message::{Message, MessageReader, MessageWriter};
+use super::message::{message::Message, pipe_ext::PipeExt};
 use anyhow::Result;
+use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
-
 use std::{collections::HashMap, path::PathBuf};
 use tokio::{fs::read, select, sync::mpsc};
 use uuid::Uuid;
@@ -35,7 +35,7 @@ struct FunctionPipes {
 }
 
 #[derive(PartialEq)]
-enum FunctionStatus {
+pub enum FunctionStatus {
     Loaded,
     Running, // TODO: add started time here
 }
@@ -77,33 +77,34 @@ impl Function {
     }
 
     fn create_std_io(&mut self) -> Result<(Input, Output)> {
-        let stdout_reader = MessageReader::new(self.pipes.stdout.clone());
-        let stdin_writer = MessageWriter::new(self.pipes.stdin.clone());
+        let mut stdout_reader = self.pipes.stdout.clone().to_message_reader();
+        let mut stdin_writer = self.pipes.stdin.clone().to_message_writer();
 
         let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Message>();
-        let (output_tx, mut output_rx) = mpsc::unbounded_channel::<Message>();
+        let (output_tx, output_rx) = mpsc::unbounded_channel::<Message>();
 
-        let a = async move {
-            while self.status == FunctionStatus::Running {
+        tokio::spawn(async move {
+            // TODO: stop if function is not running
+            loop {
                 select! {
-                    Some(input) = input_rx.recv() => {
-                        // TODO: write to stdin_writer
-                        todo!()
+                    Some(message) = input_rx.recv() => {
+                        // TODO: handle error
+                        stdin_writer.send(message).await.unwrap();
                     }
-                    // TODO: read from stdout streams and write to output_tx
+                    Some(message) = stdout_reader.next() => {
+                        // TODO: handle error
+                        //              pipe_err decoding_err
+                        let item = message.unwrap().unwrap();
+                        output_tx.send(item).unwrap();
+                    }
                 }
             }
-        };
+        });
 
         Ok((input_tx, output_rx))
     }
 
-    pub async fn start(
-        &mut self,
-    ) -> Result<(
-        mpsc::UnboundedSender<Message>,
-        mpsc::UnboundedReceiver<Message>,
-    )> {
+    pub async fn start(&mut self) -> Result<(Input, Output)> {
         let name = self.module.name().unwrap_or("module");
         let wasi_env = WasiState::new(name)
             .stdin(Box::new(self.pipes.stdin.clone()))
@@ -122,9 +123,12 @@ impl Function {
             .data_mut(&mut self.store)
             .set_memory(memory.clone());
 
-        let start = instance.exports.get_function("_start")?;
-        start.call(&mut self.store, &[])?;
-
-        todo!()
+        //TODO: configure `Builder` of tokio for huge blocking tasks
+        tokio::task::spawn_blocking(move || {
+            let start = instance.exports.get_function("_start").unwrap();
+            start.call(&mut self.store, &[]).unwrap();
+            todo!()
+        });
+        self.create_std_io()
     }
 }

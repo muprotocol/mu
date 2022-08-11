@@ -1,9 +1,14 @@
+use super::{
+    message::{self, MessageReader, MessageWriter},
+    message_codec::MessageCodec,
+};
 use std::{
     io::{BufReader, BufWriter, Read, Write},
     pin::Pin,
     task::Poll,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio_util::codec::{FramedRead, FramedWrite};
 use wasmer_wasi::Pipe;
 
 pub struct AsyncReadPipe(BufReader<Pipe>);
@@ -72,5 +77,26 @@ impl AsyncWrite for AsyncWritePipe {
         _cx: &mut std::task::Context<'_>,
     ) -> Poll<Result<(), std::io::Error>> {
         Poll::Ready(Ok(()))
+    }
+}
+
+pub trait PipeExt {
+    fn to_message_reader(self) -> MessageReader;
+    fn to_message_writer(self) -> MessageWriter;
+}
+
+impl PipeExt for Pipe {
+    fn to_message_reader(self) -> MessageReader {
+        FramedRead::new(
+            AsyncReadPipe::from(self),
+            MessageCodec::new_with_max_length(message::MAX_MESSAGE_LEN),
+        )
+    }
+
+    fn to_message_writer(self) -> MessageWriter {
+        FramedWrite::new(
+            AsyncWritePipe::from(self),
+            MessageCodec::new_with_max_length(message::MAX_MESSAGE_LEN),
+        )
     }
 }
