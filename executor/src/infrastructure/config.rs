@@ -1,16 +1,17 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::{Context, Result};
 use config::{Config, Environment, File, FileFormat, Value};
 
-use crate::network::connection_manager::ConnectionManagerConfig;
+use crate::network::{connection_manager::ConnectionManagerConfig, gossip::GossipConfig};
 
-pub fn initialize_config() -> Result<(Config, ConnectionManagerConfig)> {
+pub fn initialize_config() -> Result<(Config, ConnectionManagerConfig, GossipConfig)> {
     let defaults = vec![
         ("log.level", "warn"),
         ("connection_manager.listen_ip", "0.0.0.0"),
         ("connection_manager.listen_port", "12012"),
         ("connection_manager.max_request_size_kb", "8192"),
+        ("gossip.heartbeat_interval_millis", "1000"),
     ];
 
     let default_arrays = vec!["log.filters"];
@@ -67,7 +68,16 @@ pub fn initialize_config() -> Result<(Config, ConnectionManagerConfig)> {
             * 1024,
     };
 
-    Ok((config, connection_manager_config))
+    let gossip_config = GossipConfig {
+        heartbeat_interval: Duration::from_millis(
+            config
+                .get_string("gossip.heartbeat_interval_millis")?
+                .parse()
+                .context("Failed to parse heartbeat interval")?,
+        ),
+    };
+
+    Ok((config, connection_manager_config, gossip_config))
 }
 
 pub trait ConfigExt {

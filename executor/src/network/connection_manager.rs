@@ -48,7 +48,7 @@ impl Default for ConnectionManagerConfig {
 #[async_trait]
 pub trait ConnectionManager: Sync + Send {
     async fn connect(&self, address: IpAddr, port: u16) -> Result<ConnectionID>;
-    async fn send_datagram(&self, id: ConnectionID, data: Bytes) -> Result<()>;
+    fn send_datagram(&self, id: ConnectionID, data: Bytes);
     async fn send_req_rep(&self, id: ConnectionID, data: Bytes) -> Result<Bytes>;
     async fn send_reply(&self, id: ConnectionID, req_id: RequestID, data: Bytes) -> Result<()>;
     async fn disconnect(&self, id: ConnectionID) -> Result<()>;
@@ -58,7 +58,7 @@ pub trait ConnectionManager: Sync + Send {
 #[derive(Debug)]
 enum ConnectionManagerMessage {
     Connect(IpAddr, u16, ReplyChannel<Result<ConnectionID>>),
-    SendDatagram(ConnectionID, Bytes, ReplyChannel<Result<()>>),
+    SendDatagram(ConnectionID, Bytes),
     SendReqRep(ConnectionID, Bytes, ReplyChannel<Result<Bytes>>),
     SendReply(ConnectionID, RequestID, Bytes, ReplyChannel<()>),
     Disconnect(ConnectionID, ReplyChannel<()>),
@@ -92,13 +92,10 @@ impl ConnectionManager for ConnectionManagerImpl {
         )
     }
 
-    async fn send_datagram(&self, id: ConnectionID, data: Bytes) -> Result<()> {
+    fn send_datagram(&self, id: ConnectionID, data: Bytes) {
         debug!("Sending datagram {} <- {:?}", id, data);
-        flatten_and_map_result(
-            self.mailbox
-                .post_and_reply(|r| ConnectionManagerMessage::SendDatagram(id, data, r))
-                .await,
-        )
+        self.mailbox
+            .post_and_forget(ConnectionManagerMessage::SendDatagram(id, data));
     }
 
     async fn send_req_rep(&self, id: ConnectionID, data: Bytes) -> Result<Bytes> {
@@ -238,10 +235,10 @@ async fn body(
                         );
                     }
 
-                    Some(ConnectionManagerMessage::SendDatagram(id, bytes, rep)) => {
-                        rep.reply(
-                            send_datagram(id, bytes, &mut connections)
-                        );
+                    Some(ConnectionManagerMessage::SendDatagram(id, bytes)) => {
+                        if let Err(f) = send_datagram(id, bytes, &mut connections) {
+                            debug!("Failed to send datagram to {id} due to {f}");
+                        }
                     }
 
                     Some(ConnectionManagerMessage::SendReqRep(id, bytes, rep)) => {

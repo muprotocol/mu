@@ -7,3 +7,5 @@ connection_manager:
   listen_address: 0.0.0.0
   listen_port: 12012
   max_request_size_kb: 8
+gossip:
+  heartbeat_interval_millis: 1000

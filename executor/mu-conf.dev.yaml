@@ -1,2 +1,7 @@
 log:
   level: debug
+  filters:
+    - module: quinn::connection
+      level: off
+    - module: mu::network::connection_manager
+      level: info
