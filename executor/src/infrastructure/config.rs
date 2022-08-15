@@ -12,6 +12,9 @@ pub fn initialize_config() -> Result<(Config, ConnectionManagerConfig, GossipCon
         ("connection_manager.listen_port", "12012"),
         ("connection_manager.max_request_size_kb", "8192"),
         ("gossip.heartbeat_interval_millis", "1000"),
+        ("gossip.assume_dead_after_missed_heartbeats", "10"),
+        ("gossip.max_peers", "6"),
+        ("gossip.network_initialization_time_millis", "1000"),
     ];
 
     let default_arrays = vec!["log.filters"];
@@ -56,15 +59,15 @@ pub fn initialize_config() -> Result<(Config, ConnectionManagerConfig, GossipCon
         listen_address: config
             .get_string("connection_manager.listen_address")?
             .parse()
-            .context("Failed to parse listen address")?,
+            .context("Failed to parse listen_address")?,
         listen_port: config
             .get_string("connection_manager.listen_port")?
             .parse()
-            .context("Failed to parse listen port")?,
+            .context("Failed to parse listen_port")?,
         max_request_response_size: config
             .get_string("connection_manager.max_request_size_kb")?
             .parse::<usize>()
-            .context("Failed to parse max request size")?
+            .context("Failed to parse max_request_response_size")?
             * 1024,
     };
 
@@ -73,7 +76,21 @@ pub fn initialize_config() -> Result<(Config, ConnectionManagerConfig, GossipCon
             config
                 .get_string("gossip.heartbeat_interval_millis")?
                 .parse()
-                .context("Failed to parse heartbeat interval")?,
+                .context("Failed to parse heartbeat_interval")?,
+        ),
+        assume_dead_after_missed_heartbeats: config
+            .get_string("gossip.assume_dead_after_missed_heartbeats")?
+            .parse()
+            .context("Failed to parse assume_dead_after_missed_heartbeats")?,
+        max_peers: config
+            .get_string("gossip.max_peers")?
+            .parse()
+            .context("Failed to parse max_peers")?,
+        network_initialization_time: Duration::from_millis(
+            config
+                .get_string("gossip.network_initialization_time_millis")?
+                .parse()
+                .context("Failed to parse network_initialization_time_millis")?,
         ),
     };
 

@@ -16,7 +16,7 @@ use network::{
     gossip::GossipNotification,
 };
 
-use crate::network::gossip::{self, Gossip, KnownNodes, Node};
+use crate::network::gossip::{self, Gossip, KnownNodes, NodeAddress};
 
 pub async fn run() -> Result<()> {
     let cancellation_token = CancellationToken::new();
@@ -58,7 +58,7 @@ pub async fn run() -> Result<()> {
         let address = "127.0.0.1".parse().unwrap();
         let id = connection_manager.connect(address, 12012).await?;
         known_nodes.push((
-            Node {
+            NodeAddress {
                 address,
                 port: 12012,
                 generation: 0,
@@ -67,7 +67,7 @@ pub async fn run() -> Result<()> {
         ));
     }
 
-    let my_node = Node {
+    let my_node = NodeAddress {
         address: "127.0.0.1".parse().unwrap(),
         port,
         generation: SystemTime::now()
@@ -76,7 +76,8 @@ pub async fn run() -> Result<()> {
             .as_nanos(),
     };
 
-    let (gossip_notification_channel, gossip_notification_receiver) = NotificationChannel::new();
+    let (gossip_notification_channel, mut gossip_notification_receiver) =
+        NotificationChannel::new();
 
     let gossip = gossip::start(
         my_node,
@@ -92,12 +93,22 @@ pub async fn run() -> Result<()> {
         cancellation_token,
         &connection_manager,
         connection_manager_notification_receiver,
-        &gossip,
-        gossip_notification_receiver,
+        &*gossip,
+        &mut gossip_notification_receiver,
     )
     .await;
 
     gossip.stop().await.context("Failed to stop gossip")?;
+
+    // The glue loop shouldn't stop as soon as it receives a ctrl+C
+    loop {
+        match gossip_notification_receiver.recv().await {
+            None => break,
+            Some(notification) => {
+                process_gossip_notification(Some(notification), &connection_manager).await
+            }
+        }
+    }
 
     connection_manager
         .stop()
@@ -116,7 +127,7 @@ async fn glue_modules(
         ConnectionManagerNotification,
     >,
     gossip: &dyn Gossip,
-    mut gossip_notification_receiver: mpsc::UnboundedReceiver<GossipNotification>,
+    gossip_notification_receiver: &mut mpsc::UnboundedReceiver<GossipNotification>,
 ) {
     let mut debug_timer = tokio::time::interval(std::time::Duration::from_secs(3));
 
@@ -128,10 +139,10 @@ async fn glue_modules(
             }
 
             _ = debug_timer.tick() => {
-                let peers = gossip.get_peers().await;
-                match peers {
-                    Ok(peers) => warn!("Connected peers: {:?}", peers),
-                    Err(f) => error!("Failed to get peers: {}", f)
+                let nodes = gossip.get_nodes().await;
+                match nodes {
+                    Ok(peers) => warn!("Discovered nodes: {:?}", peers),
+                    Err(f) => error!("Failed to get nodes: {}", f)
                 }
             }
 
@@ -187,8 +198,14 @@ async fn process_gossip_notification(
 ) {
     match notification {
         None => (), // TODO
-        Some(GossipNotification::PeerStatusUpdated(peer, status)) => {
-            debug!("Peer {} now has status {:?}", peer.node(), status);
+        Some(GossipNotification::NodeDiscovered(node)) => {
+            debug!("Node discovered: {node}");
+        }
+        Some(GossipNotification::NodeDied(node, cleanly)) => {
+            debug!(
+                "Node died {}: {node}",
+                if cleanly { "cleanly" } else { "uncleanly" }
+            );
         }
         Some(GossipNotification::SendMessage(id, bytes)) => {
             connection_manager.send_datagram(id, bytes);

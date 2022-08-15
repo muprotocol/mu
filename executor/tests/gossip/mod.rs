@@ -1,10 +1,10 @@
-use mu::gossip::{GossipConfig, GossipImpl, Node};
+use mu::gossip::{GossipConfig, GossipImpl, NodeAddress};
 use tokio::time::Duration;
 
 #[tokio::test]
 async fn test_network() {
     let mut gossip1 = GossipImpl::new(
-        Node::new("127.0.0.1", 59001),
+        NodeAddress::new("127.0.0.1", 59001),
         GossipConfig {
             heartbeat_time: Duration::from_millis(1),
         },
@@ -12,7 +12,7 @@ async fn test_network() {
     .await
     .unwrap();
 
-    let node2 = Node::new("127.0.0.1", 59002);
+    let node2 = NodeAddress::new("127.0.0.1", 59002);
     let mut gossip2 = GossipImpl::new(
         node2.clone(),
         GossipConfig {
@@ -22,7 +22,7 @@ async fn test_network() {
     .await
     .unwrap();
 
-    let node3 = Node::new("127.0.0.1", 59003);
+    let node3 = NodeAddress::new("127.0.0.1", 59003);
     let mut _gossip3 = GossipImpl::new(
         node3.clone(),
         GossipConfig {

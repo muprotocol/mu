@@ -9,3 +9,6 @@ connection_manager:
   max_request_size_kb: 8
 gossip:
   heartbeat_interval_millis: 1000
+  assume_dead_after_missed_heartbeats: 10
+  max_peers: 6
+  network_initialization_time_millis: 10000
