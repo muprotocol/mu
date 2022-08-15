@@ -1,8 +1,3 @@
-// TODO:
-// * Implement heartbeat propagation from seed nodes (subject to discussion with @thepeak)
-//   * Nodes should try to connect to peers they don't have an active connection to
-//   * Drop one of the connections if we get two due to retries
-
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     fmt::Display,

@@ -195,15 +195,29 @@ struct OpenConnection {
 
 type ConnectionMap = HashMap<ConnectionID, OpenConnection>;
 
+struct ConnectionManagerState {
+    endpoint: Endpoint,
+    notification_sender: NotificationSender,
+    next_connection_id: u32,
+    connections: ConnectionMap,
+    req_rep_codec_builder: length_delimited::Builder,
+}
+
 async fn body(
     mut message_receiver: MessageReceiver<ConnectionManagerMessage>,
     notification_sender: NotificationSender,
-    mut endpoint: Endpoint,
+    endpoint: Endpoint,
     mut incoming: Incoming,
     req_rep_codec_builder: length_delimited::Builder,
 ) {
-    let mut next_connection_id = 0;
-    let mut connections: ConnectionMap = HashMap::new();
+    let mut state = ConnectionManagerState {
+        endpoint,
+        notification_sender,
+        req_rep_codec_builder,
+        connections: HashMap::new(),
+        next_connection_id: 0,
+    };
+
     let mut stop_reply_channel = None;
 
     // TODO: this code is not async enough. For example, if connecting to
@@ -224,19 +238,12 @@ async fn body(
                     Some(ConnectionManagerMessage::Connect(ip, port, rep)) => {
                         rep.reply(
                             // TODO await
-                            connect(
-                                ip,
-                                port,
-                                &mut next_connection_id,
-                                &mut endpoint,
-                                &mut connections,
-                                &notification_sender,
-                            ).await
+                            connect(ip, port, &mut state).await
                         );
                     }
 
                     Some(ConnectionManagerMessage::SendDatagram(id, bytes)) => {
-                        if let Err(f) = send_datagram(id, bytes, &mut connections) {
+                        if let Err(f) = send_datagram(id, bytes, &mut state) {
                             debug!("Failed to send datagram to {id} due to {f}");
                         }
                     }
@@ -246,18 +253,18 @@ async fn body(
                         // looks like a relatively instantaneous operation, which is good
                         // enough, but it can be made completely async with the main task
                         // if we move each connection to its mailbox and handle it there.
-                        send_req_rep(id, bytes, &mut connections, &req_rep_codec_builder, rep).await;
+                        send_req_rep(id, bytes, rep, &mut state).await;
                     }
 
                     Some(ConnectionManagerMessage::SendReply(id, req_id, bytes, r)) => {
                         // TODO await
-                        send_reply(id, req_id, bytes, &mut connections).await;
+                        send_reply(id, req_id, bytes, &mut state).await;
                         r.reply(());
                     }
 
                     Some(ConnectionManagerMessage::Disconnect(id, rep)) => {
                         // TODO await
-                        disconnect(id, &mut connections, &notification_sender).await;
+                        disconnect(id, &mut state).await;
                         rep.reply(());
                     }
 
@@ -271,16 +278,16 @@ async fn body(
             maybe_connecting = incoming.next() => {
                 debug!("Received incoming connection: {:?}", maybe_connecting);
                 // TODO await
-                if !process_incoming(&mut next_connection_id, &mut connections, &notification_sender, maybe_connecting).await {
+                if !process_incoming(maybe_connecting, &mut state).await {
                     warn!("Local endpoint was stopped, stopping connection manager");
                     break 'main_loop;
                 }
             }
 
-            message = get_next_message(&mut connections, &notification_sender, &req_rep_codec_builder).fuse() => {
+            message = get_next_message(&mut state).fuse() => {
                 debug!("Received incoming message: {:?}", message);
                 // TODO await
-                if let Err(f) = process_message(message, &notification_sender, &mut connections).await {
+                if let Err(f) = process_message(message, &mut state).await {
                     warn!("Failed to handle message due to {}", f);
                 }
             }
@@ -288,6 +295,11 @@ async fn body(
     }
 
     // Drop everything, then reply to whoever asked us to stop
+    let ConnectionManagerState {
+        connections,
+        endpoint,
+        ..
+    } = state;
     drop(connections);
     drop(incoming);
 
@@ -302,23 +314,21 @@ async fn body(
 async fn connect(
     addr: IpAddr,
     port: u16,
-    next_connection_id: &mut u32,
-    endpoint: &mut Endpoint,
-    connections: &mut ConnectionMap,
-    notification_sender: &NotificationSender,
+    state: &mut ConnectionManagerState,
 ) -> Result<ConnectionID> {
     debug!("Connecting to {addr}:{port}");
-    let new_connection = endpoint
+    let new_connection = state
+        .endpoint
         .connect(SocketAddr::new(addr, port), "mu_peer")
         .context("Failed to connect to peer")?
         .await
         .context("Failed to establish connection")?;
 
-    let id = get_and_increment(next_connection_id);
+    let id = get_and_increment(&mut state.next_connection_id);
 
     info!("Connected to {addr}:{port} with ID {id}");
 
-    connections.insert(
+    state.connections.insert(
         id,
         OpenConnection {
             new_connection,
@@ -329,13 +339,15 @@ async fn connect(
         },
     );
 
-    notification_sender.send(ConnectionManagerNotification::NewConnectionAvailable(id));
+    state
+        .notification_sender
+        .send(ConnectionManagerNotification::NewConnectionAvailable(id));
 
     Ok(id)
 }
 
-fn send_datagram(id: ConnectionID, data: Bytes, connections: &mut ConnectionMap) -> Result<()> {
-    if let Some(connection) = connections.get_mut(&id) {
+fn send_datagram(id: ConnectionID, data: Bytes, state: &mut ConnectionManagerState) -> Result<()> {
+    if let Some(connection) = state.connections.get_mut(&id) {
         debug!("Sending datagram {id} <- {data:?}");
         connection.new_connection.connection.send_datagram(data)?;
         return Ok(());
@@ -347,11 +359,10 @@ fn send_datagram(id: ConnectionID, data: Bytes, connections: &mut ConnectionMap)
 async fn send_req_rep(
     id: ConnectionID,
     data: Bytes,
-    connections: &mut ConnectionMap,
-    codec_builder: &length_delimited::Builder,
     reply_channel: ReplyChannel<Result<Bytes>>,
+    state: &mut ConnectionManagerState,
 ) {
-    if let Some(connection) = connections.get_mut(&id) {
+    if let Some(connection) = state.connections.get_mut(&id) {
         debug!("Sending req-rep message to {} <- {:?}", id, data);
 
         debug!("Opening req-rep stream");
@@ -369,8 +380,8 @@ async fn send_req_rep(
             }
         };
 
-        let mut write = codec_builder.new_write(send);
-        let mut read = codec_builder.new_read(recv);
+        let mut write = state.req_rep_codec_builder.new_write(send);
+        let mut read = state.req_rep_codec_builder.new_read(recv);
 
         tokio::spawn(async move {
             let reply = async move {
@@ -406,10 +417,10 @@ async fn send_reply(
     id: ConnectionID,
     req_id: RequestID,
     data: Bytes,
-    connections: &mut ConnectionMap,
+    state: &mut ConnectionManagerState,
 ) {
     debug!("Sending reply {id}.{req_id} <- {data:?}");
-    if let Some(connection) = connections.get_mut(&id) {
+    if let Some(connection) = state.connections.get_mut(&id) {
         if let Some(channel) = connection.pending_writes.get_mut(&req_id) {
             if let Err(f) = channel.write.send(data).await {
                 info!("Failed to reply to {} due to: {}", id, f);
@@ -420,25 +431,21 @@ async fn send_reply(
     }
 }
 
-async fn disconnect(
-    id: ConnectionID,
-    connections: &mut ConnectionMap,
-    notification_sender: &NotificationSender,
-) {
-    if let Some(connection) = connections.remove(&id) {
+async fn disconnect(id: ConnectionID, state: &mut ConnectionManagerState) {
+    if let Some(connection) = state.connections.remove(&id) {
         debug!("Disconnecting {id}");
         // This does nothing really, but it's good to be explicit
         std::mem::drop(connection);
 
-        notification_sender.send(ConnectionManagerNotification::ConnectionClosed(id));
+        state
+            .notification_sender
+            .send(ConnectionManagerNotification::ConnectionClosed(id));
     }
 }
 
 async fn process_incoming(
-    next_connection_id: &mut u32,
-    connections: &mut ConnectionMap,
-    notification_sender: &NotificationSender,
     maybe_connecting: Option<Connecting>,
+    state: &mut ConnectionManagerState,
 ) -> bool {
     debug!("Accepting new connection");
     let connecting = match maybe_connecting {
@@ -455,7 +462,7 @@ async fn process_incoming(
         }
     };
 
-    let id = get_and_increment(next_connection_id);
+    let id = get_and_increment(&mut state.next_connection_id);
 
     info!(
         "New connection available from {}, assigning id {}",
@@ -463,7 +470,7 @@ async fn process_incoming(
         id
     );
 
-    connections.insert(
+    state.connections.insert(
         id,
         OpenConnection {
             new_connection,
@@ -474,7 +481,9 @@ async fn process_incoming(
         },
     );
 
-    notification_sender.send(ConnectionManagerNotification::NewConnectionAvailable(id));
+    state
+        .notification_sender
+        .send(ConnectionManagerNotification::NewConnectionAvailable(id));
 
     true
 }
@@ -485,12 +494,8 @@ enum IncomingMessage {
     ReqRep(ConnectionID, RequestID, Bytes),
 }
 
-async fn get_next_message(
-    connections: &mut ConnectionMap,
-    notification_sender: &NotificationSender,
-    codec_builder: &length_delimited::Builder,
-) -> IncomingMessage {
-    let num_connections = connections.len();
+async fn get_next_message(state: &mut ConnectionManagerState) -> IncomingMessage {
+    let num_connections = state.connections.len();
     if num_connections == 0 {
         // TODO: This will need be re-worked if we move away from select!, since it
         // essentially creates a future that never completes.
@@ -504,11 +509,16 @@ async fn get_next_message(
     let mut to_disconnect = vec![];
     let result = loop {
         match future::select_all(
-            connections
+            state
+                .connections
                 .iter_mut()
                 .filter(|(k, _)| !to_disconnect.contains(*k))
                 .map(|(id, connection)| {
-                    Box::pin(get_next_message_single(*id, connection, codec_builder))
+                    Box::pin(get_next_message_single(
+                        *id,
+                        connection,
+                        &state.req_rep_codec_builder,
+                    ))
                 }),
         )
         .await
@@ -527,7 +537,7 @@ async fn get_next_message(
     };
 
     for id in to_disconnect {
-        disconnect(id, connections, notification_sender).await;
+        disconnect(id, state).await;
     }
 
     if result.is_none() {
@@ -617,18 +627,19 @@ async fn get_next_message_single(
 
 async fn process_message(
     message: IncomingMessage,
-    notification_sender: &NotificationSender,
-    connections: &mut ConnectionMap,
+    state: &mut ConnectionManagerState,
 ) -> Result<()> {
     match message {
         IncomingMessage::Datagram(id, bytes) => {
             debug!("Raising notification for datagram: {id} <- {bytes:?}");
-            notification_sender.send(ConnectionManagerNotification::DatagramReceived(id, bytes));
+            state
+                .notification_sender
+                .send(ConnectionManagerNotification::DatagramReceived(id, bytes));
         }
 
         IncomingMessage::ReqRep(id, req_id, bytes) => {
             debug!("Processing req-rep: {id}.{req_id} <- {bytes:?}");
-            let connection = match connections.get_mut(&id) {
+            let connection = match state.connections.get_mut(&id) {
                 Some(x) => x,
                 None => bail!("Failed to find connection when it was supposed to be there"),
             };
@@ -644,9 +655,11 @@ async fn process_message(
             connection.pending_writes.insert(req_id, channel);
 
             debug!("Raising notification for req-rep {id}.{req_id} <- {bytes:?}");
-            notification_sender.send(ConnectionManagerNotification::ReqRepReceived(
-                id, req_id, bytes,
-            ));
+            state
+                .notification_sender
+                .send(ConnectionManagerNotification::ReqRepReceived(
+                    id, req_id, bytes,
+                ));
         }
     }
 
