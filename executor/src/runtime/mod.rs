@@ -1,59 +1,81 @@
 //TODO
 #![allow(dead_code)]
-
-use anyhow::Result;
-use error::Error;
-use function::{Config, Function, InstanceID};
-use std::{collections::HashMap, time::Duration};
-use uuid::Uuid;
-
-use message::gateway::{GatewayRequest, GatewayResponse};
+//TODO: Add logging
 
 pub mod error;
 mod function;
-pub mod message;
-mod mock;
+mod message;
+mod providers;
 
-//TODO: use metrics and MemoryUsage so we can report usage of memory and CPU time.
-#[derive(Default)]
-pub struct Runtime {
-    //TODO: use Vec<Function> and hold more than one function at a time so we can load balance
-    // over funcs.
-    instances: HashMap<InstanceID, Function>,
+use self::function::{FunctionDefinition, FunctionID, FunctionIO};
+use anyhow::Result;
+use async_trait::async_trait;
+use std::collections::HashMap;
+use tokio::task::JoinHandle;
+use uuid::Uuid;
+
+/// This is FunctionProvider that should cache functions if needed.
+#[async_trait]
+pub trait FunctionProvider {
+    async fn get(&mut self, id: FunctionID) -> anyhow::Result<&FunctionDefinition>;
 }
 
-impl Runtime {
-    async fn load_function(&mut self, config: Config) -> Result<()> {
-        if self.instances.get(&config.id).is_none() {
-            let id = config.id;
-            let function = Function::load(config).await?;
-            self.instances.insert(id, function);
+//TODO:
+// * use metrics and MemoryUsage so we can report usage of memory and CPU time.
+// * remove less frequently used source's from runtime
+// * hold more than one instance of functions and load balance on them
+pub struct Runtime<P: FunctionProvider> {
+    instances: HashMap<FunctionID, Instance>,
+    function_provider: P,
+}
+
+impl<P> Runtime<P>
+where
+    P: FunctionProvider,
+{
+    pub fn new(provider: P) -> Self {
+        Self {
+            instances: HashMap::new(),
+            function_provider: provider,
+        }
+    }
+
+    //TODO: check and maintain function status better
+    async fn run_function(&mut self, id: FunctionID) -> Result<()> {
+        match self.instances.get(&id) {
+            Some(i) if !i.is_finished() => (),
+            _ => {
+                let definition = self.function_provider.get(id).await?;
+                let instance = Instance::new(definition).await?;
+                self.instances.insert(id, instance);
+            }
         }
         Ok(())
     }
 
-    async fn run_with_gateway_request(
-        &mut self,
-        id: Uuid,
-        _request: GatewayRequest,
-    ) -> Result<GatewayResponse> {
-        if let Some(_f) = self.instances.get_mut(&id) {
-            //let output = f.run(request).await?;
-            //GatewayResponse::parse(output)?
-            todo!()
-        } else {
-            Err(Error::FunctionNotFound(id).into())
-        }
+    pub async fn start(&mut self) {
+        loop {}
+    }
+}
+
+pub struct Instance {
+    id: Uuid,
+    io: FunctionIO,
+    join_handle: JoinHandle<()>,
+}
+
+impl Instance {
+    pub async fn new(definition: &FunctionDefinition) -> Result<Self> {
+        let function = definition.create_function().await?;
+        let (join_handle, io) = function.start()?;
+        Ok(Self {
+            id: definition.id,
+            io,
+            join_handle,
+        })
     }
 
-    pub async fn listen(&mut self) {
-        let mut gateway = mock::gateway::start(Duration::from_secs(1), 10, |i| {
-            GatewayRequest::new(rand::random(), format!("Test Request Number {}", i))
-        })
-        .await;
-
-        while let Some((_request, _resposne_sender)) = gateway.recv().await {
-            todo!();
-        }
+    pub fn is_finished(&self) -> bool {
+        self.join_handle.is_finished()
     }
 }

@@ -1,11 +1,9 @@
+use super::Message;
 use bytes::BufMut;
 use bytes::{Buf, BytesMut};
 use std::{cmp, fmt, io, usize};
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
-
-use super::message::FuncInput;
-use super::message::Message;
 
 /// A simple [`Decoder`] and [`Encoder`] implementation that splits up data into JSON objects.
 ///

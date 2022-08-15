@@ -1,7 +1,4 @@
-use super::{
-    message::{self, MessageReader, MessageWriter},
-    message_codec::MessageCodec,
-};
+use super::{message_codec::MessageCodec, MessageReader, MessageWriter};
 use std::{
     io::{BufReader, BufWriter, Read, Write},
     pin::Pin,
@@ -89,14 +86,14 @@ impl PipeExt for Pipe {
     fn to_message_reader(self) -> MessageReader {
         FramedRead::new(
             AsyncReadPipe::from(self),
-            MessageCodec::new_with_max_length(message::MAX_MESSAGE_LEN),
+            MessageCodec::new_with_max_length(super::MAX_MESSAGE_LEN),
         )
     }
 
     fn to_message_writer(self) -> MessageWriter {
         FramedWrite::new(
             AsyncWritePipe::from(self),
-            MessageCodec::new_with_max_length(message::MAX_MESSAGE_LEN),
+            MessageCodec::new_with_max_length(super::MAX_MESSAGE_LEN),
         )
     }
 }

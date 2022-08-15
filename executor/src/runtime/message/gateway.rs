@@ -3,7 +3,7 @@
 
 use std::any::type_name;
 
-use super::message::{FuncInput, FuncOutput, Message};
+use super::{FuncInput, FuncOutput, Message};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 

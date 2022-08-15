@@ -1,7 +1,7 @@
 //TODO
 #![allow(dead_code)]
 
-use super::message::{FuncInput, FuncOutput, Message};
+use super::{FuncInput, FuncOutput, Message};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::any::type_name;
