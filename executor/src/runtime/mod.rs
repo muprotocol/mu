@@ -58,7 +58,7 @@ where
     }
 }
 
-pub struct Instance {
+struct Instance {
     id: Uuid,
     io: FunctionIO,
     join_handle: JoinHandle<()>,

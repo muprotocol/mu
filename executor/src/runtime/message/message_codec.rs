@@ -36,7 +36,7 @@ impl MessageCodec {
     /// of a buffered line. See the documentation for [`new_with_max_length`]
     /// for information on why this could be a potential security risk.
     ///
-    /// [`new_with_max_length`]: crate::runtime::message::MessageCodec::new_with_max_length()
+    /// [`new_with_max_length`]: MessageCodec::new_with_max_length()
     pub fn new() -> Self {
         Self {
             next_index: 0,
@@ -62,7 +62,7 @@ impl MessageCodec {
     /// exploit this unbounded buffer by sending an unbounded amount of input
     /// without any correct `}` characters, causing unbounded memory consumption.
     ///
-    /// [`MessageCodecError`]: crate::runtime::message::MessageCodecError
+    /// [`MessageCodecError`]: MessageCodecError
     pub fn new_with_max_length(max_length: usize) -> Self {
         Self {
             max_length,
