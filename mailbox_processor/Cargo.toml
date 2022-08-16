@@ -1,5 +1,5 @@
 [package]
-name = "tokio_mailbox_processor"
+name = "mailbox_processor"
 version = "0.3.0"
 edition = "2021"
 

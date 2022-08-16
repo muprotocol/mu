@@ -10,15 +10,15 @@ use anyhow::{Context, Ok, Result};
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use log::*;
+use mailbox_processor::{
+    plain::{MessageReceiver, PlainMailboxProcessor},
+    ReplyChannel,
+};
 use serde::{Deserialize, Serialize};
 use stable_hash::{FieldAddress, StableHash};
 use tokio::{
     select,
     time::{Duration, Instant},
-};
-use tokio_mailbox_processor::{
-    plain::{MessageReceiver, PlainMailboxProcessor},
-    ReplyChannel,
 };
 use tokio_serde::{
     formats::{Bincode, SymmetricalBincode},
@@ -186,7 +186,7 @@ pub enum GossipNotification {
     SendMessage(ConnectionID, Bytes),
 }
 
-type NotificationChannel = tokio_mailbox_processor::NotificationChannel<GossipNotification>;
+type NotificationChannel = mailbox_processor::NotificationChannel<GossipNotification>;
 pub type KnownNodes = Vec<(NodeAddress, ConnectionID)>;
 
 struct GossipImpl {

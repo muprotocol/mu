@@ -17,13 +17,13 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures::{future, FutureExt, SinkExt, StreamExt};
 use log::*;
+use mailbox_processor::{
+    plain::{MessageReceiver, PlainMailboxProcessor},
+    NotificationChannel, ReplyChannel,
+};
 use quinn::{
     ClientConfig, Connecting, Endpoint, Incoming, NewConnection, RecvStream, SendStream,
     ServerConfig,
-};
-use tokio_mailbox_processor::{
-    plain::{MessageReceiver, PlainMailboxProcessor},
-    NotificationChannel, ReplyChannel,
 };
 use tokio_util::codec::{length_delimited, FramedRead, FramedWrite, LengthDelimitedCodec};
 
@@ -133,7 +133,7 @@ impl ConnectionManager for ConnectionManagerImpl {
     }
 }
 
-fn flatten_and_map_result<T>(r: Result<Result<T>, tokio_mailbox_processor::Error>) -> Result<T> {
+fn flatten_and_map_result<T>(r: Result<Result<T>, mailbox_processor::Error>) -> Result<T> {
     match r {
         Ok(Ok(x)) => Ok(x),
         Ok(Err(f)) => Err(f),

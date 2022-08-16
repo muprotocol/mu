@@ -6,8 +6,8 @@ use std::{process, time::SystemTime};
 
 use anyhow::{Context, Result};
 use log::*;
+use mailbox_processor::NotificationChannel;
 use tokio::{select, sync::mpsc};
-use tokio_mailbox_processor::NotificationChannel;
 use tokio_util::sync::CancellationToken;
 
 use infrastructure::{config, log_setup};

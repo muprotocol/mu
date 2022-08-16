@@ -541,6 +541,7 @@ dependencies = [
  "env_logger",
  "futures",
  "log",
+ "mailbox_processor",
  "pin-project",
  "quinn",
  "rand",
@@ -552,7 +553,6 @@ dependencies = [
  "tokio",
  "tokio-serde",
  "tokio-util",
- "tokio_mailbox_processor",
  "uuid",
  "wasmer",
  "wasmer-wasi",
@@ -832,6 +832,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b823e83b2affd8f40a9ee8c29dbc56404c1e34cd2710921f2801e2cf29527afa"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "mailbox_processor"
+version = "0.3.0"
+dependencies = [
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -1844,14 +1852,6 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "tokio_mailbox_processor"
-version = "0.3.0"
-dependencies = [
- "thiserror",
- "tokio",
 ]
 
 [[package]]
