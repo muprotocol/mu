@@ -166,7 +166,7 @@ pub struct GossipConfig {
     pub heartbeat_interval: Duration,
     pub assume_dead_after_missed_heartbeats: u32,
     pub max_peers: u32,
-    pub network_initialization_time: Duration,
+    pub peer_connection_delay: Duration,
 }
 
 enum GossipControlMessage {

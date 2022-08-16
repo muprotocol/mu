@@ -86,11 +86,11 @@ pub fn initialize_config() -> Result<(Config, ConnectionManagerConfig, GossipCon
             .get_string("gossip.max_peers")?
             .parse()
             .context("Failed to parse max_peers")?,
-        network_initialization_time: Duration::from_millis(
+        peer_connection_delay: Duration::from_millis(
             config
-                .get_string("gossip.network_initialization_time_millis")?
+                .get_string("gossip.peer_connection_delay_millis")?
                 .parse()
-                .context("Failed to parse network_initialization_time_millis")?,
+                .context("Failed to parse peer_connection_delay_millis")?,
         ),
     };
 
