@@ -1,6 +1,7 @@
 pub mod infrastructure;
 pub mod network;
 pub mod runtime;
+pub mod util;
 
 use std::{process, time::SystemTime};
 
@@ -91,9 +92,9 @@ pub async fn run() -> Result<()> {
     // TODO: create a `Module`/`Subsystem`/`NotificationSource` trait to batch modules with their notification receivers?
     glue_modules(
         cancellation_token,
-        &connection_manager,
+        connection_manager.as_ref(),
         connection_manager_notification_receiver,
-        &*gossip,
+        gossip.as_ref(),
         &mut gossip_notification_receiver,
     )
     .await;
@@ -105,7 +106,12 @@ pub async fn run() -> Result<()> {
         match gossip_notification_receiver.recv().await {
             None => break,
             Some(notification) => {
-                process_gossip_notification(Some(notification), &connection_manager).await
+                process_gossip_notification(
+                    Some(notification),
+                    connection_manager.as_ref(),
+                    gossip.as_ref(),
+                )
+                .await
             }
         }
     }
@@ -151,7 +157,7 @@ async fn glue_modules(
             }
 
             notification = gossip_notification_receiver.recv() => {
-                process_gossip_notification(notification, connection_manager).await;
+                process_gossip_notification(notification, connection_manager, gossip).await;
             }
         }
     }
@@ -177,7 +183,7 @@ async fn process_connection_manager_notification(
                 String::from_utf8_lossy(&bytes)
             );
 
-            gossip.receive_message(id, bytes).await;
+            gossip.receive_message(id, bytes);
         }
         Some(ConnectionManagerNotification::ReqRepReceived(id, req_id, bytes)) => {
             debug!(
@@ -195,6 +201,7 @@ async fn process_connection_manager_notification(
 async fn process_gossip_notification(
     notification: Option<GossipNotification>,
     connection_manager: &dyn ConnectionManager,
+    gossip: &dyn Gossip,
 ) {
     match notification {
         None => (), // TODO
@@ -207,8 +214,17 @@ async fn process_gossip_notification(
                 if cleanly { "cleanly" } else { "uncleanly" }
             );
         }
+        Some(GossipNotification::Connect(req_id, address, port)) => {
+            match connection_manager.connect(address, port).await {
+                Ok(id) => gossip.connection_available(req_id, id),
+                Err(f) => gossip.connection_failed(req_id, f),
+            }
+        }
         Some(GossipNotification::SendMessage(id, bytes)) => {
             connection_manager.send_datagram(id, bytes);
         }
+        Some(GossipNotification::Disconnect(id)) => match connection_manager.disconnect(id).await {
+            _ => (),
+        },
     }
 }

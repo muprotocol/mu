@@ -11,4 +11,5 @@ gossip:
   heartbeat_interval_millis: 1000
   assume_dead_after_missed_heartbeats: 10
   max_peers: 6
-  network_initialization_time_millis: 10000
+  peer_update_interval_millis: 10000
+  liveness_check_interval_millis: 1000

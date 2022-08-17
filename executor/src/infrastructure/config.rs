@@ -14,7 +14,8 @@ pub fn initialize_config() -> Result<(Config, ConnectionManagerConfig, GossipCon
         ("gossip.heartbeat_interval_millis", "1000"),
         ("gossip.assume_dead_after_missed_heartbeats", "10"),
         ("gossip.max_peers", "6"),
-        ("gossip.network_initialization_time_millis", "1000"),
+        ("gossip.peer_update_interval_millis", "10000"),
+        ("gossip.liveness_check_interval_millis", "1000"),
     ];
 
     let default_arrays = vec!["log.filters"];
@@ -86,11 +87,17 @@ pub fn initialize_config() -> Result<(Config, ConnectionManagerConfig, GossipCon
             .get_string("gossip.max_peers")?
             .parse()
             .context("Failed to parse max_peers")?,
-        peer_connection_delay: Duration::from_millis(
+        peer_update_interval: Duration::from_millis(
             config
-                .get_string("gossip.peer_connection_delay_millis")?
+                .get_string("gossip.peer_update_interval_millis")?
                 .parse()
-                .context("Failed to parse peer_connection_delay_millis")?,
+                .context("Failed to parse peer_update_interval_millis")?,
+        ),
+        liveness_check_interval: Duration::from_millis(
+            config
+                .get_string("gossip.liveness_check_interval_millis")?
+                .parse()
+                .context("Failed to parse liveness_check_interval_millis")?,
         ),
     };
 

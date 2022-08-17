@@ -32,6 +32,7 @@ rustls = { version = "0.20", features = ["dangerous_configuration"] }
 rcgen = "0.9"
 ctrlc = "3.2"
 stable-hash = "0.4"
+num = "0.4"
 
 [lib]
 name = "mu"

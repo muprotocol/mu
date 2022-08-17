@@ -52,7 +52,7 @@ pub trait ConnectionManager: Sync + Send {
     async fn send_req_rep(&self, id: ConnectionID, data: Bytes) -> Result<Bytes>;
     async fn send_reply(&self, id: ConnectionID, req_id: RequestID, data: Bytes) -> Result<()>;
     async fn disconnect(&self, id: ConnectionID) -> Result<()>;
-    async fn stop(self) -> Result<()>;
+    async fn stop(&self) -> Result<()>;
 }
 
 #[derive(Debug)]
@@ -77,7 +77,7 @@ pub enum ConnectionManagerNotification {
 type NotificationSender = NotificationChannel<ConnectionManagerNotification>;
 
 #[derive(Clone)]
-pub struct ConnectionManagerImpl {
+struct ConnectionManagerImpl {
     mailbox: PlainMailboxProcessor<ConnectionManagerMessage>,
 }
 
@@ -124,7 +124,7 @@ impl ConnectionManager for ConnectionManagerImpl {
             .map_err(Into::into)
     }
 
-    async fn stop(self) -> Result<()> {
+    async fn stop(&self) -> Result<()> {
         debug!("Sending stop");
         self.mailbox
             .post_and_reply(|r| ConnectionManagerMessage::Stop(r))
@@ -144,7 +144,7 @@ fn flatten_and_map_result<T>(r: Result<Result<T>, mailbox_processor::Error>) -> 
 pub async fn start(
     config: ConnectionManagerConfig,
     notification_sender: NotificationSender,
-) -> Result<ConnectionManagerImpl> {
+) -> Result<Box<dyn ConnectionManager>> {
     info!(
         "Starting connection manager on {}:{}",
         config.listen_address, config.listen_port
@@ -172,7 +172,7 @@ pub async fn start(
         10000,
     );
 
-    Ok(ConnectionManagerImpl { mailbox })
+    Ok(Box::new(ConnectionManagerImpl { mailbox }))
 }
 
 type RequestID = u32;
