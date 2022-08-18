@@ -6,19 +6,33 @@ pub mod error;
 mod function;
 mod message;
 mod providers;
+pub mod types;
 
-use self::function::{FunctionDefinition, FunctionID, FunctionIO};
+use self::{
+    function::{FunctionDefinition, FunctionID, FunctionIO},
+    message::gateway::{GatewayRequest, GatewayResponse},
+    types::ID,
+};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use tokio::task::JoinHandle;
-use uuid::Uuid;
+use tokio_mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
 
-/// This is FunctionProvider that should cache functions if needed.
+/// This is the FunctionProvider that should cache functions if needed.
 #[async_trait]
 pub trait FunctionProvider {
     async fn get(&mut self, id: FunctionID) -> anyhow::Result<&FunctionDefinition>;
 }
+
+pub enum Request {
+    Gateway {
+        message: GatewayRequest,
+        reply: ReplyChannel<GatewayResponse>,
+    },
+}
+
+pub type RequestID = ID<Request>;
 
 //TODO:
 // * use metrics and MemoryUsage so we can report usage of memory and CPU time.
@@ -26,6 +40,7 @@ pub trait FunctionProvider {
 // * hold more than one instance of functions and load balance on them
 pub struct Runtime<P: FunctionProvider> {
     instances: HashMap<FunctionID, Instance>,
+    pending_requests: HashMap<RequestID, ReplyChannel<GatewayResponse>>,
     function_provider: P,
 }
 
@@ -37,6 +52,7 @@ where
         Self {
             instances: HashMap::new(),
             function_provider: provider,
+            pending_requests: HashMap::new(),
         }
     }
 
@@ -53,13 +69,23 @@ where
         Ok(())
     }
 
-    pub async fn start(&mut self) {
-        loop {}
+    pub async fn start(&mut self) -> CallbackMailboxProcessor<Request> {
+        async fn step(msg: Request, _state: ()) -> () {
+            match msg {
+                Request::Gateway { message, reply } => {
+                    todo!()
+                }
+            }
+        }
+
+        let mailbox = CallbackMailboxProcessor::start(step, (), 1000);
+
+        mailbox
     }
 }
 
 struct Instance {
-    id: Uuid,
+    id: FunctionID,
     io: FunctionIO,
     join_handle: JoinHandle<()>,
 }

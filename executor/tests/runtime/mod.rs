@@ -4,6 +4,7 @@ use std::{collections::HashMap, path::Path};
 use uuid::Uuid;
 
 mod common;
+mod providers;
 
 #[tokio::test]
 async fn test_simple_func() {

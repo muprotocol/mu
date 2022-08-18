@@ -1,7 +1,10 @@
 //TODO
 #![allow(dead_code)]
 
-use super::message::{pipe_ext::PipeExt, Message};
+use super::{
+    message::{pipe_ext::PipeExt, Message},
+    types::ID,
+};
 use anyhow::Result;
 use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
@@ -11,11 +14,10 @@ use tokio::{
     sync::{mpsc, oneshot},
     task::JoinHandle,
 };
-use uuid::Uuid;
 use wasmer::{Instance, Module, Store};
 use wasmer_wasi::{Pipe, WasiState};
 
-pub type FunctionID = Uuid;
+pub type FunctionID = ID<Function>;
 pub type FunctionSource = Vec<u8>;
 
 #[derive(Deserialize, Clone)]
