@@ -1,12 +1,6 @@
 mod node_collection;
 
-use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
-    fmt::Display,
-    net::IpAddr,
-    pin::Pin,
-    time::SystemTime,
-};
+use std::{collections::HashMap, fmt::Display, net::IpAddr, pin::Pin, time::SystemTime};
 
 use anyhow::{bail, Context, Error, Result};
 use async_trait::async_trait;
@@ -16,7 +10,7 @@ use mailbox_processor::{
     plain::{MessageReceiver, PlainMailboxProcessor},
     ReplyChannel,
 };
-use rand::prelude::Distribution;
+use rand::{prelude::Distribution, rngs::ThreadRng};
 use serde::{Deserialize, Serialize};
 use stable_hash::{FieldAddress, StableHash};
 use tokio::{
@@ -30,7 +24,8 @@ use tokio_serde::{
 
 use crate::{network::connection_manager::ConnectionID, util::id::IdExt};
 
-use self::node_collection::{KnownNodes, NodeCollection};
+pub use self::node_collection::KnownNodes;
+use self::node_collection::*;
 
 type NodeHash = u128;
 
@@ -84,12 +79,15 @@ impl NodeAddress {
         stable_hash::fast_stable_hash(self)
     }
 }
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Heartbeat {
     node_address: NodeAddress,
     seq: u32,
     // The number of times this heartbeat was rebroadcast before being received
     distance: u32,
+    // TODO: add number of known nodes to heartbeats, so we can have a general idea of
+    // how "connected" we are.
 }
 
 // TODO: replace with version-tolerant solution
@@ -221,9 +219,13 @@ struct GossipState {
     node_collection: NodeCollection,
     my_heartbeat: u32,
     codec: Codec,
+
+    // maintenance-related fields
     next_heartbeat: Instant,
     next_peer_update: Instant,
     next_liveness_check: Instant,
+
+    // pending connections
     pending_peer_connections: HashMap<ConnectionRequestID, NodeHash>,
     next_pending_peer_id: ConnectionRequestID,
 }
@@ -270,8 +272,11 @@ async fn body(
                         break 'main_loop;
                     }
 
-                    Some(GossipControlMessage::ConnectionAvailable(req_id, connection_id)) =>
-                        process_new_connection(&mut state, req_id, connection_id),
+                    Some(GossipControlMessage::ConnectionAvailable(req_id, connection_id)) => {
+                        if let Err(f) = process_new_connection(&mut state, req_id, connection_id) {
+                            warn!("Failed to process new connection: {f}");
+                        }
+                    }
 
                     Some(GossipControlMessage::ConnectionFailed(req_id, error)) =>
                         process_failed_connection(&mut state, req_id, error),
@@ -287,8 +292,8 @@ async fn body(
 
                     Some(GossipControlMessage::GetPeers(r)) => r.reply(
                         state.node_collection
-                            .get_nodes()
-                            .map(|(k, v)| (*k, v.address.clone()))
+                            .get_nodes_and_hashes()
+                            .map(|(hash, node)| (*hash, node.info().address.clone()))
                             .collect()
                     ),
 
@@ -338,13 +343,13 @@ fn send_protocol_message(
         .serialize(&message)
         .context("Failed to serialize protocol message")?;
 
-    for (hash, _, peer) in state.node_collection.get_peers_raw() {
+    for (hash, peer) in state.node_collection.get_peers_and_hashes() {
         if !excluded_peers.contains(&hash) {
             debug!("Sending protocol message {message:?} to {hash}");
             state
                 .notification_channel
                 .send(GossipNotification::SendMessage(
-                    peer.connection_id,
+                    peer.connection_id(),
                     message_bytes.clone(),
                 ));
         }
@@ -367,40 +372,64 @@ fn receive_message(
     debug!("Received protocol message: {message:?}");
     match message {
         GossipProtocolMessage::Heartbeat(heartbeat) => {
-            let hash = heartbeat.node_address.get_hash();
             let mut seen = false;
-            match state.nodes.entry(hash) {
-                Entry::Occupied(mut entry) => {
+            let hash = heartbeat.node_address.get_hash();
+
+            match state.node_collection.node_entry(&heartbeat.node_address) {
+                NodeEntry::Occupied(occ) => {
                     debug!(
                         "Heartbeat #{} from known node {}",
                         heartbeat.seq, heartbeat.node_address
                     );
 
-                    let mut node = entry.get_mut();
+                    let mut same_generation = match occ {
+                        Occupied::OccupiedBySameGeneration(same) => same,
+                        Occupied::OccupiedByOlderGeneration(old) => {
+                            debug!(
+                                "Discovered newer generation {} of peer {}",
+                                heartbeat.node_address.generation,
+                                old.get().info().address
+                            );
+                            old.update_generation(heartbeat.node_address.generation)
+                        }
+                        Occupied::OccupiedByNewerGeneration() => {
+                            debug!(
+                                "Already know newer version of node {}, ignoring heartbeat",
+                                heartbeat.node_address
+                            );
+                            return Ok(());
+                        }
+                    };
 
-                    if node.last_heartbeat < heartbeat.seq {
-                        node.last_heartbeat = heartbeat.seq;
-                        node.last_heartbeat_timestamp = Instant::now();
+                    let node = same_generation.get_mut();
+                    let info = node.info_mut();
+
+                    if info.last_heartbeat < heartbeat.seq {
+                        info.last_heartbeat = heartbeat.seq;
+                        info.last_heartbeat_timestamp = Instant::now();
                     } else {
                         seen = true;
                     }
 
-                    if node.distance > heartbeat.distance // Shorter path discovered...
+                    if info.distance > heartbeat.distance // Shorter path discovered...
                         // ... or a node along shortest path died
-                        || heartbeat.seq - node.distance_seq > state.config.assume_dead_after_missed_heartbeats
+                        || heartbeat.seq - info.distance_seq > state.config.assume_dead_after_missed_heartbeats
                     {
-                        node.distance = heartbeat.distance;
-                        node.distance_seq = heartbeat.seq;
-                    } else if node.distance == heartbeat.distance {
-                        node.distance_seq = heartbeat.seq;
+                        info.distance = heartbeat.distance;
+                        info.distance_seq = heartbeat.seq;
+                    } else if info.distance == heartbeat.distance {
+                        info.distance_seq = heartbeat.seq;
                     }
 
-                    if node.distance == 1 && !state.peers.contains(&hash) {
-                        node.peer_connection = Some(PeerConnection {
-                            connection_id,
-                            is_temporary: false,
-                        });
-                        state.peers.insert(hash);
+                    if info.distance == 1 {
+                        if let HashEntry::OccupiedBySameGeneration(mut occ) =
+                            state.node_collection.hash_entry(&hash)
+                        {
+                            if let Node::RemoteNode(_) = occ.get() {
+                                occ.promote_to_peer(connection_id)
+                                    .context("Failed to promote node to peer")?;
+                            }
+                        }
                     }
 
                     // TODO: this will cause missed messages when a peer disconnects and
@@ -408,31 +437,31 @@ fn receive_message(
                     // a new connection can't immediately be identified and must present
                     // its node information. This will be fixed when reconnections are
                     // implemented in the connection manager.
-                    if let Some(peer) = node.peer_connection.as_mut() {
-                        if peer.connection_id != connection_id {
+                    if let Some(Node::Peer(peer)) = state.node_collection.get_node_mut(&hash) {
+                        if peer.connection_id() != connection_id {
                             debug!(
                                 "Peer {} was reconnected and now has connection ID {}",
-                                hash, peer.connection_id
+                                hash, connection_id
                             );
-                            peer.connection_id = connection_id;
+                            peer.set_connection_id(connection_id);
                         }
                     }
                 }
 
-                Entry::Vacant(e) => {
-                    // TODO: check for existing older generation of same node
-
+                NodeEntry::Vacant(vac) => {
                     debug!(
                         "Heartbeat #{} from new node {}",
                         heartbeat.seq, heartbeat.node_address
                     );
 
-                    let node = Node::from_heartbeat(&heartbeat);
+                    let info = NodeInfo::from_heartbeat(&heartbeat);
+                    let address = info.address.clone();
 
-                    let node = e.insert(node);
+                    vac.insert_remote(info);
+
                     state
                         .notification_channel
-                        .send(GossipNotification::NodeDiscovered(node.address.clone()));
+                        .send(GossipNotification::NodeDiscovered(address));
                 }
             }
 
@@ -454,13 +483,15 @@ fn receive_message(
 
         GossipProtocolMessage::Goodbye(node_address) => {
             let hash = node_address.get_hash();
-            match state.nodes.remove(&hash) {
+            match state.node_collection.remove(&hash) {
                 Some(node) => {
-                    state.peers.remove(&hash);
-                    debug!("Goodbye from node {}", node.address);
+                    let info = node.into_info();
+
+                    debug!("Goodbye from node {}", info.address);
+
                     state
                         .notification_channel
-                        .send(GossipNotification::NodeDied(node.address, true));
+                        .send(GossipNotification::NodeDied(info.address, true));
 
                     if let Err(f) = send_protocol_message(
                         GossipProtocolMessage::Goodbye(node_address),
@@ -523,15 +554,16 @@ fn perform_liveness_check(state: &mut GossipState, now: Instant) -> Result<()> {
 
     let mut dead = vec![];
 
-    for (hash, node) in &state.nodes {
-        let since_last_heartbeat = now.saturating_duration_since(node.last_heartbeat_timestamp);
+    for (hash, node) in state.node_collection.get_nodes_and_hashes() {
+        let info = node.info();
+        let since_last_heartbeat = now.saturating_duration_since(info.last_heartbeat_timestamp);
         if since_last_heartbeat > assume_dead_duration
             // This scans the entire map, but there will always only be a few entries.
             // If we're attempting to connect to a node, we should wait until we're sure
             // the connection couldn't be established
             && !state.pending_peer_connections.values().any(|x| *x == *hash)
         {
-            debug!("No heartbeat from node {} for {since_last_heartbeat:?}, assuming dead and removing from known nodes", node.address);
+            debug!("No heartbeat from node {} for {since_last_heartbeat:?}, assuming dead and removing from known nodes", info.address);
             dead.push(*hash);
         }
     }
@@ -546,7 +578,10 @@ fn perform_liveness_check(state: &mut GossipState, now: Instant) -> Result<()> {
 
         state
             .notification_channel
-            .send(GossipNotification::NodeDied(node.address.clone(), false));
+            .send(GossipNotification::NodeDied(
+                node.info().address.clone(),
+                false,
+            ));
     }
 
     Ok(())
@@ -557,95 +592,111 @@ fn perform_peer_update(state: &mut GossipState) -> Result<()> {
 
     let mut rng = rand::thread_rng();
 
-    let non_temp_peer_count = get_peer_nodes(state)
-        .filter(|(_, _, p)| !p.is_temporary)
+    let permanent_peer_count = state
+        .node_collection
+        .get_permanent_peers_and_hashes()
         .count();
 
-    if non_temp_peer_count < state.config.max_peers {
+    if permanent_peer_count < state.config.max_peers {
         debug!("Too few peers, promoting a node");
-
-        fn is_candidate(n: &Node) -> bool {
-            match n.peer_connection {
-                Some(PeerConnection {
-                    is_temporary: true, ..
-                })
-                | None => true,
-                _ => false,
-            }
-        }
-
-        let dist = match rand::distributions::weighted::WeightedIndex::new(
-            state
-                .nodes
-                .iter()
-                .filter(|n| is_candidate(n.1))
-                .map(|n| n.1.distance + 1),
-        ) {
-            Ok(d) => d,
-            Err(_) => {
-                // This happens when we give WeightedIndex zero weights to work with
-                debug!("No nodes to promote");
-                return Ok(());
-            }
-        };
-
-        let index = dist.sample(&mut rng);
-        let (hash, node) = match state
-            .nodes
-            .iter_mut()
-            .filter(|n| is_candidate(n.1))
-            .skip(index)
-            .next()
-        {
-            None => {
-                bail!(
-                    "Failed to get node at random index {index}, don't have enough non-peer nodes"
-                )
-            }
-            Some(n) => n,
-        };
-
-        match node.peer_connection.as_mut() {
-            Some(peer_connection) => {
-                // Already have an active connection to this node, just mark it as not temporary
-                peer_connection.is_temporary = false;
-            }
-            None => {
-                let req_id = state.next_pending_peer_id.get_and_increment();
-                state.pending_peer_connections.insert(req_id, *hash);
-                state.notification_channel.send(GossipNotification::Connect(
-                    req_id,
-                    node.address.address,
-                    node.address.port,
-                ));
-            }
-        }
+        promote_random_to_permanent_peer(state, &mut rng)
+            .context("Failed to promote a node to peer")?;
     }
 
-    let peer_count = state.peers.iter().count();
+    let peer_count = state.node_collection.get_peers().count();
 
+    // Other nodes may choose this node as a peer more times than we want,
+    // in which case we attempt to remove temporary peer connections. If
+    // there are no temporary connections, we just ignore the extra peers.
     if peer_count > state.config.max_peers {
-        let temp_peers = get_peer_nodes(state)
-            .filter(|(_, _, p)| p.is_temporary)
+        let temp_peers = state
+            .node_collection
+            .get_temporary_peers_and_hashes()
             .collect::<Vec<_>>();
         if temp_peers.len() > 0 {
             let index = rand::distributions::Uniform::new(0, temp_peers.len()).sample(&mut rng);
-            let (hash, _, _) = temp_peers[index];
-            disconnect(state, hash);
+            let (hash, _) = temp_peers[index];
+            disconnect(state, *hash);
         }
     }
 
     Ok(())
 }
 
-fn disconnect(state: &mut GossipState, hash: u128) -> Option<Node> {
-    if let Some(node) = state.nodes.remove(&hash) {
-        state.peers.remove(&hash);
+fn promote_random_to_permanent_peer(state: &mut GossipState, rng: &mut ThreadRng) -> Result<()> {
+    fn is_promotion_candidate(n: &Node) -> bool {
+        match n {
+            Node::RemoteNode(_) => true,
+            Node::Peer(Peer::Temporary(_)) => true,
+            Node::Peer(Peer::Permanent(_)) => false,
+        }
+    }
 
-        if let Some(peer) = &node.peer_connection {
+    let dist = match rand::distributions::weighted::WeightedIndex::new(
+        state
+            .node_collection
+            .get_nodes()
+            .filter(|n| is_promotion_candidate(n))
+            .map(|n| n.info().distance + 1),
+    ) {
+        Ok(d) => d,
+        Err(_) => {
+            // This happens when we give WeightedIndex zero weights to work with
+            debug!("No nodes to promote");
+            return Ok(());
+        }
+    };
+
+    let index = dist.sample(rng);
+
+    let (hash, _) = match state
+        .node_collection
+        .get_nodes_and_hashes()
+        .filter(|n| is_promotion_candidate(n.1))
+        .skip(index)
+        .next()
+    {
+        None => {
+            bail!("Failed to get node at random index {index}, don't have enough non-peer nodes")
+        }
+        Some(n) => n,
+    };
+    let hash = *hash;
+
+    match state.node_collection.hash_entry(&hash) {
+        HashEntry::OccupiedBySameGeneration(mut occ) => match occ.get() {
+            node @ Node::RemoteNode(_) => {
+                // We must first establish a connection to the remote node before we can make it a peer
+                let req_id = state.next_pending_peer_id.get_and_increment();
+                state.pending_peer_connections.insert(req_id, hash);
+
+                let address = node.info().address.clone();
+                state.notification_channel.send(GossipNotification::Connect(
+                    req_id,
+                    address.address,
+                    address.port,
+                ));
+            }
+            Node::Peer(Peer::Temporary(_)) => {
+                occ.promote_to_permanent()
+                    .context("Failed to promote known temporary peer to permanent")?;
+            }
+            Node::Peer(Peer::Permanent(_)) => {
+                panic!("Impossible, already filtered out permanent peers above")
+            }
+        },
+        HashEntry::Vacant(_) => panic!("Impossible, node was already seen above"),
+    }
+
+    Ok(())
+}
+
+fn disconnect(state: &mut GossipState, hash: u128) -> Option<Node> {
+    if let Some(node) = state.node_collection.remove(&hash) {
+        if let Node::Peer(peer) = &node {
             state
                 .notification_channel
-                .send(GossipNotification::Disconnect(peer.connection_id));
+                .send(GossipNotification::Disconnect(peer.connection_id()));
         }
 
         Some(node)
@@ -658,24 +709,34 @@ fn process_new_connection(
     state: &mut GossipState,
     req_id: ConnectionRequestID,
     connection_id: ConnectionID,
-) {
+) -> Result<()> {
     if let Some(hash) = state.pending_peer_connections.remove(&req_id) {
-        if let Some(node) = state.nodes.get_mut(&hash) {
-            if let Some(peer) = &node.peer_connection {
-                warn!("Received connection ID {connection_id} for node {hash} with existing peer connection {}", peer.connection_id);
+        match state.node_collection.hash_entry(&hash) {
+            HashEntry::OccupiedBySameGeneration(mut occ) => match occ.get() {
+                Node::Peer(peer) => {
+                    warn!("Received connection ID {connection_id} for node {hash} with existing peer connection {}", peer.connection_id());
+                    state
+                        .notification_channel
+                        .send(GossipNotification::Disconnect(connection_id));
+                }
+                Node::RemoteNode(_) => {
+                    occ.promote_to_peer(connection_id)
+                        .context("Failed to promote known remote node to peer")?;
+                }
+            },
+
+            HashEntry::Vacant(_) => {
+                warn!("Received connection ID {connection_id} for unknown node {hash}");
                 state
                     .notification_channel
                     .send(GossipNotification::Disconnect(connection_id));
-                return;
             }
-
-            node.peer_connection = Some(PeerConnection {
-                connection_id,
-                is_temporary: false,
-            });
-            state.peers.insert(hash);
         }
+    } else {
+        bail!("New connection {connection_id} for unknown connection request {req_id}");
     }
+
+    Ok(())
 }
 
 fn process_failed_connection(state: &mut GossipState, req_id: ConnectionRequestID, error: Error) {

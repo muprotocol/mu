@@ -141,7 +141,7 @@ fn flatten_and_map_result<T>(r: Result<Result<T>, mailbox_processor::Error>) -> 
     }
 }
 
-pub async fn start(
+pub fn start(
     config: ConnectionManagerConfig,
     notification_sender: NotificationSender,
 ) -> Result<Box<dyn ConnectionManager>> {

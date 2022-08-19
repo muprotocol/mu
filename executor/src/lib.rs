@@ -41,7 +41,6 @@ pub async fn run() -> Result<()> {
         connection_manager_config,
         connection_manager_notification_channel,
     )
-    .await
     .context("Failed to start connection manager")?;
 
     if cancellation_token.is_cancelled() {
@@ -86,7 +85,6 @@ pub async fn run() -> Result<()> {
         known_nodes,
         gossip_notification_channel,
     )
-    .await
     .context("Failed to start gossip")?;
 
     // TODO: create a `Module`/`Subsystem`/`NotificationSource` trait to batch modules with their notification receivers?

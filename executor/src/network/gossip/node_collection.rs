@@ -1,6 +1,19 @@
-use std::collections::hash_map;
+use std::{
+    collections::{
+        hash_map::{self, Entry},
+        HashMap, HashSet,
+    },
+    net::IpAddr,
+};
 
-use crate::network::gossip::*;
+use anyhow::{bail, Context, Result};
+use tokio::time::Instant;
+
+use crate::network::connection_manager::ConnectionID;
+
+use super::{Heartbeat, NodeAddress, NodeHash};
+
+// use crate::network::gossip::*;
 
 pub struct NodeCollection {
     nodes: HashMap<NodeHash, Node>,
@@ -9,7 +22,7 @@ pub struct NodeCollection {
 }
 
 impl NodeCollection {
-    pub fn new(known_nodes: KnownNodes) -> Self {
+    pub(super) fn new(known_nodes: KnownNodes) -> Self {
         let now = Instant::now();
         Self {
             peers: known_nodes
@@ -23,123 +36,143 @@ impl NodeCollection {
             nodes: known_nodes
                 .into_iter()
                 .map(|(address, connection_id)| {
+                    let hash = address.get_hash();
                     (
-                        address.get_hash(),
-                        Node::new(
-                            address,
-                            1,
-                            Some(PeerConnection::new(connection_id, true)),
-                            now,
-                        ),
+                        hash,
+                        Node::Peer(Peer::Temporary(TemporaryPeer(
+                            hash,
+                            NodeInfo::new(address, 1, now),
+                            connection_id,
+                        ))),
                     )
                 })
                 .collect(),
         }
     }
 
-    pub fn get_nodes<'a>(&'a self) -> impl Iterator<Item = NodeStatus<'a>> {
-        self.nodes
-            .iter()
-            .map(|(hash, node)| Self::get_node_status(hash, node))
+    pub(super) fn get_nodes(&self) -> impl Iterator<Item = &Node> {
+        self.nodes.values()
     }
 
-    pub fn get_node<'a>(&'a self, hash: NodeHash) -> Option<NodeStatus<'a>> {
-        self.nodes
-            .get(&hash)
-            .map(|node| Self::get_node_status(&hash, node))
+    // TODO: unsafe, might update node hash
+    pub(super) fn get_node_mut(&mut self, hash: &NodeHash) -> Option<&mut Node> {
+        self.nodes.get_mut(hash)
     }
 
-    fn get_node_status<'a>(hash: &'a NodeHash, node: &'a Node) -> NodeStatus {
-        match &node.peer_connection {
-            None => NodeStatus::RemoteNode(RemoteNode(*hash, node)),
-            Some(peer_connection) if peer_connection.is_temporary => {
-                NodeStatus::Peer(PeerStatus::TemporaryPeer(TemporaryPeer(
-                    *hash,
-                    node,
-                    peer_connection.connection_id,
-                )))
-            }
-            Some(peer_connection) => NodeStatus::Peer(PeerStatus::PermanentPeer(PermanentPeer(
-                *hash,
-                node,
-                peer_connection.connection_id,
-            ))),
-        }
-    }
-
-    pub fn get_nodes_and_hashes(&self) -> impl Iterator<Item = (&NodeHash, &Node)> {
+    pub(super) fn get_nodes_and_hashes(&self) -> impl Iterator<Item = (&NodeHash, &Node)> {
         self.nodes.iter()
     }
 
-    pub fn get_peers_raw(&self) -> impl Iterator<Item = (&NodeHash, &Node, &PeerConnection)> {
+    pub(super) fn get_peers_and_hashes(&self) -> impl Iterator<Item = (&u128, &Peer)> {
         self.peers.iter().map(|hash| {
             let node = self
                 .nodes
                 .get(hash)
                 .with_context(|| format!("No node corresponding to peer {hash}"))
                 .unwrap();
-            let connection = node
-                .peer_connection
-                .as_ref()
-                .with_context(|| format!("Node {hash} was in peers has no peer connection"))
-                .unwrap();
-            (hash, node, connection)
-        })
-    }
-
-    pub fn get_peers<'a>(&'a self) -> impl Iterator<Item = PeerStatus<'a>> {
-        self.get_peers_raw().map(|(hash, node, peer)| {
-            if peer.is_temporary {
-                PeerStatus::TemporaryPeer(TemporaryPeer(*hash, node, peer.connection_id))
-            } else {
-                PeerStatus::PermanentPeer(PermanentPeer(*hash, node, peer.connection_id))
+            match node {
+                Node::Peer(peer) => (hash, peer),
+                Node::RemoteNode(_) => panic!("Node {hash} was in peers is not a peer"),
             }
         })
     }
 
-    pub fn get_node_entry<'a>(&'a self, node_address: NodeAddress) -> Entry<'a> {
+    pub(super) fn get_peers(&self) -> impl Iterator<Item = &Peer> {
+        self.get_peers_and_hashes().map(|(_, peer)| peer)
+    }
+
+    pub(super) fn get_temporary_peers_and_hashes(
+        &self,
+    ) -> impl Iterator<Item = (&NodeHash, &TemporaryPeer)> {
+        self.get_peers_and_hashes().filter_map(|(h, p)| match p {
+            Peer::Temporary(p) => Some((h, p)),
+            Peer::Permanent(_) => None,
+        })
+    }
+
+    pub(super) fn get_permanent_peers_and_hashes(
+        &self,
+    ) -> impl Iterator<Item = (&NodeHash, &PermanentPeer)> {
+        self.get_peers_and_hashes().filter_map(|(h, p)| match p {
+            Peer::Temporary(_) => None,
+            Peer::Permanent(p) => Some((h, p)),
+        })
+    }
+
+    pub(super) fn hash_entry<'a>(&'a mut self, hash: &NodeHash) -> HashEntry<'a> {
+        match self.nodes.entry(*hash) {
+            Entry::Occupied(occ) => HashEntry::OccupiedBySameGeneration(OccupiedBySameGeneration {
+                inner: occ,
+                peers: &mut self.peers,
+            }),
+            Entry::Vacant(vac) => HashEntry::Vacant(Vacant {
+                peers: &mut self.peers,
+                nodes_by_addr_and_port: &mut self.nodes_by_addr_and_port,
+                inner: vac,
+            }),
+        }
+    }
+
+    pub(super) fn node_entry<'a>(&'a mut self, node_address: &NodeAddress) -> NodeEntry<'a> {
         let input_hash = node_address.get_hash();
         match self
             .nodes_by_addr_and_port
             .get(&(node_address.address, node_address.port))
         {
             None => match self.nodes.entry(input_hash) {
-                hash_map::Entry::Vacant(v) => Entry::Vacant(Vacant {
-                    col: self,
-                    inner: v,
+                hash_map::Entry::Vacant(vac) => NodeEntry::Vacant(Vacant {
+                    peers: &mut self.peers,
+                    nodes_by_addr_and_port: &mut self.nodes_by_addr_and_port,
+                    inner: vac,
                 }),
                 hash_map::Entry::Occupied(_) => {
                     panic!("nodes is out of sync with nodes_by_addr_and_port")
                 }
             },
             Some(old_hash) if *old_hash == input_hash => match self.nodes.entry(input_hash) {
-                hash_map::Entry::Occupied(occ) => Entry::Occupied(Occupied {
-                    inner: occ,
-                    col: self,
-                }),
+                hash_map::Entry::Occupied(occ) => NodeEntry::Occupied(
+                    Occupied::OccupiedBySameGeneration(OccupiedBySameGeneration {
+                        peers: &mut self.peers,
+                        inner: occ,
+                    }),
+                ),
                 hash_map::Entry::Vacant(_) => {
                     panic!("nodes is out of sync with nodes_by_addr_and_port")
                 }
             },
-            Some(old_hash) => match self.nodes.entry(*old_hash) {
-                hash_map::Entry::Occupied(occ) => {
-                    let generation = occ.get().address.generation;
+            Some(old_hash) => match self.nodes.get(old_hash) {
+                Some(node) => {
+                    let generation = node.info().address.generation;
                     if generation < node_address.generation {
-                        Entry::OccupiedByOlderGeneration(OccupiedByOlderGeneration {
-                            inner: occ,
-                            col: self,
-                        })
+                        NodeEntry::Occupied(Occupied::OccupiedByOlderGeneration(
+                            OccupiedByOlderGeneration {
+                                old_hash: *old_hash,
+                                nodes: &mut self.nodes,
+                                nodes_by_addr_and_port: &mut self.nodes_by_addr_and_port,
+                                peers: &mut self.peers,
+                            },
+                        ))
                     } else {
-                        Entry::OccupiedByNewerGeneration(OccupiedByNewerGeneration {
-                            inner: occ,
-                            col: self,
-                        })
+                        NodeEntry::Occupied(Occupied::OccupiedByNewerGeneration())
                     }
                 }
-                hash_map::Entry::Vacant(_) => {
+                None => {
                     panic!("nodes is out of sync with nodes_by_addr_and_port")
                 }
             },
+        }
+    }
+
+    pub(super) fn remove(&mut self, hash: &NodeHash) -> Option<Node> {
+        match self.nodes.remove(hash) {
+            Some(node) => {
+                self.peers.remove(hash);
+                let address = &node.info().address;
+                self.nodes_by_addr_and_port
+                    .remove(&(address.address, address.port));
+                Some(node)
+            }
+            None => None,
         }
     }
 }
@@ -147,103 +180,282 @@ impl NodeCollection {
 pub type KnownNodes = Vec<(NodeAddress, ConnectionID)>;
 
 #[derive(Clone, Debug)]
-struct PeerConnection {
-    pub(super) connection_id: ConnectionID,
-    // Nodes connect to seeds at startup, and the disconnect when they have enough
-    // info about the network. If a peer is marked `is_temporary`, it won't count
-    // towards the total number of connected peers and is a candidate for being
-    // replaced with a new peer.
-    pub(super) is_temporary: bool,
-}
-
-impl PeerConnection {
-    fn new(connection_id: ConnectionID, is_temporary: bool) -> Self {
-        Self {
-            connection_id,
-            is_temporary,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Node {
+pub struct NodeInfo {
     pub(super) address: NodeAddress,
     pub(super) last_heartbeat: u32,
     pub(super) last_heartbeat_timestamp: Instant,
     pub(super) distance: u32,
     // The last seq number at which the distance was observed
     pub(super) distance_seq: u32,
-    pub(super) peer_connection: Option<PeerConnection>,
 }
 
-impl Node {
-    fn new(
-        address: NodeAddress,
-        distance: u32,
-        peer_connection: Option<PeerConnection>,
-        last_heartbeat: Instant,
-    ) -> Self {
+impl NodeInfo {
+    fn new(address: NodeAddress, distance: u32, last_heartbeat: Instant) -> Self {
         Self {
             address,
             last_heartbeat: 0,
             last_heartbeat_timestamp: last_heartbeat,
             distance,
             distance_seq: 0,
-            peer_connection,
         }
     }
 
-    fn from_heartbeat(heartbeat: &Heartbeat) -> Self {
+    pub(super) fn from_heartbeat(heartbeat: &Heartbeat) -> Self {
         Self {
             address: heartbeat.node_address.clone(),
             last_heartbeat: heartbeat.seq,
             last_heartbeat_timestamp: Instant::now(),
             distance: heartbeat.distance,
             distance_seq: heartbeat.seq,
-            peer_connection: None,
+        }
+    }
+
+    pub fn get_hash(&self) -> NodeHash {
+        self.address.get_hash()
+    }
+}
+
+// TODO: rename to node
+pub(super) enum Node {
+    RemoteNode(RemoteNode),
+    Peer(Peer),
+}
+
+impl Node {
+    pub fn info(&self) -> &NodeInfo {
+        match self {
+            Node::RemoteNode(n) => &n.1,
+            Node::Peer(p) => p.info(),
+        }
+    }
+
+    // TODO: unsafe: if address is changed, node hash will also change
+    pub fn info_mut(&mut self) -> &mut NodeInfo {
+        match self {
+            Node::RemoteNode(n) => &mut n.1,
+            Node::Peer(p) => p.info_mut(),
+        }
+    }
+
+    pub fn into_info(self) -> NodeInfo {
+        match self {
+            Node::RemoteNode(n) => n.1,
+            Node::Peer(p) => p.into_info(),
         }
     }
 }
 
-pub(super) enum NodeStatus<'a> {
-    RemoteNode(RemoteNode<'a>),
-    Peer(PeerStatus<'a>),
+pub(super) enum Peer {
+    // Nodes connect to seeds at startup, and the disconnect when they have enough
+    // info about the network. If a peer is marked `is_temporary`, it won't count
+    // towards the total number of connected peers and is a candidate for being
+    // replaced with a new peer.
+    Temporary(TemporaryPeer),
+    Permanent(PermanentPeer),
 }
 
-pub(super) enum PeerStatus<'a> {
-    TemporaryPeer(TemporaryPeer<'a>),
-    PermanentPeer(PermanentPeer<'a>),
+impl Peer {
+    pub fn hash(&self) -> &NodeHash {
+        match self {
+            Peer::Temporary(t) => &t.0,
+            Peer::Permanent(p) => &p.0,
+        }
+    }
+
+    pub fn info(&self) -> &NodeInfo {
+        match self {
+            Peer::Temporary(t) => &t.1,
+            Peer::Permanent(p) => &p.1,
+        }
+    }
+
+    pub fn info_mut(&mut self) -> &mut NodeInfo {
+        match self {
+            Peer::Temporary(t) => &mut t.1,
+            Peer::Permanent(p) => &mut p.1,
+        }
+    }
+
+    pub fn into_info(self) -> NodeInfo {
+        match self {
+            Peer::Temporary(t) => t.1,
+            Peer::Permanent(p) => p.1,
+        }
+    }
+
+    pub fn connection_id(&self) -> ConnectionID {
+        match self {
+            Peer::Temporary(t) => t.2,
+            Peer::Permanent(p) => p.2,
+        }
+    }
+
+    pub fn set_connection_id(&mut self, connection_id: ConnectionID) {
+        match self {
+            Peer::Temporary(t) => (*t).2 = connection_id,
+            Peer::Permanent(p) => (*p).2 = connection_id,
+        }
+    }
 }
 
-pub(super) struct RemoteNode<'a>(NodeHash, &'a Node);
+pub(super) struct RemoteNode(NodeHash, NodeInfo);
 
-pub(super) struct TemporaryPeer<'a>(NodeHash, &'a Node, ConnectionID);
+pub(super) struct TemporaryPeer(NodeHash, NodeInfo, ConnectionID);
 
-pub(super) struct PermanentPeer<'a>(NodeHash, &'a Node, ConnectionID);
+pub(super) struct PermanentPeer(NodeHash, NodeInfo, ConnectionID);
 
-pub(super) enum Entry<'a> {
+pub(super) enum NodeEntry<'a> {
     Occupied(Occupied<'a>),
-    OccupiedByOlderGeneration(OccupiedByOlderGeneration<'a>),
-    OccupiedByNewerGeneration(OccupiedByNewerGeneration<'a>),
     Vacant(Vacant<'a>),
 }
 
-pub(super) struct Occupied<'a> {
-    col: &'a NodeCollection,
+pub(super) enum HashEntry<'a> {
+    OccupiedBySameGeneration(OccupiedBySameGeneration<'a>),
+    Vacant(Vacant<'a>),
+}
+
+pub(super) enum Occupied<'a> {
+    OccupiedBySameGeneration(OccupiedBySameGeneration<'a>),
+    OccupiedByOlderGeneration(OccupiedByOlderGeneration<'a>),
+    OccupiedByNewerGeneration(),
+}
+
+pub(super) struct OccupiedBySameGeneration<'a> {
     inner: hash_map::OccupiedEntry<'a, NodeHash, Node>,
+    peers: &'a mut HashSet<NodeHash>,
+}
+
+impl<'a> OccupiedBySameGeneration<'a> {
+    pub fn get(&self) -> &Node {
+        self.inner.get()
+    }
+
+    pub fn get_mut(&mut self) -> &mut Node {
+        self.inner.get_mut()
+    }
+
+    // TODO: the current structure doesn't allow it, but we *should* be able to
+    // change this function's signature so it doesn't fail
+    pub fn promote_to_peer(&mut self, connection_id: ConnectionID) -> Result<()> {
+        match self.inner.get() {
+            Node::RemoteNode(remote) => {
+                let hash = remote.0;
+                self.inner.insert(Node::Peer(Peer::Permanent(PermanentPeer(
+                    hash,
+                    remote.1.clone(), // TODO: can't we move this?
+                    connection_id,
+                ))));
+                self.peers.insert(hash);
+                Ok(())
+            }
+            Node::Peer(p) => bail!("Node {} was not a remote", p.hash()),
+        }
+    }
+
+    pub fn promote_to_permanent(&mut self) -> Result<()> {
+        match self.inner.get() {
+            Node::Peer(Peer::Temporary(temp)) => {
+                self.inner.insert(Node::Peer(Peer::Permanent(PermanentPeer(
+                    temp.0,
+                    temp.1.clone(), // TODO: can't we move this?
+                    temp.2,
+                ))));
+                Ok(())
+            }
+            Node::RemoteNode(n) => bail!("Node {} was not a remote", n.0),
+            Node::Peer(Peer::Permanent(p)) => bail!("Node {} was not a remote", p.0),
+        }
+    }
 }
 
 pub(super) struct OccupiedByOlderGeneration<'a> {
-    col: &'a NodeCollection,
-    inner: hash_map::OccupiedEntry<'a, NodeHash, Node>,
+    // Since we also need to modify the map itself, we can't store an Entry here
+    old_hash: NodeHash,
+    nodes: &'a mut HashMap<NodeHash, Node>,
+    nodes_by_addr_and_port: &'a mut HashMap<(IpAddr, u16), NodeHash>,
+    peers: &'a mut HashSet<NodeHash>,
 }
 
-pub(super) struct OccupiedByNewerGeneration<'a> {
-    col: &'a NodeCollection,
-    inner: hash_map::OccupiedEntry<'a, NodeHash, Node>,
+impl<'a> OccupiedByOlderGeneration<'a> {
+    pub fn get(&self) -> &Node {
+        // We know the node is in the map, we just can't keep the Entry around
+        self.nodes.get(&self.old_hash).unwrap()
+    }
+
+    pub fn update_generation(self, generation: u128) -> OccupiedBySameGeneration<'a> {
+        let address = &self.get().info().address;
+
+        match self
+            .nodes_by_addr_and_port
+            .entry((address.address, address.port))
+        {
+            Entry::Vacant(_) => panic!("No previous addr_and_port entry for this node"),
+
+            Entry::Occupied(mut addr_and_port) => {
+                let mut node = self.nodes.remove(&self.old_hash).unwrap();
+                self.peers.remove(&self.old_hash);
+
+                let info = node.info_mut();
+                info.address.generation = generation;
+                let new_hash = info.get_hash();
+
+                addr_and_port.insert(new_hash);
+                self.peers.insert(new_hash);
+
+                self.nodes.insert(new_hash, node);
+
+                let entry = match self.nodes.entry(new_hash) {
+                    Entry::Occupied(occ) => occ,
+                    Entry::Vacant(_) => panic!("Impossible, we just inserted the node"),
+                };
+                OccupiedBySameGeneration {
+                    inner: entry,
+                    peers: self.peers,
+                }
+            }
+        }
+    }
 }
 
 pub(super) struct Vacant<'a> {
-    col: &'a NodeCollection,
+    peers: &'a mut HashSet<NodeHash>,
+    nodes_by_addr_and_port: &'a mut HashMap<(IpAddr, u16), NodeHash>,
     inner: hash_map::VacantEntry<'a, NodeHash, Node>,
+}
+
+impl<'a> Vacant<'a> {
+    pub fn insert_remote(self, info: NodeInfo) -> &'a mut Node {
+        let hash = *self.inner.key();
+        assert_eq!(
+            hash,
+            info.get_hash(),
+            "Cannot insert node with different hash in vacant slot"
+        );
+
+        self.nodes_by_addr_and_port
+            .insert((info.address.address, info.address.port), hash);
+
+        self.inner.insert(Node::RemoteNode(RemoteNode(hash, info)))
+    }
+
+    #[allow(dead_code)]
+    pub fn insert_peer(self, info: NodeInfo, connection_id: ConnectionID) -> &'a mut Node {
+        let hash = *self.inner.key();
+        assert_eq!(
+            hash,
+            info.get_hash(),
+            "Cannot insert node with different hash in vacant slot"
+        );
+
+        self.nodes_by_addr_and_port
+            .insert((info.address.address, info.address.port), hash);
+
+        self.peers.insert(hash);
+
+        self.inner.insert(Node::Peer(Peer::Permanent(PermanentPeer(
+            hash,
+            info,
+            connection_id,
+        ))))
+    }
 }
