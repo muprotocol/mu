@@ -397,6 +397,10 @@ impl<'a> OccupiedByOlderGeneration<'a> {
 
                 let info = node.info_mut();
                 info.address.generation = generation;
+                // A new generation will almost certainly start sending lower heartbeats,
+                // since the process was restarted and had to start back at zero
+                info.last_heartbeat = 0;
+                info.last_heartbeat_timestamp = Instant::now();
                 let new_hash = info.get_hash();
 
                 addr_and_port.insert(new_hash);

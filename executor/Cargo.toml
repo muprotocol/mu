@@ -33,6 +33,8 @@ rcgen = "0.9"
 ctrlc = "3.2"
 stable-hash = "0.4"
 num = "0.4"
+dyn-clone = "1.0"
+dyn-clonable = "0.9"
 
 [lib]
 name = "mu"
@@ -40,3 +42,6 @@ name = "mu"
 [[bin]]
 path = "src/main.rs"
 name = "mu-executor"
+
+[dev-dependencies]
+test-log = "0.2.11"
