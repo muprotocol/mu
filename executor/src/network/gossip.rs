@@ -131,6 +131,9 @@ pub trait Gossip: Clone {
     fn receive_message(&self, connection_id: ConnectionID, bytes: Bytes);
     async fn get_nodes(&self) -> Result<Vec<(NodeHash, NodeAddress)>>;
     async fn stop(&self) -> Result<()>;
+
+    #[cfg(debug_assertions)]
+    async fn log_statistics(&self);
 }
 
 #[derive(Clone)]
@@ -153,6 +156,9 @@ enum GossipControlMessage {
     ReceiveMessage(ConnectionID, Bytes),
     GetPeers(ReplyChannel<Vec<(NodeHash, NodeAddress)>>),
     Stop(ReplyChannel<()>),
+
+    #[cfg(debug_assertions)]
+    LogStatistics(ReplyChannel<()>),
 }
 
 #[derive(Debug)]
@@ -213,6 +219,14 @@ impl Gossip for GossipImpl {
             .post_and_reply(GossipControlMessage::Stop)
             .await
             .map_err(Into::into)
+    }
+
+    #[cfg(debug_assertions)]
+    async fn log_statistics(&self) {
+        self.mailbox
+            .post_and_reply(GossipControlMessage::LogStatistics)
+            .await
+            .unwrap()
     }
 }
 
@@ -337,6 +351,12 @@ async fn body(
                         }
                         r.reply(());
                         break 'main_loop;
+                    },
+
+                    #[cfg(debug_assertions)]
+                    Some(GossipControlMessage::LogStatistics(r)) => {
+                        log_statistics(&state);
+                        r.reply(());
                     }
                 }
             }
@@ -667,6 +687,7 @@ fn perform_peer_update(state: &mut GossipState) -> Result<()> {
             .get_temporary_peers_and_hashes()
             .collect::<Vec<_>>();
         if temp_peers.len() > 0 {
+            debug!(state, "Too many peers, dropping a temporary");
             let index = rand::distributions::Uniform::new(0, temp_peers.len()).sample(&mut rng);
             let (hash, _) = temp_peers[index];
             disconnect(state, *hash);
@@ -806,4 +827,25 @@ fn process_failed_connection(state: &mut GossipState, req_id: ConnectionRequestI
     if let Some(hash) = state.pending_peer_connections.remove(&req_id) {
         warn!(state, "Failed to connect to node {hash} due to {error}");
     }
+}
+
+#[cfg(debug_assertions)]
+fn log_statistics(state: &GossipState) {
+    debug!(state, "#############################################");
+    let mut nodes = state.node_collection.get_nodes().collect::<Vec<_>>();
+    debug!(state, "Known node count: {}", nodes.len());
+    debug!(
+        state,
+        "Peer count: {}",
+        state.node_collection.get_peers().count()
+    );
+    nodes.sort_unstable_by(|a, b| match (a, b) {
+        (Node::Peer(_), Node::RemoteNode(_)) => std::cmp::Ordering::Greater,
+        (Node::RemoteNode(_), Node::Peer(_)) => std::cmp::Ordering::Less,
+        _ => std::cmp::Ordering::Equal,
+    });
+    for (i, node) in nodes.iter().enumerate() {
+        debug!(state, "Node {i} is: {node:?}");
+    }
+    debug!(state, "#############################################");
 }

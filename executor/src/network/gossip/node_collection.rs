@@ -215,7 +215,7 @@ impl NodeInfo {
     }
 }
 
-// TODO: rename to node
+#[derive(Debug)]
 pub(super) enum Node {
     RemoteNode(RemoteNode),
     Peer(Peer),
@@ -245,6 +245,7 @@ impl Node {
     }
 }
 
+#[derive(Debug)]
 pub(super) enum Peer {
     // Nodes connect to seeds at startup, and the disconnect when they have enough
     // info about the network. If a peer is marked `is_temporary`, it won't count
@@ -298,10 +299,13 @@ impl Peer {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct RemoteNode(NodeHash, NodeInfo);
 
+#[derive(Debug)]
 pub(super) struct TemporaryPeer(NodeHash, NodeInfo, ConnectionID);
 
+#[derive(Debug)]
 pub(super) struct PermanentPeer(NodeHash, NodeInfo, ConnectionID);
 
 pub(super) enum NodeEntry<'a> {
