@@ -1,19 +1,11 @@
 //TODO
 #![allow(dead_code)]
 
-use super::{
-    message::{pipe_ext::PipeExt, Message},
-    types::ID,
-};
+use super::types::ID;
 use anyhow::Result;
-use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
 use std::{collections::HashMap, path::PathBuf};
-use tokio::{
-    select,
-    sync::{mpsc, oneshot},
-    task::JoinHandle,
-};
+use tokio::task::JoinHandle;
 use wasmer::{Instance, Module, Store};
 use wasmer_wasi::{Pipe, WasiState};
 
@@ -68,15 +60,10 @@ impl FunctionDefinition {
     }
 }
 
-struct FunctionPipes {
+pub struct FunctionPipes {
     pub stdin: Pipe,
     pub stdout: Pipe,
     pub stderr: Pipe,
-}
-
-pub struct FunctionIO {
-    input: mpsc::UnboundedSender<Message>,
-    output: mpsc::UnboundedReceiver<Message>,
 }
 
 pub struct Function {
@@ -87,51 +74,8 @@ pub struct Function {
 }
 
 impl Function {
-    fn create_io(
-        pipes: &FunctionPipes,
-        mut task_stoped: oneshot::Receiver<()>,
-    ) -> Result<FunctionIO> {
-        let mut stdout_reader = pipes.stdout.clone().to_message_reader();
-        let mut stdin_writer = pipes.stdin.clone().to_message_writer();
-
-        let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Message>();
-        let (output_tx, output_rx) = mpsc::unbounded_channel::<Message>();
-
-        tokio::spawn(async move {
-            loop {
-                select! {
-                    _r = &mut task_stoped => {
-                        break //TODO log
-                    }
-                    message = input_rx.recv() => {
-                        // TODO: handle error
-                        match message {
-                            Some(m) => stdin_writer.send(m).await.unwrap(),
-                            None => break, //TODO: log
-                        }
-                    }
-                    message = stdout_reader.next() => {
-                        match message {
-                            Some(Ok(m)) => {
-                                // TODO: log error (decoding_err) and notify user
-                                let item = m.unwrap();
-                                output_tx.send(item).unwrap();
-                            },
-                            Some(Err(_)) | None => break //TODO: log
-                        }
-                    }
-                }
-            }
-        });
-
-        Ok(FunctionIO {
-            input: input_tx,
-            output: output_rx,
-        })
-    }
-
     //TODO: configure `Builder` of tokio for huge blocking tasks
-    pub fn start(mut self) -> Result<(JoinHandle<()>, FunctionIO)> {
+    pub fn start(mut self) -> Result<(JoinHandle<()>, FunctionPipes)> {
         let name = self.module.name().unwrap_or("module");
         let wasi_env = WasiState::new(name)
             .stdin(Box::new(self.pipes.stdin.clone()))
@@ -147,18 +91,13 @@ impl Function {
             .data_mut(&mut self.store)
             .set_memory(memory.clone());
 
-        let (task_stoped_tx, task_stoped_rx) = oneshot::channel();
-
         let join_handle = tokio::task::spawn_blocking(move || {
             //TODO: bubble up the error to outer task
             let start = instance.exports.get_function("_start").unwrap();
             start.call(&mut self.store, &[]).unwrap();
-            task_stoped_tx.send(()).unwrap();
             //TODO: report usage to runtime
         });
 
-        let io = Self::create_io(&self.pipes, task_stoped_rx)?;
-
-        Ok((join_handle, io))
+        Ok((join_handle, self.pipes))
     }
 }

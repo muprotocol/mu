@@ -3,15 +3,9 @@
 
 pub mod database;
 pub mod gateway;
-mod message_codec;
-pub mod pipe_ext;
 
 use anyhow::Result;
-use message_codec::MessageCodec;
-use pipe_ext::{AsyncReadPipe, AsyncWritePipe};
 use serde::{Deserialize, Serialize};
-use std::any::type_name;
-use tokio_util::codec::{FramedRead, FramedWrite};
 
 // TODO: move to configs: default 8k
 pub const MAX_MESSAGE_LEN: usize = 1024 * 8;
@@ -23,13 +17,17 @@ pub struct Message {
     pub message: serde_json::Value,
 }
 
+impl Message {
+    pub fn as_bytes(self) -> Result<Vec<u8>> {
+        serde_json::to_vec(&self).map_err(Into::into)
+    }
+}
+
 pub trait FuncInput
 where
     Self: Serialize,
 {
-    fn get_type() -> String {
-        type_name::<Self>().to_owned()
-    }
+    const TYPE: &'static str;
 
     fn to_message(&self) -> Result<Message>;
 }
@@ -38,13 +36,7 @@ pub trait FuncOutput<'a>
 where
     Self: Deserialize<'a>,
 {
-    fn get_type() -> String {
-        type_name::<Self>().to_owned()
-    }
+    const TYPE: &'static str;
 
     fn from_message(m: Message) -> Result<Self>;
 }
-
-pub type MessageReader = FramedRead<AsyncReadPipe, MessageCodec>;
-
-pub type MessageWriter = FramedWrite<AsyncWritePipe, MessageCodec>;

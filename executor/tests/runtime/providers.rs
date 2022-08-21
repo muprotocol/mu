@@ -1,3 +1,4 @@
+use mu::runtime::FunctionProvider;
 use std::{collections::HashMap, path::PathBuf};
 
 /// Reads functions from filesystem in a `base_path` directory

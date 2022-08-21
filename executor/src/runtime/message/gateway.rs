@@ -3,6 +3,8 @@
 
 use std::any::type_name;
 
+use crate::runtime::function::FunctionID;
+
 use super::{FuncInput, FuncOutput, Message};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -11,10 +13,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Debug)]
 pub struct GatewayRequest {
     id: u64,
+    pub function_id: FunctionID,
     request: String,
 }
 
 impl FuncInput for GatewayRequest {
+    const TYPE: &'static str = "GatewayRequest";
+
     fn to_message(&self) -> Result<Message> {
         Ok(Message {
             id: self.id,
@@ -25,8 +30,12 @@ impl FuncInput for GatewayRequest {
 }
 
 impl GatewayRequest {
-    pub fn new(id: u64, request: String) -> Self {
-        GatewayRequest { id, request }
+    pub fn new(id: u64, function_id: FunctionID, request: String) -> Self {
+        GatewayRequest {
+            id,
+            function_id,
+            request,
+        }
     }
 }
 
@@ -38,6 +47,8 @@ pub struct GatewayResponse {
 }
 
 impl<'a> FuncOutput<'a> for GatewayResponse {
+    const TYPE: &'static str = "GatewayResponse";
+
     fn from_message(m: Message) -> Result<Self> {
         Ok(Self {
             id: m.id,

@@ -41,6 +41,8 @@ pub struct DbRequest {
 }
 
 impl<'a> FuncOutput<'a> for DbRequest {
+    const TYPE: &'static str = "DbRequest";
+
     fn from_message(m: Message) -> Result<Self> {
         Ok(Self {
             id: m.id,
@@ -65,6 +67,8 @@ pub struct DbResponse {
 }
 
 impl FuncInput for DbResponse {
+    const TYPE: &'static str = "DbResponse";
+
     fn to_message(&self) -> Result<Message> {
         Ok(Message {
             id: self.id,

@@ -2,7 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::any::type_name;
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::io::{BufReader, BufWriter};
 use std::marker::PhantomData;
+use wasmer_wasi::Pipe;
+
+use super::function::FunctionPipes;
 
 #[derive(Deserialize, Serialize)]
 pub struct ID<T> {
@@ -17,6 +21,10 @@ impl<T> ID<T> {
             inner: id,
             phantom_type: PhantomData,
         }
+    }
+
+    pub fn gen() -> Self {
+        Self::new(rand::random())
     }
 
     pub fn inner_to_string(&self) -> String {
@@ -55,5 +63,21 @@ impl<T> Debug for ID<T> {
         f.write_str(type_name::<T>())?;
         f.write_str("] ")?;
         self.inner.fmt(f)
+    }
+}
+
+pub struct FunctionIO {
+    pub stdin: BufWriter<Pipe>,
+    pub stdout: BufReader<Pipe>,
+    pub stderr: BufReader<Pipe>,
+}
+
+impl FunctionIO {
+    pub fn from_pipes(pipes: FunctionPipes) -> Self {
+        Self {
+            stdin: BufWriter::new(pipes.stdin),
+            stdout: BufReader::new(pipes.stdout),
+            stderr: BufReader::new(pipes.stderr),
+        }
     }
 }
