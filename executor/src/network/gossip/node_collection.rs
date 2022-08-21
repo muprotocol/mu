@@ -130,12 +130,12 @@ impl NodeCollection {
                 }
             },
             Some(old_hash) if *old_hash == input_hash => match self.nodes.entry(input_hash) {
-                hash_map::Entry::Occupied(occ) => NodeEntry::Occupied(
-                    Occupied::OccupiedBySameGeneration(OccupiedBySameGeneration {
+                hash_map::Entry::Occupied(occ) => {
+                    NodeEntry::Occupied(OccupiedByGeneration::Same(OccupiedBySameGeneration {
                         peers: &mut self.peers,
                         inner: occ,
-                    }),
-                ),
+                    }))
+                }
                 hash_map::Entry::Vacant(_) => {
                     panic!("nodes is out of sync with nodes_by_addr_and_port")
                 }
@@ -144,7 +144,7 @@ impl NodeCollection {
                 Some(node) => {
                     let generation = node.info().address.generation;
                     if generation < node_address.generation {
-                        NodeEntry::Occupied(Occupied::OccupiedByOlderGeneration(
+                        NodeEntry::Occupied(OccupiedByGeneration::Older(
                             OccupiedByOlderGeneration {
                                 old_hash: *old_hash,
                                 nodes: &mut self.nodes,
@@ -153,7 +153,7 @@ impl NodeCollection {
                             },
                         ))
                     } else {
-                        NodeEntry::Occupied(Occupied::OccupiedByNewerGeneration())
+                        NodeEntry::Occupied(OccupiedByGeneration::Newer())
                     }
                 }
                 None => {
@@ -309,7 +309,7 @@ pub(super) struct TemporaryPeer(NodeHash, NodeInfo, ConnectionID);
 pub(super) struct PermanentPeer(NodeHash, NodeInfo, ConnectionID);
 
 pub(super) enum NodeEntry<'a> {
-    Occupied(Occupied<'a>),
+    Occupied(OccupiedByGeneration<'a>),
     Vacant(Vacant<'a>),
 }
 
@@ -318,10 +318,10 @@ pub(super) enum HashEntry<'a> {
     Vacant(Vacant<'a>),
 }
 
-pub(super) enum Occupied<'a> {
-    OccupiedBySameGeneration(OccupiedBySameGeneration<'a>),
-    OccupiedByOlderGeneration(OccupiedByOlderGeneration<'a>),
-    OccupiedByNewerGeneration(),
+pub(super) enum OccupiedByGeneration<'a> {
+    Same(OccupiedBySameGeneration<'a>),
+    Older(OccupiedByOlderGeneration<'a>),
+    Newer(),
 }
 
 pub(super) struct OccupiedBySameGeneration<'a> {

@@ -127,7 +127,7 @@ impl ConnectionManager for ConnectionManagerImpl {
     async fn stop(&self) -> Result<()> {
         debug!("Sending stop");
         self.mailbox
-            .post_and_reply(|r| ConnectionManagerMessage::Stop(r))
+            .post_and_reply(ConnectionManagerMessage::Stop)
             .await
             .map_err(Into::into)
     }
@@ -375,7 +375,7 @@ async fn send_req_rep(
         {
             Ok(x) => x,
             Err(f) => {
-                reply_channel.reply(Err(f.into()));
+                reply_channel.reply(Err(f));
                 return;
             }
         };
@@ -399,8 +399,8 @@ async fn send_req_rep(
                 debug!("Received reply: {:?}", reply);
 
                 match reply {
-                    Some(Ok(bytes)) => return Ok(bytes.freeze()),
-                    Some(Err(f)) => return Err(f.into()),
+                    Some(Ok(bytes)) => Ok(bytes.freeze()),
+                    Some(Err(f)) => Err(f),
                     None => bail!("Failed to read response because the connection was closed"),
                 }
             }
@@ -570,15 +570,15 @@ async fn get_next_message_single(
                     let channel = ReqRepChannel { write, read };
                     connection.just_received.push(channel);
                     debug!("Adding new channel to {id}, now have {}", connection.just_received.len());
-                    return Ok(None);
+                    Ok(None)
                 },
                 Some(Err(f)) => {
                     info!("Failed to accept bi-directional stream from connection {} due to {}, removing connection", id, f);
-                    return Err(id);
+                    Err(id)
                 }
                 None => {
                     info!("No more bi-directional streams from connection {}, removing connection", id);
-                    return Err(id);
+                    Err(id)
                 }
             }
         }
@@ -594,16 +594,16 @@ async fn get_next_message_single(
             debug!("Received request in {id}.{req_id}: {bytes:?}");
             match bytes {
                 Some(Ok(bytes)) => {
-                    return Ok(Some(IncomingMessage::ReqRep(id, *req_id, bytes.freeze())));
+                    Ok(Some(IncomingMessage::ReqRep(id, *req_id, bytes.freeze())))
                 },
                 // TODO: we may be disconnecting too aggressively here
                 Some(Err(f)) => {
                     info!("Failed to receive data over bi-directional stream {} of connection {} due to {}, removing connection", req_id, id, f);
-                    return Err(id);
+                    Err(id)
                 }
                 None => {
                     info!("No data from bi-directional stream {} of connection {}, removing connection", req_id, id);
-                    return Err(id);
+                    Err(id)
                 }
             }
         }
@@ -611,14 +611,14 @@ async fn get_next_message_single(
         datagram = connection.new_connection.datagrams.next() => {
             debug!("Received datagram from {id}: {datagram:?}");
             match datagram {
-                Some(Ok(bytes)) => return Ok(Some(IncomingMessage::Datagram(id, bytes))),
+                Some(Ok(bytes)) => Ok(Some(IncomingMessage::Datagram(id, bytes))),
                 Some(Err(f)) => {
                     info!("Failed to read message from connection {} due to {}, removing connection", id, f);
-                    return Err(id);
+                    Err(id)
                 }
                 None => {
                     info!("Failed to read message from connection {}, removing connection", id);
-                    return Err(id);
+                    Err(id)
                 }
             }
         }

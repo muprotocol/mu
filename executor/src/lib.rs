@@ -221,8 +221,8 @@ async fn process_gossip_notification(
         Some(GossipNotification::SendMessage(id, bytes)) => {
             connection_manager.send_datagram(id, bytes);
         }
-        Some(GossipNotification::Disconnect(id)) => match connection_manager.disconnect(id).await {
-            _ => (),
-        },
+        Some(GossipNotification::Disconnect(id)) => {
+            connection_manager.disconnect(id).await.unwrap_or(());
+        }
     }
 }

@@ -401,7 +401,7 @@ fn send_protocol_message(
         .context("Failed to serialize protocol message")?;
 
     for (hash, peer) in state.node_collection.get_peers_and_hashes() {
-        if !excluded_peers.contains(&hash) {
+        if !excluded_peers.contains(hash) {
             debug!(state, "Sending protocol message {message:?} to {hash}");
             state
                 .notification_channel
@@ -440,8 +440,8 @@ fn receive_message(
                     );
 
                     let mut same_generation = match occ {
-                        Occupied::OccupiedBySameGeneration(same) => same,
-                        Occupied::OccupiedByOlderGeneration(old) => {
+                        OccupiedByGeneration::Same(same) => same,
+                        OccupiedByGeneration::Older(old) => {
                             debug!(
                                 state,
                                 "Discovered newer generation {} of peer {}",
@@ -450,7 +450,7 @@ fn receive_message(
                             );
                             old.update_generation(heartbeat.node_address.generation)
                         }
-                        Occupied::OccupiedByNewerGeneration() => {
+                        OccupiedByGeneration::Newer() => {
                             debug!(
                                 state,
                                 "Already know newer version of node {}, ignoring heartbeat",
@@ -590,22 +590,21 @@ async fn perform_maintenance(state: &mut GossipState) -> Instant {
         if let Err(f) = send_heartbeat(state) {
             error!(state, "Failed to send heartbeat: {f}");
         }
-        state.next_heartbeat = state.next_heartbeat + state.config.heartbeat_interval;
+        state.next_heartbeat += state.config.heartbeat_interval;
     }
 
     if almost_at_or_after_instant(now, state.next_liveness_check) {
         if let Err(f) = perform_liveness_check(state, now) {
             error!(state, "Failed to send heartbeat: {f}");
         }
-        state.next_liveness_check =
-            state.next_liveness_check + state.config.liveness_check_interval;
+        state.next_liveness_check += state.config.liveness_check_interval;
     }
 
     if almost_at_or_after_instant(now, state.next_peer_update) {
         if let Err(f) = perform_peer_update(state) {
             error!(state, "Failed to send heartbeat: {f}");
         }
-        state.next_peer_update = state.next_peer_update + state.config.peer_update_interval;
+        state.next_peer_update += state.config.peer_update_interval;
     }
 
     state
@@ -686,7 +685,7 @@ fn perform_peer_update(state: &mut GossipState) -> Result<()> {
             .node_collection
             .get_temporary_peers_and_hashes()
             .collect::<Vec<_>>();
-        if temp_peers.len() > 0 {
+        if !temp_peers.is_empty() {
             debug!(state, "Too many peers, dropping a temporary");
             let index = rand::distributions::Uniform::new(0, temp_peers.len()).sample(&mut rng);
             let (hash, _) = temp_peers[index];
@@ -727,8 +726,7 @@ fn promote_random_to_permanent_peer(state: &mut GossipState, rng: &mut ThreadRng
         .node_collection
         .get_nodes_and_hashes()
         .filter(|n| is_promotion_candidate(n.1))
-        .skip(index)
-        .next()
+        .nth(index)
     {
         None => {
             bail!("Failed to get node at random index {index}, don't have enough non-peer nodes")

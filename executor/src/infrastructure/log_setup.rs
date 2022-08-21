@@ -17,7 +17,7 @@ pub fn setup(config: &Config) -> Result<()> {
 
     let module_filters = table
         .get("filters")
-        .map(|o| o.clone())
+        .cloned()
         .unwrap_or_else(|| Value::new(None, Vec::<String>::new()))
         .into_array()
         .context("Expected log.filters to be an array")?;
