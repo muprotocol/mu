@@ -7,9 +7,6 @@ pub mod gateway;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-// TODO: move to configs: default 8k
-pub const MAX_MESSAGE_LEN: usize = 1024 * 8;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Message {
     pub id: u64,
@@ -23,19 +20,13 @@ impl Message {
     }
 }
 
-pub trait FuncInput
-where
-    Self: Serialize,
-{
+pub trait ToMessage {
     const TYPE: &'static str;
 
     fn to_message(&self) -> Result<Message>;
 }
 
-pub trait FuncOutput<'a>
-where
-    Self: Deserialize<'a>,
-{
+pub trait FromMessage: Sized {
     const TYPE: &'static str;
 
     fn from_message(m: Message) -> Result<Self>;

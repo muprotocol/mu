@@ -1,9 +1,11 @@
 use anyhow::{Context, Result};
-use mu::runtime::{
-    function::{Config, FunctionDefinition, FunctionID},
-    message::gateway::{GatewayRequest, GatewayResponse},
-    types::ID,
-    Request, Runtime,
+use mu::{
+    mu_stack::{FunctionRuntime, StackID},
+    runtime::{
+        function::{FunctionDefinition, FunctionID},
+        message::gateway::{GatewayRequest, GatewayRequestDetails, GatewayResponse},
+        InvokeFunctionRequest, Request, Runtime,
+    },
 };
 use std::{
     collections::HashMap,
@@ -11,6 +13,7 @@ use std::{
 };
 use tokio::fs;
 use utils::{clean_wasm_project, compile_wasm_project};
+use uuid::Uuid;
 
 use self::providers::MapFunctionProvider;
 
@@ -44,11 +47,16 @@ async fn read_wasm_projects(
     let mut results = HashMap::new();
 
     for (_, path) in projects {
-        let id = ID::gen();
+        let id = FunctionID {
+            stack_id: StackID(Uuid::new_v4()),
+            function_name: "my_func".into(),
+        };
         let source = fs::read(&path).await?;
-        let config = Config::new(id, HashMap::new(), path);
 
-        results.insert(id, FunctionDefinition::new(source, config));
+        results.insert(
+            id.clone(),
+            FunctionDefinition::new(id, source, FunctionRuntime::Wasi1_0, []),
+        );
     }
 
     Ok(results)
@@ -71,13 +79,23 @@ async fn test_simple_func() {
         .await
         .unwrap();
     let function_ids = provider.ids();
-    let runtime = Runtime::new(provider).start();
+    let runtime = Runtime::start(Box::new(provider));
 
-    let request = r#"{ "req_id": 1, "name": "Chappy" }"#.to_owned();
-    let message = GatewayRequest::new(1, function_ids[0], request);
+    let request = GatewayRequestDetails {
+        body: r#"{ "req_id": 1, "name": "Chappy" }"#.into(),
+        local_path_and_query: "".into(),
+    };
+    let message = GatewayRequest::new(1, request);
 
     let response: Result<GatewayResponse> = runtime
-        .post_and_reply(|r| Request::Gateway { message, reply: r })
+        .mailbox
+        .post_and_reply(|r| {
+            Request::InvokeFunction(InvokeFunctionRequest {
+                message,
+                function_id: function_ids[0].clone(),
+                reply: r,
+            })
+        })
         .await
         .unwrap();
 

@@ -1,106 +1,104 @@
 //TODO
 #![allow(dead_code)]
 
-use super::types::ID;
+use std::{
+    collections::HashMap,
+    hash::Hash,
+    io::{BufReader, BufWriter},
+};
+
 use anyhow::Result;
-use serde::Deserialize;
-use std::{collections::HashMap, path::PathBuf};
 use tokio::task::JoinHandle;
 use wasmer::{Instance, Module, Store};
 use wasmer_wasi::{Pipe, WasiState};
 
-pub type FunctionID = ID<Function>;
-pub type FunctionSource = Vec<u8>;
+use crate::mu_stack::{FunctionRuntime, StackID};
 
-#[derive(Deserialize, Clone)]
-pub struct Config {
-    pub id: FunctionID,
-    // TODO: key must not contain `=` and both must not contain `null` byte
-    pub envs: HashMap<String, String>,
-    pub module_path: PathBuf,
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct FunctionID {
+    pub stack_id: StackID,
+    pub function_name: String,
 }
 
-impl Config {
-    pub fn new(id: FunctionID, envs: HashMap<String, String>, path: PathBuf) -> Self {
+pub type FunctionSource = Vec<u8>;
+
+#[derive(Clone, Debug)]
+pub struct FunctionDefinition {
+    pub id: FunctionID,
+    pub source: FunctionSource,
+    pub runtime: FunctionRuntime,
+
+    // TODO: key must not contain `=` and both must not contain `null` byte
+    pub envs: HashMap<String, String>,
+}
+
+impl FunctionDefinition {
+    pub fn new(
+        id: FunctionID,
+        source: FunctionSource,
+        runtime: FunctionRuntime,
+        envs: impl IntoIterator<
+            IntoIter = impl Iterator<Item = (String, String)>,
+            Item = (String, String),
+        >,
+    ) -> Self {
+        let envs = envs.into_iter().collect();
         Self {
             id,
+            source,
+            runtime,
             envs,
-            module_path: path,
         }
     }
 }
 
-pub struct FunctionDefinition {
-    source: FunctionSource,
-    config: Config,
+pub struct FunctionIO {
+    pub stdin: BufWriter<Pipe>,
+    pub stdout: BufReader<Pipe>,
+    pub stderr: BufReader<Pipe>,
 }
 
-impl FunctionDefinition {
-    pub fn new(source: FunctionSource, config: Config) -> Self {
-        Self { source, config }
-    }
-
-    pub async fn create_function(&self) -> Result<Function> {
-        let store = Store::default();
-        let module = Module::from_binary(&store, &self.source)?;
-
-        let pipes = FunctionPipes {
-            stdin: Pipe::new(),
-            stdout: Pipe::new(),
-            stderr: Pipe::new(),
-        };
-
-        Ok(Function {
-            pipes,
-            config: self.config.clone(),
-            store,
-            module,
-        })
-    }
-
-    pub fn id(&self) -> FunctionID {
-        self.config.id
-    }
+pub struct FunctionHandle {
+    pub join_handle: JoinHandle<()>,
+    pub io: FunctionIO,
 }
 
-pub struct FunctionPipes {
-    pub stdin: Pipe,
-    pub stdout: Pipe,
-    pub stderr: Pipe,
-}
+//TODO: configure `Builder` of tokio for huge blocking tasks
+pub fn start(definition: &FunctionDefinition) -> Result<FunctionHandle> {
+    let mut store = Store::default();
+    //TODO: not good performance-wise to keep compiling the module
+    let module = Module::from_binary(&store, &definition.source)?;
 
-pub struct Function {
-    pipes: FunctionPipes,
-    config: Config,
-    store: Store,
-    module: Module,
-}
+    let stdin = Pipe::new();
+    let stdout = Pipe::new();
+    let stderr = Pipe::new();
 
-impl Function {
-    //TODO: configure `Builder` of tokio for huge blocking tasks
-    pub fn start(mut self) -> Result<(JoinHandle<()>, FunctionPipes)> {
-        let name = self.module.name().unwrap_or("module");
-        let wasi_env = WasiState::new(name)
-            .stdin(Box::new(self.pipes.stdin.clone()))
-            .stdout(Box::new(self.pipes.stdout.clone()))
-            .stderr(Box::new(self.pipes.stderr.clone()))
-            .envs(self.config.envs.clone())
-            .finalize(&mut self.store)?;
+    let program_name = module.name().unwrap_or("module");
+    let wasi_env = WasiState::new(program_name)
+        .stdin(Box::new(stdin.clone()))
+        .stdout(Box::new(stdout.clone()))
+        .stderr(Box::new(stderr.clone()))
+        .envs(definition.envs.clone())
+        .finalize(&mut store)?;
 
-        let import_object = wasi_env.import_object(&mut self.store, &self.module)?;
-        let instance = Instance::new(&mut self.store, &self.module, &import_object)?;
-        let memory = instance.exports.get_memory("memory")?;
-        wasi_env
-            .data_mut(&mut self.store)
-            .set_memory(memory.clone());
+    let import_object = wasi_env.import_object(&mut store, &module)?;
+    let instance = Instance::new(&mut store, &module, &import_object)?;
+    let memory = instance.exports.get_memory("memory")?;
+    wasi_env.data_mut(&mut store).set_memory(memory.clone());
 
-        let join_handle = tokio::task::spawn_blocking(move || {
-            //TODO: bubble up the error to outer task
-            let start = instance.exports.get_function("_start").unwrap();
-            start.call(&mut self.store, &[]).unwrap();
-            //TODO: report usage to runtime
-        });
+    let join_handle = tokio::task::spawn_blocking(move || {
+        //TODO: bubble up the error to outer task
+        let start = instance.exports.get_function("_start").unwrap();
+        start.call(&mut store, &[]).unwrap();
+        //TODO: report usage to runtime
+    });
 
-        Ok((join_handle, self.pipes))
-    }
+    Ok(FunctionHandle {
+        join_handle,
+        io: FunctionIO {
+            stdin: BufWriter::new(stdin),
+            stdout: BufReader::new(stdout),
+            stderr: BufReader::new(stderr),
+        },
+    })
 }

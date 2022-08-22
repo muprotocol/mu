@@ -1,39 +1,40 @@
 //TODO
 #![allow(dead_code)]
 
-use crate::runtime::function::FunctionID;
-
-use super::{FuncInput, FuncOutput, Message};
+use super::{FromMessage, Message, ToMessage};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 // TODO: Change type based on actual gateway request
-#[derive(Serialize, Debug)]
+#[derive(Debug)]
 pub struct GatewayRequest {
     id: u64,
-    pub function_id: FunctionID,
-    request: String,
+    request: GatewayRequestDetails,
 }
 
-impl FuncInput for GatewayRequest {
+// TODO: completely unsuitable!
+#[derive(Serialize, Debug)]
+pub struct GatewayRequestDetails {
+    pub local_path_and_query: String,
+    pub body: String,
+}
+
+impl ToMessage for GatewayRequest {
     const TYPE: &'static str = "GatewayRequest";
 
     fn to_message(&self) -> Result<Message> {
         Ok(Message {
             id: self.id,
             r#type: Self::TYPE.to_owned(),
+            // TODO: not good, why force user to only send JSON to functions?
             message: serde_json::to_value(&self.request)?,
         })
     }
 }
 
 impl GatewayRequest {
-    pub fn new(id: u64, function_id: FunctionID, request: String) -> Self {
-        GatewayRequest {
-            id,
-            function_id,
-            request,
-        }
+    pub fn new(id: u64, request: GatewayRequestDetails) -> Self {
+        GatewayRequest { id, request }
     }
 }
 
@@ -44,7 +45,7 @@ pub struct GatewayResponse {
     pub response: String,
 }
 
-impl<'a> FuncOutput<'a> for GatewayResponse {
+impl FromMessage for GatewayResponse {
     const TYPE: &'static str = "GatewayResponse";
 
     fn from_message(m: Message) -> Result<Self> {

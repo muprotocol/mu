@@ -1,7 +1,4 @@
-//TODO
-#![allow(dead_code)]
-
-use super::{FuncInput, FuncOutput, Message};
+use super::{FromMessage, Message, ToMessage};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -33,13 +30,12 @@ pub enum DbRequestDetail {
 }
 
 // TODO: Change based on actual MuDB request types
-#[derive(Deserialize)]
 pub struct DbRequest {
     id: u64,
     request: DbRequestDetail,
 }
 
-impl<'a> FuncOutput<'a> for DbRequest {
+impl FromMessage for DbRequest {
     const TYPE: &'static str = "DbRequest";
 
     fn from_message(m: Message) -> Result<Self> {
@@ -65,7 +61,7 @@ pub struct DbResponse {
     response: DbResponseDetail,
 }
 
-impl FuncInput for DbResponse {
+impl ToMessage for DbResponse {
     const TYPE: &'static str = "DbResponse";
 
     fn to_message(&self) -> Result<Message> {

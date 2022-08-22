@@ -1,7 +1,10 @@
-// We must use a BTreeMap to ensure key ordering stays consistent.
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct StackID(pub Uuid);
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Stack {
@@ -26,7 +29,7 @@ pub struct Database {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Gateway {
     pub name: String,
-    pub endpoints: BTreeMap<String, Vec<GatewayEndpoint>>,
+    pub endpoints: HashMap<String, Vec<GatewayEndpoint>>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -51,10 +54,10 @@ pub struct Function {
     pub name: String,
     pub binary: String,
     pub runtime: FunctionRuntime,
-    pub env: BTreeMap<String, String>,
+    pub env: HashMap<String, String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum FunctionRuntime {
     #[serde(rename = "wasi1.0")]
     Wasi1_0,
