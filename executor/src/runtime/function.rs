@@ -31,14 +31,13 @@ impl Config {
 }
 
 pub struct FunctionDefinition {
-    pub id: FunctionID,
     source: FunctionSource,
     config: Config,
 }
 
 impl FunctionDefinition {
-    pub fn new(id: FunctionID, source: FunctionSource, config: Config) -> Self {
-        Self { id, source, config }
+    pub fn new(source: FunctionSource, config: Config) -> Self {
+        Self { source, config }
     }
 
     pub async fn create_function(&self) -> Result<Function> {
@@ -57,6 +56,10 @@ impl FunctionDefinition {
             store,
             module,
         })
+    }
+
+    pub fn id(&self) -> FunctionID {
+        self.config.id
     }
 }
 

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::any::type_name;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::io::{BufReader, BufWriter};
 use std::marker::PhantomData;
@@ -25,10 +25,6 @@ impl<T> ID<T> {
 
     pub fn gen() -> Self {
         Self::new(rand::random())
-    }
-
-    pub fn inner_to_string(&self) -> String {
-        unimplemented!()
     }
 }
 
@@ -63,6 +59,15 @@ impl<T> Debug for ID<T> {
         f.write_str(type_name::<T>())?;
         f.write_str("] ")?;
         self.inner.fmt(f)
+    }
+}
+
+impl<T> Display for ID<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for b in self.inner {
+            std::fmt::LowerHex::fmt(&b, f)?;
+        }
+        Ok(())
     }
 }
 

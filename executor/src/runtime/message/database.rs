@@ -72,7 +72,7 @@ impl FuncInput for DbResponse {
     fn to_message(&self) -> Result<Message> {
         Ok(Message {
             id: self.id,
-            r#type: type_name::<Self>().to_owned(),
+            r#type: Self::TYPE.to_owned(),
             message: serde_json::to_value(&self.response)?,
         })
     }

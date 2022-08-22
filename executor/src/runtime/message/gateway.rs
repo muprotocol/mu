@@ -23,7 +23,7 @@ impl FuncInput for GatewayRequest {
     fn to_message(&self) -> Result<Message> {
         Ok(Message {
             id: self.id,
-            r#type: type_name::<Self>().to_owned(),
+            r#type: Self::TYPE.to_owned(),
             message: serde_json::to_value(&self.request)?,
         })
     }
@@ -43,7 +43,7 @@ impl GatewayRequest {
 #[derive(Deserialize, Debug)]
 pub struct GatewayResponse {
     id: u64,
-    response: String,
+    pub response: String,
 }
 
 impl<'a> FuncOutput<'a> for GatewayResponse {

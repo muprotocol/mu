@@ -110,17 +110,16 @@ where
             .clone())
     }
 
-    pub async fn start(self) -> CallbackMailboxProcessor<Request> {
+    pub fn start(self) -> CallbackMailboxProcessor<Request> {
         let step = |msg: Request, mut runtime: Runtime<_>| async {
             match msg {
                 Request::Gateway { message, reply } => {
                     if let Ok(instance) = runtime.get_instance(message.function_id).await {
                         let mut instance = instance.write_owned().await;
                         match tokio::task::spawn_blocking(move || instance.request(message)).await {
-                            Err(e) => panic!("{e}"), //TODO: handle Error
+                            Err(e) => panic!("{e}"), //TODO: handle Error, and add log
                             Ok(r) => reply.reply(r),
                         };
-                        todo!()
                     }
                 }
             }
@@ -151,7 +150,7 @@ impl Instance {
         let function = definition.create_function().await?;
         let (join_handle, pipes) = function.start()?;
         Ok(Self {
-            function_id: definition.id,
+            function_id: definition.id(),
             io: FunctionIO::from_pipes(pipes),
             join_handle,
             state: InstanceStatus::Idle,
@@ -177,6 +176,7 @@ impl Instance {
         let mut buf = String::with_capacity(MESSAGE_READ_BUF_CAP);
         self.io.stdout.read_line(&mut buf)?; //TODO: check output and if it's 0, then pipe is
                                              //closed
+        println!("Message read: `{buf}`");
         serde_json::from_slice(buf.as_bytes()).map_err(Into::into)
     }
 
@@ -185,15 +185,18 @@ impl Instance {
         //TODO: check function state
         self.write_to_stdin(request.to_message()?)?;
         loop {
-            let message = self.read_from_stdout()?;
-            match message.r#type.as_str() {
-                GatewayResponse::TYPE => {
-                    self.state = InstanceStatus::Idle;
-                    return GatewayResponse::from_message(message);
-                }
-                DbRequest::TYPE => todo!(),
-                t => bail!("invalid message type: {t}"),
-            }
+            let message = self.read_from_stdout();
+            match message {
+                Ok(message) => match message.r#type.as_str() {
+                    GatewayResponse::TYPE => {
+                        self.state = InstanceStatus::Idle;
+                        return GatewayResponse::from_message(message);
+                    }
+                    DbRequest::TYPE => todo!(),
+                    t => bail!("invalid message type: {t}"),
+                },
+                Err(e) => println!("Error while parsing resposne: {e:?}"),
+            };
         }
     }
 }
