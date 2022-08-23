@@ -65,7 +65,7 @@ pub struct FunctionHandle {
 
 //TODO: configure `Builder` of tokio for huge blocking tasks
 pub fn start(definition: &FunctionDefinition) -> Result<FunctionHandle> {
-    let mut store = Store::default();
+    let store = Store::default();
     //TODO: not good performance-wise to keep compiling the module
     let module = Module::from_binary(&store, &definition.source)?;
 
@@ -74,22 +74,20 @@ pub fn start(definition: &FunctionDefinition) -> Result<FunctionHandle> {
     let stderr = Pipe::new();
 
     let program_name = module.name().unwrap_or("module");
-    let wasi_env = WasiState::new(program_name)
+    let mut wasi_env = WasiState::new(program_name)
         .stdin(Box::new(stdin.clone()))
         .stdout(Box::new(stdout.clone()))
         .stderr(Box::new(stderr.clone()))
         .envs(definition.envs.clone())
-        .finalize(&mut store)?;
+        .finalize()?;
 
-    let import_object = wasi_env.import_object(&mut store, &module)?;
-    let instance = Instance::new(&mut store, &module, &import_object)?;
-    let memory = instance.exports.get_memory("memory")?;
-    wasi_env.data_mut(&mut store).set_memory(memory.clone());
+    let import_object = wasi_env.import_object(&module)?;
+    let instance = Instance::new(&module, &import_object)?;
 
     let join_handle = tokio::task::spawn_blocking(move || {
         //TODO: bubble up the error to outer task
         let start = instance.exports.get_function("_start").unwrap();
-        start.call(&mut store, &[]).unwrap();
+        start.call(&[]).unwrap();
         //TODO: report usage to runtime
     });
 
