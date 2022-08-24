@@ -1,6 +1,33 @@
-use super::{Function, Gateway, Stack, StackID};
+use thiserror::Error;
 
-pub enum StackValidationError {}
+use super::{Function, Gateway, HttpMethod, Stack, StackID};
+
+#[derive(Error, Debug)]
+pub enum StackValidationError {
+    #[error("Duplicate function name '{0}'")]
+    DuplicateFunctionName(String),
+
+    #[error("Duplicate database name '{0}'")]
+    DuplicateDatabaseName(String),
+
+    #[error("Duplicate gateway name '{0}'")]
+    DuplicateGatewayName(String),
+
+    #[error("Failed to fetch binary for function '{0}' due to {1}")]
+    CannotFetchFunction(String, anyhow::Error),
+
+    #[error("Unknown function name '{function}' in gateway '{gateway}'")]
+    UnknownFunctionInGateway { function: String, gateway: String },
+
+    #[error(
+        "Duplicate endpoint with path '{path}' and method '{method:?}' in gateway '{gateway}'"
+    )]
+    DuplicateEndpointInGateway {
+        gateway: String,
+        path: String,
+        method: HttpMethod,
+    },
+}
 
 pub async fn deploy(id: StackID, stack: Stack) -> Result<(), StackValidationError> {
     let stack = validate(stack)?;
