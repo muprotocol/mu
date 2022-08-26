@@ -40,6 +40,8 @@ pub async fn compile_wasm_project(project_dir: &Path) -> Result<PathBuf> {
         .to_path_buf())
 }
 
+//TODO: maybe some `make clean` usage for this function
+#[allow(dead_code)]
 pub async fn clean_wasm_project(project_dir: &Path) -> Result<()> {
     let project_dir = ensure_project_dir(project_dir)?;
 

@@ -3,13 +3,15 @@
 
 pub mod database;
 pub mod gateway;
+pub mod log;
+pub mod signal;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
-    pub id: u64,
+    pub id: Option<u64>,
     pub r#type: String,
     pub message: serde_json::Value,
 }

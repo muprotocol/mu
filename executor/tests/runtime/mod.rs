@@ -3,7 +3,7 @@ use mu::{
     mu_stack::{FunctionRuntime, StackID},
     runtime::{
         function::{FunctionDefinition, FunctionID},
-        message::gateway::{GatewayRequest, GatewayRequestDetails, GatewayResponse},
+        message::gateway::{GatewayRequest, GatewayRequestDetails},
         InvokeFunctionRequest, Request, Runtime,
     },
 };
@@ -20,6 +20,8 @@ use self::providers::MapFunctionProvider;
 mod providers;
 mod utils;
 
+//TODO: maybe some `make clean` usage for this function
+#[allow(dead_code)]
 async fn clean_wasm_projects(projects: HashMap<&str, &Path>) -> Result<()> {
     for (_, path) in projects {
         clean_wasm_project(path).await?;
@@ -82,12 +84,12 @@ async fn test_simple_func() {
     let runtime = Runtime::start(Box::new(provider));
 
     let request = GatewayRequestDetails {
-        body: r#"{ "req_id": 1, "name": "Chappy" }"#.into(),
+        body: "Chappy".into(),
         local_path_and_query: "".into(),
     };
     let message = GatewayRequest::new(1, request);
 
-    let response: Result<GatewayResponse> = runtime
+    let result = runtime
         .mailbox
         .post_and_reply(|r| {
             Request::InvokeFunction(InvokeFunctionRequest {
@@ -97,12 +99,10 @@ async fn test_simple_func() {
             })
         })
         .await
+        .unwrap()
         .unwrap();
 
-    assert_eq!(
-        "{\"req_id\":1,\"result\":\"Hello Chappy, welcome to MuRuntime\"}",
-        response.unwrap().response
-    );
-
-    //clean_wasm_projects(projects).await.unwrap();
+    assert_eq!(1, result.id);
+    assert_eq!("Hello Chappy, welcome to MuRuntime", result.response.body);
+    runtime.shutdown().await.unwrap();
 }

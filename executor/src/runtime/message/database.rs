@@ -1,5 +1,5 @@
 use super::{FromMessage, Message, ToMessage};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -40,8 +40,11 @@ impl FromMessage for DbRequest {
 
     fn from_message(m: Message) -> Result<Self> {
         Ok(Self {
-            id: m.id,
-            request: serde_json::from_value(m.message)?,
+            id: m
+                .id
+                .context("filed id in database request can not be null")?,
+            request: serde_json::from_value(m.message)
+                .context("database request deserialization failed")?,
         })
     }
 }
@@ -66,9 +69,10 @@ impl ToMessage for DbResponse {
 
     fn to_message(&self) -> Result<Message> {
         Ok(Message {
-            id: self.id,
+            id: Some(self.id),
             r#type: Self::TYPE.to_owned(),
-            message: serde_json::to_value(&self.response)?,
+            message: serde_json::to_value(&self.response)
+                .context("database response serialization failed")?,
         })
     }
 }

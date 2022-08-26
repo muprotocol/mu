@@ -2,10 +2,9 @@
 #![allow(dead_code)]
 
 use super::{FromMessage, Message, ToMessage};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-// TODO: Change type based on actual gateway request
 #[derive(Debug)]
 pub struct GatewayRequest {
     id: u64,
@@ -24,10 +23,11 @@ impl ToMessage for GatewayRequest {
 
     fn to_message(&self) -> Result<Message> {
         Ok(Message {
-            id: self.id,
+            id: Some(self.id),
             r#type: Self::TYPE.to_owned(),
             // TODO: not good, why force user to only send JSON to functions?
-            message: serde_json::to_value(&self.request)?,
+            message: serde_json::to_value(&self.request)
+                .context("gateway request serialization failed")?,
         })
     }
 }
@@ -38,11 +38,15 @@ impl GatewayRequest {
     }
 }
 
-// TODO: Change type based on actual gateway response
 #[derive(Deserialize, Debug)]
 pub struct GatewayResponse {
-    id: u64,
-    pub response: String,
+    pub id: u64,
+    pub response: GatewayResponseDetails,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct GatewayResponseDetails {
+    pub body: String,
 }
 
 impl FromMessage for GatewayResponse {
@@ -50,8 +54,11 @@ impl FromMessage for GatewayResponse {
 
     fn from_message(m: Message) -> Result<Self> {
         Ok(Self {
-            id: m.id,
-            response: serde_json::from_value(m.message)?,
+            id: m
+                .id
+                .context("filed id in gateway resposne can not be null")?,
+            response: serde_json::from_value(m.message)
+                .context("gateway response deserialization failed")?,
         })
     }
 }

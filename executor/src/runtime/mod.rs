@@ -8,12 +8,14 @@ pub mod message;
 pub mod providers;
 
 const MESSAGE_READ_BUF_CAP: usize = 8 * 1024;
+const FUNCTION_TERM_TIMEOUT: Duration = Duration::from_secs(2);
 
 use self::{
     function::{FunctionDefinition, FunctionHandle, FunctionID},
     message::{
         database::DbRequest,
         gateway::{GatewayRequest, GatewayResponse},
+        log::Log,
         FromMessage, Message,
     },
 };
@@ -26,6 +28,7 @@ use std::{
     collections::{hash_map::Entry, HashMap},
     io::{BufRead, Write},
     sync::Arc,
+    time::Duration,
 };
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -36,10 +39,13 @@ pub trait FunctionProvider: Send {
     async fn get(&mut self, id: &FunctionID) -> anyhow::Result<&FunctionDefinition>;
 }
 
+#[derive(Debug)]
 pub enum Request {
     InvokeFunction(InvokeFunctionRequest),
+    Shutdown,
 }
 
+#[derive(Debug)]
 pub struct InvokeFunctionRequest {
     // TODO: not needed in public interface
     pub function_id: FunctionID,
@@ -82,7 +88,7 @@ impl Runtime {
     }
 
     async fn mailbox_step(
-        _: CallbackMailboxProcessor<Request>,
+        _mb: CallbackMailboxProcessor<Request>,
         msg: Request,
         mut runtime: RuntimeState,
     ) -> RuntimeState {
@@ -91,11 +97,17 @@ impl Runtime {
                 if let Ok(instance) = Self::get_instance(&mut runtime, req.function_id).await {
                     let mut instance = instance.write_owned().await;
                     // TODO: Handle spawn_blocking errors
-                    // TODO: Handle node shutdown, how can we cancel running functions?
+
                     tokio::task::spawn_blocking(move || {
                         req.reply.reply(instance.request(req.message))
                     });
                 }
+            }
+
+            Request::Shutdown => {
+                //runtime.cancel_tokens.values().for_each(|i| {
+                //    i.cancel();
+                //});
             }
         }
         runtime
@@ -108,9 +120,10 @@ impl Runtime {
         let instance_id = match state.instances.entry(function_id.clone()) {
             Entry::Vacant(v) => {
                 let definition = state.function_provider.get(&function_id).await?;
-                let instance = Instance::new(definition).await?;
-                let mut map = HashMap::new();
                 let id = InstanceID::generate_random();
+                let instance = Instance::new(definition)?;
+
+                let mut map = HashMap::new();
                 map.insert(id, Arc::new(RwLock::new(instance)));
                 v.insert(map);
                 id
@@ -121,7 +134,7 @@ impl Runtime {
                     .get()
                     .iter()
                     .filter_map(|(k, v)| match v.try_read() {
-                        Ok(i) if i.is_idle() => Some(k),
+                        Ok(_) => Some(k),
                         _ => None,
                     })
                     .nth(0);
@@ -129,8 +142,8 @@ impl Runtime {
                 match first_idle_instance {
                     None => {
                         let definition = state.function_provider.get(&function_id).await?;
-                        let instance = Instance::new(definition).await?;
                         let id = InstanceID::generate_random();
+                        let instance = Instance::new(definition)?;
                         o.get_mut().insert(id, Arc::new(RwLock::new(instance)));
                         id
                     }
@@ -146,27 +159,27 @@ impl Runtime {
             .unwrap()
             .clone())
     }
+
+    pub async fn shutdown(self) -> Result<()> {
+        self.mailbox.post(Request::Shutdown).await?;
+        self.mailbox.stop().await;
+        Ok(())
+    }
 }
 
-#[derive(PartialEq)]
-enum InstanceStatus {
-    Idle,
-    Busy,
-}
-
+#[derive(Debug)]
 pub struct Instance {
     function_id: FunctionID,
     handle: FunctionHandle,
-    state: InstanceStatus,
 }
 
 impl Instance {
-    pub async fn new(definition: &FunctionDefinition) -> Result<Self> {
+    pub fn new(definition: &FunctionDefinition) -> Result<Self> {
         let handle = function::start(definition)?;
+
         Ok(Self {
             function_id: definition.id.clone(),
             handle,
-            state: InstanceStatus::Idle,
         })
     }
 
@@ -174,38 +187,53 @@ impl Instance {
         self.handle.join_handle.is_finished()
     }
 
-    pub fn is_idle(&self) -> bool {
-        self.state == InstanceStatus::Idle
-    }
-
     fn write_to_stdin(&mut self, input: Message) -> Result<()> {
         let mut bytes = input.as_bytes()?;
         bytes.put_u8(b'\n');
         self.handle.io.stdin.write(&bytes)?; //TODO: check if all of buffer is written
+        self.handle.io.stdin.flush()?;
         Ok(())
     }
 
     fn read_from_stdout(&mut self) -> Result<Message> {
         let mut buf = String::with_capacity(MESSAGE_READ_BUF_CAP);
-        self.handle.io.stdout.read_line(&mut buf)?; //TODO: check output and if it's 0, then pipe is
-                                                    //closed
-        println!("Message read: `{buf}`");
-        serde_json::from_slice(buf.as_bytes()).map_err(Into::into)
+        loop {
+            let bytes_read = self.handle.io.stdout.read_line(&mut buf)?;
+            if bytes_read == 0 {
+                continue;
+            };
+
+            return serde_json::from_slice(buf.as_bytes()).map_err(Into::into);
+        }
     }
 
+    //if self.cancellation.token.is_cancelled() {
+    //    println!("Got shutdown");
+    //    let msg = Signal::term().to_message().unwrap();
+    //    self.write_to_stdin(msg)?;
+    //    println!("shutdown signal sent");
+    //    std::thread::sleep(FUNCTION_TERM_TIMEOUT);
+    //    println!("shutdown timeout");
+    //    self.handle.join_handle.abort();
+    //    println!("function aborted");
+    //}
+
     pub fn request(&mut self, request: GatewayRequest) -> Result<GatewayResponse> {
-        self.state = InstanceStatus::Busy;
         //TODO: check function state
         self.write_to_stdin(request.to_message()?)?;
         loop {
-            let message = self.read_from_stdout();
-            match message {
+            match self.read_from_stdout() {
                 Ok(message) => match message.r#type.as_str() {
                     GatewayResponse::TYPE => {
-                        self.state = InstanceStatus::Idle;
                         return GatewayResponse::from_message(message);
                     }
-                    DbRequest::TYPE => todo!(),
+
+                    DbRequest::TYPE => (), //TODO
+
+                    Log::TYPE => {
+                        let log = Log::from_message(message)?;
+                        println!("Log: {log:?}");
+                    }
                     t => bail!("invalid message type: {t}"),
                 },
                 Err(e) => println!("Error while parsing resposne: {e:?}"),

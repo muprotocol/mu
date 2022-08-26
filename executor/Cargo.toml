@@ -6,9 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wasmer = { git = "https://github.com/wasmerio/wasmer", rev = "0cd9dfe3" }
-wasmer-wasi = { git = "https://github.com/wasmerio/wasmer", rev = "0cd9dfe3" }
-tokio = { version = "1.0", features = ["full"] }
+wasmer = { git = "https://github.com/wasmerio/wasmer", rev = "43b6e0c2" }
+wasmer-wasi = { git = "https://github.com/wasmerio/wasmer", rev = "43b6e0c2" }
+wasmer-middlewares = { git = "https://github.com/wasmerio/wasmer", rev = "43b6e0c2" }
+tokio = { version = "1.0", features = ["full", "tracing"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
