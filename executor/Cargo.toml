@@ -9,7 +9,7 @@ edition = "2021"
 wasmer = { git = "https://github.com/wasmerio/wasmer", rev = "43b6e0c2" }
 wasmer-wasi = { git = "https://github.com/wasmerio/wasmer", rev = "43b6e0c2" }
 wasmer-middlewares = { git = "https://github.com/wasmerio/wasmer", rev = "43b6e0c2" }
-tokio = { version = "1.0", features = ["full", "tracing"] }
+tokio = { version = "1.0", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -39,6 +39,13 @@ num = "0.4"
 dyn-clone = "1.0"
 dyn-clonable = "0.9"
 reqwest = "0.11"
+sled = "0.34"
+assert_matches = "1.5"
+validator = { version = "0.16", features = ["derive"] }
+
+[dev-dependencies]
+serial_test = "0.8"
+test-log = "0.2"
 
 [lib]
 name = "mu"
@@ -46,6 +53,3 @@ name = "mu"
 [[bin]]
 path = "src/main.rs"
 name = "mu-executor"
-
-[dev-dependencies]
-test-log = "0.2.11"
