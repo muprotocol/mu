@@ -145,7 +145,7 @@ impl Instance {
     fn write_to_stdin(&mut self, input: Message) -> Result<()> {
         let mut bytes = input.as_bytes()?;
         bytes.put_u8(b'\n');
-        self.handle.io.stdin.write(&bytes)?; //TODO: check if all of buffer is written
+        self.handle.io.stdin.write_all(&bytes)?;
         self.handle.io.stdin.flush()?;
         Ok(())
     }

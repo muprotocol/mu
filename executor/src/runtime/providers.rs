@@ -11,6 +11,12 @@ pub struct FunctionProviderImpl {
     functions: HashMap<FunctionID, FunctionDefinition>,
 }
 
+impl Default for FunctionProviderImpl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FunctionProviderImpl {
     pub fn new() -> Self {
         Self {
