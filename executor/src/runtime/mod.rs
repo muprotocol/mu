@@ -14,7 +14,7 @@ const FUNCTION_TERM_TIMEOUT: Duration = Duration::from_secs(2);
 use self::{
     error::Error,
     message::{
-        database::DbRequest,
+        database::{table_id, DbRequest, DbResponse, DbResponseDetails},
         gateway::{GatewayRequest, GatewayResponse},
         log::Log,
         FromMessage, Message,
@@ -24,7 +24,10 @@ use self::{
         InstanceID, InvokeFunctionRequest, Request,
     },
 };
-use crate::runtime::message::ToMessage;
+use crate::{
+    mudb::{self, service as DbService},
+    runtime::message::{database::DbRequestDetails, ToMessage},
+};
 use anyhow::{bail, Result};
 use bytes::BufMut;
 use futures::Future;
@@ -199,7 +202,51 @@ impl Instance {
                         });
                     }
 
-                    DbRequest::TYPE => (), //TODO
+                    DbRequest::TYPE => {
+                        let db_req = DbRequest::from_message(message)?;
+                        let db_resp = match db_req.request {
+                            DbRequestDetails::CreateTable(req) => {
+                                let res = DbService::create_table(table_id(
+                                    &self.id.function_id,
+                                    req.db_name,
+                                    req.table_name,
+                                ))
+                                .map_err(|e| e.to_string());
+
+                                DbResponse {
+                                    id: db_req.id,
+                                    response: DbResponseDetails::CreateTable(res),
+                                }
+                            }
+                            _ => todo!(),
+                            //DbRequestDetails::DropTable(req) => DbService::delete_table(
+                            //    create_database_id(&self.id.function_id, req.db_name),
+                            //    req.table_name,
+                            //),
+                            //DbRequestDetails::Find(req) => DbService::find_item(
+                            //    create_database_id(&self.id.function_id, req.db_name),
+                            //    req.table_name,
+                            //    req.key_filter,
+                            //    req.value_filter,
+                            //),
+                            //DbRequestDetails::Insert(req) => DbService::insert_one_item(
+                            //    create_database_id(&self.id.function_id, req.db_name),
+                            //    req.table_name,
+                            //    req.key,
+                            //    req.value,
+                            //),
+
+                            //DbRequestDetails::Update(req) => DbService::update_item(
+                            //    create_database_id(&self.id.function_id, req.db_name),
+                            //    req.table_name,
+                            //    req.key_filter,
+                            //    req.value_filter,
+                            //    mudb::query::Update(req.update),
+                            //),
+                        };
+                        let msg = db_resp.to_message()?;
+                        self.write_to_stdin(msg)?;
+                    }
 
                     Log::TYPE => {
                         let log = Log::from_message(message)?;

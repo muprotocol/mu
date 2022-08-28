@@ -1,38 +1,68 @@
+use crate::{
+    mudb::{
+        client::TableID,
+        input::KeyFilter,
+        output::{
+            CreateTableOutput, DeleteTableOutput, FindItemOutput, InsertOneItemOutput,
+            UpdateItemOutput,
+        },
+    },
+    runtime::types::FunctionID,
+};
+
 use super::{FromMessage, Message, ToMessage};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-#[derive(Deserialize)]
-pub struct Filter;
+macro_rules! make_request {
+    ($name:ident) => {
+        #[derive(Deserialize)]
+        pub struct $name {
+            pub db_name: String,
+            pub table_name: String,
+        }
+    };
 
-#[derive(Deserialize)]
-pub enum DbRequestDetail {
-    CreateTable {
-        table_name: String,
-        auto_increment_id: bool,
-    },
-    DropTable {
-        table_name: String,
-    },
-    Query {
-        table_name: String,
-        filter: Filter,
-    },
-    Insert {
-        table_name: String,
-        key: String,
-        value: String,
-    },
-    InsertMany {
-        table_name: String,
-        items: Vec<(String, String)>,
-    },
+    ($name:ident, $($field:ident : $type:ty),*) => {
+        #[derive(Deserialize)]
+        pub struct $name {
+            pub db_name: String,
+            pub table_name: String,
+            $(
+            pub $field: $type,
+            )*
+        }
+    };
 }
 
-// TODO: Change based on actual MuDB request types
+make_request!(CreateTableRequest);
+make_request!(DropTableRequest);
+make_request!(
+    FindRequest,
+    key_filter: KeyFilter,
+    value_filter: Option<Value>
+);
+make_request!(InsertRequest, key: String, value: String);
+make_request!(
+    UpdateRequest,
+    key_filter: Value,
+    value_filter: Option<Value>,
+    update: Value
+);
+
+#[derive(Deserialize)]
+pub enum DbRequestDetails {
+    CreateTable(CreateTableRequest),
+    DropTable(DropTableRequest),
+    Find(FindRequest),
+    Insert(InsertRequest),
+    Update(UpdateRequest),
+}
+
 pub struct DbRequest {
-    id: u64,
-    request: DbRequestDetail,
+    pub id: u64,
+    pub request: DbRequestDetails,
 }
 
 impl FromMessage for DbRequest {
@@ -50,18 +80,18 @@ impl FromMessage for DbRequest {
 }
 
 #[derive(Serialize)]
-pub enum DbResponseDetail {
-    CreateTable(Result<(), &'static str>),
-    DropTable(Result<(), &'static str>),
-    Query(Result<Vec<(String, String)>, &'static str>),
-    Insert(Result<(), &'static str>),
-    InsertMany(Result<(), &'static str>),
+pub enum DbResponseDetails {
+    CreateTable(Result<CreateTableOutput, String>),
+    DropTable(Result<Option<DeleteTableOutput>, String>),
+    Query(Result<FindItemOutput, String>),
+    Insert(Result<InsertOneItemOutput, String>),
+    Update(Result<UpdateItemOutput, String>),
 }
 
 #[derive(Serialize)]
 pub struct DbResponse {
     id: u64,
-    response: DbResponseDetail,
+    response: DbResponseDetails,
 }
 
 impl ToMessage for DbResponse {
@@ -74,5 +104,13 @@ impl ToMessage for DbResponse {
             message: serde_json::to_value(&self.response)
                 .context("database response serialization failed")?,
         })
+    }
+}
+
+pub fn table_id(function_id: &FunctionID, database_name: String, table_name: String) -> TableID {
+    TableID {
+        stack_id: function_id.stack_id,
+        database_name,
+        table_name,
     }
 }

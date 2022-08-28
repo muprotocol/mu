@@ -40,7 +40,7 @@ pub struct InvokeFunctionRequest<'a> {
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct InstanceID {
-    function_id: FunctionID,
+    pub function_id: FunctionID,
     instance_id: Uuid,
 }
 
