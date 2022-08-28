@@ -89,14 +89,13 @@ async fn test_simple_func() {
     };
     let message = GatewayRequest::new(1, request);
 
-    let (resp, usage) = runtime
+    let (resp, _usage) = runtime
         .invoke_function(function_ids[0].clone(), message)
         .await
         .unwrap();
 
     assert_eq!(1, resp.id);
     assert_eq!("Hello Chappy, welcome to MuRuntime", resp.response.body);
-    assert_eq!(77313, usage);
     runtime.shutdown().await.unwrap();
 }
 
