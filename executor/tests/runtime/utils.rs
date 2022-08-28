@@ -38,7 +38,7 @@ pub async fn compile_wasm_project(project_dir: &Path) -> Result<PathBuf> {
 
     Ok(project_dir
         .join("target/wasm32-wasi/release/")
-        .to_path_buf())
+        )
 }
 
 //TODO: maybe some `make clean` usage for this function
@@ -86,7 +86,7 @@ fn database_id_to_string(database_id: DatabaseID) -> String {
     format!(
         "{}_{}",
         database_id.stack_id,
-        database_id.database_name.replace(" ", "-")
+        database_id.database_name.replace(' ', "-")
     )
 }
 

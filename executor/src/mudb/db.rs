@@ -343,7 +343,7 @@ impl MuDB {
     // }
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct TableDescription {
     pub table_name: String,
     // TODO
@@ -594,11 +594,11 @@ mod test {
             res,
             Ok(DeleteTableOutput {
                 table_description: Some(TableDescription {
-                    table_name: handy_table.clone(),
+                    table_name: handy_table,
                 })
             })
         );
-        assert_eq!(db._table_names(), Ok(vec![auto_table.clone()]));
+        assert_eq!(db._table_names(), Ok(vec![auto_table]));
 
         // again delete same table should return Ok(false)
         let res = db.delete_table(input);
@@ -620,7 +620,7 @@ mod test {
 
         // insert into handy key table
         let input = InsertOneItemInput {
-            table_name: table_handy_key.clone(),
+            table_name: table_handy_key,
             key: "ex::1".to_string(),
             value: "VALUE1".to_string(),
         };
@@ -654,7 +654,7 @@ mod test {
         let (table_handy_key, _) = init_table(&db);
 
         let input = InsertOneItemInput {
-            table_name: table_handy_key.clone(),
+            table_name: table_handy_key,
             key: "ex::1".to_string(),
             value: "VALUE1".to_string(),
         };
@@ -695,7 +695,7 @@ mod test {
         assert_eq!(res, Ok(FindItemOutput { items: vec![] }));
 
         let input = FindItemInput {
-            table_name: table_handy_key.clone(),
+            table_name: table_handy_key,
             key_filter: KeyFilter::Exact("ex::2".to_string()),
             filter: Some(query::Filter(json!({
                 "num_item": 1  // it's not ok for key:2
@@ -794,7 +794,7 @@ mod test {
 
         // find all
         let input = FindItemInput {
-            table_name: table_handy_key.clone(),
+            table_name: table_handy_key,
             key_filter: KeyFilter::Prefix("".to_string()),
             filter: None,
         };
@@ -811,7 +811,7 @@ mod test {
         let _ = seed_item(&db, &table_handy_key);
 
         let input = FindItemInput {
-            table_name: table_handy_key.clone(),
+            table_name: table_handy_key,
             key_filter: KeyFilter::Prefix("ex".to_string()),
             filter: Some(query::Filter(json!({
                 "hello": { "$in": 5 } // it should be and array
@@ -873,7 +873,7 @@ mod test {
         assert_eq!(
             db.find_item(f_input),
             Ok(FindItemOutput {
-                items: vec![("ex::1".to_string(), updated_item.clone())]
+                items: vec![("ex::1".to_string(), updated_item)]
             })
         );
 
@@ -920,7 +920,7 @@ mod test {
         assert_eq!(
             db.find_item(f_input),
             Ok(FindItemOutput {
-                items: vec![("ex::2".to_string(), updated_item.clone())]
+                items: vec![("ex::2".to_string(), updated_item)]
             })
         );
 
@@ -943,7 +943,7 @@ mod test {
 
         let res = db.update_item(input);
         let f_input = FindItemInput {
-            table_name: table_handy_key.clone(),
+            table_name: table_handy_key,
             key_filter: KeyFilter::Prefix("ex".to_string()),
             filter,
         };
@@ -1008,7 +1008,7 @@ mod test {
             })
         );
         let f_input = FindItemInput {
-            table_name: table_handy_key.clone(),
+            table_name: table_handy_key,
             key_filter: KeyFilter::Prefix("ex".to_string()),
             filter,
         };
@@ -1032,7 +1032,7 @@ mod test {
         assert_eq!(res, Ok(DeleteAllItemsOutput));
 
         let f_input = FindItemInput {
-            table_name: table_handy_key.clone(),
+            table_name: table_handy_key,
             key_filter: KeyFilter::Prefix("ex".to_string()),
             filter: None,
         };

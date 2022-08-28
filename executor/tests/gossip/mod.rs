@@ -122,9 +122,7 @@ async fn bridge(
     log_stats_interval: Duration,
 ) -> Vec<BridgeState> {
     fn find_by_port(v: &Vec<RefCell<BridgeState>>, port: u16) -> &RefCell<BridgeState> {
-        v.iter()
-            .filter(|b| b.borrow().port == port)
-            .next()
+        v.iter().find(|b| b.borrow().port == port)
             .expect("Couldn't find port in gossips")
     }
 

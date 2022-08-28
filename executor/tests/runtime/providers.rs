@@ -20,6 +20,6 @@ impl MapFunctionProvider {
 #[async_trait]
 impl FunctionProvider for MapFunctionProvider {
     async fn get(&mut self, id: &FunctionID) -> Result<&FunctionDefinition> {
-        Ok(self.inner.get(&id).unwrap())
+        Ok(self.inner.get(id).unwrap())
     }
 }

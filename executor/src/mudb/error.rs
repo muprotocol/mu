@@ -71,7 +71,7 @@ impl From<tokio::task::JoinError> for Error {
     }
 }
 
-#[derive(Clone, Error, Debug, PartialEq)]
+#[derive(Clone, Error, Debug, PartialEq, Eq)]
 pub enum InvalidQueryError {
     #[error("InvalidOprErr")]
     InvalidOprErr,
