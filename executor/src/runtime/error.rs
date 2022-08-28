@@ -1,7 +1,7 @@
 //TODO
 #![allow(dead_code)]
 
-use super::function::FunctionID;
+use super::types::{FunctionID, InstanceID};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -14,4 +14,10 @@ pub enum Error {
 
     #[error("Can parse {0} from convert output message")]
     IncorrectOutputMessage(&'static str),
+
+    #[error("Function exited early: {0}")]
+    FunctionEarlyExit(InstanceID),
+
+    #[error("Function exited early: {0}")]
+    FunctionAborted(InstanceID),
 }

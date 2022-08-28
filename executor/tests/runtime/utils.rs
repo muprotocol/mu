@@ -55,3 +55,27 @@ pub async fn clean_wasm_project(project_dir: &Path) -> Result<()> {
 
     Ok(())
 }
+
+//pub async fn setup_webserver(addr: &str, endpoints: HashMap<String, PathBuf>) -> Result<()> {
+//    let addr = SocketAddr::from_str(addr)?;
+//
+//    async fn handle(req: Request<()>) -> Result<Response<Body>, Infallible> {
+//        if let &Method::GET = req.method() {
+//            if *req.uri() != "hello-wasm.wasm" {
+//                return Err(Infallible::);
+//            }
+//            let resp = Response::builder()
+//                .status(StatusCode::OK)
+//                .header("Content-Type", "application/octet-stream")
+//                .body(&[]);
+//            todo!()
+//        } else {
+//            todo!()
+//        }
+//    }
+//
+//    let make_service = make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(handle)) });
+//
+//    let server = Server::bind(&addr).serve(make_service);
+//    server.await.map_err(Into::into)
+//}

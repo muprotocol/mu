@@ -2,9 +2,9 @@ use anyhow::{Context, Result};
 use mu::{
     mu_stack::{FunctionRuntime, StackID},
     runtime::{
-        function::{FunctionDefinition, FunctionID},
         message::gateway::{GatewayRequest, GatewayRequestDetails},
-        InvokeFunctionRequest, Request, Runtime,
+        types::*,
+        Runtime,
     },
 };
 use std::{
@@ -89,20 +89,47 @@ async fn test_simple_func() {
     };
     let message = GatewayRequest::new(1, request);
 
-    let result = runtime
-        .mailbox
-        .post_and_reply(|r| {
-            Request::InvokeFunction(InvokeFunctionRequest {
-                message,
-                function_id: function_ids[0].clone(),
-                reply: r,
-            })
-        })
+    let (resp, usage) = runtime
+        .invoke_function(function_ids[0].clone(), message)
         .await
-        .unwrap()
         .unwrap();
 
-    assert_eq!(1, result.id);
-    assert_eq!("Hello Chappy, welcome to MuRuntime", result.response.body);
+    assert_eq!(1, resp.id);
+    assert_eq!("Hello Chappy, welcome to MuRuntime", resp.response.body);
+    assert_eq!(77313, usage);
     runtime.shutdown().await.unwrap();
 }
+
+//#[tokio::test]
+//async fn func_provider_works() {
+//    let mut projects = HashMap::new();
+//    projects.insert("hello-wasm", Path::new("tests/runtime/funcs/hello-wasm"));
+//    build_wasm_projects(projects);
+//
+//    let provider = FunctionProviderImpl::new();
+//    let function = Function {
+//        name: "hello-wasm".into(),
+//        binary: "http://localhost:9999/hello-wasm.wasm".into(),
+//        runtime: FunctionRuntime::Wasi1_0,
+//        env: HashMap::new(),
+//    };
+//    provider.add(StackID(Uuid::new_v4()), function);
+//
+//    let runtime = Runtime::start(Box::new(provider));
+//
+//    let request = GatewayRequestDetails {
+//        body: "Chappy".into(),
+//        local_path_and_query: "".into(),
+//    };
+//    let message = GatewayRequest::new(1, request);
+//
+//    let (resp, usage) = runtime
+//        .invoke_function(function_ids[0].clone(), message)
+//        .await
+//        .unwrap();
+//
+//    assert_eq!(1, resp.id);
+//    assert_eq!("Hello Chappy, welcome to MuRuntime", resp.response.body);
+//    assert_eq!(77313, usage);
+//    runtime.shutdown().await.unwrap();
+//}

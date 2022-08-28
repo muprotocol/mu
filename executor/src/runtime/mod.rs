@@ -6,85 +6,83 @@ pub mod error;
 pub mod function;
 pub mod message;
 pub mod providers;
+pub mod types;
 
 const MESSAGE_READ_BUF_CAP: usize = 8 * 1024;
 const FUNCTION_TERM_TIMEOUT: Duration = Duration::from_secs(2);
 
 use self::{
-    function::{FunctionDefinition, FunctionHandle, FunctionID},
+    error::Error,
     message::{
         database::DbRequest,
         gateway::{GatewayRequest, GatewayResponse},
         log::Log,
         FromMessage, Message,
     },
+    types::{
+        FunctionDefinition, FunctionHandle, FunctionID, FunctionProvider, FunctionUsage,
+        InstanceID, InvokeFunctionRequest, Request,
+    },
 };
 use crate::runtime::message::ToMessage;
 use anyhow::{bail, Result};
-use async_trait::async_trait;
 use bytes::BufMut;
-use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
+use futures::Future;
+use mailbox_processor::callback::CallbackMailboxProcessor;
 use std::{
-    collections::{hash_map::Entry, HashMap},
     io::{BufRead, Write},
-    sync::Arc,
     time::Duration,
 };
-use tokio::sync::RwLock;
-use uuid::Uuid;
-
-/// This is the FunctionProvider that should cache functions if needed.
-#[async_trait]
-pub trait FunctionProvider: Send {
-    async fn get(&mut self, id: &FunctionID) -> anyhow::Result<&FunctionDefinition>;
-}
-
-#[derive(Debug)]
-pub enum Request {
-    InvokeFunction(InvokeFunctionRequest),
-    Shutdown,
-}
-
-#[derive(Debug)]
-pub struct InvokeFunctionRequest {
-    // TODO: not needed in public interface
-    pub function_id: FunctionID,
-    pub message: GatewayRequest,
-    pub reply: ReplyChannel<Result<GatewayResponse>>,
-}
-
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
-pub struct InstanceID(Uuid);
-
-impl InstanceID {
-    fn generate_random() -> Self {
-        Self(Uuid::new_v4())
-    }
-}
+use wasmer_middlewares::metering::MeteringPoints;
 
 //TODO:
 // * use metrics and MemoryUsage so we can report usage of memory and CPU time.
 // * remove less frequently used source's from runtime
 pub struct Runtime {
-    // TODO: make mailbox private, implement methods for posting messages
-    pub mailbox: CallbackMailboxProcessor<Request>,
+    mailbox: CallbackMailboxProcessor<Request>,
 }
 
 struct RuntimeState {
-    instances: HashMap<FunctionID, HashMap<InstanceID, Arc<RwLock<Instance>>>>,
     function_provider: Box<dyn FunctionProvider>,
+}
+
+impl RuntimeState {
+    async fn instantiate_function(&mut self, function_id: FunctionID) -> Result<Instance> {
+        let definition = self.function_provider.get(&function_id).await?;
+        let instance = Instance::new(definition)?;
+        Ok(instance)
+    }
 }
 
 impl Runtime {
     pub fn start(function_provider: Box<dyn FunctionProvider>) -> Self {
-        let state = RuntimeState {
-            instances: HashMap::new(),
-            function_provider,
-        };
+        let state = RuntimeState { function_provider };
 
         let mailbox = CallbackMailboxProcessor::start(Self::mailbox_step, state, 10000);
 
         Self { mailbox }
+    }
+
+    pub async fn invoke_function(
+        &self,
+        function_id: FunctionID,
+        message: GatewayRequest,
+    ) -> Result<(GatewayResponse, FunctionUsage)> {
+        let result = self
+            .mailbox
+            .post_and_reply(|r| {
+                Request::InvokeFunction(InvokeFunctionRequest {
+                    function_id,
+                    message,
+                    reply: r,
+                })
+            })
+            .await;
+
+        match result {
+            Ok(r) => r,
+            Err(e) => Err(e).map_err(Into::into),
+        }
     }
 
     async fn mailbox_step(
@@ -92,72 +90,29 @@ impl Runtime {
         msg: Request,
         mut runtime: RuntimeState,
     ) -> RuntimeState {
+        //TODO: pass metering info to blockchain_manager service
         match msg {
             Request::InvokeFunction(req) => {
-                if let Ok(instance) = Self::get_instance(&mut runtime, req.function_id).await {
-                    let mut instance = instance.write_owned().await;
-                    // TODO: Handle spawn_blocking errors
+                if let Ok(instance) = runtime.instantiate_function(req.function_id).await {
+                    tokio::spawn(async {
+                        let resp =
+                            tokio::task::spawn_blocking(move || instance.request(req.message))
+                                .await
+                                .unwrap(); // TODO: Handle spawn_blocking errors
 
-                    tokio::task::spawn_blocking(move || {
-                        req.reply.reply(instance.request(req.message))
+                        match resp {
+                            Ok(a) => req.reply.reply(a.await),
+                            Err(a) => req.reply.reply(Err(a)),
+                        };
                     });
                 }
             }
 
             Request::Shutdown => {
-                //runtime.cancel_tokens.values().for_each(|i| {
-                //    i.cancel();
-                //});
+                //TODO: find a way to kill running functions
             }
         }
         runtime
-    }
-
-    async fn get_instance(
-        state: &mut RuntimeState,
-        function_id: FunctionID,
-    ) -> Result<Arc<RwLock<Instance>>> {
-        let instance_id = match state.instances.entry(function_id.clone()) {
-            Entry::Vacant(v) => {
-                let definition = state.function_provider.get(&function_id).await?;
-                let id = InstanceID::generate_random();
-                let instance = Instance::new(definition)?;
-
-                let mut map = HashMap::new();
-                map.insert(id, Arc::new(RwLock::new(instance)));
-                v.insert(map);
-                id
-            }
-
-            Entry::Occupied(mut o) => {
-                let first_idle_instance = o
-                    .get()
-                    .iter()
-                    .filter_map(|(k, v)| match v.try_read() {
-                        Ok(_) => Some(k),
-                        _ => None,
-                    })
-                    .nth(0);
-
-                match first_idle_instance {
-                    None => {
-                        let definition = state.function_provider.get(&function_id).await?;
-                        let id = InstanceID::generate_random();
-                        let instance = Instance::new(definition)?;
-                        o.get_mut().insert(id, Arc::new(RwLock::new(instance)));
-                        id
-                    }
-                    Some(k) => *k,
-                }
-            }
-        };
-        Ok(state
-            .instances
-            .get(&function_id)
-            .unwrap()
-            .get(&instance_id)
-            .unwrap()
-            .clone())
     }
 
     pub async fn shutdown(self) -> Result<()> {
@@ -169,7 +124,7 @@ impl Runtime {
 
 #[derive(Debug)]
 pub struct Instance {
-    function_id: FunctionID,
+    id: InstanceID,
     handle: FunctionHandle,
 }
 
@@ -178,8 +133,8 @@ impl Instance {
         let handle = function::start(definition)?;
 
         Ok(Self {
-            function_id: definition.id.clone(),
             handle,
+            id: InstanceID::generate_random(definition.id.clone()),
         })
     }
 
@@ -218,14 +173,30 @@ impl Instance {
     //    println!("function aborted");
     //}
 
-    pub fn request(&mut self, request: GatewayRequest) -> Result<GatewayResponse> {
+    pub fn request(
+        mut self,
+        request: GatewayRequest,
+    ) -> Result<impl Future<Output = Result<(GatewayResponse, FunctionUsage)>>> {
         //TODO: check function state
         self.write_to_stdin(request.to_message()?)?;
         loop {
+            if self.is_finished() {
+                return Err(Error::FunctionEarlyExit(self.id)).map_err(Into::into);
+            }
+
             match self.read_from_stdout() {
                 Ok(message) => match message.r#type.as_str() {
                     GatewayResponse::TYPE => {
-                        return GatewayResponse::from_message(message);
+                        let resp = GatewayResponse::from_message(message)?;
+                        return Ok(async move {
+                            match self.handle.join_handle.await {
+                                Ok(MeteringPoints::Exhausted) => Ok((resp, u64::MAX)),
+                                Ok(MeteringPoints::Remaining(p)) => Ok((resp, u64::MAX - p)),
+                                Err(_) => {
+                                    Err(Error::FunctionAborted(self.id.clone())).map_err(Into::into)
+                                }
+                            }
+                        });
                     }
 
                     DbRequest::TYPE => (), //TODO

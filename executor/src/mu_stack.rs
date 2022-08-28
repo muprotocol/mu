@@ -1,10 +1,16 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct StackID(pub Uuid);
+
+impl Display for StackID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Stack {

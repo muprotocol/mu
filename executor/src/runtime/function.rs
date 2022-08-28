@@ -2,74 +2,15 @@
 #![allow(dead_code)]
 
 use std::{
-    collections::HashMap,
-    hash::Hash,
     io::{BufReader, BufWriter},
     sync::Arc,
 };
 
+use super::types::{FunctionDefinition, FunctionHandle, FunctionIO};
 use anyhow::{Context, Result};
-use tokio::task::JoinHandle;
 use wasmer::{CompilerConfig, Cranelift, EngineBuilder, Instance, Module, Store};
-use wasmer_middlewares::{
-    metering::{get_remaining_points, MeteringPoints},
-    Metering,
-};
+use wasmer_middlewares::{metering::get_remaining_points, Metering};
 use wasmer_wasi::{Pipe, WasiState};
-
-use crate::mu_stack::{FunctionRuntime, StackID};
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct FunctionID {
-    pub stack_id: StackID,
-    pub function_name: String,
-}
-
-pub type FunctionSource = Vec<u8>;
-
-#[derive(Clone, Debug)]
-pub struct FunctionDefinition {
-    pub id: FunctionID,
-    pub source: FunctionSource,
-    pub runtime: FunctionRuntime,
-
-    // TODO: key must not contain `=` and both must not contain `null` byte
-    pub envs: HashMap<String, String>,
-}
-
-impl FunctionDefinition {
-    pub fn new(
-        id: FunctionID,
-        source: FunctionSource,
-        runtime: FunctionRuntime,
-        envs: impl IntoIterator<
-            IntoIter = impl Iterator<Item = (String, String)>,
-            Item = (String, String),
-        >,
-    ) -> Self {
-        let mut envs: HashMap<String, String> = envs.into_iter().collect();
-        envs.insert("RUST_BACKTRACE".into(), "1".into()); //TODO: remove this
-        Self {
-            id,
-            source,
-            runtime,
-            envs,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct FunctionIO {
-    pub stdin: BufWriter<Pipe>,
-    pub stdout: BufReader<Pipe>,
-    pub stderr: BufReader<Pipe>,
-}
-
-#[derive(Debug)]
-pub struct FunctionHandle {
-    pub join_handle: Arc<JoinHandle<MeteringPoints>>,
-    pub io: FunctionIO,
-}
 
 //TODO: configure `Builder` of tokio for huge blocking tasks
 pub fn start(definition: &FunctionDefinition) -> Result<FunctionHandle> {
@@ -128,7 +69,7 @@ pub fn start(definition: &FunctionDefinition) -> Result<FunctionHandle> {
     });
 
     Ok(FunctionHandle {
-        join_handle: Arc::new(join_handle),
+        join_handle,
         io: FunctionIO {
             stdin: BufWriter::new(stdin),
             stdout: BufReader::new(stdout),

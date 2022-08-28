@@ -1,9 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use mu::runtime::{
-    function::{FunctionDefinition, FunctionID},
-    FunctionProvider,
-};
+use mu::runtime::types::*;
 use std::collections::HashMap;
 
 pub struct MapFunctionProvider {
