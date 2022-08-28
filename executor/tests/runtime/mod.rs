@@ -1,14 +1,11 @@
 use anyhow::{Context, Result};
 use mu::{
     mu_stack::{FunctionRuntime, StackID},
-    runtime::{
-        message::gateway::{GatewayRequest, GatewayRequestDetails},
-        types::*,
-        Runtime,
-    },
+    runtime::{message::gateway, types::*, Runtime},
 };
 use std::{
     collections::HashMap,
+    hash::Hash,
     path::{Path, PathBuf},
 };
 use tokio::fs;
@@ -83,18 +80,20 @@ async fn test_simple_func() {
     let function_ids = provider.ids();
     let runtime = Runtime::start(Box::new(provider));
 
-    let request = GatewayRequestDetails {
-        body: "Chappy".into(),
-        local_path_and_query: "".into(),
+    let request = gateway::Request {
+        method: gateway::HttpMethod::Get,
+        path: "/get_name",
+        query: HashMap::new(),
+        headers: Vec::new(),
+        data: "Chappy",
     };
-    let message = GatewayRequest::new(1, request);
+    let message = gateway::GatewayRequest::new(request);
 
     let (resp, _usage) = runtime
         .invoke_function(function_ids[0].clone(), message)
         .await
         .unwrap();
 
-    assert_eq!(1, resp.id);
     assert_eq!("Hello Chappy, welcome to MuRuntime", resp.response.body);
     runtime.shutdown().await.unwrap();
 }

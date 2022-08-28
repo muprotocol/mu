@@ -25,16 +25,16 @@ pub trait FunctionProvider: Send {
 pub type FunctionUsage = u64; // # of executed instructions
 
 #[derive(Debug)]
-pub enum Request {
-    InvokeFunction(InvokeFunctionRequest),
+pub enum Request<'a> {
+    InvokeFunction(InvokeFunctionRequest<'a>),
     Shutdown,
 }
 
 #[derive(Debug)]
-pub struct InvokeFunctionRequest {
+pub struct InvokeFunctionRequest<'a> {
     // TODO: not needed in public interface
     pub function_id: FunctionID,
-    pub message: GatewayRequest,
+    pub message: GatewayRequest<'a>,
     pub reply: ReplyChannel<Result<(GatewayResponse, FunctionUsage)>>,
 }
 

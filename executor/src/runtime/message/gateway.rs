@@ -1,29 +1,63 @@
 //TODO
 #![allow(dead_code)]
 
+use std::{borrow::Cow, collections::HashMap};
+
 use super::{FromMessage, Message, ToMessage};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
-pub struct GatewayRequest {
-    id: u64,
-    request: GatewayRequestDetails,
+#[derive(Serialize, Debug)]
+pub enum HttpMethod {
+    Get,
+    Head,
+    Post,
+    Put,
+    Patch,
+    Delete,
+    Options,
 }
 
-// TODO: completely unsuitable!
 #[derive(Serialize, Debug)]
-pub struct GatewayRequestDetails {
-    pub local_path_and_query: String,
+pub struct Header<'a> {
+    pub name: Cow<'a, str>,
+    pub value: Cow<'a, str>,
+}
+
+#[derive(Serialize, Debug)]
+pub struct Request<'a> {
+    pub method: HttpMethod,
+    pub path: &'a str,
+    pub query: HashMap<&'a str, &'a str>,
+    pub headers: Vec<Header<'a>>,
+    pub data: &'a str,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct OwnedHeader {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Response {
+    pub status: u16,
+    pub content_type: String,
+    pub headers: Vec<OwnedHeader>,
     pub body: String,
 }
 
-impl ToMessage for GatewayRequest {
+#[derive(Debug)]
+pub struct GatewayRequest<'a> {
+    request: Request<'a>,
+}
+
+impl<'a> ToMessage for GatewayRequest<'a> {
     const TYPE: &'static str = "GatewayRequest";
 
     fn to_message(&self) -> Result<Message> {
         Ok(Message {
-            id: Some(self.id),
+            id: None,
             r#type: Self::TYPE.to_owned(),
             // TODO: not good, why force user to only send JSON to functions?
             message: serde_json::to_value(&self.request)
@@ -32,21 +66,15 @@ impl ToMessage for GatewayRequest {
     }
 }
 
-impl GatewayRequest {
-    pub fn new(id: u64, request: GatewayRequestDetails) -> Self {
-        GatewayRequest { id, request }
+impl<'a> GatewayRequest<'a> {
+    pub fn new(request: Request<'a>) -> Self {
+        GatewayRequest { request }
     }
 }
 
 #[derive(Deserialize, Debug)]
 pub struct GatewayResponse {
-    pub id: u64,
-    pub response: GatewayResponseDetails,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct GatewayResponseDetails {
-    pub body: String,
+    pub response: Response,
 }
 
 impl FromMessage for GatewayResponse {
@@ -54,9 +82,6 @@ impl FromMessage for GatewayResponse {
 
     fn from_message(m: Message) -> Result<Self> {
         Ok(Self {
-            id: m
-                .id
-                .context("filed id in gateway resposne can not be null")?,
             response: serde_json::from_value(m.message)
                 .context("gateway response deserialization failed")?,
         })

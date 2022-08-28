@@ -1,27 +1,49 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
+    collections::HashMap,
     io::{stdin, stdout, Write},
-    sync::Mutex,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Message {
-    id: u32,
+    id: Option<u32>,
     r#type: String,
     message: Value,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct Request {
-    local_path_and_query: String,
-    body: String,
+#[derive(Deserialize, Debug)]
+pub enum HttpMethod {
+    Get,
+    Head,
+    Post,
+    Put,
+    Patch,
+    Delete,
+    Options,
 }
 
-#[derive(Debug, Serialize)]
-struct Response {
-    body: String,
+#[derive(Deserialize, Serialize, Debug)]
+pub struct Header {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Request {
+    pub method: HttpMethod,
+    pub path: String,
+    pub query: HashMap<String, String>,
+    pub headers: Vec<Header>,
+    pub data: String,
+}
+
+#[derive(Serialize, Debug)]
+pub struct Response {
+    pub status: u16,
+    pub content_type: String,
+    pub headers: Vec<Header>,
+    pub body: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -29,12 +51,7 @@ struct Log {
     body: String,
 }
 
-fn send_message<T: Serialize>(msg: T, msg_type: &str, counter: &mut u32, id: Option<u32>) {
-    let id = id.unwrap_or_else(|| {
-        *counter += 1;
-        *counter
-    });
-
+fn send_message<T: Serialize>(msg: T, msg_type: &str, id: Option<u32>) {
     let msg = Message {
         id,
         r#type: msg_type.into(),
@@ -46,51 +63,43 @@ fn send_message<T: Serialize>(msg: T, msg_type: &str, counter: &mut u32, id: Opt
 
     stdout().write_all(&msg).unwrap();
 }
-fn read_stdin(mut log: impl FnMut(String)) -> Message {
+fn read_stdin() -> Message {
     let mut buf = String::new();
     loop {
-        let bytes_read = stdin()
-            .read_line(&mut buf)
-            .map_err(|e| log(e.to_string()))
-            .unwrap();
+        let bytes_read = stdin().read_line(&mut buf).unwrap();
         if bytes_read == 0 {
             continue;
         };
 
-        let msg: Message = serde_json::from_str(&buf)
-            .map_err(|e| log(e.to_string()))
-            .unwrap();
-        log(format!("[function]: Got message: {msg:?}"));
+        let msg: Message = serde_json::from_str(&buf).unwrap();
         return msg;
     }
 }
 
 fn main() {
-    let message_counter = Mutex::new(0);
-    let log = |body| {
+    let mut message_counter = 0;
+    let mut log = |body| {
+        message_counter += 1;
         let log = Log { body };
-        send_message(log, "Log", &mut message_counter.lock().unwrap(), None);
+        send_message(log, "Log", Some(message_counter));
     };
 
-    let response = |id, body| {
-        let resp = Response { body };
-        send_message(
-            resp,
-            "GatewayResponse",
-            &mut message_counter.lock().unwrap(),
-            Some(id),
-        );
+    let response = |body| {
+        let resp = Response {
+            status: 200,
+            content_type: "plain".into(),
+            headers: Vec::new(),
+            body,
+        };
+        send_message(resp, "GatewayResponse", None);
     };
 
-    let msg = read_stdin(log);
+    let msg = read_stdin();
 
     let request: Request = serde_json::from_value(msg.message)
         .map_err(|e| log(e.to_string()))
         .unwrap();
-    log(format!(
-        "[function]: made request out of message: {request:?}"
-    ));
 
-    let body = format!("Hello {}, welcome to MuRuntime", request.body);
-    response(msg.id, body);
+    let body = format!("Hello {}, welcome to MuRuntime", request.data);
+    response(body);
 }

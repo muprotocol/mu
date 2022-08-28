@@ -39,7 +39,7 @@ use wasmer_middlewares::metering::MeteringPoints;
 // * use metrics and MemoryUsage so we can report usage of memory and CPU time.
 // * remove less frequently used source's from runtime
 pub struct Runtime {
-    mailbox: CallbackMailboxProcessor<Request>,
+    mailbox: CallbackMailboxProcessor<Request<'static>>,
 }
 
 struct RuntimeState {
@@ -66,7 +66,7 @@ impl Runtime {
     pub async fn invoke_function(
         &self,
         function_id: FunctionID,
-        message: GatewayRequest,
+        message: GatewayRequest<'static>,
     ) -> Result<(GatewayResponse, FunctionUsage)> {
         let result = self
             .mailbox
@@ -85,9 +85,9 @@ impl Runtime {
         }
     }
 
-    async fn mailbox_step(
-        _mb: CallbackMailboxProcessor<Request>,
-        msg: Request,
+    async fn mailbox_step<'a>(
+        _mb: CallbackMailboxProcessor<Request<'a>>,
+        msg: Request<'a>,
         mut runtime: RuntimeState,
     ) -> RuntimeState {
         //TODO: pass metering info to blockchain_manager service
