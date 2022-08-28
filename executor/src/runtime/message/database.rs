@@ -1,11 +1,12 @@
 use crate::{
     mudb::{
-        client::TableID,
+        client::DatabaseID,
         input::KeyFilter,
         output::{
             CreateTableOutput, DeleteTableOutput, FindItemOutput, InsertOneItemOutput,
             UpdateItemOutput,
         },
+        query::Filter,
     },
     runtime::types::FunctionID,
 };
@@ -41,13 +42,13 @@ make_request!(DropTableRequest);
 make_request!(
     FindRequest,
     key_filter: KeyFilter,
-    value_filter: Option<Value>
+    value_filter: Option<Filter>
 );
 make_request!(InsertRequest, key: String, value: String);
 make_request!(
     UpdateRequest,
-    key_filter: Value,
-    value_filter: Option<Value>,
+    key_filter: KeyFilter,
+    value_filter: Option<Filter>,
     update: Value
 );
 
@@ -82,16 +83,16 @@ impl FromMessage for DbRequest {
 #[derive(Serialize)]
 pub enum DbResponseDetails {
     CreateTable(Result<CreateTableOutput, String>),
-    DropTable(Result<Option<DeleteTableOutput>, String>),
-    Query(Result<FindItemOutput, String>),
+    DropTable(Result<DeleteTableOutput, String>),
+    Find(Result<FindItemOutput, String>),
     Insert(Result<InsertOneItemOutput, String>),
     Update(Result<UpdateItemOutput, String>),
 }
 
 #[derive(Serialize)]
 pub struct DbResponse {
-    id: u64,
-    response: DbResponseDetails,
+    pub id: u64,
+    pub response: DbResponseDetails,
 }
 
 impl ToMessage for DbResponse {
@@ -107,10 +108,9 @@ impl ToMessage for DbResponse {
     }
 }
 
-pub fn table_id(function_id: &FunctionID, database_name: String, table_name: String) -> TableID {
-    TableID {
-        stack_id: function_id.stack_id,
+pub fn database_id(function_id: &FunctionID, database_name: String) -> DatabaseID {
+    DatabaseID {
+        stack_id: function_id.stack_id.clone(),
         database_name,
-        table_name,
     }
 }

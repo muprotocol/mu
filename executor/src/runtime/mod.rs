@@ -14,7 +14,7 @@ const FUNCTION_TERM_TIMEOUT: Duration = Duration::from_secs(2);
 use self::{
     error::Error,
     message::{
-        database::{table_id, DbRequest, DbResponse, DbResponseDetails},
+        database::{database_id, DbRequest, DbResponse, DbResponseDetails},
         gateway::{GatewayRequest, GatewayResponse},
         log::Log,
         FromMessage, Message,
@@ -206,44 +206,81 @@ impl Instance {
                         let db_req = DbRequest::from_message(message)?;
                         let db_resp = match db_req.request {
                             DbRequestDetails::CreateTable(req) => {
-                                let res = DbService::create_table(table_id(
-                                    &self.id.function_id,
-                                    req.db_name,
-                                    req.table_name,
-                                ))
-                                .map_err(|e| e.to_string());
+                                let res = tokio::runtime::Handle::current()
+                                    .block_on(DbService::create_table(
+                                        database_id(&self.id.function_id, req.db_name),
+                                        req.table_name,
+                                    ))
+                                    .map_err(|e| e.to_string());
 
                                 DbResponse {
                                     id: db_req.id,
                                     response: DbResponseDetails::CreateTable(res),
                                 }
                             }
-                            _ => todo!(),
-                            //DbRequestDetails::DropTable(req) => DbService::delete_table(
-                            //    create_database_id(&self.id.function_id, req.db_name),
-                            //    req.table_name,
-                            //),
-                            //DbRequestDetails::Find(req) => DbService::find_item(
-                            //    create_database_id(&self.id.function_id, req.db_name),
-                            //    req.table_name,
-                            //    req.key_filter,
-                            //    req.value_filter,
-                            //),
-                            //DbRequestDetails::Insert(req) => DbService::insert_one_item(
-                            //    create_database_id(&self.id.function_id, req.db_name),
-                            //    req.table_name,
-                            //    req.key,
-                            //    req.value,
-                            //),
 
-                            //DbRequestDetails::Update(req) => DbService::update_item(
-                            //    create_database_id(&self.id.function_id, req.db_name),
-                            //    req.table_name,
-                            //    req.key_filter,
-                            //    req.value_filter,
-                            //    mudb::query::Update(req.update),
-                            //),
+                            DbRequestDetails::DropTable(req) => {
+                                let res = tokio::runtime::Handle::current()
+                                    .block_on(DbService::delete_table(
+                                        database_id(&self.id.function_id, req.db_name),
+                                        req.table_name,
+                                    ))
+                                    .map_err(|e| e.to_string());
+
+                                DbResponse {
+                                    id: db_req.id,
+                                    response: DbResponseDetails::DropTable(res),
+                                }
+                            }
+
+                            DbRequestDetails::Find(req) => {
+                                let res = tokio::runtime::Handle::current()
+                                    .block_on(DbService::find_item(
+                                        database_id(&self.id.function_id, req.db_name),
+                                        req.table_name,
+                                        req.key_filter,
+                                        req.value_filter,
+                                    ))
+                                    .map_err(|e| e.to_string());
+
+                                DbResponse {
+                                    id: db_req.id,
+                                    response: DbResponseDetails::Find(res),
+                                }
+                            }
+                            DbRequestDetails::Insert(req) => {
+                                let res = tokio::runtime::Handle::current()
+                                    .block_on(DbService::insert_one_item(
+                                        database_id(&self.id.function_id, req.db_name),
+                                        req.table_name,
+                                        req.key,
+                                        req.value,
+                                    ))
+                                    .map_err(|e| e.to_string());
+
+                                DbResponse {
+                                    id: db_req.id,
+                                    response: DbResponseDetails::Insert(res),
+                                }
+                            }
+                            DbRequestDetails::Update(req) => {
+                                let res = tokio::runtime::Handle::current()
+                                    .block_on(DbService::update_item(
+                                        database_id(&self.id.function_id, req.db_name),
+                                        req.table_name,
+                                        req.key_filter,
+                                        req.value_filter,
+                                        mudb::query::Update(req.update),
+                                    ))
+                                    .map_err(|e| e.to_string());
+
+                                DbResponse {
+                                    id: db_req.id,
+                                    response: DbResponseDetails::Update(res),
+                                }
+                            }
                         };
+
                         let msg = db_resp.to_message()?;
                         self.write_to_stdin(msg)?;
                     }

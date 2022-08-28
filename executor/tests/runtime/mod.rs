@@ -1,16 +1,18 @@
 use anyhow::{Context, Result};
 use mu::{
     mu_stack::{FunctionRuntime, StackID},
+    mudb::client::DatabaseID,
     runtime::{message::gateway, types::*, Runtime},
 };
 use std::{
     collections::HashMap,
-    hash::Hash,
     path::{Path, PathBuf},
 };
 use tokio::fs;
 use utils::{clean_wasm_project, compile_wasm_project};
 use uuid::Uuid;
+
+use crate::runtime::utils::create_db;
 
 use self::providers::MapFunctionProvider;
 
@@ -131,3 +133,39 @@ async fn test_simple_func() {
 //    assert_eq!(77313, usage);
 //    runtime.shutdown().await.unwrap();
 //}
+
+#[tokio::test]
+async fn can_query_mudb() {
+    let mut projects = HashMap::new();
+    projects.insert("hello-mudb", Path::new("tests/runtime/funcs/hello-mudb"));
+
+    let provider = create_map_function_provider(projects.clone())
+        .await
+        .unwrap();
+    let function_ids = provider.ids();
+
+    let database_id = DatabaseID {
+        stack_id: function_ids[0].stack_id.clone(),
+        database_name: "my_db".into(),
+    };
+    create_db(database_id).await.unwrap();
+
+    let runtime = Runtime::start(Box::new(provider));
+
+    let request = gateway::Request {
+        method: gateway::HttpMethod::Get,
+        path: "/get_name",
+        query: HashMap::new(),
+        headers: Vec::new(),
+        data: "Dream",
+    };
+    let message = gateway::GatewayRequest::new(request);
+
+    let (resp, _usage) = runtime
+        .invoke_function(function_ids[0].clone(), message)
+        .await
+        .unwrap();
+
+    assert_eq!("Hello Dream", resp.response.body);
+    runtime.shutdown().await.unwrap();
+}
