@@ -1,6 +1,11 @@
-use serde::Deserialize;
-
 use super::{input::*, output::*, Config, MuDB, Result};
+use crate::mu_stack::StackID;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DatabaseID {
+    pub stack_id: StackID,
+    pub database_name: String,
+}
 
 /// # Usage
 ///
@@ -13,7 +18,7 @@ use super::{input::*, output::*, Config, MuDB, Result};
 /// ```ignore
 /// #[derive(Debug, Deserialize)]
 /// pub struct CreateTable {
-///     pub conn_conf: Config,
+///     pub database_name: String,
 ///     pub input: CreateTableInput,
 /// }
 ///
@@ -23,8 +28,13 @@ use super::{input::*, output::*, Config, MuDB, Result};
 ///         run: impl Fn(&CreateTableInput, MuDB) -> Result<CreateTableOutput> + Send + Sync + 'static,
 ///     ) -> Result<CreateTableOutput> {
 ///         ::tokio::task::spawn_blocking(move || {
-///             let db = MuDB::open_db(self.conn_conf)?;
-///             run(&self.input, db)
+///             let conf = Config {
+///                 name: self.database_name,
+///                 ..Default::default()
+///             };
+///
+///             let db = MuDB::open_db(conf)?;
+///             run(self.input, db)
 ///         })
 ///         .await?
 ///     }
@@ -32,9 +42,9 @@ use super::{input::*, output::*, Config, MuDB, Result};
 /// ```
 macro_rules! make_type_from {
     ($type_name:ident, $input_type:ident, $output_type:ident) => {
-        #[derive(Debug, Deserialize)]
+        #[derive(Debug)]
         pub struct $type_name {
-            pub conn_conf: Config,
+            pub database_id: DatabaseID,
             pub input: $input_type,
         }
 
@@ -44,7 +54,18 @@ macro_rules! make_type_from {
                 run: impl Fn($input_type, MuDB) -> Result<$output_type> + Send + Sync + 'static,
             ) -> Result<$output_type> {
                 ::tokio::task::spawn_blocking(move || {
-                    let db = MuDB::open_db(self.conn_conf)?;
+                    let database_id = format!(
+                        "{}_{}",
+                        self.database_id.stack_id,
+                        self.database_id.database_name.replace(" ", "-")
+                    );
+                    // TODO: that's prototype
+                    let conf = Config {
+                        name: database_id,
+                        ..Default::default()
+                    };
+
+                    let db = MuDB::open_db(conf)?;
                     run(self.input, db)
                 })
                 .await?
@@ -61,7 +82,7 @@ make_type_from!(InsertOneItem, InsertOneItemInput, InsertOneItemOutput);
 make_type_from!(FindItem, FindItemInput, FindItemOutput);
 make_type_from!(UpdateItem, UpdateItemInput, UpdateItemOutput);
 make_type_from!(DeleteItem, DeleteItemInput, DeleteItemOutput);
-make_type_from!(DeleteAllItems, DeleteAllItemInput, DeleteAllItemsOutput);
+make_type_from!(DeleteAllItems, DeleteAllItemsInput, DeleteAllItemsOutput);
 make_type_from!(TableLen, TableLenInput, TableLenOutput);
 make_type_from!(TableIsEmpty, TableIsEmptyInput, TableIsEmptyOutput);
 

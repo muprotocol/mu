@@ -312,9 +312,9 @@ impl MuDB {
 
     /// Deletes all table values.
     /// Note that this is not atomic.
-    pub fn delete_all_items(&self, input: DeleteAllItemInput) -> Result<DeleteAllItemsOutput> {
+    pub fn delete_all_items(&self, input: DeleteAllItemsInput) -> Result<DeleteAllItemsOutput> {
         input.validate()?;
-        let DeleteAllItemInput { table_name } = input;
+        let DeleteAllItemsInput { table_name } = input;
 
         self.db_inner
             .open_tree(table_name)?
@@ -1024,7 +1024,7 @@ mod test {
         let (table_handy_key, _) = init_table(&db);
         let _ = seed_item(&db, &table_handy_key);
 
-        let input = DeleteAllItemInput {
+        let input = DeleteAllItemsInput {
             table_name: table_handy_key.clone(),
         };
 

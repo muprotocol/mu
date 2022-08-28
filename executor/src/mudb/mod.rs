@@ -7,6 +7,7 @@ pub mod error;
 pub mod input;
 pub mod output;
 pub mod query;
+pub mod service;
 
 // re-exports
 pub use self::config::Config;

@@ -83,7 +83,7 @@ pub struct DeleteItemInput {
 }
 
 #[derive(Debug, Validate, Deserialize)]
-pub struct DeleteAllItemInput {
+pub struct DeleteAllItemsInput {
     #[validate(length(min = 1), custom = "validate_no_reserved_table")]
     pub table_name: String,
 }

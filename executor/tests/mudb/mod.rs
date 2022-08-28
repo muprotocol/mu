@@ -147,15 +147,20 @@ fn test_mudb_operations() {
 #[tokio::test]
 #[serial]
 async fn test_mudb_stateless_api() {
-    // init db
-    let conf = Config {
-        name: "test_mudb".to_owned(),
-        ..Default::default()
+    // // init db
+    // let conf = Config {
+    //     name: "test_mudb".to_owned(),
+    //     ..Default::default()
+    // };
+
+    let database_id = client::DatabaseID {
+        stack_id: mu::mu_stack::StackID(uuid::Uuid::new_v4()),
+        database_name: "test_mudb".to_owned(),
     };
 
     // create table 1
     let res = client::CreateTable {
-        conn_conf: conf.clone(),
+        database_id: database_id.clone(),
         input: CreateTableInput {
             table_name: "table_1".to_string(),
         },
@@ -174,7 +179,7 @@ async fn test_mudb_stateless_api() {
 
     // create table 2
     let res = client::CreateTable {
-        conn_conf: conf.clone(),
+        database_id: database_id.clone(),
         input: CreateTableInput {
             table_name: "table_2_auto_key".to_string(),
         },
@@ -203,7 +208,7 @@ async fn test_mudb_stateless_api() {
     .to_string();
 
     let res = client::InsertOneItem {
-        conn_conf: conf.clone(),
+        database_id: database_id.clone(),
         input: InsertOneItemInput {
             table_name: "table_1".to_string(),
             key: "ex::1".to_string(),
@@ -222,7 +227,7 @@ async fn test_mudb_stateless_api() {
 
     // insert one items
     let insert_one_res = client::InsertOneItem {
-        conn_conf: conf.clone(),
+        database_id: database_id.clone(),
         input: InsertOneItemInput {
             table_name: "table_2_auto_key".to_string(),
             key: "ex::5".to_string(),
@@ -245,7 +250,7 @@ async fn test_mudb_stateless_api() {
 
     // find
     let find_res = client::FindItem {
-        conn_conf: conf.clone(),
+        database_id: database_id.clone(),
         input: FindItemInput {
             table_name: "table_1".to_string(),
             key_filter: KeyFilter::Prefix("".to_string()),
@@ -265,7 +270,7 @@ async fn test_mudb_stateless_api() {
 
     // update
     let update_res = client::UpdateItem {
-        conn_conf: conf.clone(),
+        database_id: database_id.clone(),
         input: UpdateItemInput {
             table_name: "table_1".to_string(),
             key_filter: KeyFilter::Exact("ex::1".to_string()),
@@ -287,7 +292,7 @@ async fn test_mudb_stateless_api() {
 
     // delete
     let del_res = client::DeleteItem {
-        conn_conf: conf.clone(),
+        database_id: database_id.clone(),
         input: DeleteItemInput {
             table_name: "table_2_auto_key".to_string(),
             key_filter: KeyFilter::Prefix("".to_string()),
@@ -305,7 +310,7 @@ async fn test_mudb_stateless_api() {
 
     // delete table 1
     let res = client::DeleteTable {
-        conn_conf: conf.clone(),
+        database_id: database_id.clone(),
         input: DeleteTableInput {
             table_name: "table_1".to_string(),
         },
@@ -324,7 +329,7 @@ async fn test_mudb_stateless_api() {
 
     // delete table 2
     let res = client::DeleteTable {
-        conn_conf: conf.clone(),
+        database_id: database_id.clone(),
         input: DeleteTableInput {
             table_name: "table_2_auto_key".to_string(),
         },
