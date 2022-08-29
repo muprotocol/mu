@@ -68,18 +68,19 @@ impl MuDB {
             .map_err(Into::into)
     }
 
-    pub fn query_databases_by_prefix(prefix: &str) -> Result<Vec<String>> {
-        let mut list = vec![];
-        let prefixed_list =
-            sled::open(std::path::Path::new(&format!("./mudb/{}", DB_LIST)))?.scan_prefix(prefix);
+    // TODO
+    // pub fn query_databases_by_prefix(prefix: &str) -> Result<Vec<String>> {
+    //     let mut list = vec![];
+    //     let prefixed_list =
+    //         sled::open(std::path::Path::new(&format!("./mudb/{}", DB_LIST)))?.scan_prefix(prefix);
 
-        for res in prefixed_list {
-            let (k_ivec, _) = res?;
-            list.push(String::from_ivec(&k_ivec))
-        }
+    //     for res in prefixed_list {
+    //         let (k_ivec, _) = res?;
+    //         list.push(String::from_ivec(&k_ivec))
+    //     }
 
-        Ok(list)
-    }
+    //     Ok(list)
+    // }
 
     fn add_db_to_list(name: &str) -> Result<()> {
         // TODO: refactor to use mudb instead sled, after string key.
@@ -460,48 +461,49 @@ mod test {
         assert_eq!(MuDB::db_exists("123456_db").unwrap(), false);
     }
 
-    #[test]
-    #[serial]
-    fn query_db_by_prefix_r_ok_lists() {
-        let conf_1 = Config {
-            name: "a::b::db_1".to_string(),
-            temporary: Some(true),
-            ..Default::default()
-        };
-        let conf_2 = Config {
-            name: "a::b::db_2".to_string(),
-            ..conf_1.clone()
-        };
+    // TODO: query_databases_by_prefix
+    // #[test]
+    // #[serial]
+    // fn query_db_by_prefix_r_ok_lists() {
+    //     let conf_1 = Config {
+    //         name: "a::b::db_1".to_string(),
+    //         temporary: Some(true),
+    //         ..Default::default()
+    //     };
+    //     let conf_2 = Config {
+    //         name: "a::b::db_2".to_string(),
+    //         ..conf_1.clone()
+    //     };
 
-        let conf_3 = Config {
-            name: "a::c::db_3".to_string(),
-            ..conf_1.clone()
-        };
+    //     let conf_3 = Config {
+    //         name: "a::c::db_3".to_string(),
+    //         ..conf_1.clone()
+    //     };
 
-        let conf_4 = Config {
-            name: "x::y::db_4".to_string(),
-            ..conf_1.clone()
-        };
+    //     let conf_4 = Config {
+    //         name: "x::y::db_4".to_string(),
+    //         ..conf_1.clone()
+    //     };
 
-        MuDB::create_db(conf_1).unwrap();
-        MuDB::create_db(conf_2).unwrap();
-        MuDB::create_db(conf_3).unwrap();
-        MuDB::create_db(conf_4).unwrap();
+    //     MuDB::create_db(conf_1).unwrap();
+    //     MuDB::create_db(conf_2).unwrap();
+    //     MuDB::create_db(conf_3).unwrap();
+    //     MuDB::create_db(conf_4).unwrap();
 
-        assert_eq!(
-            MuDB::query_databases_by_prefix("a"),
-            Ok(vec![
-                "a::b::db_1".to_string(),
-                "a::b::db_2".to_string(),
-                "a::c::db_3".to_string()
-            ])
-        );
+    //     assert_eq!(
+    //         MuDB::query_databases_by_prefix("a"),
+    //         Ok(vec![
+    //             "a::b::db_1".to_string(),
+    //             "a::b::db_2".to_string(),
+    //             "a::c::db_3".to_string()
+    //         ])
+    //     );
 
-        assert_eq!(
-            MuDB::query_databases_by_prefix("a::b"),
-            Ok(vec!["a::b::db_1".to_string(), "a::b::db_2".to_string()])
-        );
-    }
+    //     assert_eq!(
+    //         MuDB::query_databases_by_prefix("a::b"),
+    //         Ok(vec!["a::b::db_1".to_string(), "a::b::db_2".to_string()])
+    //     );
+    // }
 
     // create_table
 
