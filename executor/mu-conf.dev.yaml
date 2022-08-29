@@ -1,5 +1,5 @@
 log:
-  level: debug
+  level: info
   filters:
     - module: quinn::connection
       level: off

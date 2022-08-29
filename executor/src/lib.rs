@@ -1,3 +1,4 @@
+pub mod gateway;
 pub mod infrastructure;
 pub mod mu_stack;
 pub mod network;
@@ -21,13 +22,16 @@ use network::{
 use crate::network::gossip::{self, Gossip, KnownNodes, NodeAddress};
 
 pub async fn run() -> Result<()> {
+    // TODO handle failures in components
+
     let cancellation_token = CancellationToken::new();
     let cancellation_token_clone = cancellation_token.clone();
 
     ctrlc::set_handler(move || cancellation_token_clone.cancel())
         .context("Failed to initialize Ctrl+C handler")?;
 
-    let (config, connection_manager_config, gossip_config) = config::initialize_config()?;
+    let (config, connection_manager_config, gossip_config, gateway_manager_config) =
+        config::initialize_config()?;
 
     let port = connection_manager_config.listen_port; // TODO
 
@@ -47,11 +51,6 @@ pub async fn run() -> Result<()> {
     if cancellation_token.is_cancelled() {
         process::exit(0);
     }
-
-    // Connect to and query seed nodes
-    // Start gossip
-
-    // TODO handle failures in components
 
     let mut known_nodes: KnownNodes = vec![];
 
@@ -88,6 +87,11 @@ pub async fn run() -> Result<()> {
     )
     .context("Failed to start gossip")?;
 
+    // TODO: no notification channel for now, requests are sent straight to runtime
+    let gateway_manager = gateway::start(gateway_manager_config)
+        .await
+        .context("Failed to start gateway manager")?;
+
     // TODO: create a `Module`/`Subsystem`/`NotificationSource` trait to batch modules with their notification receivers?
     glue_modules(
         cancellation_token,
@@ -97,6 +101,14 @@ pub async fn run() -> Result<()> {
         &mut gossip_notification_receiver,
     )
     .await;
+
+    // Stop gateway manager first. This waits for rocket to shut down, essentially
+    // running all requests to completion or cancelling them safely before shutting
+    // the rest of the system down.
+    gateway_manager
+        .stop()
+        .await
+        .context("Failed to stop gateway manager")?;
 
     gossip.stop().await.context("Failed to stop gossip")?;
 

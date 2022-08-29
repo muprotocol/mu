@@ -3,9 +3,17 @@ use std::{collections::HashMap, time::Duration};
 use anyhow::{Context, Result};
 use config::{Config, Environment, File, FileFormat, Value};
 
-use crate::network::{connection_manager::ConnectionManagerConfig, gossip::GossipConfig};
+use crate::{
+    gateway::GatewayManagerConfig,
+    network::{connection_manager::ConnectionManagerConfig, gossip::GossipConfig},
+};
 
-pub fn initialize_config() -> Result<(Config, ConnectionManagerConfig, GossipConfig)> {
+pub fn initialize_config() -> Result<(
+    Config,
+    ConnectionManagerConfig,
+    GossipConfig,
+    GatewayManagerConfig,
+)> {
     let defaults = vec![
         ("log.level", "warn"),
         ("connection_manager.listen_ip", "0.0.0.0"),
@@ -16,6 +24,8 @@ pub fn initialize_config() -> Result<(Config, ConnectionManagerConfig, GossipCon
         ("gossip.max_peers", "6"),
         ("gossip.peer_update_interval_millis", "10000"),
         ("gossip.liveness_check_interval_millis", "1000"),
+        ("gateway_manager.listen_ip", "0.0.0.0"),
+        ("gateway_manager.listen_port", "12012"),
     ];
 
     let default_arrays = vec!["log.filters"];
@@ -101,7 +111,23 @@ pub fn initialize_config() -> Result<(Config, ConnectionManagerConfig, GossipCon
         ),
     };
 
-    Ok((config, connection_manager_config, gossip_config))
+    let gateway_config = GatewayManagerConfig {
+        listen_address: config
+            .get_string("gateway_manager.listen_address")?
+            .parse()
+            .context("Failed to parse gateway_manager.listen_address")?,
+        listen_port: config
+            .get_string("gateway_manager.listen_port")?
+            .parse()
+            .context("Failed to parse gateway_manager.listen_port")?,
+    };
+
+    Ok((
+        config,
+        connection_manager_config,
+        gossip_config,
+        gateway_config,
+    ))
 }
 
 pub trait ConfigExt {
