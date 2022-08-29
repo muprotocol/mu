@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use futures::FutureExt;
 use mu::{
     gateway,
     mu_stack::{self, FunctionRuntime, StackID},
@@ -168,5 +169,46 @@ async fn can_query_mudb() {
         .unwrap();
 
     assert_eq!("Hello Dream", resp.body);
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn can_run_multiple_instance_of_the_same_function() {
+    let mut projects = HashMap::new();
+    projects.insert("hello-wasm", Path::new("tests/runtime/funcs/hello-wasm"));
+
+    let provider = create_map_function_provider(projects.clone())
+        .await
+        .unwrap();
+    let function_ids = provider.ids();
+    let runtime = Runtime::start(Box::new(provider));
+
+    let make_request = |name| gateway::Request {
+        method: mu_stack::HttpMethod::Get,
+        path: "/get_name",
+        query: HashMap::new(),
+        headers: Vec::new(),
+        data: name,
+    };
+
+    runtime
+        .invoke_function(function_ids[0].clone(), make_request("Mathew"))
+        .then(
+            |r| async move { assert_eq!("Hello Mathew, welcome to MuRuntime", r.unwrap().0.body) },
+        )
+        .await;
+
+    runtime
+        .invoke_function(function_ids[0].clone(), make_request("Morphius"))
+        .then(
+            |r| async move { assert_eq!("Hello Morphius, welcome to MuRuntime", r.unwrap().0.body) },
+        )
+        .await;
+
+    runtime
+        .invoke_function(function_ids[0].clone(), make_request("Unity"))
+        .then(|r| async move { assert_eq!("Hello Unity, welcome to MuRuntime", r.unwrap().0.body) })
+        .await;
+
     runtime.shutdown().await.unwrap();
 }
