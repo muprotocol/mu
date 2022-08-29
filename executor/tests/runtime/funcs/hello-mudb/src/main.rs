@@ -132,7 +132,7 @@ fn send_message<T: Serialize>(msg: T, msg_type: &str, id: Option<u32>) {
     stdout().write_all(&msg).unwrap();
 }
 
-fn read_stdin(mut log: impl FnMut(String)) -> Message {
+fn read_stdin(log: impl Fn(String)) -> Message {
     let mut buf = String::new();
     loop {
         let bytes_read = stdin()
@@ -140,6 +140,7 @@ fn read_stdin(mut log: impl FnMut(String)) -> Message {
             .map_err(|e| log(e.to_string()))
             .unwrap();
         if bytes_read == 0 {
+            std::thread::yield_now();
             continue;
         };
 
@@ -162,7 +163,7 @@ impl Counter {
         }
     }
 
-    pub fn get(&mut self) -> u32 {
+    pub fn get(&self) -> u32 {
         let mut inner = self.inner.write().unwrap();
         *inner += 1;
         *inner
@@ -170,10 +171,10 @@ impl Counter {
 }
 
 fn main() {
-    let mut counter = Counter::new();
+    let counter = Counter::new();
 
-    let mut counter_clone = counter.clone();
-    let mut log = move |body| {
+    let counter_clone = counter.clone();
+    let log = move |body| {
         let log = Log { body };
         send_message(log, "Log", Some(counter_clone.get()));
     };
@@ -188,13 +189,13 @@ fn main() {
         send_message(resp, "GatewayResponse", None);
     };
 
-    let mut db_request = move |req| {
+    let db_request = move |req| {
         let id = counter.get();
         send_message(req, "DbRequest", Some(id));
         id
     };
 
-    let gateway_msg = read_stdin(&mut log);
+    let gateway_msg = read_stdin(&log);
     let request: Request = serde_json::from_value(gateway_msg.message)
         .map_err(|e| log(e.to_string()))
         .unwrap();
@@ -205,7 +206,7 @@ fn main() {
         table_name: "test_table".into(),
     }));
 
-    let db_resp_msg = read_stdin(&mut log);
+    let db_resp_msg = read_stdin(&log);
     let _: DbResponse = serde_json::from_value(db_resp_msg.message)
         .map_err(|e| log(e.to_string()))
         .unwrap();
@@ -218,7 +219,7 @@ fn main() {
         value: "\"Mu Rocks!\"".into(),
     }));
 
-    let db_resp_msg = read_stdin(&mut log);
+    let db_resp_msg = read_stdin(&log);
     let _: DbResponse = serde_json::from_value(db_resp_msg.message)
         .map_err(|e| log(e.to_string()))
         .unwrap();
@@ -231,7 +232,7 @@ fn main() {
         value_filter: None,
     }));
 
-    let db_resp_msg = read_stdin(&mut log);
+    let db_resp_msg = read_stdin(&log);
     let db_resp = serde_json::from_value::<DbResponse>(db_resp_msg.message)
         .map_err(|e| log(e.to_string()))
         .unwrap();
