@@ -140,3 +140,21 @@ async fn get_existing_gateways(_stack_id: StackID) -> Vec<DeployedGateway> {
 }
 
 async fn delete_gateway(_stack_id: StackID, _gateway: DeployedGateway) {}
+
+/*
+download function
+
+    pub async fn add(&mut self, stack_id: StackID, function: Function) -> Result<()> {
+        let id = FunctionID {
+            stack_id,
+            function_name: function.name.clone(),
+        };
+
+        let source = Self::download_function_module(&function.binary).await?;
+        let definition =
+            FunctionDefinition::new(id.clone(), source, function.runtime, function.env);
+        self.functions.insert(id, definition);
+        Ok(())
+    }
+
+*/

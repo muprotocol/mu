@@ -88,8 +88,11 @@ pub async fn run() -> Result<()> {
     )
     .context("Failed to start gossip")?;
 
+    let function_provider = runtime::providers::DefaultFunctionProvider::new();
+    let runtime = runtime::Runtime::start(Box::new(function_provider));
+
     // TODO: no notification channel for now, requests are sent straight to runtime
-    let gateway_manager = gateway::start(gateway_manager_config)
+    let gateway_manager = gateway::start(gateway_manager_config, runtime.clone())
         .await
         .context("Failed to start gateway manager")?;
 

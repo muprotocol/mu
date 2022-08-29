@@ -6,10 +6,9 @@ use std::{
 
 use anyhow::Result;
 
-use super::message::gateway::{GatewayRequest, GatewayResponse};
+use super::message::{gateway::GatewayResponse, Message};
 use crate::mu_stack::{FunctionRuntime, StackID};
 
-use async_trait::async_trait;
 use mailbox_processor::ReplyChannel;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
@@ -17,24 +16,24 @@ use wasmer_middlewares::metering::MeteringPoints;
 use wasmer_wasi::Pipe;
 
 /// This is the FunctionProvider that should cache functions if needed.
-#[async_trait]
 pub trait FunctionProvider: Send {
-    async fn get(&mut self, id: &FunctionID) -> anyhow::Result<&FunctionDefinition>;
+    fn get(&self, id: &FunctionID) -> Option<&FunctionDefinition>;
+    fn add_function(&mut self, function: FunctionDefinition);
 }
 
 pub type FunctionUsage = u64; // # of executed instructions
 
 #[derive(Debug)]
-pub enum Request<'a> {
-    InvokeFunction(InvokeFunctionRequest<'a>),
+pub enum Request {
+    InvokeFunction(InvokeFunctionRequest),
     Shutdown,
 }
 
 #[derive(Debug)]
-pub struct InvokeFunctionRequest<'a> {
+pub struct InvokeFunctionRequest {
     // TODO: not needed in public interface
     pub function_id: FunctionID,
-    pub message: GatewayRequest<'a>,
+    pub message: Message,
     pub reply: ReplyChannel<Result<(GatewayResponse, FunctionUsage)>>,
 }
 

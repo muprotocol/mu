@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
 use mu::{
-    mu_stack::{FunctionRuntime, StackID},
+    gateway,
+    mu_stack::{self, FunctionRuntime, StackID},
     mudb::client::DatabaseID,
-    runtime::{message::gateway, types::*, Runtime},
+    runtime::{types::*, Runtime},
 };
 use serial_test::serial;
 use std::{
@@ -84,20 +85,19 @@ async fn test_simple_func() {
     let runtime = Runtime::start(Box::new(provider));
 
     let request = gateway::Request {
-        method: gateway::HttpMethod::Get,
+        method: mu_stack::HttpMethod::Get,
         path: "/get_name",
         query: HashMap::new(),
         headers: Vec::new(),
         data: "Chappy",
     };
-    let message = gateway::GatewayRequest::new(request);
 
     let (resp, _usage) = runtime
-        .invoke_function(function_ids[0].clone(), message)
+        .invoke_function(function_ids[0].clone(), request)
         .await
         .unwrap();
 
-    assert_eq!("Hello Chappy, welcome to MuRuntime", resp.response.body);
+    assert_eq!("Hello Chappy, welcome to MuRuntime", resp.body);
     runtime.shutdown().await.unwrap();
 }
 
@@ -155,19 +155,18 @@ async fn can_query_mudb() {
     let runtime = Runtime::start(Box::new(provider));
 
     let request = gateway::Request {
-        method: gateway::HttpMethod::Get,
+        method: mu_stack::HttpMethod::Get,
         path: "/get_name",
         query: HashMap::new(),
         headers: Vec::new(),
         data: "Dream",
     };
-    let message = gateway::GatewayRequest::new(request);
 
     let (resp, _usage) = runtime
-        .invoke_function(function_ids[0].clone(), message)
+        .invoke_function(function_ids[0].clone(), request)
         .await
         .unwrap();
 
-    assert_eq!("Hello Dream", resp.response.body);
+    assert_eq!("Hello Dream", resp.body);
     runtime.shutdown().await.unwrap();
 }

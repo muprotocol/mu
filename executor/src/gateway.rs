@@ -12,10 +12,14 @@ use rocket::{
     request::{FromParam, FromRequest},
     routes, State,
 };
+use serde::{Deserialize, Serialize};
 use tokio::{sync::RwLock, task::JoinHandle};
 use uuid::Uuid;
 
-use crate::mu_stack::{Gateway, HttpMethod, StackID};
+use crate::{
+    mu_stack::{Gateway, HttpMethod, StackID},
+    runtime::{types::FunctionID, Runtime},
+};
 
 #[async_trait]
 #[clonable]
@@ -91,26 +95,33 @@ struct GatewayState {
 
 // Used to access the gateway manager from within request handlers
 #[derive(Clone)]
-struct GatewayManagerAccessor {
-    inner: Arc<RwLock<Option<GatewayManagerImpl>>>,
+struct DependencyAccessor {
+    // TODO: break gateway manager's function management logic into new type to avoid
+    // dependency cycle and remove need for Arc<RwLock>
+    gateway_manager: Arc<RwLock<Option<GatewayManagerImpl>>>,
+    runtime: Runtime,
 }
 
-impl<'a> GatewayManagerAccessor {
-    async fn get(&'a self) -> GatewayManagerImpl {
-        self.inner.read().await.as_ref().unwrap().clone()
+impl<'a> DependencyAccessor {
+    async fn get_gateway_manager(&'a self) -> GatewayManagerImpl {
+        self.gateway_manager.read().await.as_ref().unwrap().clone()
     }
 }
 
 // TODO: route requests through outer layer to enable passing to other nodes
-pub async fn start(config: GatewayManagerConfig) -> Result<Box<dyn GatewayManager>> {
+pub async fn start(
+    config: GatewayManagerConfig,
+    runtime: Runtime,
+) -> Result<Box<dyn GatewayManager>> {
     let config = rocket::Config::figment()
         .merge(("address", config.listen_address.to_string()))
         .merge(("port", config.listen_port))
         .merge(("cli-colors", false))
         .merge(("ctrlc", false));
 
-    let accessor = GatewayManagerAccessor {
-        inner: Arc::new(RwLock::new(None)),
+    let accessor = DependencyAccessor {
+        gateway_manager: Arc::new(RwLock::new(None)),
+        runtime,
     };
 
     let ignited = rocket::custom(config)
@@ -140,7 +151,7 @@ pub async fn start(config: GatewayManagerConfig) -> Result<Box<dyn GatewayManage
 
     let result = GatewayManagerImpl { mailbox };
 
-    *accessor.inner.write().await = Some(result.clone());
+    *accessor.gateway_manager.write().await = Some(result.clone());
 
     Ok(Box::new(result))
 }
@@ -232,13 +243,13 @@ impl<'a> FromRequest<'a> for RequestHeaders<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Header<'a> {
     pub name: Cow<'a, str>,
     pub value: Cow<'a, str>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Request<'a> {
     pub method: HttpMethod,
     pub path: &'a str,
@@ -247,13 +258,13 @@ pub struct Request<'a> {
     pub data: &'a str,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub struct OwnedHeader {
     pub name: String,
     pub value: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub struct Response {
     pub status: u16,
     pub content_type: String,
@@ -315,26 +326,6 @@ impl<'r, 'o: 'r> rocket::response::Responder<'r, 'o> for Response {
     }
 }
 
-async fn _runtime_invoke_function<'a>(
-    stack_id: StackID,
-    function_name: String,
-    request: Request<'a>,
-) -> Response {
-    // TODO: replace with runtime integration
-    let status = 201;
-    let content_type = "application/json";
-    Response {
-        status,
-        content_type: content_type.into(),
-        body: format!("Request to function {function_name} of stack {stack_id}: {request:?}")
-            .into(),
-        headers: vec![OwnedHeader {
-            name: "X-Mu".into(),
-            value: "Yes".into(),
-        }],
-    }
-}
-
 async fn handle_request<'a>(
     stack_id: Uuid,
     gateway_name: &'a str,
@@ -343,7 +334,7 @@ async fn handle_request<'a>(
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
     data: Option<&'a str>,
-    gateway_manager: &State<GatewayManagerAccessor>,
+    dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     let stack_id = StackID(stack_id);
 
@@ -369,8 +360,8 @@ async fn handle_request<'a>(
         data: data.unwrap_or(""),
     };
 
-    let function_name = gateway_manager
-        .get()
+    let function_name = dependency_accessor
+        .get_gateway_manager()
         .await
         .mailbox
         .post_and_reply(|r| {
@@ -390,7 +381,24 @@ async fn handle_request<'a>(
         Ok(Some(x)) => x,
     };
 
-    _runtime_invoke_function(stack_id, function_name, request).await
+    match dependency_accessor
+        .runtime
+        .invoke_function(
+            FunctionID {
+                stack_id,
+                function_name,
+            },
+            request,
+        )
+        .await
+    {
+        Ok(x) => x.0,
+        // TODO: Generate meaningful error messages (propagate user function failure?)
+        Err(f) => {
+            error!("Failed to run user function: {f:?}");
+            Response::internal_error("User function failure")
+        }
+    }
 }
 
 #[get("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
@@ -401,7 +409,7 @@ async fn get<'a>(
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
     data: &'a str,
-    gateway_manager: &State<GatewayManagerAccessor>,
+    dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
         stack_id.0,
@@ -411,7 +419,7 @@ async fn get<'a>(
         query,
         headers,
         Some(data),
-        gateway_manager,
+        dependency_accessor,
     )
     .await
 }
@@ -424,7 +432,7 @@ async fn post<'a>(
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
     data: &'a str,
-    gateway_manager: &State<GatewayManagerAccessor>,
+    dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
         stack_id.0,
@@ -434,7 +442,7 @@ async fn post<'a>(
         query,
         headers,
         Some(data),
-        gateway_manager,
+        dependency_accessor,
     )
     .await
 }
@@ -447,7 +455,7 @@ async fn put<'a>(
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
     data: &'a str,
-    gateway_manager: &State<GatewayManagerAccessor>,
+    dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
         stack_id.0,
@@ -457,7 +465,7 @@ async fn put<'a>(
         query,
         headers,
         Some(data),
-        gateway_manager,
+        dependency_accessor,
     )
     .await
 }
@@ -470,7 +478,7 @@ async fn delete<'a>(
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
     data: &'a str,
-    gateway_manager: &State<GatewayManagerAccessor>,
+    dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
         stack_id.0,
@@ -480,7 +488,7 @@ async fn delete<'a>(
         query,
         headers,
         Some(data),
-        gateway_manager,
+        dependency_accessor,
     )
     .await
 }
@@ -493,7 +501,7 @@ async fn head<'a>(
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
     data: &'a str,
-    gateway_manager: &State<GatewayManagerAccessor>,
+    dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
         stack_id.0,
@@ -503,7 +511,7 @@ async fn head<'a>(
         query,
         headers,
         Some(data),
-        gateway_manager,
+        dependency_accessor,
     )
     .await
 }
@@ -516,7 +524,7 @@ async fn patch<'a>(
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
     data: &'a str,
-    gateway_manager: &State<GatewayManagerAccessor>,
+    dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
         stack_id.0,
@@ -526,7 +534,7 @@ async fn patch<'a>(
         query,
         headers,
         Some(data),
-        gateway_manager,
+        dependency_accessor,
     )
     .await
 }
@@ -539,7 +547,7 @@ async fn options<'a>(
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
     data: &'a str,
-    gateway_manager: &State<GatewayManagerAccessor>,
+    dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
         stack_id.0,
@@ -549,7 +557,7 @@ async fn options<'a>(
         query,
         headers,
         Some(data),
-        gateway_manager,
+        dependency_accessor,
     )
     .await
 }

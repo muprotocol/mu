@@ -1,4 +1,3 @@
-use anyhow::Result;
 use async_trait::async_trait;
 use mu::runtime::types::*;
 use std::collections::HashMap;
@@ -19,7 +18,11 @@ impl MapFunctionProvider {
 
 #[async_trait]
 impl FunctionProvider for MapFunctionProvider {
-    async fn get(&mut self, id: &FunctionID) -> Result<&FunctionDefinition> {
-        Ok(self.inner.get(id).unwrap())
+    fn get(&self, id: &FunctionID) -> Option<&FunctionDefinition> {
+        Some(self.inner.get(id).unwrap())
+    }
+
+    fn add_function(&mut self, _function: FunctionDefinition) {
+        unimplemented!("Not needed")
     }
 }

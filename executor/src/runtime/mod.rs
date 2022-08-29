@@ -25,10 +25,11 @@ use self::{
     },
 };
 use crate::{
+    gateway,
     mudb::{self, service as DbService},
     runtime::message::{database::DbRequestDetails, ToMessage},
 };
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use bytes::BufMut;
 use futures::Future;
 use mailbox_processor::callback::CallbackMailboxProcessor;
@@ -41,8 +42,9 @@ use wasmer_middlewares::metering::MeteringPoints;
 //TODO:
 // * use metrics and MemoryUsage so we can report usage of memory and CPU time.
 // * remove less frequently used source's from runtime
+#[derive(Clone)]
 pub struct Runtime {
-    mailbox: CallbackMailboxProcessor<Request<'static>>,
+    mailbox: CallbackMailboxProcessor<Request>,
 }
 
 struct RuntimeState {
@@ -51,7 +53,10 @@ struct RuntimeState {
 
 impl RuntimeState {
     async fn instantiate_function(&mut self, function_id: FunctionID) -> Result<Instance> {
-        let definition = self.function_provider.get(&function_id).await?;
+        let definition = self
+            .function_provider
+            .get(&function_id)
+            .ok_or(Error::FunctionNotFound(function_id))?;
         let instance = Instance::new(definition)?;
         Ok(instance)
     }
@@ -66,11 +71,14 @@ impl Runtime {
         Self { mailbox }
     }
 
-    pub async fn invoke_function(
+    pub async fn invoke_function<'a>(
         &self,
         function_id: FunctionID,
-        message: GatewayRequest<'static>,
-    ) -> Result<(GatewayResponse, FunctionUsage)> {
+        message: gateway::Request<'a>,
+    ) -> Result<(gateway::Response, FunctionUsage)> {
+        let message = GatewayRequest::new(message)
+            .to_message()
+            .context("Failed to serialize request message")?;
         let result = self
             .mailbox
             .post_and_reply(|r| {
@@ -83,14 +91,14 @@ impl Runtime {
             .await;
 
         match result {
-            Ok(r) => r,
+            Ok(r) => r.map(|r| (r.0.response, r.1)),
             Err(e) => Err(e).map_err(Into::into),
         }
     }
 
-    async fn mailbox_step<'a>(
-        _mb: CallbackMailboxProcessor<Request<'a>>,
-        msg: Request<'a>,
+    async fn mailbox_step(
+        _mb: CallbackMailboxProcessor<Request>,
+        msg: Request,
         mut runtime: RuntimeState,
     ) -> RuntimeState {
         //TODO: pass metering info to blockchain_manager service
@@ -178,10 +186,10 @@ impl Instance {
 
     pub fn request(
         mut self,
-        request: GatewayRequest,
+        request: Message,
     ) -> Result<impl Future<Output = Result<(GatewayResponse, FunctionUsage)>>> {
         //TODO: check function state
-        self.write_to_stdin(request.to_message()?)?;
+        self.write_to_stdin(request)?;
         loop {
             if self.is_finished() {
                 return Err(Error::FunctionEarlyExit(self.id)).map_err(Into::into);
@@ -293,7 +301,7 @@ impl Instance {
                     }
                     t => bail!("invalid message type: {t}"),
                 },
-                Err(e) => println!("Error while parsing resposne: {e:?}"),
+                Err(e) => println!("Error while parsing response: {e:?}"),
             };
         }
     }
