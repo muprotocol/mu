@@ -4,6 +4,7 @@ use mu::{
     mudb::client::DatabaseID,
     runtime::{message::gateway, types::*, Runtime},
 };
+use serial_test::serial;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -135,6 +136,7 @@ async fn test_simple_func() {
 //}
 
 #[tokio::test]
+#[serial]
 async fn can_query_mudb() {
     let mut projects = HashMap::new();
     projects.insert("hello-mudb", Path::new("tests/runtime/funcs/hello-mudb"));

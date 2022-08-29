@@ -250,12 +250,14 @@ impl Instance {
                             }
                             DbRequestDetails::Insert(req) => {
                                 let res = tokio::runtime::Handle::current()
-                                    .block_on(DbService::insert_one_item(
-                                        database_id(&self.id.function_id, req.db_name),
-                                        req.table_name,
-                                        req.key,
-                                        req.value,
-                                    ))
+                                    .block_on({
+                                        DbService::insert_one_item(
+                                            database_id(&self.id.function_id, req.db_name),
+                                            req.table_name,
+                                            req.key,
+                                            req.value,
+                                        )
+                                    })
                                     .map_err(|e| e.to_string());
 
                                 DbResponse {
@@ -287,7 +289,7 @@ impl Instance {
 
                     Log::TYPE => {
                         let log = Log::from_message(message)?;
-                        println!("Log: {log:?}");
+                        println!("Log: {log:#?}");
                     }
                     t => bail!("invalid message type: {t}"),
                 },

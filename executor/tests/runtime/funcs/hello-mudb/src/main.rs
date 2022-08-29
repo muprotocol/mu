@@ -215,7 +215,7 @@ fn main() {
         db_name: "my_db".into(),
         table_name: "test_table".into(),
         key: "secret".into(),
-        value: "Mu Rocks!".into(),
+        value: "\"Mu Rocks!\"".into(),
     }));
 
     let db_resp_msg = read_stdin(&mut log);
@@ -232,13 +232,15 @@ fn main() {
     }));
 
     let db_resp_msg = read_stdin(&mut log);
-    let db_resp: DbResponse = serde_json::from_value(db_resp_msg.message)
+    let db_resp = serde_json::from_value::<DbResponse>(db_resp_msg.message)
         .map_err(|e| log(e.to_string()))
         .unwrap();
 
     if let DbResponse::Find(db_resp) = db_resp {
         match db_resp {
-            Ok(r) => assert_eq!(r.items[0], ("secret".into(), "Mu Rocks!".into())),
+            Ok(r) => {
+                assert_eq!(r.items[0], ("secret".into(), "\"Mu Rocks!\"".into()))
+            }
             Err(e) => log(format!("Database Error: {e}")),
         }
     }

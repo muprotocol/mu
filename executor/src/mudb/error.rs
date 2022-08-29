@@ -2,7 +2,7 @@ use super::input::Key;
 use thiserror::Error;
 
 // TODO: encapsolate some error into internal error.
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug)]
 pub enum Error {
     // user error
     #[error("table {0} already exist")]
@@ -25,12 +25,37 @@ pub enum Error {
     SledErr(sled::Error),
     #[error("sled transaction error: {0}")]
     SledTransErr(sled::transaction::TransactionError),
-    #[error("sled error")]
-    SerdeJsonErr, // (serde_json::error::Error)
+    #[error("serde_json error")]
+    SerdeJsonErr(serde_json::Error), // (serde_json::error::Error)
     #[error("command was cancelled")]
     CommandCancelled,
     #[error("command panicked")]
     CommandPanicked,
+}
+
+impl PartialEq for Error {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Error::TableAlreadyExist(l), Error::TableAlreadyExist(r)) => l == r,
+            (Error::TableDoseNotExist(l), Error::TableDoseNotExist(r)) => l == r,
+            (Error::TableIsReserved(l), Error::TableIsReserved(r)) => l == r,
+            (
+                Error::TryingToSetKeyWhileItIsAutoIncrement(l),
+                Error::TryingToSetKeyWhileItIsAutoIncrement(r),
+            ) => l == r,
+            (Error::TryingToInsertItemWithNoKey, Error::TryingToInsertItemWithNoKey) => true,
+            (Error::KeyAlreadyExist(l), Error::KeyAlreadyExist(r)) => l == r,
+            (Error::InputValidationErr(l), Error::InputValidationErr(r)) => l == r,
+            (Error::SledErr(l), Error::SledErr(r)) => l == r,
+            (Error::SledTransErr(l), Error::SledTransErr(r)) => l == r,
+            (Error::SerdeJsonErr(l), Error::SerdeJsonErr(r)) => {
+                l.line() == r.line() && l.column() == r.column()
+            }
+            (Error::CommandCancelled, Error::CommandCancelled) => true,
+            (Error::CommandPanicked, Error::CommandPanicked) => true,
+            _ => false,
+        }
+    }
 }
 
 impl Eq for Error {}
@@ -48,9 +73,9 @@ impl From<sled::transaction::TransactionError> for Error {
 }
 
 impl From<serde_json::error::Error> for Error {
-    fn from(_err: serde_json::error::Error) -> Self {
+    fn from(err: serde_json::error::Error) -> Self {
         // Self::SerdeJsonErr(err)
-        Self::SerdeJsonErr
+        Self::SerdeJsonErr(err)
     }
 }
 
