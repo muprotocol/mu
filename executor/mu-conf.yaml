@@ -7,6 +7,11 @@ connection_manager:
   listen_address: 0.0.0.0
   listen_port: 12012
   max_request_size_kb: 8
+gateway_manager:
+  listen_address: 0.0.0.0
+  # Note, this is a TCP port. Connection manager uses a UDP port, so it's OK for both
+  # listen_ports to be set to the same number.
+  listen_port: 12012
 gossip:
   heartbeat_interval_millis: 1000
   assume_dead_after_missed_heartbeats: 10
