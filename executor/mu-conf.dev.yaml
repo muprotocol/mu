@@ -5,3 +5,5 @@ log:
       level: off
     - module: mu::network::connection_manager
       level: info
+    - module: wasmer_compiler_cranelift::translator::func_translator
+      level: off

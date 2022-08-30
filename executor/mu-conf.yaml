@@ -3,6 +3,8 @@ log:
   filters:
     - module: quinn::connection
       level: off
+    - module: wasmer_compiler_cranelift::translator::func_translator
+      level: off
 connection_manager:
   listen_address: 0.0.0.0
   listen_port: 12012

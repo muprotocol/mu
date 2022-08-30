@@ -174,7 +174,7 @@ fn validate(stack: Stack) -> Result<Stack, StackValidationError> {
 
 async fn fetch_function(url: &String) -> Vec<u8> {
     // TODO
-    std::fs::read(Path::new("./functions").join(url)).unwrap()
+    std::fs::read(Path::new("./prototype/functions").join(url)).unwrap()
 }
 
 /*

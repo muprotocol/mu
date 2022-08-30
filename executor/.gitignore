@@ -1,3 +1,4 @@
 /target
 /tests/runtime/funcs/*/target
 /mudb
+/prototype

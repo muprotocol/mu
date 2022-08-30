@@ -9,8 +9,10 @@ pub mod util;
 use std::{process, time::SystemTime};
 
 use anyhow::{Context, Result};
+use gateway::GatewayManager;
 use log::*;
 use mailbox_processor::NotificationChannel;
+use runtime::Runtime;
 use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 
@@ -96,6 +98,9 @@ pub async fn run() -> Result<()> {
         .await
         .context("Failed to start gateway manager")?;
 
+    // TODO remove this
+    deploy_prototype_stack(runtime.clone(), gateway_manager.clone()).await;
+
     // TODO: create a `Module`/`Subsystem`/`NotificationSource` trait to batch modules with their notification receivers?
     glue_modules(
         cancellation_token,
@@ -139,6 +144,19 @@ pub async fn run() -> Result<()> {
     info!("Goodbye!");
 
     Ok(())
+}
+
+async fn deploy_prototype_stack(
+    runtime: Box<dyn Runtime>,
+    gateway_manager: Box<dyn GatewayManager>,
+) {
+    let yaml = std::fs::read_to_string("./prototype/stack.yaml").unwrap();
+    let stack = serde_yaml::from_str::<mu_stack::Stack>(yaml.as_str()).unwrap();
+    let id = mu_stack::StackID("00001111-2222-3333-4444-555566667777".parse().unwrap());
+    mu_stack::deploy::deploy(id, stack, runtime, gateway_manager)
+        .await
+        .unwrap();
+    warn!("Deployed prototype stack with ID {id}");
 }
 
 async fn glue_modules(
