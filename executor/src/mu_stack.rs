@@ -53,18 +53,37 @@ pub enum Service {
     Function(Function),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Database {
     pub name: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Gateway {
     pub name: String,
     pub endpoints: HashMap<String, Vec<GatewayEndpoint>>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+impl Gateway {
+    // Strip leading slashes from urls, since that's the format rocket provides
+    fn clone_normalized(&self) -> Self {
+        let mut ep = HashMap::new();
+        for (url, endpoint) in &self.endpoints {
+            if url.starts_with('/') {
+                ep.insert(url[1..].to_string(), endpoint.clone());
+            } else {
+                ep.insert(url.clone(), endpoint.clone());
+            }
+        }
+
+        Self {
+            name: self.name.clone(),
+            endpoints: ep,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GatewayEndpoint {
     pub method: HttpMethod,
     pub route_to: String,
@@ -90,7 +109,7 @@ pub struct Function {
     pub env: HashMap<String, String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub enum FunctionRuntime {
     #[serde(rename = "wasi1.0")]
     Wasi1_0,

@@ -48,6 +48,12 @@ impl MuDB {
         })
     }
 
+    pub fn create_db_with_default_config(name: String) -> Result<Self> {
+        let mut conf = Config::default();
+        conf.name = name;
+        Self::create_db(conf)
+    }
+
     pub fn delete_db(name: &str) -> Result<()> {
         let conf = Config {
             name: name.to_owned(),
@@ -69,18 +75,18 @@ impl MuDB {
     }
 
     // TODO
-    // pub fn query_databases_by_prefix(prefix: &str) -> Result<Vec<String>> {
-    //     let mut list = vec![];
-    //     let prefixed_list =
-    //         sled::open(std::path::Path::new(&format!("./mudb/{}", DB_LIST)))?.scan_prefix(prefix);
+    pub fn query_databases_by_prefix(prefix: &str) -> Result<Vec<String>> {
+        let mut list = vec![];
+        let prefixed_list =
+            sled::open(std::path::Path::new(&format!("./mudb/{}", DB_LIST)))?.scan_prefix(prefix);
 
-    //     for res in prefixed_list {
-    //         let (k_ivec, _) = res?;
-    //         list.push(String::from_ivec(&k_ivec))
-    //     }
+        for res in prefixed_list {
+            let (k_ivec, _) = res?;
+            list.push(String::from_ivec(&k_ivec))
+        }
 
-    //     Ok(list)
-    // }
+        Ok(list)
+    }
 
     fn add_db_to_list(name: &str) -> Result<()> {
         // TODO: refactor to use mudb instead sled, after string key.

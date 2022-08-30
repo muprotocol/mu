@@ -7,6 +7,18 @@ pub struct DatabaseID {
     pub database_name: String,
 }
 
+impl DatabaseID {
+    pub fn database_name(stack_id: StackID, name: &String) -> String {
+        format!("{}_{}", stack_id, name.replace(" ", "-"))
+    }
+}
+
+impl ToString for DatabaseID {
+    fn to_string(&self) -> String {
+        DatabaseID::database_name(self.stack_id, &self.database_name)
+    }
+}
+
 /// # Usage
 ///
 /// ```ignore

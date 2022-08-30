@@ -1,6 +1,19 @@
-use thiserror::Error;
+use std::path::Path;
 
-use super::{Function, Gateway, HttpMethod, Stack, StackID};
+use db::MuDB;
+use thiserror::Error;
+use tokio::task::spawn_blocking;
+
+use crate::{
+    gateway::GatewayManager,
+    mudb::{client::DatabaseID, db},
+    runtime::{
+        types::{FunctionDefinition, FunctionID},
+        Runtime,
+    },
+};
+
+use super::{HttpMethod, Stack, StackID};
 
 #[derive(Error, Debug)]
 pub enum StackValidationError {
@@ -29,66 +42,126 @@ pub enum StackValidationError {
     },
 }
 
-pub async fn deploy(id: StackID, stack: Stack) -> Result<(), StackValidationError> {
-    let stack = validate(stack)?;
+#[derive(Error, Debug)]
+pub enum StackDeploymentError {
+    #[error("Validation error: {0}")]
+    ValidationError(StackValidationError),
+
+    #[error("Failed to deploy functions due to: {0}")]
+    FailedToDeployFunctions(anyhow::Error),
+
+    #[error("Failed to deploy gateways due to: {0}")]
+    FailedToDeployGateways(anyhow::Error),
+
+    #[error("Failed to deploy databases due to: {0}")]
+    FailedToDeployDatabases(anyhow::Error),
+}
+
+pub async fn deploy(
+    id: StackID,
+    stack: Stack,
+    mut runtime: Box<dyn Runtime>,
+    gateway_manager: Box<dyn GatewayManager>,
+) -> Result<(), StackDeploymentError> {
+    let stack = validate(stack).map_err(StackDeploymentError::ValidationError)?;
 
     // TODO: handle partial deployments
 
     // Step 1: Functions
     // Since functions need to be fetched from remote sources, they're more error-prone, so deploy them first
     let mut function_names = vec![];
+    let mut function_defs = vec![];
     for func in stack.functions() {
         let function_source = fetch_function(&func.binary).await;
-        deploy_function(id, &func, function_source).await;
+        function_defs.push(FunctionDefinition {
+            id: FunctionID {
+                stack_id: id,
+                function_name: func.name.clone(),
+            },
+            source: function_source,
+            runtime: func.runtime,
+            envs: func.env.clone(),
+        });
         function_names.push(&func.name);
     }
+    runtime
+        .add_functions(function_defs)
+        .await
+        .map_err(StackDeploymentError::FailedToDeployFunctions)?;
 
     // Step 2: Databases
-    let mut db_names = vec![];
-    for db in stack.databases() {
-        let db_name = format!("{id}:{}", db.name);
-        if !database_exists(&db_name).await {
-            create_database(&db_name).await;
+    let id_copy = id.clone();
+    let databases = stack.databases().map(Clone::clone).collect::<Vec<_>>();
+    let db_names = spawn_blocking(move || {
+        let mut db_names = vec![];
+        for db in databases {
+            let db_name = DatabaseID::database_name(id_copy, &db.name);
+            if !MuDB::db_exists(&db_name)
+                .map_err(|e| StackDeploymentError::FailedToDeployDatabases(e.into()))?
+            {
+                MuDB::create_db_with_default_config(db_name.clone())
+                    .map_err(|e| StackDeploymentError::FailedToDeployDatabases(e.into()))?;
+            }
+            db_names.push(db_name);
         }
-        db_names.push(db_name);
-    }
+        Ok(db_names)
+    })
+    .await
+    .map_err(|e| StackDeploymentError::FailedToDeployDatabases(e.into()))??;
 
     // Step 3: Gateways
     let mut gateway_names = vec![];
+    let mut gateways_to_deploy = vec![];
     for gw in stack.gateways() {
-        deploy_gateway(id, gw).await;
+        gateways_to_deploy.push(gw.clone_normalized());
         gateway_names.push(&gw.name);
     }
+    gateway_manager
+        .deploy_gateways(id, gateways_to_deploy)
+        .await
+        .map_err(StackDeploymentError::FailedToDeployGateways)?;
 
     // Now that everything deployed successfully, remove all obsolete services
 
-    for existing_gw in get_existing_gateways(id).await {
-        if gateway_names
-            .iter()
-            .filter(|n| ***n == *existing_gw.name)
-            .nth(0)
-            == None
-        {
-            delete_gateway(id, existing_gw).await;
+    let existing_gateways = gateway_manager
+        .get_deployed_gateway_names(id)
+        .await
+        .unwrap_or(Some(vec![]))
+        .unwrap_or(vec![]);
+    let mut gateways_to_remove = vec![];
+    for existing in existing_gateways {
+        if !gateway_names.iter().any(|n| ***n == *existing) {
+            gateways_to_remove.push(existing);
         }
     }
+    gateway_manager
+        .delete_gateways(id, gateways_to_remove)
+        .await
+        .unwrap_or(());
 
-    let prefix = format!("{id}:");
-    for db_name in query_databases_by_prefix(&prefix).await {
-        if !db_names.contains(&db_name) {
-            delete_database(&db_name).await;
+    let prefix = format!("{id}_");
+    spawn_blocking(move || {
+        for db_name in MuDB::query_databases_by_prefix(&prefix).unwrap_or(vec![]) {
+            if !db_names.contains(&db_name) {
+                MuDB::delete_db(&db_name).unwrap_or(());
+            }
+        }
+    })
+    .await
+    .unwrap_or(());
+
+    let existing_function_names = runtime.get_function_names(id).await.unwrap_or(vec![]);
+    let mut functions_to_delete = vec![];
+    for existing in existing_function_names {
+        if !function_names.iter().any(|n| ***n == *existing) {
+            functions_to_delete.push(existing);
         }
     }
-
-    for existing_func in get_existing_functions(id).await {
-        if function_names
-            .iter()
-            .filter(|n| ***n == *existing_func.name)
-            .nth(0)
-            == None
-        {
-            delete_function(id, existing_func).await;
-        }
+    if functions_to_delete.len() > 0 {
+        runtime
+            .remove_functions(id, functions_to_delete)
+            .await
+            .unwrap_or(());
     }
 
     Ok(())
@@ -99,47 +172,10 @@ fn validate(stack: Stack) -> Result<Stack, StackValidationError> {
     Ok(stack)
 }
 
-// Stub implementations, to be filled in by implementations in each module
-
-async fn database_exists(_db_name: &String) -> bool {
-    true
+async fn fetch_function(url: &String) -> Vec<u8> {
+    // TODO
+    std::fs::read(Path::new("./functions").join(url)).unwrap()
 }
-
-async fn create_database(_db_name: &String) {}
-
-async fn query_databases_by_prefix(_prefix: &String) -> Vec<String> {
-    vec![]
-}
-
-async fn delete_database(_db_name: &String) {}
-
-async fn fetch_function(_url: &String) -> Vec<u8> {
-    vec![]
-}
-
-async fn deploy_function(_stack_id: StackID, _func: &Function, _source: Vec<u8>) {}
-
-struct DeployedFunction {
-    name: String,
-}
-
-async fn get_existing_functions(_stack_id: StackID) -> Vec<DeployedFunction> {
-    vec![]
-}
-
-async fn delete_function(_stack_id: StackID, _function: DeployedFunction) {}
-
-async fn deploy_gateway(_stack_id: StackID, _gw: &Gateway) {}
-
-struct DeployedGateway {
-    name: String,
-}
-
-async fn get_existing_gateways(_stack_id: StackID) -> Vec<DeployedGateway> {
-    vec![]
-}
-
-async fn delete_gateway(_stack_id: StackID, _gateway: DeployedGateway) {}
 
 /*
 download function
