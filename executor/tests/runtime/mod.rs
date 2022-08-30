@@ -4,7 +4,7 @@ use mu::{
     gateway,
     mu_stack::{self, FunctionRuntime, StackID},
     mudb::client::DatabaseID,
-    runtime::{types::*, Runtime},
+    runtime::{start, types::*},
 };
 use serial_test::serial;
 use std::{
@@ -83,7 +83,7 @@ async fn test_simple_func() {
         .await
         .unwrap();
     let function_ids = provider.ids();
-    let runtime = Runtime::start(Box::new(provider));
+    let runtime = start(Box::new(provider));
 
     let request = gateway::Request {
         method: mu_stack::HttpMethod::Get,
@@ -153,7 +153,7 @@ async fn can_query_mudb() {
     };
     create_db(database_id).await.unwrap();
 
-    let runtime = Runtime::start(Box::new(provider));
+    let runtime = start(Box::new(provider));
 
     let request = gateway::Request {
         method: mu_stack::HttpMethod::Get,

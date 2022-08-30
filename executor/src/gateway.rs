@@ -99,7 +99,7 @@ struct DependencyAccessor {
     // TODO: break gateway manager's function management logic into new type to avoid
     // dependency cycle and remove need for Arc<RwLock>
     gateway_manager: Arc<RwLock<Option<GatewayManagerImpl>>>,
-    runtime: Runtime,
+    runtime: Box<dyn Runtime>,
 }
 
 impl<'a> DependencyAccessor {
@@ -111,7 +111,7 @@ impl<'a> DependencyAccessor {
 // TODO: route requests through outer layer to enable passing to other nodes
 pub async fn start(
     config: GatewayManagerConfig,
-    runtime: Runtime,
+    runtime: Box<dyn Runtime>,
 ) -> Result<Box<dyn GatewayManager>> {
     let config = rocket::Config::figment()
         .merge(("address", config.listen_address.to_string()))

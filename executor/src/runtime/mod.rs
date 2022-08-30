@@ -30,7 +30,9 @@ use crate::{
     runtime::message::{database::DbRequestDetails, ToMessage},
 };
 use anyhow::{bail, Context, Result};
+use async_trait::async_trait;
 use bytes::BufMut;
+use dyn_clonable::clonable;
 use futures::Future;
 use mailbox_processor::callback::CallbackMailboxProcessor;
 use std::{
@@ -39,11 +41,23 @@ use std::{
 };
 use wasmer_middlewares::metering::MeteringPoints;
 
+#[async_trait]
+#[clonable]
+pub trait Runtime: Clone + Send + Sync {
+    async fn invoke_function<'a>(
+        &self,
+        function_id: FunctionID,
+        message: gateway::Request<'a>,
+    ) -> Result<(gateway::Response, FunctionUsage)>;
+
+    async fn shutdown(&self) -> Result<()>;
+}
+
 //TODO:
 // * use metrics and MemoryUsage so we can report usage of memory and CPU time.
 // * remove less frequently used source's from runtime
 #[derive(Clone)]
-pub struct Runtime {
+struct RuntimeImpl {
     mailbox: CallbackMailboxProcessor<Request>,
 }
 
@@ -62,16 +76,9 @@ impl RuntimeState {
     }
 }
 
-impl Runtime {
-    pub fn start(function_provider: Box<dyn FunctionProvider>) -> Self {
-        let state = RuntimeState { function_provider };
-
-        let mailbox = CallbackMailboxProcessor::start(Self::mailbox_step, state, 10000);
-
-        Self { mailbox }
-    }
-
-    pub async fn invoke_function<'a>(
+#[async_trait]
+impl Runtime for RuntimeImpl {
+    async fn invoke_function<'a>(
         &self,
         function_id: FunctionID,
         message: gateway::Request<'a>,
@@ -96,39 +103,9 @@ impl Runtime {
         }
     }
 
-    async fn mailbox_step(
-        _mb: CallbackMailboxProcessor<Request>,
-        msg: Request,
-        mut runtime: RuntimeState,
-    ) -> RuntimeState {
-        //TODO: pass metering info to blockchain_manager service
-        match msg {
-            Request::InvokeFunction(req) => {
-                if let Ok(instance) = runtime.instantiate_function(req.function_id).await {
-                    tokio::spawn(async {
-                        let resp =
-                            tokio::task::spawn_blocking(move || instance.request(req.message))
-                                .await
-                                .unwrap(); // TODO: Handle spawn_blocking errors
-
-                        match resp {
-                            Ok(a) => req.reply.reply(a.await),
-                            Err(a) => req.reply.reply(Err(a)),
-                        };
-                    });
-                }
-            }
-
-            Request::Shutdown => {
-                //TODO: find a way to kill running functions
-            }
-        }
-        runtime
-    }
-
-    pub async fn shutdown(self) -> Result<()> {
+    async fn shutdown(&self) -> Result<()> {
         self.mailbox.post(Request::Shutdown).await?;
-        self.mailbox.stop().await;
+        self.mailbox.clone().stop().await;
         Ok(())
     }
 }
@@ -305,4 +282,41 @@ impl Instance {
             };
         }
     }
+}
+
+pub fn start(function_provider: Box<dyn FunctionProvider>) -> Box<dyn Runtime> {
+    let state = RuntimeState { function_provider };
+
+    let mailbox = CallbackMailboxProcessor::start(mailbox_step, state, 10000);
+
+    Box::new(RuntimeImpl { mailbox })
+}
+
+async fn mailbox_step(
+    _mb: CallbackMailboxProcessor<Request>,
+    msg: Request,
+    mut runtime: RuntimeState,
+) -> RuntimeState {
+    //TODO: pass metering info to blockchain_manager service
+    match msg {
+        Request::InvokeFunction(req) => {
+            if let Ok(instance) = runtime.instantiate_function(req.function_id).await {
+                tokio::spawn(async {
+                    let resp = tokio::task::spawn_blocking(move || instance.request(req.message))
+                        .await
+                        .unwrap(); // TODO: Handle spawn_blocking errors
+
+                    match resp {
+                        Ok(a) => req.reply.reply(a.await),
+                        Err(a) => req.reply.reply(Err(a)),
+                    };
+                });
+            }
+        }
+
+        Request::Shutdown => {
+            //TODO: find a way to kill running functions
+        }
+    }
+    runtime
 }
