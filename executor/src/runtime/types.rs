@@ -19,15 +19,11 @@ use wasmer_wasi::Pipe;
 pub trait FunctionProvider: Send {
     fn get(&self, id: &FunctionID) -> Option<&FunctionDefinition>;
     fn add_function(&mut self, function: FunctionDefinition);
+    fn remove_function(&mut self, id: &FunctionID);
+    fn get_function_names(&self, stack_id: &StackID) -> Vec<String>;
 }
 
 pub type FunctionUsage = u64; // # of executed instructions
-
-#[derive(Debug)]
-pub enum Request {
-    InvokeFunction(InvokeFunctionRequest),
-    Shutdown,
-}
 
 #[derive(Debug)]
 pub struct InvokeFunctionRequest {

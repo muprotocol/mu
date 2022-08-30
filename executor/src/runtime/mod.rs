@@ -21,11 +21,12 @@ use self::{
     },
     types::{
         FunctionDefinition, FunctionHandle, FunctionID, FunctionProvider, FunctionUsage,
-        InstanceID, InvokeFunctionRequest, Request,
+        InstanceID, InvokeFunctionRequest,
     },
 };
 use crate::{
     gateway,
+    mu_stack::StackID,
     mudb::{self, service as DbService},
     runtime::message::{database::DbRequestDetails, ToMessage},
 };
@@ -34,7 +35,7 @@ use async_trait::async_trait;
 use bytes::BufMut;
 use dyn_clonable::clonable;
 use futures::Future;
-use mailbox_processor::callback::CallbackMailboxProcessor;
+use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
 use std::{
     io::{BufRead, Write},
     time::Duration,
@@ -51,6 +52,20 @@ pub trait Runtime: Clone + Send + Sync {
     ) -> Result<(gateway::Response, FunctionUsage)>;
 
     async fn shutdown(&self) -> Result<()>;
+
+    async fn add_functions(&mut self, functions: Vec<FunctionDefinition>) -> Result<()>;
+    async fn remove_functions(&mut self, stack_id: StackID, names: Vec<String>) -> Result<()>;
+    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>>;
+}
+
+#[derive(Debug)]
+pub enum MailboxMessage {
+    InvokeFunction(InvokeFunctionRequest),
+    Shutdown,
+
+    AddFunctions(Vec<FunctionDefinition>),
+    RemoveFunctions(StackID, Vec<String>),
+    GetFunctionNames(StackID, ReplyChannel<Vec<String>>),
 }
 
 //TODO:
@@ -58,7 +73,7 @@ pub trait Runtime: Clone + Send + Sync {
 // * remove less frequently used source's from runtime
 #[derive(Clone)]
 struct RuntimeImpl {
-    mailbox: CallbackMailboxProcessor<Request>,
+    mailbox: CallbackMailboxProcessor<MailboxMessage>,
 }
 
 struct RuntimeState {
@@ -89,7 +104,7 @@ impl Runtime for RuntimeImpl {
         let result = self
             .mailbox
             .post_and_reply(|r| {
-                Request::InvokeFunction(InvokeFunctionRequest {
+                MailboxMessage::InvokeFunction(InvokeFunctionRequest {
                     function_id,
                     message,
                     reply: r,
@@ -104,9 +119,30 @@ impl Runtime for RuntimeImpl {
     }
 
     async fn shutdown(&self) -> Result<()> {
-        self.mailbox.post(Request::Shutdown).await?;
+        self.mailbox.post(MailboxMessage::Shutdown).await?;
         self.mailbox.clone().stop().await;
         Ok(())
+    }
+
+    async fn add_functions(&mut self, functions: Vec<FunctionDefinition>) -> Result<()> {
+        self.mailbox
+            .post(MailboxMessage::AddFunctions(functions))
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn remove_functions(&mut self, stack_id: StackID, names: Vec<String>) -> Result<()> {
+        self.mailbox
+            .post(MailboxMessage::RemoveFunctions(stack_id, names))
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>> {
+        self.mailbox
+            .post_and_reply(|r| MailboxMessage::GetFunctionNames(stack_id, r))
+            .await
+            .map_err(Into::into)
     }
 }
 
@@ -293,13 +329,13 @@ pub fn start(function_provider: Box<dyn FunctionProvider>) -> Box<dyn Runtime> {
 }
 
 async fn mailbox_step(
-    _mb: CallbackMailboxProcessor<Request>,
-    msg: Request,
+    _mb: CallbackMailboxProcessor<MailboxMessage>,
+    msg: MailboxMessage,
     mut runtime: RuntimeState,
 ) -> RuntimeState {
     //TODO: pass metering info to blockchain_manager service
     match msg {
-        Request::InvokeFunction(req) => {
+        MailboxMessage::InvokeFunction(req) => {
             if let Ok(instance) = runtime.instantiate_function(req.function_id).await {
                 tokio::spawn(async {
                     let resp = tokio::task::spawn_blocking(move || instance.request(req.message))
@@ -314,8 +350,27 @@ async fn mailbox_step(
             }
         }
 
-        Request::Shutdown => {
+        MailboxMessage::Shutdown => {
             //TODO: find a way to kill running functions
+        }
+
+        MailboxMessage::AddFunctions(functions) => {
+            for f in functions {
+                runtime.function_provider.add_function(f)
+            }
+        }
+
+        MailboxMessage::RemoveFunctions(stack_id, functions_names) => {
+            for function_name in functions_names {
+                runtime.function_provider.remove_function(&FunctionID {
+                    stack_id,
+                    function_name,
+                })
+            }
+        }
+
+        MailboxMessage::GetFunctionNames(stack_id, r) => {
+            r.reply(runtime.function_provider.get_function_names(&stack_id));
         }
     }
     runtime
