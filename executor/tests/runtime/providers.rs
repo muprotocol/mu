@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use mu::runtime::types::*;
+use mu::{mu_stack::StackID, runtime::types::*};
 use std::collections::HashMap;
 
 pub struct MapFunctionProvider {
@@ -23,6 +23,14 @@ impl FunctionProvider for MapFunctionProvider {
     }
 
     fn add_function(&mut self, _function: FunctionDefinition) {
+        unimplemented!("Not needed")
+    }
+
+    fn remove_function(&mut self, _id: &FunctionID) {
+        unimplemented!("Not needed")
+    }
+
+    fn get_function_names(&self, _stack_id: &StackID) -> Vec<String> {
         unimplemented!("Not needed")
     }
 }

@@ -181,7 +181,7 @@ async fn can_run_multiple_instance_of_the_same_function() {
         .await
         .unwrap();
     let function_ids = provider.ids();
-    let runtime = Runtime::start(Box::new(provider));
+    let runtime = start(Box::new(provider));
 
     let make_request = |name| gateway::Request {
         method: mu_stack::HttpMethod::Get,
