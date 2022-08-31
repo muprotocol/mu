@@ -145,6 +145,11 @@ pub struct GossipConfig {
     pub peer_update_interval: Duration,
 }
 
+pub struct KnownNodeConfig {
+    pub address: IpAddr,
+    pub port: u16,
+}
+
 pub type NodeDiedCleanly = bool;
 pub type ConnectionRequestID = u32;
 

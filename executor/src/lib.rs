@@ -8,7 +8,7 @@ pub mod util;
 
 use std::{process, time::SystemTime};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use gateway::GatewayManager;
 use log::*;
 use mailbox_processor::NotificationChannel;
@@ -19,10 +19,10 @@ use tokio_util::sync::CancellationToken;
 use infrastructure::{config, log_setup};
 use network::{
     connection_manager::{self, ConnectionManager, ConnectionManagerNotification},
-    gossip::GossipNotification,
+    gossip::{GossipNotification, KnownNodeConfig},
 };
 
-use crate::network::gossip::{self, Gossip, KnownNodes, NodeAddress};
+use crate::network::gossip::{self, Gossip, NodeAddress};
 
 pub async fn run() -> Result<()> {
     // TODO handle failures in components
@@ -33,10 +33,27 @@ pub async fn run() -> Result<()> {
     ctrlc::set_handler(move || cancellation_token_clone.cancel())
         .context("Failed to initialize Ctrl+C handler")?;
 
-    let (config, connection_manager_config, gossip_config, gateway_manager_config) =
-        config::initialize_config()?;
+    let (
+        config,
+        connection_manager_config,
+        gossip_config,
+        mut known_nodes_config,
+        gateway_manager_config,
+    ) = config::initialize_config()?;
 
-    let port = connection_manager_config.listen_port; // TODO
+    let my_node = NodeAddress {
+        address: connection_manager_config.listen_address,
+        port: connection_manager_config.listen_port,
+        generation: SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    };
+
+    let is_seed = known_nodes_config
+        .iter()
+        .any(|n| is_same_node_as_me(n, &my_node));
+    known_nodes_config.retain(|n| !is_same_node_as_me(n, &my_node));
 
     log_setup::setup(&config)?;
 
@@ -55,32 +72,38 @@ pub async fn run() -> Result<()> {
         process::exit(0);
     }
 
-    let mut known_nodes: KnownNodes = vec![];
-
-    if port != 12012 {
-        let address = "127.0.0.1".parse().unwrap();
-        let id = connection_manager.connect(address, 12012).await?;
-        known_nodes.push((
-            NodeAddress {
-                address,
-                port: 12012,
-                generation: 0,
-            },
-            id,
-        ));
-    }
-
-    let my_node = NodeAddress {
-        address: "127.0.0.1".parse().unwrap(),
-        port,
-        generation: SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos(),
-    };
-
     let (gossip_notification_channel, mut gossip_notification_receiver) =
         NotificationChannel::new();
+
+    let mut known_nodes = vec![];
+
+    info!("Establishing connection to seeds");
+
+    for node in known_nodes_config {
+        match connection_manager.connect(node.address, node.port).await {
+            Ok(connection_id) => known_nodes.push((
+                NodeAddress {
+                    address: node.address,
+                    port: node.port,
+                    generation: 0,
+                },
+                connection_id,
+            )),
+
+            Err(f) => warn!(
+                "Failed to connect to seed {}:{}, will ignore this seed. Error is {f}",
+                node.address, node.port
+            ),
+        }
+
+        if cancellation_token.is_cancelled() {
+            process::exit(0);
+        }
+    }
+
+    if known_nodes.is_empty() && !is_seed {
+        bail!("Failed to connect to any seeds and this node is not a seed, aborting");
+    }
 
     let gossip = gossip::start(
         my_node,
@@ -146,6 +169,11 @@ pub async fn run() -> Result<()> {
     Ok(())
 }
 
+fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
+    node.port == me.port && (node.address == me.address || node.address.is_loopback())
+}
+
+// TODO
 async fn deploy_prototype_stack(
     runtime: Box<dyn Runtime>,
     gateway_manager: Box<dyn GatewayManager>,

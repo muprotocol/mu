@@ -20,3 +20,6 @@ gossip:
   max_peers: 6
   peer_update_interval_millis: 10000
   liveness_check_interval_millis: 1000
+  seeds:
+    - address: 127.0.0.1
+      port: 12012
