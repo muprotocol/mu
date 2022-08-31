@@ -15,14 +15,15 @@ pub fn setup(config: &Config) -> Result<()> {
 
     builder.filter_level(parse_level(&table, "level", "log")?);
 
-    let module_filters = table
-        .get("filters")
-        .cloned()
-        .unwrap_or_else(|| Value::new(None, Vec::<String>::new()))
-        .into_array()
-        .context("Expected log.filters to be an array")?;
+    let module_filters = crate::config::array_or_map_value(
+        table
+            .get("filters")
+            .cloned()
+            .unwrap_or_else(|| Value::new(None, Vec::<String>::new())),
+        "log.filters",
+    )?;
 
-    for (idx, val) in module_filters.into_iter().enumerate() {
+    for (idx, val) in module_filters.enumerate() {
         let table = val
             .into_table()
             .context(format!("Expected log.filters[{idx}] to be a table"))?;

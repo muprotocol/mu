@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use config::{Config, Environment, File, FileFormat, Value};
 
 use crate::{
@@ -116,12 +116,7 @@ pub fn initialize_config() -> Result<(
     };
 
     let mut known_node_config = vec![];
-    for (idx, val) in config
-        .get_array("gossip.seeds")
-        .context("Failed to get gossip.seeds as array")?
-        .into_iter()
-        .enumerate()
-    {
+    for (idx, val) in array_or_map(&config, "gossip.seeds")?.enumerate() {
         let table = val
             .into_table()
             .context(format!("Expected gossip.seeds[{idx}] to be an object"))?;
@@ -169,6 +164,21 @@ pub fn initialize_config() -> Result<(
         known_node_config,
         gateway_config,
     ))
+}
+
+pub fn array_or_map(config: &Config, key: &str) -> Result<Box<dyn Iterator<Item = Value>>> {
+    let val = config.get(key).context(format!("Key not found: {key}"))?;
+    array_or_map_value(val, key)
+}
+
+pub fn array_or_map_value(value: Value, key: &str) -> Result<Box<dyn Iterator<Item = Value>>> {
+    match value.clone().into_array() {
+        Ok(x) => Ok(Box::new(x.into_iter())),
+        Err(_) => match value.into_table() {
+            Ok(x) => Ok(Box::new(x.into_values())),
+            Err(_) => bail!("Expected {key} to be array or object"),
+        },
+    }
 }
 
 pub trait ConfigExt {
