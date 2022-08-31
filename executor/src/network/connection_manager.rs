@@ -145,6 +145,10 @@ pub fn start(
     config: ConnectionManagerConfig,
     notification_sender: NotificationSender,
 ) -> Result<Box<dyn ConnectionManager>> {
+    if config.listen_address.is_unspecified() {
+        bail!("Connection manager listen address cannot be the all-zeroes 'unspecified' address");
+    }
+
     info!(
         "Starting connection manager on {}:{}",
         config.listen_address, config.listen_port
