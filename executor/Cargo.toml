@@ -6,18 +6,47 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wasmer = { git = "https://github.com/wasmerio/wasmer" }
-wasmer-wasi = { git = "https://github.com/wasmerio/wasmer" }
+wasmer = { git = "https://github.com/wasmerio/wasmer", rev = "43b6e0c2" }
+wasmer-wasi = { git = "https://github.com/wasmerio/wasmer", rev = "43b6e0c2" }
+wasmer-middlewares = { git = "https://github.com/wasmerio/wasmer", rev = "43b6e0c2" }
 tokio = { version = "1.0", features = ["full"] }
-tokio-util = { version = "0.7", features = ["codec"]}
-serde = "1"
-tokio-serde = {version = "0.8", features = ["bincode"]}
+tokio-util = { version = "0.7", features = ["codec"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+tokio-serde = { version = "0.8", features = ["bincode"] }
 futures = "0.3"
 pin-project = "1.0"
 rand = "0.8"
-uuid = { version = "1.1.2", features = ["fast-rng", "v4", "serde"]}
+uuid = { version = "1.1", features = ["fast-rng", "v4", "serde"] }
 anyhow = "1.0"
 thiserror = "1.0"
+log = { version = "0.4", features = [
+    "release_max_level_debug",
+    "max_level_debug",
+] }
+env_logger = "0.9"
+config = { version = "0.13", features = ["yaml"], default-features = false }
+async-trait = "0.1"
+bytes = "1.2"
+mailbox_processor = { path = "../mailbox_processor" }
+quinn = "0.8"
+rustls = { version = "0.20", features = ["dangerous_configuration"] }
+rcgen = "0.9"
+ctrlc = "3.2"
+stable-hash = "0.4"
+num = "0.4"
+dyn-clone = "1.0"
+dyn-clonable = "0.9"
+rocket = "0.5.0-rc.2"
+reqwest = "0.11"
+sled = "0.34"
+assert_matches = "1.5"
+validator = { version = "0.16", features = ["derive"] }
+
+[dev-dependencies]
+serial_test = "0.8"
+test-log = "0.2"
 
 [lib]
 name = "mu"

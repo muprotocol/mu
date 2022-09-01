@@ -1,0 +1,25 @@
+log:
+  level: info
+  filters:
+    - module: quinn::connection
+      level: off
+    - module: wasmer_compiler_cranelift::translator::func_translator
+      level: off
+connection_manager:
+  listen_address: 127.0.0.1
+  listen_port: 12012
+  max_request_size_kb: 8
+gateway_manager:
+  listen_address: 0.0.0.0
+  # Note, this is a TCP port. Connection manager uses a UDP port, so it's OK for both
+  # listen_ports to be set to the same number.
+  listen_port: 12012
+gossip:
+  heartbeat_interval_millis: 1000
+  assume_dead_after_missed_heartbeats: 10
+  max_peers: 6
+  peer_update_interval_millis: 10000
+  liveness_check_interval_millis: 1000
+  seeds:
+    - address: 127.0.0.1
+      port: 12012

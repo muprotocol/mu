@@ -3,5 +3,8 @@
 		{
 			"path": "."
 		}
-	]
+	],
+	"settings": {
+		"powershell.cwd": "c:\\Users\\arshi\\source\\repos\\InnovationBerlin\\muprotocol"
+	}
 }

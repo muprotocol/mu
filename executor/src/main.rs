@@ -1,11 +1,4 @@
-use mu::gossip::Node;
-
-mod runtime;
-
 #[tokio::main]
-async fn main() {
-    println!("Hello, world!");
-
-    let _n = Node::new("0.0.0.0", 59999);
-    //    let mut g = Gossip::new(n, Default::default()).await.unwrap();
+async fn main() -> anyhow::Result<()> {
+    mu::run().await
 }
