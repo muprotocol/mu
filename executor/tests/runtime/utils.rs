@@ -36,9 +36,7 @@ pub async fn compile_wasm_project(project_dir: &Path) -> Result<PathBuf> {
         .wait()
         .await?;
 
-    Ok(project_dir
-        .join("target/wasm32-wasi/release/")
-        )
+    Ok(project_dir.join("target/wasm32-wasi/release/"))
 }
 
 //TODO: maybe some `make clean` usage for this function

@@ -8,8 +8,8 @@ pub struct DatabaseID {
 }
 
 impl DatabaseID {
-    pub fn database_name(stack_id: StackID, name: &String) -> String {
-        format!("{}_{}", stack_id, name.replace(" ", "-"))
+    pub fn database_name(stack_id: StackID, name: &str) -> String {
+        format!("{}_{}", stack_id, name.replace(' ', "-"))
     }
 }
 

@@ -49,8 +49,10 @@ impl MuDB {
     }
 
     pub fn create_db_with_default_config(name: String) -> Result<Self> {
-        let mut conf = Config::default();
-        conf.name = name;
+        let conf = Config {
+            name,
+            ..Default::default()
+        };
         Self::create_db(conf)
     }
 

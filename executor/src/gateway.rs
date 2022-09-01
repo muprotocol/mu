@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use std::{borrow::Cow, collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc};
 
 use anyhow::Result;
@@ -167,8 +169,7 @@ async fn step(
                 gateways.get(&gateway_name).and_then(|gateway| {
                     gateway.endpoints.get(&request_path).and_then(|eps| {
                         eps.iter()
-                            .filter(|ep| ep.method == method)
-                            .nth(0)
+                            .find(|ep| ep.method == method)
                             .map(|ep| ep.route_to.clone())
                     })
                 })
@@ -181,13 +182,13 @@ async fn step(
                 state
                     .gateways
                     .get(&stack_id)
-                    .map(|gateways| gateways.keys().map(|name| name.clone()).collect()),
+                    .map(|gateways| gateways.keys().cloned().collect()),
             );
             state
         }
 
         GatewayMessage::DeployGateways(stack_id, incoming_gateways) => {
-            let gateways = state.gateways.entry(stack_id).or_insert(HashMap::new());
+            let gateways = state.gateways.entry(stack_id).or_insert_with(HashMap::new);
 
             for incoming in incoming_gateways {
                 gateways.insert(incoming.name.clone(), incoming);
@@ -206,7 +207,9 @@ async fn step(
         }
 
         GatewayMessage::Stop() => {
-            state.shutdown.take().map(|shutdown| shutdown.notify());
+            if let Some(shutdown) = state.shutdown.take() {
+                shutdown.notify();
+            }
             if let Some(f) = state.server_future.take() {
                 if let Err(f) = f.await {
                     error!("Rocket failed to run to completion: {f:?}");

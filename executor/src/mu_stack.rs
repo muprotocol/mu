@@ -69,8 +69,8 @@ impl Gateway {
     fn clone_normalized(&self) -> Self {
         let mut ep = HashMap::new();
         for (url, endpoint) in &self.endpoints {
-            if url.starts_with('/') {
-                ep.insert(url[1..].to_string(), endpoint.clone());
+            if let Some(stripped) = url.strip_prefix('/') {
+                ep.insert(stripped.to_string(), endpoint.clone());
             } else {
                 ep.insert(url.clone(), endpoint.clone());
             }

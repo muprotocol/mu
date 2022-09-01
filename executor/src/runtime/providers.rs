@@ -33,7 +33,10 @@ impl FunctionProvider for DefaultFunctionProvider {
 
     fn add_function(&mut self, function: super::types::FunctionDefinition) {
         let id = &function.id;
-        let stack_functions = self.functions.entry(id.stack_id).or_insert(HashMap::new());
+        let stack_functions = self
+            .functions
+            .entry(id.stack_id)
+            .or_insert_with(HashMap::new);
         stack_functions.insert(id.function_name.clone(), function);
     }
 
@@ -45,8 +48,8 @@ impl FunctionProvider for DefaultFunctionProvider {
 
     fn get_function_names(&self, stack_id: &StackID) -> Vec<String> {
         self.functions
-            .get(&stack_id)
-            .map(|f| f.keys().map(|s| s.clone()).collect())
-            .unwrap_or_else(|| vec![])
+            .get(stack_id)
+            .map(|f| f.keys().cloned().collect())
+            .unwrap_or_else(Vec::new)
     }
 }

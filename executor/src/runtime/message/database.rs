@@ -110,7 +110,7 @@ impl ToMessage for DbResponse {
 
 pub fn database_id(function_id: &FunctionID, database_name: String) -> DatabaseID {
     DatabaseID {
-        stack_id: function_id.stack_id.clone(),
+        stack_id: function_id.stack_id,
         database_name,
     }
 }

@@ -123,9 +123,7 @@ pub fn initialize_config() -> Result<(
         known_node_config.push(KnownNodeConfig {
             address: table
                 .get("address")
-                .ok_or(anyhow!(
-                    "Missing required key `address` in gossip.seeds[{idx}]"
-                ))?
+                .ok_or_else(|| anyhow!("Missing required key `address` in gossip.seeds[{idx}]"))?
                 .clone()
                 .into_string()
                 .context(format!(
@@ -135,9 +133,7 @@ pub fn initialize_config() -> Result<(
                 .context(format!("Failed to parse gossip.seeds.address[{idx}]"))?,
             port: table
                 .get("port")
-                .ok_or(anyhow!(
-                    "Missing required key `port` in gossip.seeds[{idx}]"
-                ))?
+                .ok_or_else(|| anyhow!("Missing required key `port` in gossip.seeds[{idx}]"))?
                 .clone()
                 .into_string()
                 .context(format!("Expected gossip.seeds[{idx}].port to be a number"))?

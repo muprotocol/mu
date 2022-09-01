@@ -90,7 +90,7 @@ pub async fn deploy(
         .map_err(StackDeploymentError::FailedToDeployFunctions)?;
 
     // Step 2: Databases
-    let id_copy = id.clone();
+    let id_copy = id;
     let databases = stack.databases().map(Clone::clone).collect::<Vec<_>>();
     let db_names = spawn_blocking(move || {
         let mut db_names = vec![];
@@ -127,7 +127,7 @@ pub async fn deploy(
         .get_deployed_gateway_names(id)
         .await
         .unwrap_or(Some(vec![]))
-        .unwrap_or(vec![]);
+        .unwrap_or_default();
     let mut gateways_to_remove = vec![];
     for existing in existing_gateways {
         if !gateway_names.iter().any(|n| ***n == *existing) {
@@ -141,7 +141,7 @@ pub async fn deploy(
 
     let prefix = format!("{id}_");
     spawn_blocking(move || {
-        for db_name in MuDB::query_databases_by_prefix(&prefix).unwrap_or(vec![]) {
+        for db_name in MuDB::query_databases_by_prefix(&prefix).unwrap_or_default() {
             if !db_names.contains(&db_name) {
                 MuDB::delete_db(&db_name).unwrap_or(());
             }
@@ -150,14 +150,14 @@ pub async fn deploy(
     .await
     .unwrap_or(());
 
-    let existing_function_names = runtime.get_function_names(id).await.unwrap_or(vec![]);
+    let existing_function_names = runtime.get_function_names(id).await.unwrap_or_default();
     let mut functions_to_delete = vec![];
     for existing in existing_function_names {
         if !function_names.iter().any(|n| ***n == *existing) {
             functions_to_delete.push(existing);
         }
     }
-    if functions_to_delete.len() > 0 {
+    if !functions_to_delete.is_empty() {
         runtime
             .remove_functions(id, functions_to_delete)
             .await
