@@ -127,7 +127,7 @@ enum GossipProtocolMessage {
 
 #[async_trait]
 #[clonable]
-pub trait Gossip: Clone {
+pub trait Gossip: Clone + Sync + Send {
     fn connection_available(
         &self,
         connection_request_id: ConnectionRequestID,

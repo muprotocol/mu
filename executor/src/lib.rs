@@ -6,7 +6,10 @@ pub mod network;
 pub mod runtime;
 pub mod util;
 
-use std::{process, time::SystemTime};
+use std::{
+    process,
+    time::{Duration, SystemTime},
+};
 
 use anyhow::{bail, Context, Result};
 use gateway::GatewayManager;
@@ -114,55 +117,70 @@ pub async fn run() -> Result<()> {
     .context("Failed to start gossip")?;
 
     let function_provider = runtime::providers::DefaultFunctionProvider::new();
-    let runtime = runtime::start(Box::new(function_provider));
+    let mut runtime = runtime::start(Box::new(function_provider));
 
     // TODO: no notification channel for now, requests are sent straight to runtime
     let gateway_manager = gateway::start(gateway_manager_config, runtime.clone())
         .await
         .context("Failed to start gateway manager")?;
 
-    // TODO remove this
-    deploy_prototype_stack(runtime.clone(), gateway_manager.clone()).await;
-
     // TODO: create a `Module`/`Subsystem`/`NotificationSource` trait to batch modules with their notification receivers?
-    glue_modules(
-        cancellation_token,
-        connection_manager.as_ref(),
-        connection_manager_notification_receiver,
-        gossip.as_ref(),
-        &mut gossip_notification_receiver,
-    )
-    .await;
+    let connection_manager_clone = connection_manager.clone();
+    let gossip_clone = gossip.clone();
+    let gateway_manager_clone = gateway_manager.clone();
+    let glue_task = tokio::spawn(async move {
+        glue_modules(
+            cancellation_token,
+            connection_manager_clone.as_ref(),
+            connection_manager_notification_receiver,
+            gossip_clone.as_ref(),
+            &mut gossip_notification_receiver,
+        )
+        .await;
 
-    // Stop gateway manager first. This waits for rocket to shut down, essentially
-    // running all requests to completion or cancelling them safely before shutting
-    // the rest of the system down.
-    gateway_manager
-        .stop()
-        .await
-        .context("Failed to stop gateway manager")?;
+        // Stop gateway manager first. This waits for rocket to shut down, essentially
+        // running all requests to completion or cancelling them safely before shutting
+        // the rest of the system down.
+        gateway_manager_clone
+            .stop()
+            .await
+            .context("Failed to stop gateway manager")?;
 
-    gossip.stop().await.context("Failed to stop gossip")?;
+        gossip.stop().await.context("Failed to stop gossip")?;
 
-    // The glue loop shouldn't stop as soon as it receives a ctrl+C
-    loop {
-        match gossip_notification_receiver.recv().await {
-            None => break,
-            Some(notification) => {
-                process_gossip_notification(
-                    Some(notification),
-                    connection_manager.as_ref(),
-                    gossip.as_ref(),
-                )
-                .await
+        // The glue loop shouldn't stop as soon as it receives a ctrl+C
+        loop {
+            match gossip_notification_receiver.recv().await {
+                None => break,
+                Some(notification) => {
+                    process_gossip_notification(
+                        Some(notification),
+                        connection_manager.as_ref(),
+                        gossip.as_ref(),
+                    )
+                    .await
+                }
             }
         }
+
+        connection_manager
+            .stop()
+            .await
+            .context("Failed to stop connection manager")?;
+
+        Result::<()>::Ok(())
+    });
+
+    // TODO remove this
+    {
+        info!("Waiting 10 seconds for node discovery to complete");
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        info!("Deploying prototype stack");
+        deploy_prototype_stack(&mut runtime, &gateway_manager).await;
     }
 
-    connection_manager
-        .stop()
-        .await
-        .context("Failed to stop connection manager")?;
+    glue_task.await??;
 
     info!("Goodbye!");
 
@@ -175,8 +193,8 @@ fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
 
 // TODO
 async fn deploy_prototype_stack(
-    runtime: Box<dyn Runtime>,
-    gateway_manager: Box<dyn GatewayManager>,
+    runtime: &mut Box<dyn Runtime>,
+    gateway_manager: &Box<dyn GatewayManager>,
 ) {
     let yaml = std::fs::read_to_string("./prototype/stack.yaml").unwrap();
     let stack = serde_yaml::from_str::<mu_stack::Stack>(yaml.as_str()).unwrap();

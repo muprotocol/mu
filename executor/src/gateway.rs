@@ -25,7 +25,7 @@ use crate::{
 
 #[async_trait]
 #[clonable]
-pub trait GatewayManager: Clone {
+pub trait GatewayManager: Clone + Send + Sync {
     async fn get_deployed_gateway_names(&self, stack_id: StackID) -> Result<Option<Vec<String>>>;
     async fn deploy_gateways(&self, stack_id: StackID, gateways: Vec<Gateway>) -> Result<()>;
     async fn delete_gateways(&self, stack_id: StackID, gateways: Vec<String>) -> Result<()>;
