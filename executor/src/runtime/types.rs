@@ -1,15 +1,14 @@
+use super::message::{gateway::GatewayResponse, Message};
+use crate::mu_stack::{FunctionRuntime, StackID};
+
+use anyhow::Result;
+use bytes::Bytes;
+use mailbox_processor::ReplyChannel;
 use std::{
     collections::HashMap,
     fmt::Display,
     io::{BufReader, BufWriter},
 };
-
-use anyhow::Result;
-
-use super::message::{gateway::GatewayResponse, Message};
-use crate::mu_stack::{FunctionRuntime, StackID};
-
-use mailbox_processor::ReplyChannel;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wasmer_middlewares::metering::MeteringPoints;
@@ -66,7 +65,7 @@ impl Display for FunctionID {
     }
 }
 
-pub type FunctionSource = Vec<u8>;
+pub type FunctionSource = Bytes;
 
 #[derive(Clone, Debug)]
 pub struct FunctionDefinition {

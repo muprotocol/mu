@@ -55,7 +55,7 @@ async fn read_wasm_projects(
             stack_id: StackID(Uuid::new_v4()),
             function_name: "my_func".into(),
         };
-        let source = fs::read(&path).await?;
+        let source = fs::read(&path).await?.into();
 
         results.insert(
             id.clone(),

@@ -1,6 +1,5 @@
-use std::path::Path;
-
 use db::MuDB;
+use reqwest::Url;
 use thiserror::Error;
 use tokio::task::spawn_blocking;
 
@@ -28,6 +27,9 @@ pub enum StackValidationError {
 
     #[error("Failed to fetch binary for function '{0}' due to {1}")]
     CannotFetchFunction(String, anyhow::Error),
+
+    #[error("Invalid URL for function '{0}': {1}")]
+    InvalidFunctionUrl(String, anyhow::Error),
 
     #[error("Unknown function name '{function}' in gateway '{gateway}'")]
     UnknownFunctionInGateway { function: String, gateway: String },
@@ -72,7 +74,17 @@ pub async fn deploy(
     let mut function_names = vec![];
     let mut function_defs = vec![];
     for func in stack.functions() {
-        let function_source = fetch_function(&func.binary).await;
+        let binary_url = Url::parse(&func.binary).map_err(|e| {
+            StackDeploymentError::ValidationError(StackValidationError::InvalidFunctionUrl(
+                func.name.clone(),
+                e.into(),
+            ))
+        })?;
+
+        let function_source = download_function(binary_url)
+            .await
+            .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
+
         function_defs.push(FunctionDefinition {
             id: FunctionID {
                 stack_id: id,
@@ -172,25 +184,11 @@ fn validate(stack: Stack) -> Result<Stack, StackValidationError> {
     Ok(stack)
 }
 
-async fn fetch_function(url: &String) -> Vec<u8> {
-    // TODO
-    std::fs::read(Path::new("./prototype/functions").join(url)).unwrap()
+async fn download_function(url: Url) -> Result<bytes::Bytes, StackDeploymentError> {
+    reqwest::get(url)
+        .await
+        .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?
+        .bytes()
+        .await
+        .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))
 }
-
-/*
-download function
-
-    pub async fn add(&mut self, stack_id: StackID, function: Function) -> Result<()> {
-        let id = FunctionID {
-            stack_id,
-            function_name: function.name.clone(),
-        };
-
-        let source = Self::download_function_module(&function.binary).await?;
-        let definition =
-            FunctionDefinition::new(id.clone(), source, function.runtime, function.env);
-        self.functions.insert(id, definition);
-        Ok(())
-    }
-
-*/
