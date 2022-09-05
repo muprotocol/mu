@@ -3,7 +3,7 @@ use std::{str::FromStr, time::Duration};
 use anyhow::{Context, Result};
 use config::{Config, Environment, File, FileFormat};
 use log::ParseLevelError;
-use serde::Deserialize;
+use serde::{de::Visitor, Deserialize};
 
 use crate::{
     gateway::GatewayManagerConfig,
@@ -78,10 +78,7 @@ pub fn initialize_config() -> Result<(
         .get("connection_manager")
         .context("Invalid connection_manager config")?;
 
-    let gossip_config = config
-        .get::<GossipConfigRaw>("gossip")
-        .context("Invalid gossip config")?
-        .into();
+    let gossip_config = config.get("gossip").context("Invalid gossip config")?;
 
     let known_node_config: Vec<KnownNodeConfig> = config
         .get("gossip.seeds")
@@ -96,6 +93,7 @@ pub fn initialize_config() -> Result<(
         .context("Invalid log config")?
         .try_into()?;
 
+    println!("###\nConfigs: {:?}", gossip_config);
     Ok((
         connection_manager_config,
         gossip_config,
@@ -103,28 +101,6 @@ pub fn initialize_config() -> Result<(
         gateway_config,
         log_config,
     ))
-}
-
-// We can't directly deserialize `Duration` type, so instead make config in two steps
-#[derive(Clone, Deserialize)]
-struct GossipConfigRaw {
-    pub heartbeat_interval_millis: u64,
-    pub liveness_check_interval_millis: u64,
-    pub assume_dead_after_missed_heartbeats: u32,
-    pub max_peers: usize,
-    pub peer_update_interval_millis: u64,
-}
-
-impl From<GossipConfigRaw> for GossipConfig {
-    fn from(raw: GossipConfigRaw) -> Self {
-        GossipConfig {
-            heartbeat_interval: Duration::from_millis(raw.heartbeat_interval_millis),
-            liveness_check_interval: Duration::from_millis(raw.liveness_check_interval_millis),
-            assume_dead_after_missed_heartbeats: raw.assume_dead_after_missed_heartbeats,
-            max_peers: raw.max_peers,
-            peer_update_interval: Duration::from_millis(raw.peer_update_interval_millis),
-        }
-    }
 }
 
 // We can't directly deserialize `LevelFilter` type, so instead make config in two steps
@@ -164,5 +140,54 @@ impl TryFrom<LogFilterConfigRaw> for LogFilterConfig {
             module: raw.module,
             level,
         })
+    }
+}
+
+pub fn human_readable_duration_deserializer<'de, D>(d: D) -> Result<Duration, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    d.deserialize_str(HumanReadableDurationVisitor)
+}
+
+struct HumanReadableDurationVisitor;
+
+impl<'de> Visitor<'de> for HumanReadableDurationVisitor {
+    type Value = Duration;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            formatter,
+            "an unsigned integer (u64) followd by a unit(`s` for seconds, `m` for millis, `n` for nanos)"
+        )
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        if v.len() < 2 {
+            return Err(E::custom("length must be at least 2"));
+        }
+
+        let (value, unit) = v.split_at(v.len() - 1);
+
+        let value = value.parse::<u64>().map_err(|_| {
+            E::invalid_value(serde::de::Unexpected::Str(value), &"unsigned integer")
+        })?;
+
+        let duration = match unit {
+            "s" => Duration::from_secs(value),
+            "m" => Duration::from_millis(value),
+            "n" => Duration::from_nanos(value),
+            u => {
+                return Err(E::invalid_value(
+                    serde::de::Unexpected::Str(u),
+                    &"`s`, `m` or `n`",
+                ))
+            }
+        };
+
+        Ok(duration)
     }
 }

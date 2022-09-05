@@ -15,11 +15,11 @@ gateway_manager:
   # listen_ports to be set to the same number.
   listen_port: 12012
 gossip:
-  heartbeat_interval_millis: 1000
+  heartbeat_interval: 1s
   assume_dead_after_missed_heartbeats: 10
   max_peers: 6
-  peer_update_interval_millis: 10000
-  liveness_check_interval_millis: 1000
+  peer_update_interval: 10s
+  liveness_check_interval: 1s
   seeds:
     - address: 127.0.0.1
       port: 12012

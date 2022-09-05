@@ -25,7 +25,10 @@ use tokio_serde::{
     Deserializer, Serializer,
 };
 
-use crate::{network::connection_manager::ConnectionID, util::id::IdExt};
+use crate::{
+    config::human_readable_duration_deserializer, network::connection_manager::ConnectionID,
+    util::id::IdExt,
+};
 
 pub use self::node_collection::KnownNodes;
 use self::node_collection::*;
@@ -139,12 +142,15 @@ pub trait Gossip: Clone {
     async fn log_statistics(&self);
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Debug)]
 pub struct GossipConfig {
+    #[serde(deserialize_with = "human_readable_duration_deserializer")]
     pub heartbeat_interval: Duration,
+    #[serde(deserialize_with = "human_readable_duration_deserializer")]
     pub liveness_check_interval: Duration,
     pub assume_dead_after_missed_heartbeats: u32,
     pub max_peers: usize,
+    #[serde(deserialize_with = "human_readable_duration_deserializer")]
     pub peer_update_interval: Duration,
 }
 
