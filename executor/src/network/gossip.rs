@@ -1,6 +1,12 @@
 mod node_collection;
 
-use std::{collections::HashMap, fmt::Display, net::IpAddr, pin::Pin, time::SystemTime};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    net::IpAddr,
+    pin::Pin,
+    time::{Duration, SystemTime},
+};
 
 use anyhow::{bail, Context, Error, Result};
 use async_trait::async_trait;
@@ -13,10 +19,7 @@ use mailbox_processor::{
 use rand::{prelude::Distribution, rngs::ThreadRng};
 use serde::{Deserialize, Serialize};
 use stable_hash::{FieldAddress, StableHash};
-use tokio::{
-    select,
-    time::{Duration, Instant},
-};
+use tokio::{select, time::Instant};
 use tokio_serde::{
     formats::{Bincode, SymmetricalBincode},
     Deserializer, Serializer,
@@ -136,7 +139,7 @@ pub trait Gossip: Clone {
     async fn log_statistics(&self);
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize)]
 pub struct GossipConfig {
     pub heartbeat_interval: Duration,
     pub liveness_check_interval: Duration,
@@ -145,6 +148,7 @@ pub struct GossipConfig {
     pub peer_update_interval: Duration,
 }
 
+#[derive(Deserialize)]
 pub struct KnownNodeConfig {
     pub address: IpAddr,
     pub port: u16,

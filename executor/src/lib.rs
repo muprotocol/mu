@@ -34,11 +34,11 @@ pub async fn run() -> Result<()> {
         .context("Failed to initialize Ctrl+C handler")?;
 
     let (
-        config,
         connection_manager_config,
         gossip_config,
         mut known_nodes_config,
         gateway_manager_config,
+        log_config,
     ) = config::initialize_config()?;
 
     let my_node = NodeAddress {
@@ -55,7 +55,7 @@ pub async fn run() -> Result<()> {
         .any(|n| is_same_node_as_me(n, &my_node));
     known_nodes_config.retain(|n| !is_same_node_as_me(n, &my_node));
 
-    log_setup::setup(&config)?;
+    log_setup::setup(log_config)?;
 
     info!("Initializing Mu...");
 

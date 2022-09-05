@@ -1,7 +1,9 @@
-use std::{collections::HashMap, time::Duration};
+use std::{str::FromStr, time::Duration};
 
-use anyhow::{anyhow, bail, Context, Result};
-use config::{Config, Environment, File, FileFormat, Value};
+use anyhow::{Context, Result};
+use config::{Config, Environment, File, FileFormat};
+use log::ParseLevelError;
+use serde::Deserialize;
 
 use crate::{
     gateway::GatewayManagerConfig,
@@ -11,12 +13,14 @@ use crate::{
     },
 };
 
+use super::log_setup::{LogConfig, LogFilterConfig};
+
 pub fn initialize_config() -> Result<(
-    Config,
     ConnectionManagerConfig,
     GossipConfig,
     Vec<KnownNodeConfig>,
     GatewayManagerConfig,
+    LogConfig,
 )> {
     let defaults = vec![
         ("log.level", "warn"),
@@ -70,120 +74,95 @@ pub fn initialize_config() -> Result<(
         .build()
         .context("Failed to initialize configuration")?;
 
-    let connection_manager_config = ConnectionManagerConfig {
-        listen_address: config
-            .get_string("connection_manager.listen_address")?
-            .parse()
-            .context("Failed to parse listen_address")?,
-        listen_port: config
-            .get_string("connection_manager.listen_port")?
-            .parse()
-            .context("Failed to parse listen_port")?,
-        max_request_response_size: config
-            .get_string("connection_manager.max_request_size_kb")?
-            .parse::<usize>()
-            .context("Failed to parse max_request_response_size")?
-            * 1024,
-    };
+    let connection_manager_config = config
+        .get("connection_manager")
+        .context("Invalid connection_manager config")?;
 
-    let gossip_config = GossipConfig {
-        heartbeat_interval: Duration::from_millis(
-            config
-                .get_string("gossip.heartbeat_interval_millis")?
-                .parse()
-                .context("Failed to parse heartbeat_interval")?,
-        ),
-        assume_dead_after_missed_heartbeats: config
-            .get_string("gossip.assume_dead_after_missed_heartbeats")?
-            .parse()
-            .context("Failed to parse assume_dead_after_missed_heartbeats")?,
-        max_peers: config
-            .get_string("gossip.max_peers")?
-            .parse()
-            .context("Failed to parse max_peers")?,
-        peer_update_interval: Duration::from_millis(
-            config
-                .get_string("gossip.peer_update_interval_millis")?
-                .parse()
-                .context("Failed to parse peer_update_interval_millis")?,
-        ),
-        liveness_check_interval: Duration::from_millis(
-            config
-                .get_string("gossip.liveness_check_interval_millis")?
-                .parse()
-                .context("Failed to parse liveness_check_interval_millis")?,
-        ),
-    };
+    let gossip_config = config
+        .get::<GossipConfigRaw>("gossip")
+        .context("Invalid gossip config")?
+        .into();
 
-    let mut known_node_config = vec![];
-    for (idx, val) in array_or_map(&config, "gossip.seeds")?.enumerate() {
-        let table = val
-            .into_table()
-            .context(format!("Expected gossip.seeds[{idx}] to be an object"))?;
-        known_node_config.push(KnownNodeConfig {
-            address: table
-                .get("address")
-                .ok_or_else(|| anyhow!("Missing required key `address` in gossip.seeds[{idx}]"))?
-                .clone()
-                .into_string()
-                .context(format!(
-                    "Expected gossip.seeds[{idx}].address to be a string"
-                ))?
-                .parse()
-                .context(format!("Failed to parse gossip.seeds.address[{idx}]"))?,
-            port: table
-                .get("port")
-                .ok_or_else(|| anyhow!("Missing required key `port` in gossip.seeds[{idx}]"))?
-                .clone()
-                .into_string()
-                .context(format!("Expected gossip.seeds[{idx}].port to be a number"))?
-                .parse()
-                .context(format!("Failed to parse gossip.seeds[{idx}].port"))?,
-        });
-    }
+    let known_node_config: Vec<KnownNodeConfig> = config
+        .get("gossip.seeds")
+        .context("Invalid known_node config")?;
 
-    let gateway_config = GatewayManagerConfig {
-        listen_address: config
-            .get_string("gateway_manager.listen_address")?
-            .parse()
-            .context("Failed to parse gateway_manager.listen_address")?,
-        listen_port: config
-            .get_string("gateway_manager.listen_port")?
-            .parse()
-            .context("Failed to parse gateway_manager.listen_port")?,
-    };
+    let gateway_config = config
+        .get("gateway_manager")
+        .context("Invalid gateway config")?;
+
+    let log_config = config
+        .get::<LogConfigRaw>("log")
+        .context("Invalid log config")?
+        .try_into()?;
 
     Ok((
-        config,
         connection_manager_config,
         gossip_config,
         known_node_config,
         gateway_config,
+        log_config,
     ))
 }
 
-pub fn array_or_map(config: &Config, key: &str) -> Result<Box<dyn Iterator<Item = Value>>> {
-    let val = config.get(key).context(format!("Key not found: {key}"))?;
-    array_or_map_value(val, key)
+// We can't directly deserialize `Duration` type, so instead make config in two steps
+#[derive(Clone, Deserialize)]
+struct GossipConfigRaw {
+    pub heartbeat_interval_millis: u64,
+    pub liveness_check_interval_millis: u64,
+    pub assume_dead_after_missed_heartbeats: u32,
+    pub max_peers: usize,
+    pub peer_update_interval_millis: u64,
 }
 
-pub fn array_or_map_value(value: Value, key: &str) -> Result<Box<dyn Iterator<Item = Value>>> {
-    match value.clone().into_array() {
-        Ok(x) => Ok(Box::new(x.into_iter())),
-        Err(_) => match value.into_table() {
-            Ok(x) => Ok(Box::new(x.into_values())),
-            Err(_) => bail!("Expected {key} to be array or object"),
-        },
+impl From<GossipConfigRaw> for GossipConfig {
+    fn from(raw: GossipConfigRaw) -> Self {
+        GossipConfig {
+            heartbeat_interval: Duration::from_millis(raw.heartbeat_interval_millis),
+            liveness_check_interval: Duration::from_millis(raw.liveness_check_interval_millis),
+            assume_dead_after_missed_heartbeats: raw.assume_dead_after_missed_heartbeats,
+            max_peers: raw.max_peers,
+            peer_update_interval: Duration::from_millis(raw.peer_update_interval_millis),
+        }
     }
 }
 
-pub trait ConfigExt {
-    fn get_mandatory(&self, key: &str, path: &str) -> Result<&Value>;
+// We can't directly deserialize `LevelFilter` type, so instead make config in two steps
+#[derive(Deserialize)]
+struct LogConfigRaw {
+    level: String,
+    filters: Vec<LogFilterConfigRaw>,
 }
 
-impl ConfigExt for HashMap<String, Value> {
-    fn get_mandatory(&self, key: &str, path: &str) -> Result<&Value> {
-        self.get(key)
-            .context(format!("Missing mandatory config value {path}.{key}"))
+#[derive(Deserialize)]
+struct LogFilterConfigRaw {
+    module: String,
+    level: String,
+}
+
+impl TryFrom<LogConfigRaw> for LogConfig {
+    type Error = ParseLevelError;
+
+    fn try_from(raw: LogConfigRaw) -> Result<Self, Self::Error> {
+        let level = log::LevelFilter::from_str(&raw.level)?;
+        Ok(LogConfig {
+            level,
+            filters: raw
+                .filters
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<Vec<LogFilterConfig>, Self::Error>>()?,
+        })
+    }
+}
+
+impl TryFrom<LogFilterConfigRaw> for LogFilterConfig {
+    type Error = ParseLevelError;
+    fn try_from(raw: LogFilterConfigRaw) -> Result<Self, Self::Error> {
+        let level = log::LevelFilter::from_str(&raw.level)?;
+        Ok(LogFilterConfig {
+            module: raw.module,
+            level,
+        })
     }
 }
