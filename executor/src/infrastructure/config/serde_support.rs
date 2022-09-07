@@ -55,7 +55,7 @@ impl<'de> Visitor<'de> for HumanReadableDurationVisitor {
             .take_while(|c| c.is_numeric())
             .map(|c| c.len_utf8())
             .sum::<usize>();
-        if split_offset <= 0 || split_offset >= v.len() {
+        if split_offset == 0 || split_offset >= v.len() {
             return Err(E::invalid_value(de::Unexpected::Str(v), &self));
         }
         let (value, unit) = v.split_at(split_offset);
