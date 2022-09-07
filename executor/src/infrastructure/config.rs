@@ -1,9 +1,9 @@
-use std::{str::FromStr, time::Duration};
+mod serde_support;
+
+pub use serde_support::{ConfigDuration, ConfigLogLevelFilter};
 
 use anyhow::{Context, Result};
 use config::{Config, Environment, File, FileFormat};
-use log::ParseLevelError;
-use serde::{de::Visitor, Deserialize};
 
 use crate::{
     gateway::GatewayManagerConfig,
@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-use super::log_setup::{LogConfig, LogFilterConfig};
+use super::log_setup::LogConfig;
 
 pub fn initialize_config() -> Result<(
     ConnectionManagerConfig,
@@ -89,9 +89,8 @@ pub fn initialize_config() -> Result<(
         .context("Invalid gateway config")?;
 
     let log_config = config
-        .get::<LogConfigRaw>("log")
-        .context("Invalid log config")?
-        .try_into()?;
+        .get::<LogConfig>("log")
+        .context("Invalid log config")?;
 
     println!("###\nConfigs: {:?}", gossip_config);
     Ok((
@@ -101,93 +100,4 @@ pub fn initialize_config() -> Result<(
         gateway_config,
         log_config,
     ))
-}
-
-// We can't directly deserialize `LevelFilter` type, so instead make config in two steps
-#[derive(Deserialize)]
-struct LogConfigRaw {
-    level: String,
-    filters: Vec<LogFilterConfigRaw>,
-}
-
-#[derive(Deserialize)]
-struct LogFilterConfigRaw {
-    module: String,
-    level: String,
-}
-
-impl TryFrom<LogConfigRaw> for LogConfig {
-    type Error = ParseLevelError;
-
-    fn try_from(raw: LogConfigRaw) -> Result<Self, Self::Error> {
-        let level = log::LevelFilter::from_str(&raw.level)?;
-        Ok(LogConfig {
-            level,
-            filters: raw
-                .filters
-                .into_iter()
-                .map(TryInto::try_into)
-                .collect::<Result<Vec<LogFilterConfig>, Self::Error>>()?,
-        })
-    }
-}
-
-impl TryFrom<LogFilterConfigRaw> for LogFilterConfig {
-    type Error = ParseLevelError;
-    fn try_from(raw: LogFilterConfigRaw) -> Result<Self, Self::Error> {
-        let level = log::LevelFilter::from_str(&raw.level)?;
-        Ok(LogFilterConfig {
-            module: raw.module,
-            level,
-        })
-    }
-}
-
-pub fn human_readable_duration_deserializer<'de, D>(d: D) -> Result<Duration, D::Error>
-where
-    D: serde::de::Deserializer<'de>,
-{
-    d.deserialize_str(HumanReadableDurationVisitor)
-}
-
-struct HumanReadableDurationVisitor;
-
-impl<'de> Visitor<'de> for HumanReadableDurationVisitor {
-    type Value = Duration;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            formatter,
-            "an unsigned integer (u64) followd by a unit(`s` for seconds, `m` for millis, `n` for nanos)"
-        )
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        if v.len() < 2 {
-            return Err(E::custom("length must be at least 2"));
-        }
-
-        let (value, unit) = v.split_at(v.len() - 1);
-
-        let value = value.parse::<u64>().map_err(|_| {
-            E::invalid_value(serde::de::Unexpected::Str(value), &"unsigned integer")
-        })?;
-
-        let duration = match unit {
-            "s" => Duration::from_secs(value),
-            "m" => Duration::from_millis(value),
-            "n" => Duration::from_nanos(value),
-            u => {
-                return Err(E::invalid_value(
-                    serde::de::Unexpected::Str(u),
-                    &"`s`, `m` or `n`",
-                ))
-            }
-        };
-
-        Ok(duration)
-    }
 }

@@ -26,7 +26,7 @@ use tokio_serde::{
 };
 
 use crate::{
-    config::human_readable_duration_deserializer, network::connection_manager::ConnectionID,
+    infrastructure::config::ConfigDuration, network::connection_manager::ConnectionID,
     util::id::IdExt,
 };
 
@@ -144,14 +144,11 @@ pub trait Gossip: Clone {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct GossipConfig {
-    #[serde(deserialize_with = "human_readable_duration_deserializer")]
-    pub heartbeat_interval: Duration,
-    #[serde(deserialize_with = "human_readable_duration_deserializer")]
-    pub liveness_check_interval: Duration,
+    pub heartbeat_interval: ConfigDuration,
+    pub liveness_check_interval: ConfigDuration,
     pub assume_dead_after_missed_heartbeats: u32,
     pub max_peers: usize,
-    #[serde(deserialize_with = "human_readable_duration_deserializer")]
-    pub peer_update_interval: Duration,
+    pub peer_update_interval: ConfigDuration,
 }
 
 #[derive(Deserialize)]
@@ -308,8 +305,8 @@ async fn body(
         my_heartbeat: 0,
         codec: Bincode::default(),
         next_heartbeat: now,
-        next_peer_update: now + config.peer_update_interval,
-        next_liveness_check: now + config.liveness_check_interval,
+        next_peer_update: now + *config.peer_update_interval,
+        next_liveness_check: now + *config.liveness_check_interval,
         pending_peer_connections: HashMap::new(),
         next_pending_peer_id: 0,
         config,
@@ -605,21 +602,21 @@ async fn perform_maintenance(state: &mut GossipState) -> Instant {
         if let Err(f) = send_heartbeat(state) {
             error!(state, "Failed to send heartbeat: {f}");
         }
-        state.next_heartbeat += state.config.heartbeat_interval;
+        state.next_heartbeat += *state.config.heartbeat_interval;
     }
 
     if almost_at_or_after_instant(now, state.next_liveness_check) {
         if let Err(f) = perform_liveness_check(state, now) {
             error!(state, "Failed to send heartbeat: {f}");
         }
-        state.next_liveness_check += state.config.liveness_check_interval;
+        state.next_liveness_check += *state.config.liveness_check_interval;
     }
 
     if almost_at_or_after_instant(now, state.next_peer_update) {
         if let Err(f) = perform_peer_update(state) {
             error!(state, "Failed to send heartbeat: {f}");
         }
-        state.next_peer_update += state.config.peer_update_interval;
+        state.next_peer_update += *state.config.peer_update_interval;
     }
 
     state
@@ -637,7 +634,7 @@ fn perform_liveness_check(state: &mut GossipState, now: Instant) -> Result<()> {
     debug!(state, "Performing liveness checks");
 
     let assume_dead_duration =
-        state.config.heartbeat_interval * state.config.assume_dead_after_missed_heartbeats;
+        *state.config.heartbeat_interval * state.config.assume_dead_after_missed_heartbeats;
 
     let mut dead = vec![];
 
