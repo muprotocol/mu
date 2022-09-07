@@ -49,7 +49,7 @@ macro_rules! error {
     ($state:expr, $($arg:tt)+) => (log::error!(target: &$state.log_target, $($arg)+))
 }
 
-type NodeHash = u128;
+pub type NodeHash = u128;
 
 /// A node in the network.
 /// Assumed to run all services (executor, gateway, DB, etc.) for now.

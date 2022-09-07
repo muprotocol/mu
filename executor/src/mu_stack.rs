@@ -1,4 +1,5 @@
 pub mod deploy;
+pub mod scheduler;
 
 // We must use a BTreeMap to ensure key ordering stays consistent.
 use std::{collections::HashMap, fmt::Display};
