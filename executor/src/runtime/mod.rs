@@ -4,43 +4,29 @@
 
 pub mod error;
 pub mod function;
+pub mod instance;
 pub mod message;
 pub mod providers;
 pub mod types;
 
-const MESSAGE_READ_BUF_CAP: usize = 8 * 1024;
-const FUNCTION_TERM_TIMEOUT: Duration = Duration::from_secs(2);
-
 use self::{
     error::Error,
-    message::{
-        database::{database_id, DbRequest, DbResponse, DbResponseDetails},
-        gateway::{GatewayRequest, GatewayResponse},
-        log::Log,
-        FromMessage, Message,
-    },
+    instance::{create_store, Instance, Loaded},
+    message::gateway::GatewayRequest,
     types::{
-        FunctionDefinition, FunctionHandle, FunctionID, FunctionProvider, FunctionUsage,
-        InstanceID, InvokeFunctionRequest,
+        FunctionDefinition, FunctionID, FunctionProvider, FunctionUsage, InvokeFunctionRequest,
+        RuntimeConfig,
     },
 };
-use crate::{
-    gateway,
-    mu_stack::StackID,
-    mudb::{self, service as DbService},
-    runtime::message::{database::DbRequestDetails, ToMessage},
-};
-use anyhow::{bail, Context, Result};
+use crate::{gateway, mu_stack::StackID, runtime::message::ToMessage};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
-use bytes::BufMut;
 use dyn_clonable::clonable;
-use futures::Future;
+use log::*;
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
-use std::{
-    io::{BufRead, Write},
-    time::Duration,
-};
-use wasmer_middlewares::metering::MeteringPoints;
+use std::{collections::HashMap, path::Path};
+use wasmer::{Module, Store};
+use wasmer_cache::{Cache, FileSystemCache};
 
 #[async_trait]
 #[clonable]
@@ -70,7 +56,6 @@ pub enum MailboxMessage {
 
 //TODO:
 // * use metrics and MemoryUsage so we can report usage of memory and CPU time.
-// * remove less frequently used source's from runtime
 #[derive(Clone)]
 struct RuntimeImpl {
     mailbox: CallbackMailboxProcessor<MailboxMessage>,
@@ -78,16 +63,57 @@ struct RuntimeImpl {
 
 struct RuntimeState {
     function_provider: Box<dyn FunctionProvider>,
+    hashkey_dict: HashMap<FunctionID, wasmer_cache::Hash>,
+    cache: FileSystemCache,
+    store: Store, // We only need this store for it's configuration
 }
 
 impl RuntimeState {
-    async fn instantiate_function(&mut self, function_id: FunctionID) -> Result<Instance> {
+    pub fn new(function_provider: Box<dyn FunctionProvider>, cache_path: &Path) -> Result<Self> {
+        let mut cache = FileSystemCache::new(cache_path).context("failed to create cache")?;
+        cache.set_cache_extension(Some("wasmu"));
+
+        Ok(Self {
+            hashkey_dict: HashMap::new(),
+            function_provider,
+            cache,
+            store: create_store(),
+        })
+    }
+
+    fn load_module(&mut self, function_id: &FunctionID) -> Result<Module> {
+        let key = self
+            .hashkey_dict
+            .get(function_id)
+            .ok_or(Error::Internal("cache key can not be found"))?
+            .to_owned();
+
+        match unsafe { self.cache.load(&self.store, key) } {
+            Ok(module) => Ok(module),
+            Err(e) => {
+                warn!("cached module is corrupted: {}", e);
+
+                let definition = self
+                    .function_provider
+                    .get(function_id)
+                    .ok_or_else(|| Error::FunctionNotFound(function_id.clone()))?;
+
+                let module = Module::new(&self.store, definition.source.clone())?; //TODO: This clone should be removed once we merged PR #39
+
+                self.cache.store(key, &module)?;
+                Ok(module)
+            }
+        }
+    }
+
+    async fn instantiate_function(&mut self, function_id: FunctionID) -> Result<Instance<Loaded>> {
         let definition = self
             .function_provider
             .get(&function_id)
-            .ok_or(Error::FunctionNotFound(function_id))?;
-        let instance = Instance::new(definition)?;
-        Ok(instance)
+            .ok_or_else(|| Error::FunctionNotFound(function_id.clone()))?;
+        let instance = Instance::new(function_id.clone(), definition.envs.clone());
+        let module = self.load_module(&function_id)?;
+        Ok(instance.load_module(module))
     }
 }
 
@@ -146,186 +172,13 @@ impl Runtime for RuntimeImpl {
     }
 }
 
-#[derive(Debug)]
-pub struct Instance {
-    id: InstanceID,
-    handle: FunctionHandle,
-}
-
-impl Instance {
-    pub fn new(definition: &FunctionDefinition) -> Result<Self> {
-        let handle = function::start(definition)?;
-
-        Ok(Self {
-            handle,
-            id: InstanceID::generate_random(definition.id.clone()),
-        })
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.handle.join_handle.is_finished()
-    }
-
-    fn write_to_stdin(&mut self, input: Message) -> Result<()> {
-        let mut bytes = input.as_bytes()?;
-        bytes.put_u8(b'\n');
-        self.handle.io.stdin.write_all(&bytes)?;
-        self.handle.io.stdin.flush()?;
-        Ok(())
-    }
-
-    fn read_from_stdout(&mut self) -> Result<Message> {
-        let mut buf = String::with_capacity(MESSAGE_READ_BUF_CAP);
-        loop {
-            let bytes_read = self.handle.io.stdout.read_line(&mut buf)?;
-            if bytes_read == 0 {
-                continue;
-            };
-
-            return serde_json::from_slice(buf.as_bytes()).map_err(Into::into);
-        }
-    }
-
-    //if self.cancellation.token.is_cancelled() {
-    //    println!("Got shutdown");
-    //    let msg = Signal::term().to_message().unwrap();
-    //    self.write_to_stdin(msg)?;
-    //    println!("shutdown signal sent");
-    //    std::thread::sleep(FUNCTION_TERM_TIMEOUT);
-    //    println!("shutdown timeout");
-    //    self.handle.join_handle.abort();
-    //    println!("function aborted");
-    //}
-
-    pub fn request(
-        mut self,
-        request: Message,
-    ) -> Result<impl Future<Output = Result<(GatewayResponse, FunctionUsage)>>> {
-        //TODO: check function state
-        self.write_to_stdin(request)?;
-        loop {
-            if self.is_finished() {
-                return Err(Error::FunctionEarlyExit(self.id)).map_err(Into::into);
-            }
-
-            match self.read_from_stdout() {
-                Ok(message) => match message.r#type.as_str() {
-                    GatewayResponse::TYPE => {
-                        let resp = GatewayResponse::from_message(message)?;
-                        return Ok(async move {
-                            match self.handle.join_handle.await {
-                                Ok(MeteringPoints::Exhausted) => Ok((resp, u64::MAX)),
-                                Ok(MeteringPoints::Remaining(p)) => Ok((resp, u64::MAX - p)),
-                                Err(_) => {
-                                    Err(Error::FunctionAborted(self.id.clone())).map_err(Into::into)
-                                }
-                            }
-                        });
-                    }
-
-                    DbRequest::TYPE => {
-                        let db_req = DbRequest::from_message(message)?;
-                        let db_resp = match db_req.request {
-                            DbRequestDetails::CreateTable(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on(DbService::create_table(
-                                        database_id(&self.id.function_id, req.db_name),
-                                        req.table_name,
-                                    ))
-                                    .map_err(|e| e.to_string());
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::CreateTable(res),
-                                }
-                            }
-
-                            DbRequestDetails::DropTable(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on(DbService::delete_table(
-                                        database_id(&self.id.function_id, req.db_name),
-                                        req.table_name,
-                                    ))
-                                    .map_err(|e| e.to_string());
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::DropTable(res),
-                                }
-                            }
-
-                            DbRequestDetails::Find(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on(DbService::find_item(
-                                        database_id(&self.id.function_id, req.db_name),
-                                        req.table_name,
-                                        req.key_filter,
-                                        req.value_filter,
-                                    ))
-                                    .map_err(|e| e.to_string());
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::Find(res),
-                                }
-                            }
-                            DbRequestDetails::Insert(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on({
-                                        DbService::insert_one_item(
-                                            database_id(&self.id.function_id, req.db_name),
-                                            req.table_name,
-                                            req.key,
-                                            req.value,
-                                        )
-                                    })
-                                    .map_err(|e| e.to_string());
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::Insert(res),
-                                }
-                            }
-                            DbRequestDetails::Update(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on(DbService::update_item(
-                                        database_id(&self.id.function_id, req.db_name),
-                                        req.table_name,
-                                        req.key_filter,
-                                        req.value_filter,
-                                        mudb::query::Update(req.update),
-                                    ))
-                                    .map_err(|e| e.to_string());
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::Update(res),
-                                }
-                            }
-                        };
-
-                        let msg = db_resp.to_message()?;
-                        self.write_to_stdin(msg)?;
-                    }
-
-                    Log::TYPE => {
-                        let log = Log::from_message(message)?;
-                        println!("Log: {log:#?}");
-                    }
-                    t => bail!("invalid message type: {t}"),
-                },
-                Err(e) => println!("Error while parsing response: {e:?}"),
-            };
-        }
-    }
-}
-
-pub fn start(function_provider: Box<dyn FunctionProvider>) -> Box<dyn Runtime> {
-    let state = RuntimeState { function_provider };
-
+pub fn start(
+    function_provider: Box<dyn FunctionProvider>,
+    config: RuntimeConfig,
+) -> Result<Box<dyn Runtime>> {
+    let state = RuntimeState::new(function_provider, &config.cache_path)?;
     let mailbox = CallbackMailboxProcessor::start(mailbox_step, state, 10000);
-
-    Box::new(RuntimeImpl { mailbox })
+    Ok(Box::new(RuntimeImpl { mailbox }))
 }
 
 async fn mailbox_step(
@@ -337,10 +190,13 @@ async fn mailbox_step(
     match msg {
         MailboxMessage::InvokeFunction(req) => {
             if let Ok(instance) = runtime.instantiate_function(req.function_id).await {
-                tokio::spawn(async {
-                    let resp = tokio::task::spawn_blocking(move || instance.request(req.message))
-                        .await
-                        .unwrap(); // TODO: Handle spawn_blocking errors
+                tokio::spawn(async move {
+                    let resp = tokio::task::spawn_blocking(move || {
+                        let instance = instance.start().context("can not run instance").unwrap(); //TODO: Handle Errors
+                        instance.request(req.message)
+                    })
+                    .await
+                    .unwrap(); // TODO: Handle spawn_blocking errors
 
                     match resp {
                         Ok(a) => req.reply.reply(a.await),
@@ -356,16 +212,36 @@ async fn mailbox_step(
 
         MailboxMessage::AddFunctions(functions) => {
             for f in functions {
-                runtime.function_provider.add_function(f)
+                if runtime.hashkey_dict.contains_key(&f.id) {
+                    continue;
+                }
+
+                let mut hash_array = Vec::with_capacity(f.id.function_name.len() + 16); // Uuid is 16 bytes
+                hash_array.extend_from_slice(f.id.stack_id.0.as_bytes());
+                hash_array.extend_from_slice(f.id.function_name.as_bytes());
+                let hash = wasmer_cache::Hash::generate(&hash_array);
+                runtime.hashkey_dict.insert(f.id.clone(), hash);
+
+                if let Ok(module) = Module::from_binary(&runtime.store, &f.source) {
+                    if let Err(e) = runtime.cache.store(hash, &module) {
+                        error!("failed to cache module: {e}, function id: {}", f.id);
+                    }
+                    runtime.function_provider.add_function(f);
+                } else {
+                    error!("can not build wasm module for function: {}", f.id);
+                }
             }
         }
 
         MailboxMessage::RemoveFunctions(stack_id, functions_names) => {
             for function_name in functions_names {
-                runtime.function_provider.remove_function(&FunctionID {
+                let function_id = FunctionID {
                     stack_id,
                     function_name,
-                })
+                };
+
+                runtime.function_provider.remove_function(&function_id);
+                runtime.hashkey_dict.remove(&function_id);
             }
         }
 

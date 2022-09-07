@@ -2,28 +2,23 @@
 #![allow(dead_code)]
 
 use std::{
+    collections::HashMap,
     io::{BufReader, BufWriter},
-    sync::Arc,
 };
 
-use super::types::{FunctionDefinition, FunctionHandle, FunctionIO};
+use super::types::{FunctionHandle, FunctionIO};
 use anyhow::{Context, Result};
-use wasmer::{CompilerConfig, Cranelift, EngineBuilder, Instance, Module, Store};
-use wasmer_middlewares::{metering::get_remaining_points, Metering};
+use wasmer::{Instance, Module, Store};
+use wasmer_middlewares::metering::get_remaining_points;
 use wasmer_wasi::{Pipe, WasiState};
 
 //TODO: configure `Builder` of tokio for huge blocking tasks
-pub fn start(definition: &FunctionDefinition) -> Result<FunctionHandle> {
+pub fn start(
+    mut store: Store,
+    module: &Module,
+    envs: HashMap<String, String>,
+) -> Result<FunctionHandle> {
     //TODO: Check wasi version specified in this module and if we can run it!
-
-    let mut compiler = Cranelift::default();
-    let metering = Arc::new(Metering::new(u64::MAX, |_| 1));
-    compiler.push_middleware(metering);
-
-    let mut store = Store::new(EngineBuilder::new(compiler));
-
-    //TODO: not good performance-wise to keep compiling the module
-    let module = Module::from_binary(&store, &definition.source)?;
 
     let stdin = Pipe::new();
     let stdout = Pipe::new();
@@ -34,11 +29,11 @@ pub fn start(definition: &FunctionDefinition) -> Result<FunctionHandle> {
         .stdin(Box::new(stdin.clone()))
         .stdout(Box::new(stdout.clone()))
         .stderr(Box::new(stderr.clone()))
-        .envs(definition.envs.clone())
+        .envs(envs)
         .finalize(&mut store)?;
 
-    let import_object = wasi_env.import_object(&mut store, &module)?;
-    let instance = Instance::new(&mut store, &module, &import_object)?;
+    let import_object = wasi_env.import_object(&mut store, module)?;
+    let instance = Instance::new(&mut store, module, &import_object)?;
     let memory = instance.exports.get_memory("memory")?;
     wasi_env.data_mut(&mut store).set_memory(memory.clone());
 
@@ -62,7 +57,7 @@ pub fn start(definition: &FunctionDefinition) -> Result<FunctionHandle> {
 
         match result {
             Ok(_) => (),
-            Err(e) => println!("error: {e:?}"),
+            Err(e) => log::error!("error: {e:?}"),
         };
 
         get_remaining_points(&mut store, &instance)
