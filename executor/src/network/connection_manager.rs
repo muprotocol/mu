@@ -25,13 +25,16 @@ use quinn::{
     ClientConfig, Connecting, Endpoint, Incoming, NewConnection, RecvStream, SendStream,
     ServerConfig,
 };
+use serde::Deserialize;
 use tokio_util::codec::{length_delimited, FramedRead, FramedWrite, LengthDelimitedCodec};
 
 pub type ConnectionID = u32;
 
+#[derive(Deserialize)]
 pub struct ConnectionManagerConfig {
     pub listen_address: IpAddr,
     pub listen_port: u16,
+    #[serde(rename = "max_request_response_size_kb")]
     pub max_request_response_size: usize,
 }
 

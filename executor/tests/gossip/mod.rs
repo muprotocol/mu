@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashSet, time::Duration};
 
 use futures::future::select_all;
 use mailbox_processor::NotificationChannel;
-use mu::network::gossip::*;
+use mu::{infrastructure::config::ConfigDuration, network::gossip::*};
 use rand::{seq::SliceRandom, thread_rng};
 use test_log::test;
 use tokio::{sync::mpsc::UnboundedReceiver, time::Instant};
@@ -12,9 +12,9 @@ async fn test_node_discovery() {
     #[cfg(test)]
     let config = GossipConfig {
         max_peers: 4,
-        peer_update_interval: Duration::from_millis(15),
-        liveness_check_interval: Duration::from_millis(5),
-        heartbeat_interval: Duration::from_millis(5),
+        peer_update_interval: ConfigDuration::new(Duration::from_millis(15)),
+        liveness_check_interval: ConfigDuration::new(Duration::from_millis(5)),
+        heartbeat_interval: ConfigDuration::new(Duration::from_millis(5)),
         assume_dead_after_missed_heartbeats: 10,
     };
 
