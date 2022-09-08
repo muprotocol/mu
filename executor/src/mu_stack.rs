@@ -16,7 +16,7 @@ impl Display for StackID {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Stack {
     pub name: String,
     pub version: String,
@@ -46,7 +46,7 @@ impl Stack {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum Service {
     Database(Database),
@@ -102,7 +102,7 @@ pub enum HttpMethod {
     Options,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Function {
     pub name: String,
     pub binary: String,
