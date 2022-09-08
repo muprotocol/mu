@@ -1,6 +1,7 @@
+use std::collections::HashMap;
+
 use super::types::{FunctionDefinition, FunctionID, FunctionProvider};
 use crate::mu_stack::StackID;
-use std::collections::HashMap;
 
 type FunctionName = String;
 

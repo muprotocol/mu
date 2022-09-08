@@ -32,6 +32,7 @@ pub trait GatewayManager: Clone {
     async fn stop(&self) -> Result<()>;
 }
 
+#[derive(Deserialize)]
 pub struct GatewayManagerConfig {
     pub listen_address: IpAddr,
     pub listen_port: u16,

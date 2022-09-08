@@ -4,17 +4,18 @@ use crate::mu_stack::{FunctionRuntime, StackID};
 use anyhow::Result;
 use bytes::Bytes;
 use mailbox_processor::ReplyChannel;
+use serde::Deserialize;
 use std::{
     collections::HashMap,
     fmt::Display,
     io::{BufReader, BufWriter},
+    path::PathBuf,
 };
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wasmer_middlewares::metering::MeteringPoints;
 use wasmer_wasi::Pipe;
 
-/// This is the FunctionProvider that should cache functions if needed.
 pub trait FunctionProvider: Send {
     fn get(&self, id: &FunctionID) -> Option<&FunctionDefinition>;
     fn add_function(&mut self, function: FunctionDefinition);
@@ -108,4 +109,9 @@ pub struct FunctionIO {
 pub struct FunctionHandle {
     pub join_handle: JoinHandle<MeteringPoints>,
     pub io: FunctionIO,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct RuntimeConfig {
+    pub cache_path: PathBuf,
 }

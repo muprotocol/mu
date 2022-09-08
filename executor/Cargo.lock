@@ -100,6 +100,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 
 [[package]]
+name = "arrayvec"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8da52d66c7071e2e3fa2a1e5c6d088fec47b593032b254f5e980de8ea54454d6"
+
+[[package]]
 name = "assert_matches"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -174,7 +180,7 @@ dependencies = [
  "cfg-if 1.0.0",
  "libc",
  "miniz_oxide",
- "object",
+ "object 0.29.0",
  "rustc-demangle",
 ]
 
@@ -218,12 +224,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b64485778c4f16a6a5a9d335e80d449ac6c70cdd6a06d2af18a6f6f775a125b3"
 dependencies = [
  "arrayref",
- "arrayvec",
+ "arrayvec 0.5.2",
  "cc",
  "cfg-if 0.1.10",
  "constant_time_eq",
  "crypto-mac",
  "digest 0.9.0",
+]
+
+[[package]]
+name = "blake3"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a08e53fc5a564bb15bfe6fae56bd71522205f1f91893f9c0116edad6496c183f"
+dependencies = [
+ "arrayref",
+ "arrayvec 0.7.2",
+ "cc",
+ "cfg-if 1.0.0",
+ "constant_time_eq",
+ "digest 0.10.3",
 ]
 
 [[package]]
@@ -806,6 +826,8 @@ dependencies = [
  "uuid",
  "validator",
  "wasmer",
+ "wasmer-cache",
+ "wasmer-compiler-llvm",
  "wasmer-middlewares",
  "wasmer-wasi",
 ]
@@ -1092,6 +1114,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
 name = "hkdf"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1233,6 +1261,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "inkwell"
+version = "0.1.0-beta.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2223d0eba0ae6d40a3e4680c6a3209143471e1f38b41746ea309aa36dde9f90b"
+dependencies = [
+ "either",
+ "inkwell_internals",
+ "libc",
+ "llvm-sys",
+ "once_cell",
+ "parking_lot 0.11.2",
+ "regex",
+]
+
+[[package]]
+name = "inkwell_internals"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c7090af3d300424caa81976b8c97bca41cd70e861272c072e188ae082fb49f9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "inlinable_string"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1252,6 +1306,15 @@ name = "ipnet"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "879d54834c8c76457ef4293a689b2a8c59b076067ad77b15efafbb05f92a592b"
+
+[[package]]
+name = "itertools"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9a9d19fa1e79b6215ff29b9d6880b706147f16e9b1dbb1e4e5947b5b02bc5e3"
+dependencies = [
+ "either",
+]
 
 [[package]]
 name = "itoa"
@@ -1293,6 +1356,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0717cef1bc8b636c6e1c1bbdefc09e6322da8a9321966e8928ef80d20f7f770f"
 
 [[package]]
+name = "llvm-sys"
+version = "120.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09b716322964966a62377cf86e64f00ca7043505fdf27bd2ec7d41ae6682d1e7"
+dependencies = [
+ "cc",
+ "lazy_static",
+ "libc",
+ "regex",
+ "semver 0.11.0",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1309,6 +1385,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
 dependencies = [
  "cfg-if 1.0.0",
+ "serde",
 ]
 
 [[package]]
@@ -1578,6 +1655,15 @@ dependencies = [
 
 [[package]]
 name = "object"
+version = "0.28.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e42c982f2d955fac81dd7e1d0e1426a7d702acd9c98d19ab01083a6a0328c424"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "object"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21158b2c33aa6d4561f1c0a6ea283ca92bc54802a93b263e910746d679a7eb53"
@@ -1733,6 +1819,16 @@ name = "percent-encoding"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4fd5641d01c8f18a23da7b6fe29298ff4b55afcccdf78973b24cf3175fee32e"
+
+[[package]]
+name = "pest"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b0560d531d1febc25a3c9398a62a71256c0178f2e3443baedd9ad4bb8c9deb4"
+dependencies = [
+ "thiserror",
+ "ucd-trie",
+]
 
 [[package]]
 name = "pin-project"
@@ -2391,7 +2487,16 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d7eb9ef2c18661902cc47e535f9bc51b78acd254da71d375c2f6720d9a40403"
 dependencies = [
- "semver-parser",
+ "semver-parser 0.7.0",
+]
+
+[[package]]
+name = "semver"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f301af10236f6df4160f7c3f04eec6dbc70ace82d23326abad5edee88801c6b6"
+dependencies = [
+ "semver-parser 0.10.2",
 ]
 
 [[package]]
@@ -2405,6 +2510,15 @@ name = "semver-parser"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
+
+[[package]]
+name = "semver-parser"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00b0bef5b7f9e0df16536d3961cfb6e84331c065b4066afb39768d0e319411f7"
+dependencies = [
+ "pest",
+]
 
 [[package]]
 name = "serde"
@@ -2597,7 +2711,7 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af75bd21beb162eab69de76abbb803d4111735ead00d5086dcc6f4ddb3b53cc9"
 dependencies = [
- "blake3",
+ "blake3 0.3.8",
  "firestorm",
  "ibig",
  "lazy_static",
@@ -3033,6 +3147,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucd-trie"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89570599c4fe5585de2b388aab47e99f7fa4e9238a1399f707a02e356058141c"
+
+[[package]]
 name = "uncased"
 version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3274,7 +3394,8 @@ dependencies = [
 [[package]]
 name = "wasmer"
 version = "3.0.0-beta"
-source = "git+https://github.com/wasmerio/wasmer?rev=43b6e0c2#43b6e0c26226ef5f89ba37f4e895ee2edd1f420c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a7662db4ddb1ff29653e709924145a6a97e86034bbea820ca1b1b6279d5e0a2"
 dependencies = [
  "cfg-if 1.0.0",
  "indexmap",
@@ -3285,6 +3406,7 @@ dependencies = [
  "wasm-bindgen",
  "wasmer-compiler",
  "wasmer-compiler-cranelift",
+ "wasmer-compiler-llvm",
  "wasmer-derive",
  "wasmer-types",
  "wasmer-vm",
@@ -3293,9 +3415,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasmer-cache"
+version = "3.0.0-beta"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ed6e5cd9a188836346b42c6fcaad25e69ff3f4e5ffb4b73c83ac1aa1642a82f"
+dependencies = [
+ "blake3 1.3.1",
+ "hex",
+ "thiserror",
+ "wasmer",
+]
+
+[[package]]
 name = "wasmer-compiler"
 version = "3.0.0-beta"
-source = "git+https://github.com/wasmerio/wasmer?rev=43b6e0c2#43b6e0c26226ef5f89ba37f4e895ee2edd1f420c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f32214d36c989b1c350a48a928865c4128ce31d3ba82c8799b9f844ad485d5f3"
 dependencies = [
  "backtrace",
  "cfg-if 1.0.0",
@@ -3318,7 +3453,8 @@ dependencies = [
 [[package]]
 name = "wasmer-compiler-cranelift"
 version = "3.0.0-beta"
-source = "git+https://github.com/wasmerio/wasmer?rev=43b6e0c2#43b6e0c26226ef5f89ba37f4e895ee2edd1f420c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4492a4895c85955d83756b5970483991f93cd5fe1ddbef2fb86e9d97085f64c7"
 dependencies = [
  "cranelift-codegen",
  "cranelift-entity",
@@ -3334,9 +3470,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasmer-compiler-llvm"
+version = "3.0.0-beta"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e55e1e80bf4b420b3fbd75ee9d71cdcf8b14ad5757ed760d86e12fafe6316670"
+dependencies = [
+ "byteorder",
+ "cc",
+ "inkwell",
+ "itertools",
+ "lazy_static",
+ "libc",
+ "object 0.28.4",
+ "rayon",
+ "regex",
+ "rustc_version 0.4.0",
+ "semver 1.0.13",
+ "smallvec",
+ "target-lexicon",
+ "wasmer-compiler",
+ "wasmer-types",
+ "wasmer-vm",
+]
+
+[[package]]
 name = "wasmer-derive"
 version = "3.0.0-beta"
-source = "git+https://github.com/wasmerio/wasmer?rev=43b6e0c2#43b6e0c26226ef5f89ba37f4e895ee2edd1f420c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96d7e0d489ec1583d7c0367bb7eccb71e9e3f827e9f7c32a4375f3de6e8aa5f2"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -3347,7 +3508,8 @@ dependencies = [
 [[package]]
 name = "wasmer-middlewares"
 version = "3.0.0-beta"
-source = "git+https://github.com/wasmerio/wasmer?rev=43b6e0c2#43b6e0c26226ef5f89ba37f4e895ee2edd1f420c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc5d62038f911fce8df18766515ed2c34ceca8ecc486bf824549e514b78ec499"
 dependencies = [
  "wasmer",
  "wasmer-types",
@@ -3357,7 +3519,8 @@ dependencies = [
 [[package]]
 name = "wasmer-types"
 version = "3.0.0-beta"
-source = "git+https://github.com/wasmerio/wasmer?rev=43b6e0c2#43b6e0c26226ef5f89ba37f4e895ee2edd1f420c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "810fcad9772ae820c2b474a65a064c9f4d23c76b923b130aa007b3995fc602db"
 dependencies = [
  "enum-iterator",
  "enumset",
@@ -3371,7 +3534,8 @@ dependencies = [
 [[package]]
 name = "wasmer-vbus"
 version = "3.0.0-beta"
-source = "git+https://github.com/wasmerio/wasmer?rev=43b6e0c2#43b6e0c26226ef5f89ba37f4e895ee2edd1f420c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5556ca1f059385cbecb360561e2c15c60074a12d8fe42e0692fb53fa700f8bef"
 dependencies = [
  "thiserror",
  "tracing",
@@ -3381,7 +3545,8 @@ dependencies = [
 [[package]]
 name = "wasmer-vfs"
 version = "3.0.0-beta"
-source = "git+https://github.com/wasmerio/wasmer?rev=43b6e0c2#43b6e0c26226ef5f89ba37f4e895ee2edd1f420c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53be0690ef53117068c89c20440a04381bb6ee42c9573b8d5dada30559ea042d"
 dependencies = [
  "libc",
  "thiserror",
@@ -3391,7 +3556,8 @@ dependencies = [
 [[package]]
 name = "wasmer-vm"
 version = "3.0.0-beta"
-source = "git+https://github.com/wasmerio/wasmer?rev=43b6e0c2#43b6e0c26226ef5f89ba37f4e895ee2edd1f420c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a951ec45d81689304cc6a2c7fe7eb038ad92929a0f97704358a2af676a135cbb"
 dependencies = [
  "backtrace",
  "cc",
@@ -3414,7 +3580,8 @@ dependencies = [
 [[package]]
 name = "wasmer-vnet"
 version = "3.0.0-beta"
-source = "git+https://github.com/wasmerio/wasmer?rev=43b6e0c2#43b6e0c26226ef5f89ba37f4e895ee2edd1f420c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d11caaab8165f3290a1becc041d3226f468fb0a5fedde86251aef116481293c0"
 dependencies = [
  "bytes",
  "thiserror",
@@ -3425,7 +3592,8 @@ dependencies = [
 [[package]]
 name = "wasmer-wasi"
 version = "3.0.0-beta"
-source = "git+https://github.com/wasmerio/wasmer?rev=43b6e0c2#43b6e0c26226ef5f89ba37f4e895ee2edd1f420c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a37eb23498f5ceabed59144c6b6707707b7ff8dc40ef70bd1d289a657816f729"
 dependencies = [
  "bytes",
  "cfg-if 1.0.0",
@@ -3448,7 +3616,8 @@ dependencies = [
 [[package]]
 name = "wasmer-wasi-local-networking"
 version = "3.0.0-beta"
-source = "git+https://github.com/wasmerio/wasmer?rev=43b6e0c2#43b6e0c26226ef5f89ba37f4e895ee2edd1f420c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "144b8c652f04c78795a72bb520e4214365cf89479777638b1eecec0d8c347977"
 dependencies = [
  "bytes",
  "tracing",
@@ -3459,7 +3628,8 @@ dependencies = [
 [[package]]
 name = "wasmer-wasi-types"
 version = "3.0.0-beta"
-source = "git+https://github.com/wasmerio/wasmer?rev=43b6e0c2#43b6e0c26226ef5f89ba37f4e895ee2edd1f420c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e822dda0962a1af8e36922b56bbb105dd8c8e46cad1511b9e3da81addf47da0"
 dependencies = [
  "byteorder",
  "time 0.2.27",

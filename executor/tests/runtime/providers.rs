@@ -7,12 +7,10 @@ pub struct MapFunctionProvider {
 }
 
 impl MapFunctionProvider {
-    pub fn new(map: HashMap<FunctionID, FunctionDefinition>) -> Self {
-        Self { inner: map }
-    }
-
-    pub fn ids(&self) -> Vec<FunctionID> {
-        self.inner.keys().map(ToOwned::to_owned).collect()
+    pub fn new() -> Self {
+        Self {
+            inner: HashMap::new(),
+        }
     }
 }
 
@@ -22,12 +20,12 @@ impl FunctionProvider for MapFunctionProvider {
         Some(self.inner.get(id).unwrap())
     }
 
-    fn add_function(&mut self, _function: FunctionDefinition) {
-        unimplemented!("Not needed")
+    fn add_function(&mut self, function: FunctionDefinition) {
+        self.inner.insert(function.id.clone(), function);
     }
 
-    fn remove_function(&mut self, _id: &FunctionID) {
-        unimplemented!("Not needed")
+    fn remove_function(&mut self, id: &FunctionID) {
+        self.inner.remove(id);
     }
 
     fn get_function_names(&self, _stack_id: &StackID) -> Vec<String> {
