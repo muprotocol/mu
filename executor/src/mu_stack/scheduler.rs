@@ -6,19 +6,20 @@ use std::{
 use anyhow::Result;
 use async_trait::async_trait;
 use dyn_clonable::clonable;
-use log::{error, warn};
+use log::{error, info, trace, warn};
 use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel};
+use serde::Deserialize;
 
 use crate::{
-    gateway::GatewayManager, network::gossip::NodeHash, runtime::Runtime,
-    util::TakeAndReplaceWithDefault,
+    gateway::GatewayManager, infrastructure::config::ConfigDuration, network::gossip::NodeHash,
+    runtime::Runtime, util::TakeAndReplaceWithDefault,
 };
 
 use super::{Stack, StackID};
 
 #[async_trait]
 #[clonable]
-pub trait Scheduler: Clone {
+pub trait Scheduler: Clone + Send + Sync {
     async fn node_discovered(&self, node: NodeHash) -> Result<()>;
     async fn node_died(&self, node: NodeHash) -> Result<()>;
     async fn node_deployed_stack(&self, node: NodeHash, stack_id: StackID) -> Result<()>;
@@ -39,10 +40,12 @@ pub trait Scheduler: Clone {
 pub enum SchedulerNotification {
     StackDeployed(StackID),
     StackUndeployed(StackID),
+    FailedToDeployStack(StackID),
 }
 
+#[derive(Deserialize)]
 pub struct SchedulerConfig {
-    tick_interval: Duration,
+    tick_interval: ConfigDuration,
 }
 
 enum SchedulerMessage {
@@ -167,7 +170,7 @@ enum StackDeployment {
 }
 
 struct SchedulerState {
-    own_hash: NodeHash,
+    my_hash: NodeHash,
     known_nodes: HashSet<NodeHash>,
     stacks: HashMap<StackID, StackDeployment>,
     reevaluate_on_next_tick: HashSet<StackID>,
@@ -179,18 +182,18 @@ struct SchedulerState {
 
 pub fn start(
     config: SchedulerConfig,
-    own_hash: NodeHash,
+    my_hash: NodeHash,
     available_stacks: Vec<(StackID, Stack)>,
     notification_channel: NotificationChannel<SchedulerNotification>,
     runtime: Box<dyn Runtime>,
     gateway_manager: Box<dyn GatewayManager>,
-) -> impl Scheduler {
-    let tick_interval = config.tick_interval;
+) -> Box<dyn Scheduler> {
+    let tick_interval = *config.tick_interval;
 
     let mailbox = CallbackMailboxProcessor::start(
         step,
         SchedulerState {
-            own_hash,
+            my_hash,
             stacks: available_stacks
                 .into_iter()
                 .map(|(id, stack)| (id, StackDeployment::Undeployed { stack }))
@@ -210,7 +213,7 @@ pub fn start(
     let res_clone = res.clone();
     tokio::spawn(async move { generate_tick(res_clone, tick_interval).await });
 
-    res
+    Box::new(res)
 }
 
 async fn generate_tick(scheduler: SchedulerImpl, interval: Duration) {
@@ -424,33 +427,97 @@ async fn tick(state: &mut SchedulerState) {
         if let Entry::Occupied(mut occ) = state.stacks.entry(*id) {
             match occ.get_mut() {
                 StackDeployment::Undeployed { stack } => {
-                    match get_closest_node(*id, state.own_hash, state.known_nodes.iter()) {
+                    match get_closest_node(*id, state.my_hash, state.known_nodes.iter()) {
                         GetClosestNodeResult::Me => {
-                            match deploy_stack(*id, stack.clone(), &state.notification_channel, &state.runtime, &state.gateway_manager).await {
+                            info!("Deploying stack {id} locally");
+                            match deploy_stack(
+                                *id,
+                                stack.clone(),
+                                &state.notification_channel,
+                                &state.runtime,
+                                &state.gateway_manager,
+                            )
+                            .await
+                            {
                                 Err(f) => {
                                     error!("Failed to deploy stack {id} due to: {f}");
                                 }
 
                                 Ok(()) => {
                                     let stack = stack.take_and_replace_with_default();
-                                    occ.insert(StackDeployment::DeployedToSelf { stack, deployed_to_others: Default::default() });
+                                    occ.insert(StackDeployment::DeployedToSelf {
+                                        stack,
+                                        deployed_to_others: Default::default(),
+                                    });
                                 }
                             }
                         }
 
                         GetClosestNodeResult::Other(node) => {
                             let stack = stack.take_and_replace_with_default();
-                            occ.insert(StackDeployment::HasDeploymentCandidate { stack, deployment_candidate: node });
+                            occ.insert(StackDeployment::HasDeploymentCandidate {
+                                stack,
+                                deployment_candidate: node,
+                            });
+                        }
+                    }
+                }
+
+                StackDeployment::DeployedToSelf {
+                    stack,
+                    deployed_to_others,
+                } => {
+                    if deployed_to_others.len() > 0 {
+                        if let GetClosestNodeResult::Other(node) =
+                            get_closest_node(*id, state.my_hash, deployed_to_others.iter())
+                        {
+                            info!("Stack {id} was deployed to closer node {node}, will undeploy");
+                            undeploy_stack(*id, &state.notification_channel).await;
+
+                            let stack = stack.take_and_replace_with_default();
+                            let deployed_to = deployed_to_others.take_and_replace_with_default();
+                            occ.insert(StackDeployment::DeployedToOthers { stack, deployed_to });
+                        }
+                    }
+                }
+
+                StackDeployment::DeployedToOthers { stack, deployed_to } => {
+                    if let GetClosestNodeResult::Me =
+                        get_closest_node(*id, state.my_hash, deployed_to.iter())
+                    {
+                        info!("I am closest to stack {id}, will deploy locally");
+                        match deploy_stack(
+                            *id,
+                            stack.clone(),
+                            &state.notification_channel,
+                            &state.runtime,
+                            &state.gateway_manager,
+                        )
+                        .await
+                        {
+                            Err(f) => {
+                                error!("Failed to deploy stack {id} due to: {f}");
+                            }
+
+                            Ok(()) => {
+                                let stack = stack.take_and_replace_with_default();
+                                let deployed_to_others =
+                                    deployed_to.take_and_replace_with_default();
+                                occ.insert(StackDeployment::DeployedToSelf {
+                                    stack,
+                                    deployed_to_others,
+                                });
+                            }
                         }
                     }
                 }
 
                 // Nothing to do if a stack has a live deployment candidate
-                StackDeployment::HasDeploymentCandidate {..}
-                // Nothing to do with an unknown stack
-                |StackDeployment::Unknown { .. } => (),
-                StackDeployment::DeployedToSelf {..} => todo!(),
-                StackDeployment::DeployedToOthers {..} => todo!(),
+                StackDeployment::HasDeploymentCandidate { .. } => (),
+
+                // Nothing to do with an unknown stack; even if we are closer, we
+                // must wait for the stack's definition to become available
+                StackDeployment::Unknown { .. } => (),
             }
         }
     }
@@ -465,24 +532,34 @@ async fn deploy_stack(
     runtime: &Box<dyn Runtime>,
     gateway_manager: &Box<dyn GatewayManager>,
 ) -> Result<()> {
-    super::deploy::deploy(
+    match super::deploy::deploy(
         id,
         stack,
         &mut runtime.clone(),
         &mut gateway_manager.clone(),
     )
-    .await?;
-    notification_channel.send(SchedulerNotification::StackDeployed(id));
-    Ok(())
+    .await
+    {
+        Err(f) => {
+            notification_channel.send(SchedulerNotification::FailedToDeployStack(id));
+            Err(f.into())
+        }
+
+        Ok(()) => {
+            notification_channel.send(SchedulerNotification::StackDeployed(id));
+            Ok(())
+        }
+    }
 }
 
 async fn undeploy_stack(
     _id: StackID,
     _notification_channel: &NotificationChannel<SchedulerNotification>,
 ) {
-    todo!("undeployment not implemented")
+    error!("Undeployment not implemented yet");
 }
 
+#[derive(Debug)]
 enum GetClosestNodeResult {
     Me,
     Other(NodeHash),
@@ -493,18 +570,23 @@ fn get_closest_node<'a>(
     my_hash: NodeHash,
     others: impl Iterator<Item = &'a NodeHash>,
 ) -> GetClosestNodeResult {
+    trace!("Determining closest node to {id}");
+
     let id_u128 = u128::from_le_bytes(id.0.as_bytes().clone());
 
     let mut min_distance = id_u128 ^ my_hash;
+    trace!("Distance to self: {min_distance}");
     let mut result = GetClosestNodeResult::Me;
 
     for hash in others {
         let distance = id_u128 ^ hash;
+        trace!("Distance to {hash}: {distance}");
         if distance < min_distance {
             min_distance = distance;
             result = GetClosestNodeResult::Other(*hash);
         }
     }
 
+    trace!("Result: {result:?}");
     result
 }

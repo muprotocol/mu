@@ -7,6 +7,7 @@ use config::{Config, Environment, File, FileFormat};
 
 use crate::{
     gateway::GatewayManagerConfig,
+    mu_stack::scheduler::SchedulerConfig,
     network::{
         connection_manager::ConnectionManagerConfig,
         gossip::{GossipConfig, KnownNodeConfig},
@@ -21,19 +22,21 @@ pub fn initialize_config() -> Result<(
     Vec<KnownNodeConfig>,
     GatewayManagerConfig,
     LogConfig,
+    SchedulerConfig,
 )> {
     let defaults = vec![
         ("log.level", "warn"),
         ("connection_manager.listen_ip", "0.0.0.0"),
         ("connection_manager.listen_port", "12012"),
         ("connection_manager.max_request_size_kb", "8192"),
-        ("gossip.heartbeat_interval_millis", "1000"),
+        ("gossip.heartbeat_interval", "1s"),
         ("gossip.assume_dead_after_missed_heartbeats", "10"),
         ("gossip.max_peers", "6"),
-        ("gossip.peer_update_interval_millis", "10000"),
-        ("gossip.liveness_check_interval_millis", "1000"),
+        ("gossip.peer_update_interval", "10s"),
+        ("gossip.liveness_check_interval", "1s"),
         ("gateway_manager.listen_ip", "0.0.0.0"),
         ("gateway_manager.listen_port", "12012"),
+        ("scheduler.tick_interval", "1s"),
     ];
 
     let default_arrays = vec!["log.filters", "gossip.seeds"];
@@ -88,9 +91,11 @@ pub fn initialize_config() -> Result<(
         .get("gateway_manager")
         .context("Invalid gateway config")?;
 
-    let log_config = config
-        .get::<LogConfig>("log")
-        .context("Invalid log config")?;
+    let log_config = config.get("log").context("Invalid log config")?;
+
+    let scheduler_config = config
+        .get("scheduler")
+        .context("Invalid scheduler config")?;
 
     println!("###\nConfigs: {:?}", gossip_config);
     Ok((
@@ -99,5 +104,6 @@ pub fn initialize_config() -> Result<(
         known_node_config,
         gateway_config,
         log_config,
+        scheduler_config,
     ))
 }

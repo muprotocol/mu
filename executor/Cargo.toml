@@ -24,7 +24,7 @@ thiserror = "1.0"
 log = { version = "0.4", features = [
     "serde",
     "release_max_level_debug",
-    "max_level_debug",
+    "max_level_trace",
 ] }
 env_logger = "0.9"
 config = { version = "0.13", features = ["yaml"], default-features = false }

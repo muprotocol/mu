@@ -1,9 +1,11 @@
 log:
-  level: info
+  level: error
   filters:
     - module: quinn::connection
       level: off
     - module: mu::network::connection_manager
-      level: info
+      level: off
     - module: wasmer_compiler_cranelift::translator::func_translator
       level: off
+    - module: mu::mu_stack::scheduler
+      level: trace

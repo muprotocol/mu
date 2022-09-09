@@ -59,7 +59,7 @@ pub enum StackDeploymentError {
     FailedToDeployDatabases(anyhow::Error),
 }
 
-pub async fn deploy(
+pub(super) async fn deploy(
     id: StackID,
     stack: Stack,
     runtime: &mut Box<dyn Runtime>,

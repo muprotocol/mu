@@ -1,3 +1,8 @@
+param (
+    [int]$Seeds = 3,
+    [int]$Total = 10
+)
+
 function RunInstance {
     param (
         [String]$Port,
@@ -15,14 +20,14 @@ function RunInstance {
 cargo build
 Remove-Item Env:\MU__*
 
-$Seeds = @()
-for ($i = 0; $i -lt 3; $i++) {
-    $Seeds += , (20000 + $i)
-    RunInstance -Port $(20000 + $i) -Seeds $Seeds
+$SeedAddresses = @()
+for ($i = 0; $i -lt $Seeds; $i++) {
+    $SeedAddresses += , (20000 + $i)
+    RunInstance -Port $(20000 + $i) -Seeds $SeedAddresses
 }
 
-for ($i = 0; $i -lt 20; $i++) {
-    RunInstance -Port $(21000 + $i) -Seeds $Seeds
+for ($i = 0; $i -lt ($Total - $Seeds); $i++) {
+    RunInstance -Port $(21000 + $i) -Seeds $SeedAddresses
 }
 
 Remove-Item Env:\MU__*

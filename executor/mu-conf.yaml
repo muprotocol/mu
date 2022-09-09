@@ -23,3 +23,5 @@ gossip:
   seeds:
     - address: 127.0.0.1
       port: 12012
+scheduler:
+  tick_interval: 1s
