@@ -3,17 +3,31 @@ use anchor_spl::token::{Mint, Token, TokenAccount, Transfer};
 
 declare_id!("9YNk2WSJ4rXsvJFM2teXJhJ2LZL3XDUPP2FAiNuGsFtx");
 
+#[error_code]
+pub enum Errors {
+    #[msg("Name can't be more than 20 chars")]
+    NameTooLong,
+}
+
+fn calc_usage(rates: &ServiceUnits, usage: &ServiceUnits) -> u64 {
+    rates.bandwidth * usage.bandwidth
+        + rates.gateway_mreqs * usage.gateway_mreqs
+        + rates.mudb_gb_month * usage.mudb_gb_month
+        + rates.mufunction_cpu_mem * usage.mufunction_cpu_mem
+}
+
 #[program]
 pub mod marketplace {
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
-        ctx.accounts.state.set_inner(MuState::new(
-            ctx.accounts.authority.key(),
-            ctx.accounts.mint.key(),
-            ctx.accounts.deposit_token.key(),
-            *ctx.bumps.get("state").unwrap(),
-        ));
+        ctx.accounts.state.set_inner(MuState {
+            account_type: 0,
+            authority: ctx.accounts.authority.key(),
+            mint: ctx.accounts.mint.key(),
+            deposit_token: ctx.accounts.deposit_token.key(),
+            bump: *ctx.bumps.get("state").unwrap(),
+        });
 
         Ok(())
     }
@@ -27,12 +41,16 @@ pub mod marketplace {
         let transfer_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), transfer);
         anchor_spl::token::transfer(transfer_ctx, 100)?;
 
-        ctx.accounts.provider.set_inner(Provider::new(
+        if name.len() > 20 {
+            return err!(Errors::NameTooLong);
+        }
+
+        ctx.accounts.provider.set_inner(Provider {
+            account_type: 1,
             name,
-            ctx.accounts.owner.key(),
-            ctx.accounts.owner_token.key(),
-            *ctx.bumps.get("provider").unwrap(),
-        ));
+            owner: ctx.accounts.owner.key(),
+            bump: *ctx.bumps.get("provider").unwrap(),
+        });
 
         Ok(())
     }
@@ -43,11 +61,12 @@ pub mod marketplace {
         _stack_seed: u64,
         stack: Vec<u8>,
     ) -> Result<()> {
-        ctx.accounts.stack.set_inner(Stack::new(
+        ctx.accounts.stack.set_inner(Stack {
+            account_type: 2,
             stack,
-            ctx.accounts.owner.key(),
-            ctx.accounts.region.key(),
-        ));
+            user: ctx.accounts.user.key(),
+            region: ctx.accounts.region.key(),
+        });
 
         Ok(())
     }
@@ -57,15 +76,32 @@ pub mod marketplace {
         _region_num: u8,
         name: String,
         zones: u8,
-        rates: ServiceRates,
+        rates: ServiceUnits,
     ) -> Result<()> {
-        ctx.accounts.region.set_inner(ProviderRegion::new(
+        ctx.accounts.region.set_inner(ProviderRegion {
+            account_type: 3,
             name,
             zones,
             rates,
-            ctx.accounts.provider.key(),
-            *ctx.bumps.get("region").unwrap(),
-        ));
+            provider: ctx.accounts.provider.key(),
+            bump: *ctx.bumps.get("region").unwrap(),
+        });
+
+        Ok(())
+    }
+
+    pub fn create_authorized_usage_signer(
+        ctx: Context<CreateAuthorizedUsageSigner>,
+        signer: Pubkey,
+        token_account: Pubkey,
+    ) -> Result<()> {
+        ctx.accounts
+            .authorized_signer
+            .set_inner(AuthorizedUsageSigner {
+                account_type: 4,
+                signer,
+                token_account,
+            });
 
         Ok(())
     }
@@ -75,10 +111,42 @@ pub mod marketplace {
     ) -> Result<()> {
         Ok(())
     }
+
+    pub fn update_usage(
+        ctx: Context<UpdateUsage>,
+        _update_seed: u64,
+        _escrow_bump: u8,
+        usage: ServiceUnits,
+    ) -> Result<()> {
+        let usage_tokens = calc_usage(&ctx.accounts.region.rates, &usage);
+        let transfer = Transfer {
+            from: ctx.accounts.escrow_account.to_account_info(),
+            to: ctx.accounts.token_account.to_account_info(),
+            authority: ctx.accounts.state.to_account_info(),
+        };
+        let bump = ctx.bumps.get("state").unwrap().to_le_bytes();
+        let pito = vec![b"state".as_ref(), bump.as_ref()];
+        let outpito = vec![pito.as_slice()];
+        let transfer_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            transfer,
+            &outpito.as_slice(),
+        );
+        anchor_spl::token::transfer(transfer_ctx, usage_tokens)?;
+
+        // ctx.accounts.usage_update.set_inner(UsageUpdate {
+        //     account_type: 4,
+        //     region: ctx.accounts.region.key(),
+        //     stack: ctx.accounts.stack.key(),
+        //     usage,
+        // });
+
+        Ok(())
+    }
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct ServiceRates {
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct ServiceUnits {
     mudb_gb_month: u64,
     mufunction_cpu_mem: u64,
     bandwidth: u64,
@@ -95,85 +163,45 @@ pub struct MuState {
     bump: u8,
 }
 
-impl MuState {
-    pub fn new(authority: Pubkey, mint: Pubkey, deposit_token: Pubkey, bump: u8) -> MuState {
-        MuState {
-            account_type: 0,
-            authority,
-            mint,
-            deposit_token,
-            bump,
-        }
-    }
-}
-
 #[account]
 pub struct Provider {
     account_type: u8, // Always 1
     name: String,     // Max 20 Chars
     owner: Pubkey,
-    owner_token: Pubkey,
     bump: u8,
-}
-
-impl Provider {
-    pub fn new(name: String, owner: Pubkey, owner_token: Pubkey, bump: u8) -> Provider {
-        Provider {
-            account_type: 1,
-            name,
-            owner,
-            owner_token,
-            bump,
-        }
-    }
-}
-
-#[account]
-pub struct Stack {
-    account_type: u8, // Always 2
-    owner: Pubkey,
-    region: Pubkey,
-    stack: Vec<u8>,
-}
-
-impl Stack {
-    pub fn new(stack: Vec<u8>, owner: Pubkey, region: Pubkey) -> Stack {
-        Stack {
-            account_type: 2,
-            stack,
-            owner,
-            region,
-        }
-    }
 }
 
 #[account]
 pub struct ProviderRegion {
-    account_type: u8, // Always 3
+    account_type: u8, // Always 2
     provider: Pubkey,
     name: String, // Max 20
     zones: u8,
-    rates: ServiceRates,
+    rates: ServiceUnits,
     bump: u8,
 }
 
-impl ProviderRegion {
-    pub fn new(
-        name: String,
-        zones: u8,
-        rates: ServiceRates,
-        provider: Pubkey,
-        bump: u8,
-    ) -> ProviderRegion {
-        ProviderRegion {
-            account_type: 3,
-            name,
-            zones,
-            rates,
-            provider,
-            bump,
-        }
-    }
+#[account]
+pub struct UsageUpdate {
+    account_type: u8, // Always 3
+    region: Pubkey,
+    stack: Pubkey,
+    usage: ServiceUnits,
+}
+
+#[account]
+pub struct AuthorizedUsageSigner {
+    account_type: u8,
+    signer: Pubkey,
+    token_account: Pubkey,
+}
+
+#[account]
+pub struct Stack {
+    account_type: u8, // Always 4
+    user: Pubkey,
+    region: Pubkey,
+    stack: Vec<u8>,
 }
 
 #[derive(Accounts)]
@@ -182,7 +210,7 @@ pub struct Initialize<'info> {
         init,
         payer = authority,
         seeds = [b"state"],
-        space = 1000,
+        space = 8 + 1 + 32 + 32 + 32 + 1,
         bump
     )]
     state: Account<'info, MuState>,
@@ -268,8 +296,8 @@ pub struct CreateProviderEscrowAccount<'info> {
 
     #[account(
         init,
-        seeds = [b"escrow", owner.key().as_ref(), provider.key().as_ref()],
-        payer = owner,
+        seeds = [b"escrow", user.key().as_ref(), provider.key().as_ref()],
+        payer = user,
         token::mint = mint,
         token::authority = state,
         bump
@@ -279,7 +307,7 @@ pub struct CreateProviderEscrowAccount<'info> {
     pub provider: Account<'info, Provider>,
 
     #[account(mut)]
-    pub owner: Signer<'info>,
+    pub user: Signer<'info>,
 
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
@@ -293,15 +321,91 @@ pub struct CreateStack<'info> {
 
     #[account(
         init,
-        payer = owner,
+        payer = user,
         space = 8 + 1 + 32 + 32 + 4 + stack_size as usize,
-        seeds = [b"stack", owner.key().as_ref(), region.key().as_ref(), stack_seed.to_be_bytes().as_ref()],
+        seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_be_bytes().as_ref()],
         bump
     )]
     pub stack: Account<'info, Stack>,
 
     #[account(mut)]
-    pub owner: Signer<'info>,
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct CreateAuthorizedUsageSigner<'info> {
+    #[account(
+        has_one = owner
+    )]
+    provider: Account<'info, Provider>,
+
+    #[account(
+        has_one = provider,
+    )]
+    region: Account<'info, ProviderRegion>,
+
+    #[account(
+        init,
+        payer = owner,
+        space = 8 + 1 + 32 + 32,
+        seeds = [b"authorized_signer", region.key().as_ref()],
+        bump
+    )]
+    authorized_signer: Account<'info, AuthorizedUsageSigner>,
+
+    #[account(mut)]
+    owner: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(update_seed: u64, escrow_bump: u8)]
+pub struct UpdateUsage<'info> {
+    #[account(
+        seeds = [b"state"],
+        bump
+    )]
+    pub state: Account<'info, MuState>,
+
+    #[account(
+        has_one = signer,
+        has_one = token_account,
+        seeds = [b"authorized_signer", region.key().as_ref()],
+        bump
+    )]
+    authorized_signer: Account<'info, AuthorizedUsageSigner>,
+
+    pub region: Account<'info, ProviderRegion>,
+
+    /// CHECK: The token account for the provider
+    #[account(mut)]
+    token_account: AccountInfo<'info>,
+
+    #[account(
+        init,
+        payer = signer,
+        space = 8 + 1 + 32 + 32 + (8 + 8 + 8 + 8),
+        seeds = [b"update", update_seed.to_be_bytes().as_ref()],
+        bump
+    )]
+    usage_update: Account<'info, UsageUpdate>,
+    /// CHECK: The escrow account for the deposits
+    #[account(
+        mut,
+        seeds = [b"escrow", stack.user.key().as_ref(), region.provider.key().as_ref()],
+        bump = escrow_bump
+    )]
+    escrow_account: AccountInfo<'info>,
+
+    #[account(has_one = region)]
+    stack: Account<'info, Stack>,
+
+    #[account(mut)]
+    signer: Signer<'info>,
 
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
