@@ -28,7 +28,7 @@ The smart contract also allows clients to post their code to providers for execu
 
 After a job is deployed to the network, provider nodes will periodically report usage to the smart contract, allowing it to charge the client for said usage and transfer it to the provider's account.
 
-All payments in the network are done using the network's native token, MU.
+All payments in the network are done using a stable coin or token that will be chosen by the community.
 
 ## The Mu Marketplace
 
