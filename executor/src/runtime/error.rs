@@ -20,4 +20,7 @@ pub enum Error {
 
     #[error("Function exited early: {0}")]
     FunctionAborted(InstanceID),
+
+    #[error("Internal error: {0}")]
+    Internal(&'static str),
 }

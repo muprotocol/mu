@@ -5,7 +5,7 @@
 	},
 	"settings": {},
 	"extensions": [
-		"rust-lang.rust",
+		"rust-lang.rust-analyzer",
 		"serayuzgur.crates",
 		"bungcip.better-toml",
 		"yzhang.markdown-all-in-one"

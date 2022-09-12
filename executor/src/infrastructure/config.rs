@@ -12,6 +12,7 @@ use crate::{
         connection_manager::ConnectionManagerConfig,
         gossip::{GossipConfig, KnownNodeConfig},
     },
+    runtime::types::RuntimeConfig,
 };
 
 use super::log_setup::LogConfig;
@@ -22,6 +23,7 @@ pub fn initialize_config() -> Result<(
     Vec<KnownNodeConfig>,
     GatewayManagerConfig,
     LogConfig,
+    RuntimeConfig,
     SchedulerConfig,
 )> {
     let defaults = vec![
@@ -93,17 +95,19 @@ pub fn initialize_config() -> Result<(
 
     let log_config = config.get("log").context("Invalid log config")?;
 
+    let runtime_config = config.get("runtime").context("Invalid runtime config")?;
+
     let scheduler_config = config
         .get("scheduler")
         .context("Invalid scheduler config")?;
 
-    println!("###\nConfigs: {:?}", gossip_config);
     Ok((
         connection_manager_config,
         gossip_config,
         known_node_config,
         gateway_config,
         log_config,
+        runtime_config,
         scheduler_config,
     ))
 }

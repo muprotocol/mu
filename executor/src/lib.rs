@@ -44,6 +44,7 @@ pub async fn run() -> Result<()> {
         mut known_nodes_config,
         gateway_manager_config,
         log_config,
+        runtime_config,
         scheduler_config,
     ) = config::initialize_config()?;
 
@@ -121,7 +122,8 @@ pub async fn run() -> Result<()> {
     .context("Failed to start gossip")?;
 
     let function_provider = runtime::providers::DefaultFunctionProvider::new();
-    let runtime = runtime::start(Box::new(function_provider));
+    let runtime = runtime::start(Box::new(function_provider), runtime_config)
+        .context("Failed to initiate runtime")?;
 
     // TODO: no notification channel for now, requests are sent straight to runtime
     let gateway_manager = gateway::start(gateway_manager_config, runtime.clone())
