@@ -1,0 +1,15 @@
+[package]
+name = "mu-cli"
+version = "0.1.0"
+edition = "2021"
+default-run = "mu"
+
+[[bin]]
+name = "mu"
+path = "src/bin/mu.rs"
+doc = false
+
+[dependencies]
+anyhow = "1.0"
+colored = "2.0"
+clap = { version = "3.2", features = ["derive"] }
