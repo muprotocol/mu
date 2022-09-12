@@ -7,7 +7,7 @@ use std::{collections::HashMap, fmt::Display};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StackID(pub Uuid);
 
 impl Display for StackID {

@@ -6,7 +6,7 @@ use std::{
 use anyhow::Result;
 use async_trait::async_trait;
 use dyn_clonable::clonable;
-use log::{error, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel};
 use serde::Deserialize;
 
@@ -22,8 +22,8 @@ use super::{Stack, StackID};
 pub trait Scheduler: Clone + Send + Sync {
     async fn node_discovered(&self, node: NodeHash) -> Result<()>;
     async fn node_died(&self, node: NodeHash) -> Result<()>;
-    async fn node_deployed_stack(&self, node: NodeHash, stack_id: StackID) -> Result<()>;
-    async fn node_undeployed_stack(&self, node: NodeHash, stack_id: StackID) -> Result<()>;
+    async fn node_deployed_stacks(&self, node: NodeHash, stack_ids: Vec<StackID>) -> Result<()>;
+    async fn node_undeployed_stacks(&self, node: NodeHash, stack_ids: Vec<StackID>) -> Result<()>;
 
     // TODO: implement stack updates
     async fn stack_available(&self, id: StackID, stack: Stack) -> Result<()>;
@@ -51,8 +51,8 @@ pub struct SchedulerConfig {
 enum SchedulerMessage {
     NodeDiscovered(NodeHash),
     NodeDied(NodeHash),
-    NodeDeployedStack(NodeHash, StackID),
-    NodeUndeployedStack(NodeHash, StackID),
+    NodeDeployedStacks(NodeHash, Vec<StackID>),
+    NodeUndeployedStacks(NodeHash, Vec<StackID>),
 
     StackAvailable(StackID, Stack),
     StackRemoved(StackID),
@@ -89,16 +89,16 @@ impl Scheduler for SchedulerImpl {
             .map_err(Into::into)
     }
 
-    async fn node_deployed_stack(&self, node: NodeHash, stack_id: StackID) -> Result<()> {
+    async fn node_deployed_stacks(&self, node: NodeHash, stack_ids: Vec<StackID>) -> Result<()> {
         self.mailbox
-            .post(SchedulerMessage::NodeDeployedStack(node, stack_id))
+            .post(SchedulerMessage::NodeDeployedStacks(node, stack_ids))
             .await
             .map_err(Into::into)
     }
 
-    async fn node_undeployed_stack(&self, node: NodeHash, stack_id: StackID) -> Result<()> {
+    async fn node_undeployed_stacks(&self, node: NodeHash, stack_ids: Vec<StackID>) -> Result<()> {
         self.mailbox
-            .post(SchedulerMessage::NodeUndeployedStack(node, stack_id))
+            .post(SchedulerMessage::NodeUndeployedStacks(node, stack_ids))
             .await
             .map_err(Into::into)
     }
@@ -183,6 +183,7 @@ struct SchedulerState {
 pub fn start(
     config: SchedulerConfig,
     my_hash: NodeHash,
+    known_nodes: Vec<NodeHash>,
     available_stacks: Vec<(StackID, Stack)>,
     notification_channel: NotificationChannel<SchedulerNotification>,
     runtime: Box<dyn Runtime>,
@@ -200,7 +201,7 @@ pub fn start(
                 .collect(),
             reevaluate_on_next_tick: HashSet::new(),
             ready_to_schedule: false,
-            known_nodes: HashSet::new(),
+            known_nodes: known_nodes.into_iter().collect(),
             notification_channel,
             runtime,
             gateway_manager,
@@ -292,77 +293,81 @@ async fn step(
             }
         }
 
-        SchedulerMessage::NodeDeployedStack(node, stack_id) => {
-            state.reevaluate_on_next_tick.insert(stack_id);
-            match state.stacks.entry(stack_id) {
-                Entry::Vacant(vac) => {
-                    let mut deployed_to = HashSet::new();
-                    deployed_to.insert(node);
-                    vac.insert(StackDeployment::Unknown { deployed_to });
-                }
-
-                Entry::Occupied(mut occ) => match occ.get_mut() {
-                    StackDeployment::DeployedToOthers { deployed_to, .. }
-                    | StackDeployment::DeployedToSelf {
-                        deployed_to_others: deployed_to,
-                        ..
-                    }
-                    | StackDeployment::Unknown { deployed_to, .. } => {
-                        deployed_to.insert(node);
-                    }
-
-                    StackDeployment::HasDeploymentCandidate { stack, .. }
-                    | StackDeployment::Undeployed { stack } => {
+        SchedulerMessage::NodeDeployedStacks(node, stack_ids) => {
+            for stack_id in stack_ids {
+                state.reevaluate_on_next_tick.insert(stack_id);
+                match state.stacks.entry(stack_id) {
+                    Entry::Vacant(vac) => {
                         let mut deployed_to = HashSet::new();
                         deployed_to.insert(node);
-                        let stack = stack.take_and_replace_with_default();
-                        occ.insert(StackDeployment::DeployedToOthers { stack, deployed_to });
+                        vac.insert(StackDeployment::Unknown { deployed_to });
                     }
-                },
+
+                    Entry::Occupied(mut occ) => match occ.get_mut() {
+                        StackDeployment::DeployedToOthers { deployed_to, .. }
+                        | StackDeployment::DeployedToSelf {
+                            deployed_to_others: deployed_to,
+                            ..
+                        }
+                        | StackDeployment::Unknown { deployed_to, .. } => {
+                            deployed_to.insert(node);
+                        }
+
+                        StackDeployment::HasDeploymentCandidate { stack, .. }
+                        | StackDeployment::Undeployed { stack } => {
+                            let mut deployed_to = HashSet::new();
+                            deployed_to.insert(node);
+                            let stack = stack.take_and_replace_with_default();
+                            occ.insert(StackDeployment::DeployedToOthers { stack, deployed_to });
+                        }
+                    },
+                }
             }
         }
 
-        SchedulerMessage::NodeUndeployedStack(node, stack_id) => {
-            state.reevaluate_on_next_tick.insert(stack_id);
-            match state.stacks.entry(stack_id) {
-                Entry::Vacant(_) => {
-                    // We should have received a notification of the node deploying the stack
-                    // before, so this is an error case
-                    warn!("Received undeployment notification for stack {stack_id} on node {node}, but we don't know this stack");
+        SchedulerMessage::NodeUndeployedStacks(node, stack_ids) => {
+            for stack_id in stack_ids {
+                state.reevaluate_on_next_tick.insert(stack_id);
+                match state.stacks.entry(stack_id) {
+                    Entry::Vacant(_) => {
+                        // We should have received a notification of the node deploying the stack
+                        // before, so this is an error case
+                        warn!("Received undeployment notification for stack {stack_id} on node {node}, but we don't know this stack");
+                    }
+
+                    Entry::Occupied(mut occ) => match occ.get_mut() {
+                        StackDeployment::DeployedToSelf {
+                            deployed_to_others: deployed_to,
+                            ..
+                        } => {
+                            if !deployed_to.remove(&node) {
+                                warn!("Received undeployment notification for stack {stack_id} on node {node}, but we didn't know it was scheduled there");
+                            }
+                        }
+
+                        StackDeployment::Unknown { deployed_to, .. } => {
+                            if !deployed_to.remove(&node) {
+                                warn!("Received undeployment notification for stack {stack_id} on node {node}, but we didn't know it was scheduled there");
+                            }
+
+                            if deployed_to.is_empty() {
+                                occ.remove();
+                            }
+                        }
+
+                        StackDeployment::HasDeploymentCandidate { .. }
+                        | StackDeployment::Undeployed { .. } => {
+                            warn!("Received undeployment notification for stack {stack_id} on node {node}, but we didn't know it was scheduled at all");
+                        }
+
+                        StackDeployment::DeployedToOthers { stack, deployed_to } => {
+                            if deployed_to.remove(&node) && deployed_to.is_empty() {
+                                let stack = stack.take_and_replace_with_default();
+                                occ.insert(StackDeployment::Undeployed { stack });
+                            }
+                        }
+                    },
                 }
-
-                Entry::Occupied(mut occ) => match occ.get_mut() {
-                    StackDeployment::DeployedToSelf {
-                        deployed_to_others: deployed_to,
-                        ..
-                    } => {
-                        if !deployed_to.remove(&node) {
-                            warn!("Received undeployment notification for stack {stack_id} on node {node}, but we didn't know it was scheduled there");
-                        }
-                    }
-
-                    StackDeployment::Unknown { deployed_to, .. } => {
-                        if !deployed_to.remove(&node) {
-                            warn!("Received undeployment notification for stack {stack_id} on node {node}, but we didn't know it was scheduled there");
-                        }
-
-                        if deployed_to.is_empty() {
-                            occ.remove();
-                        }
-                    }
-
-                    StackDeployment::HasDeploymentCandidate { .. }
-                    | StackDeployment::Undeployed { .. } => {
-                        warn!("Received undeployment notification for stack {stack_id} on node {node}, but we didn't know it was scheduled at all");
-                    }
-
-                    StackDeployment::DeployedToOthers { stack, deployed_to } => {
-                        if deployed_to.remove(&node) && deployed_to.is_empty() {
-                            let stack = stack.take_and_replace_with_default();
-                            occ.insert(StackDeployment::Undeployed { stack });
-                        }
-                    }
-                },
             }
         }
 
@@ -421,12 +426,20 @@ async fn step(
 
 async fn tick(state: &mut SchedulerState) {
     if !state.ready_to_schedule {
+        trace!("Not ready to schedule stacks, won't tick");
         return;
     }
+
+    if !state.reevaluate_on_next_tick.is_empty() {
+        debug!("Scheduler tick");
+    }
+
     for id in &state.reevaluate_on_next_tick {
         if let Entry::Occupied(mut occ) = state.stacks.entry(*id) {
+            debug!("Updating stack {id}");
             match occ.get_mut() {
                 StackDeployment::Undeployed { stack } => {
+                    debug!("Is undeployed, will evaluate closest node");
                     match get_closest_node(*id, state.my_hash, state.known_nodes.iter()) {
                         GetClosestNodeResult::Me => {
                             info!("Deploying stack {id} locally");
@@ -454,6 +467,9 @@ async fn tick(state: &mut SchedulerState) {
                         }
 
                         GetClosestNodeResult::Other(node) => {
+                            debug!(
+                                "Closest node is remote {node}, will set as deployment candidate"
+                            );
                             let stack = stack.take_and_replace_with_default();
                             occ.insert(StackDeployment::HasDeploymentCandidate {
                                 stack,
@@ -467,7 +483,9 @@ async fn tick(state: &mut SchedulerState) {
                     stack,
                     deployed_to_others,
                 } => {
+                    debug!("Is deployed to self");
                     if deployed_to_others.len() > 0 {
+                        debug!("Is also deployed to remotes, will evaluate closest node");
                         if let GetClosestNodeResult::Other(node) =
                             get_closest_node(*id, state.my_hash, deployed_to_others.iter())
                         {
@@ -477,48 +495,61 @@ async fn tick(state: &mut SchedulerState) {
                             let stack = stack.take_and_replace_with_default();
                             let deployed_to = deployed_to_others.take_and_replace_with_default();
                             occ.insert(StackDeployment::DeployedToOthers { stack, deployed_to });
+                        } else {
+                            debug!("I'm closest, nothing to do");
                         }
                     }
                 }
 
                 StackDeployment::DeployedToOthers { stack, deployed_to } => {
-                    if let GetClosestNodeResult::Me =
-                        get_closest_node(*id, state.my_hash, deployed_to.iter())
-                    {
-                        info!("I am closest to stack {id}, will deploy locally");
-                        match deploy_stack(
-                            *id,
-                            stack.clone(),
-                            &state.notification_channel,
-                            &state.runtime,
-                            &state.gateway_manager,
-                        )
-                        .await
-                        {
-                            Err(f) => {
-                                error!("Failed to deploy stack {id} due to: {f}");
-                            }
+                    debug!("Is deployed to others, will evaluate closest node");
+                    match get_closest_node(*id, state.my_hash, deployed_to.iter()) {
+                        GetClosestNodeResult::Me => {
+                            info!("I am closest to stack {id}, will deploy locally");
+                            match deploy_stack(
+                                *id,
+                                stack.clone(),
+                                &state.notification_channel,
+                                &state.runtime,
+                                &state.gateway_manager,
+                            )
+                            .await
+                            {
+                                Err(f) => {
+                                    error!("Failed to deploy stack {id} due to: {f}");
+                                }
 
-                            Ok(()) => {
-                                let stack = stack.take_and_replace_with_default();
-                                let deployed_to_others =
-                                    deployed_to.take_and_replace_with_default();
-                                occ.insert(StackDeployment::DeployedToSelf {
-                                    stack,
-                                    deployed_to_others,
-                                });
+                                Ok(()) => {
+                                    let stack = stack.take_and_replace_with_default();
+                                    let deployed_to_others =
+                                        deployed_to.take_and_replace_with_default();
+                                    occ.insert(StackDeployment::DeployedToSelf {
+                                        stack,
+                                        deployed_to_others,
+                                    });
+                                }
                             }
+                        }
+
+                        GetClosestNodeResult::Other(node) => {
+                            debug!("Is closest to node {node}, nothing to do");
                         }
                     }
                 }
 
                 // Nothing to do if a stack has a live deployment candidate
-                StackDeployment::HasDeploymentCandidate { .. } => (),
+                StackDeployment::HasDeploymentCandidate { .. } => {
+                    debug!("Has deployment candidate, nothing to do")
+                }
 
                 // Nothing to do with an unknown stack; even if we are closer, we
                 // must wait for the stack's definition to become available
-                StackDeployment::Unknown { .. } => (),
+                StackDeployment::Unknown { .. } => {
+                    debug!("Stack definition not available, nothing to do")
+                }
             }
+        } else {
+            debug!("Stack {id} was in reevaluation list but had no entry");
         }
     }
 
