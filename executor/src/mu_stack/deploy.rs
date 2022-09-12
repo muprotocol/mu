@@ -62,8 +62,8 @@ pub enum StackDeploymentError {
 pub(super) async fn deploy(
     id: StackID,
     stack: Stack,
-    runtime: &mut Box<dyn Runtime>,
-    gateway_manager: &Box<dyn GatewayManager>,
+    runtime: &dyn Runtime,
+    gateway_manager: &dyn GatewayManager,
 ) -> Result<(), StackDeploymentError> {
     let stack = validate(stack).map_err(StackDeploymentError::ValidationError)?;
 

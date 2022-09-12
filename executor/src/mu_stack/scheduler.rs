@@ -447,8 +447,8 @@ async fn tick(state: &mut SchedulerState) {
                                 *id,
                                 stack.clone(),
                                 &state.notification_channel,
-                                &state.runtime,
-                                &state.gateway_manager,
+                                state.runtime.as_ref(),
+                                state.gateway_manager.as_ref(),
                             )
                             .await
                             {
@@ -484,7 +484,7 @@ async fn tick(state: &mut SchedulerState) {
                     deployed_to_others,
                 } => {
                     debug!("Is deployed to self");
-                    if deployed_to_others.len() > 0 {
+                    if !deployed_to_others.is_empty() {
                         debug!("Is also deployed to remotes, will evaluate closest node");
                         if let GetClosestNodeResult::Other(node) =
                             get_closest_node(*id, state.my_hash, deployed_to_others.iter())
@@ -510,8 +510,8 @@ async fn tick(state: &mut SchedulerState) {
                                 *id,
                                 stack.clone(),
                                 &state.notification_channel,
-                                &state.runtime,
-                                &state.gateway_manager,
+                                state.runtime.as_ref(),
+                                state.gateway_manager.as_ref(),
                             )
                             .await
                             {
@@ -560,17 +560,10 @@ async fn deploy_stack(
     id: StackID,
     stack: Stack,
     notification_channel: &NotificationChannel<SchedulerNotification>,
-    runtime: &Box<dyn Runtime>,
-    gateway_manager: &Box<dyn GatewayManager>,
+    runtime: &dyn Runtime,
+    gateway_manager: &dyn GatewayManager,
 ) -> Result<()> {
-    match super::deploy::deploy(
-        id,
-        stack,
-        &mut runtime.clone(),
-        &mut gateway_manager.clone(),
-    )
-    .await
-    {
+    match super::deploy::deploy(id, stack, runtime, gateway_manager).await {
         Err(f) => {
             notification_channel.send(SchedulerNotification::FailedToDeployStack(id));
             Err(f.into())
@@ -603,7 +596,7 @@ fn get_closest_node<'a>(
 ) -> GetClosestNodeResult {
     trace!("Determining closest node to {id}");
 
-    let id_u128 = u128::from_le_bytes(id.0.as_bytes().clone());
+    let id_u128 = u128::from_le_bytes(*id.0.as_bytes());
 
     let mut min_distance = id_u128 ^ my_hash;
     trace!("Distance to self: {min_distance}");

@@ -705,26 +705,26 @@ fn compare_deployed_stack_list(
     let mut added = vec![];
     for id in incoming {
         if !current.contains(id) {
-            added.push(id.clone());
+            added.push(*id);
         }
     }
 
     let mut removed = vec![];
     for id in current.iter() {
         if !incoming.contains(id) {
-            removed.push(id.clone());
+            removed.push(*id);
         }
     }
 
     for id in &added {
-        current.insert(id.clone());
+        current.insert(*id);
     }
 
     for id in &removed {
         current.remove(id);
     }
 
-    return CompareDeployedStacksResult { added, removed };
+    CompareDeployedStacksResult { added, removed }
 }
 
 async fn perform_maintenance(state: &mut GossipState) -> Instant {
