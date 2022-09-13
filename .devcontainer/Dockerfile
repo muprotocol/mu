@@ -3,7 +3,9 @@ FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update
-RUN apt-get install -y build-essential curl libssl-dev libudev-dev pkg-config zlib1g-dev llvm clang cmake make git zsh language-pack-en sudo netcat
+RUN apt-get install -y build-essential curl libssl-dev libudev-dev pkg-config \
+    zlib1g-dev clang cmake make git zsh language-pack-en sudo netcat \
+    libclang-common-12-dev llvm-12-dev
 RUN useradd vscode; mkdir /home/vscode; chown vscode.vscode /home/vscode
 
 ENV SOLANA_VERSION 1.11.10
@@ -19,3 +21,5 @@ RUN bash -c "source /home/vscode/.nvm/nvm.sh ; nvm install 16; npm install -g ya
 RUN echo "export PATH=\$PATH:/home/vscode/.local/share/solana/install/releases/${SOLANA_VERSION}/solana-release/bin/" >> /home/vscode/.bashrc
 RUN sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 COPY .zshrc /home/vscode
+
+ENV LLVM_SYS_120_PREFIX=/usr/lib/llvm-12/
