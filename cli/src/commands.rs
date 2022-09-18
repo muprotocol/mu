@@ -1,4 +1,4 @@
 //! The commands available in the mu-cli binary.
-pub mod great;
+pub mod provider;
 
-pub use great::*;
+pub use provider::Provider;

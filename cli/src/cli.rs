@@ -1,25 +1,41 @@
 //! The logic for the mu CLI tool.
 
-use crate::{commands::Great, error::PrettyError};
-use anyhow::Result;
-use clap::Parser;
+use std::{
+    env,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
-#[derive(Parser)]
-#[clap(name = "mu", about = "Mu CLI tool.", version, author)]
-/// The options for mu Command Line Interface
-enum MuCLIOptions {
-    ///// Deploy a stack to mu.
-    //#[clap(name = "deploy")]
-    //Deploy(Deploy),
-    /// Great subcommand
-    #[clap(name = "great")]
-    Great(Great),
+use crate::{
+    arg_parser::parse_args_and_config,
+    commands::Provider,
+    config::MuCliConfig,
+    error::{AnyhowResultExt, PrettyError},
+    solana_client::SolanaClient,
+};
+use anchor_client::solana_sdk::signer::Signer;
+use anyhow::{Context, Result};
+
+/// Subcommands for mu Command Line Interface
+#[allow(clippy::large_enum_variant)]
+pub enum Command {
+    /// Provider specific operations
+    Provider(Provider),
 }
 
-impl MuCLIOptions {
-    fn execute(&self) -> Result<()> {
-        match self {
-            Self::Great(options) => options.execute(),
+/// The arguments for mu Command Line Interface
+pub struct Args {
+    pub(crate) keypair: Box<dyn Signer>,
+    pub(crate) command: Command,
+}
+
+impl Args {
+    fn execute(self, config: MuCliConfig) -> Result<()> {
+        let solana_client = SolanaClient::new(config.cluster, self.keypair)?;
+        match self.command {
+            Command::Provider(options) => options.execute(solana_client),
         }
     }
 }
@@ -30,14 +46,16 @@ pub fn mu_main() {
     #[cfg(windows)]
     colored::control::set_virtual_terminal(true).unwrap();
 
-    // We try to run mu with the normal arguments.
-    // Eg. `mu <SUBCOMMAND>`
-    let args = std::env::args().collect::<Vec<_>>();
-    let command = args.get(1);
-    let options = match command.unwrap_or(&"".to_string()).as_ref() {
-        "great" => MuCLIOptions::parse(),
-        _ => panic!("invalid sub command"), // TODO: we can run a default subcommand instead
-    };
+    let (args, config) = parse_args_and_config(env::args_os()).print_and_exit_on_error();
 
-    PrettyError::report(options.execute());
+    let exit = Arc::new(AtomicBool::default());
+    let _exit = exit.clone();
+    // Initialize CTRL-C handler
+    ctrlc::set_handler(move || {
+        _exit.store(true, Ordering::SeqCst);
+    })
+    .context("Error setting Ctrl-C handler")
+    .print_and_exit_on_error();
+
+    PrettyError::report(args.execute(config));
 }

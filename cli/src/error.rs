@@ -1,12 +1,21 @@
 //! Implements `PrettyError` to print pretty errors in the CLI (when they happen)
 
-use anyhow::{Chain, Error};
+use anyhow::Chain;
 use colored::*;
 use std::fmt::{self, Debug, Write};
+use thiserror::Error;
+
+/// Mu CLI Errors
+#[derive(Error, Debug)]
+pub enum MuCliError {
+    /// Can not find Solana config file located at '~/.config/solana/cli/config.yml'
+    #[error("Could not open Solana config file: '~/.config/solana/cli/config.yml'")]
+    ConfigFileNotFound,
+}
 
 /// A `PrettyError` for printing `anyhow::Error` nicely.
 pub struct PrettyError {
-    error: Error,
+    error: anyhow::Error,
 }
 
 /// A macro that prints a warning with nice colors
@@ -21,7 +30,7 @@ macro_rules! warning {
 impl PrettyError {
     /// Process a `Result` printing any errors and exiting
     /// the process after
-    pub fn report<T>(result: Result<T, Error>) -> ! {
+    pub fn report<T>(result: Result<T, anyhow::Error>) -> ! {
         std::process::exit(match result {
             Ok(_t) => 0,
             Err(error) => {
@@ -29,6 +38,26 @@ impl PrettyError {
                 1
             }
         });
+    }
+}
+
+pub(crate) trait AnyhowResultExt {
+    type T;
+
+    fn print_and_exit_on_error(self) -> Self::T;
+}
+
+impl<T> AnyhowResultExt for Result<T, anyhow::Error> {
+    type T = T;
+
+    fn print_and_exit_on_error(self) -> T {
+        match self {
+            Ok(t) => t,
+            Err(error) => {
+                eprintln!("{:?}", PrettyError { error });
+                std::process::exit(1);
+            }
+        }
     }
 }
 

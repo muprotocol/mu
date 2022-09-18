@@ -11,13 +11,16 @@
     unstable_features
 )]
 
-//#[macro_use]
-//extern crate anyhow;
+#[macro_use]
+extern crate anyhow;
 
+pub mod arg_parser;
 pub mod cli;
 pub mod commands;
 pub mod common;
+pub mod config;
 pub mod error;
+pub mod solana_client;
 
 /// Version number for this crate.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

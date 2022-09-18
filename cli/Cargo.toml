@@ -11,5 +11,14 @@ doc = false
 
 [dependencies]
 anyhow = "1.0"
+thiserror = "1.0"
 colored = "2.0"
-clap = { version = "3.2", features = ["derive"] }
+clap = "2.33"
+solana-cli-config = "1.10"
+solana-clap-utils = "1.10"
+solana-remote-wallet = "1.10"
+anchor-client = "0.25"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+config = { version = "0.13", features = ["yaml"], default-features = false }
+ctrlc = { version = "3.2", features = ["termination"] }
