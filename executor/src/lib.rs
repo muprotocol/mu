@@ -38,7 +38,7 @@ pub async fn run() -> Result<()> {
     ctrlc::set_handler(move || cancellation_token_clone.cancel())
         .context("Failed to initialize Ctrl+C handler")?;
 
-    let (
+    let config::SystemConfig(
         connection_manager_config,
         gossip_config,
         mut known_nodes_config,

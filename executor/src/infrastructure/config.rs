@@ -7,6 +7,7 @@ use config::{Config, Environment, File, FileFormat};
 
 use crate::{
     gateway::GatewayManagerConfig,
+    log_setup::LogConfig,
     mu_stack::scheduler::SchedulerConfig,
     network::{
         connection_manager::ConnectionManagerConfig,
@@ -15,17 +16,17 @@ use crate::{
     runtime::types::RuntimeConfig,
 };
 
-use super::log_setup::LogConfig;
+pub struct SystemConfig(
+    pub ConnectionManagerConfig,
+    pub GossipConfig,
+    pub Vec<KnownNodeConfig>,
+    pub GatewayManagerConfig,
+    pub LogConfig,
+    pub RuntimeConfig,
+    pub SchedulerConfig,
+);
 
-pub fn initialize_config() -> Result<(
-    ConnectionManagerConfig,
-    GossipConfig,
-    Vec<KnownNodeConfig>,
-    GatewayManagerConfig,
-    LogConfig,
-    RuntimeConfig,
-    SchedulerConfig,
-)> {
+pub fn initialize_config() -> Result<SystemConfig> {
     let defaults = vec![
         ("log.level", "warn"),
         ("connection_manager.listen_ip", "0.0.0.0"),
@@ -101,7 +102,7 @@ pub fn initialize_config() -> Result<(
         .get("scheduler")
         .context("Invalid scheduler config")?;
 
-    Ok((
+    Ok(SystemConfig(
         connection_manager_config,
         gossip_config,
         known_node_config,

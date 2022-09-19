@@ -180,6 +180,9 @@ async fn bridge(
                 gossip.borrow_mut().connections.remove(&target_port);
                 target.borrow_mut().connections.remove(&port);
             }
+
+            Some(GossipNotification::NodeDeployedStacks(_, _)) => (),
+            Some(GossipNotification::NodeUndeployedStacks(_, _)) => (),
         }
 
         // Simpler to do than a whole select!, and we're only ever interested in
