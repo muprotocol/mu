@@ -17,6 +17,7 @@ use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 
 use infrastructure::{config, log_setup};
+use mudb::service::Service as DbService;
 use network::{
     connection_manager::{self, ConnectionManager, ConnectionManagerNotification},
     gossip::{GossipNotification, KnownNodeConfig},
@@ -115,8 +116,14 @@ pub async fn run() -> Result<()> {
     .context("Failed to start gossip")?;
 
     let function_provider = runtime::providers::DefaultFunctionProvider::new();
-    let runtime = runtime::start(Box::new(function_provider), runtime_config)
-        .context("Failed to initiate runtime")?;
+    let db_service = DbService::new().await?;
+    let runtime = runtime::start(
+        Box::new(function_provider),
+        runtime_config,
+        db_service.clone(),
+    )
+    .await
+    .context("Failed to initiate runtime")?;
 
     // TODO: no notification channel for now, requests are sent straight to runtime
     let gateway_manager = gateway::start(gateway_manager_config, runtime.clone())
@@ -124,7 +131,7 @@ pub async fn run() -> Result<()> {
         .context("Failed to start gateway manager")?;
 
     // TODO remove this
-    deploy_prototype_stack(runtime.clone(), gateway_manager.clone()).await;
+    deploy_prototype_stack(runtime.clone(), gateway_manager.clone(), db_service).await;
 
     // TODO: create a `Module`/`Subsystem`/`NotificationSource` trait to batch modules with their notification receivers?
     glue_modules(
@@ -179,11 +186,12 @@ fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
 async fn deploy_prototype_stack(
     runtime: Box<dyn Runtime>,
     gateway_manager: Box<dyn GatewayManager>,
+    db_service: DbService,
 ) {
     let yaml = std::fs::read_to_string("./prototype/stack.yaml").unwrap();
     let stack = serde_yaml::from_str::<mu_stack::Stack>(yaml.as_str()).unwrap();
     let id = mu_stack::StackID("00001111-2222-3333-4444-555566667777".parse().unwrap());
-    mu_stack::deploy::deploy(id, stack, runtime, gateway_manager)
+    mu_stack::deploy::deploy(id, stack, runtime, gateway_manager, db_service)
         .await
         .unwrap();
     warn!("Deployed prototype stack with ID {id}");

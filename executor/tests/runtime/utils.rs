@@ -1,5 +1,8 @@
 use anyhow::{bail, Result};
-use mu::mudb::{self, client::DatabaseID};
+use mu::mudb::{
+    self,
+    service::{DatabaseID, Service as DbService},
+};
 use std::{
     env,
     path::{Path, PathBuf},
@@ -55,17 +58,13 @@ pub async fn clean_wasm_project(project_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn database_id_to_string(database_id: DatabaseID) -> String {
-    format!(
-        "{}_{}",
-        database_id.stack_id,
-        database_id.database_name.replace(' ', "-")
-    )
-}
+pub async fn create_db_if_not_exist(db_service: DbService, database_id: DatabaseID) -> Result<()> {
+    let conf = mudb::Config {
+        database_id,
+        ..Default::default()
+    };
 
-pub async fn create_db(database_id: DatabaseID) -> Result<()> {
-    let mut conf = mudb::Config::default();
-    conf.name = database_id_to_string(database_id);
-    tokio::task::spawn_blocking(|| mudb::MuDB::create_db(conf)).await??;
+    db_service.create_db_if_not_exist(conf).await?;
+
     Ok(())
 }

@@ -1,20 +1,11 @@
 use crate::{
-    mudb::{
-        client::DatabaseID,
-        input::KeyFilter,
-        output::{
-            CreateTableOutput, DeleteTableOutput, FindItemOutput, InsertOneItemOutput,
-            UpdateItemOutput,
-        },
-        query::Filter,
-    },
+    mudb::service::{DatabaseID, Item, Key, KeyFilter, TableDescription},
     runtime::types::FunctionID,
 };
 
 use super::{FromMessage, Message, ToMessage};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 macro_rules! make_request {
     ($name:ident) => {
@@ -39,17 +30,13 @@ macro_rules! make_request {
 
 make_request!(CreateTableRequest);
 make_request!(DropTableRequest);
-make_request!(
-    FindRequest,
-    key_filter: KeyFilter,
-    value_filter: Option<Filter>
-);
+make_request!(FindRequest, key_filter: KeyFilter, value_filter: String);
 make_request!(InsertRequest, key: String, value: String);
 make_request!(
     UpdateRequest,
     key_filter: KeyFilter,
-    value_filter: Option<Filter>,
-    update: Value
+    value_filter: String,
+    update: String
 );
 
 #[derive(Deserialize)]
@@ -82,11 +69,11 @@ impl FromMessage for DbRequest {
 
 #[derive(Serialize)]
 pub enum DbResponseDetails {
-    CreateTable(Result<CreateTableOutput, String>),
-    DropTable(Result<DeleteTableOutput, String>),
-    Find(Result<FindItemOutput, String>),
-    Insert(Result<InsertOneItemOutput, String>),
-    Update(Result<UpdateItemOutput, String>),
+    CreateTable(Result<TableDescription, String>),
+    DropTable(Result<Option<TableDescription>, String>),
+    Find(Result<Vec<Item>, String>),
+    Insert(Result<Key, String>),
+    Update(Result<Vec<Item>, String>),
 }
 
 #[derive(Serialize)]
@@ -108,9 +95,9 @@ impl ToMessage for DbResponse {
     }
 }
 
-pub fn database_id(function_id: &FunctionID, database_name: String) -> DatabaseID {
+pub fn database_id(function_id: &FunctionID, db_name: String) -> DatabaseID {
     DatabaseID {
         stack_id: function_id.stack_id,
-        database_name,
+        db_name,
     }
 }

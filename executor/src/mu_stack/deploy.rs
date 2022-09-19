@@ -1,11 +1,9 @@
-use db::MuDB;
 use reqwest::Url;
 use thiserror::Error;
-use tokio::task::spawn_blocking;
 
 use crate::{
     gateway::GatewayManager,
-    mudb::{client::DatabaseID, db},
+    mudb::service::{DatabaseID, Service as DbService},
     runtime::{
         types::{FunctionDefinition, FunctionID},
         Runtime,
@@ -64,6 +62,7 @@ pub async fn deploy(
     stack: Stack,
     mut runtime: Box<dyn Runtime>,
     gateway_manager: Box<dyn GatewayManager>,
+    db_service: DbService,
 ) -> Result<(), StackDeploymentError> {
     let stack = validate(stack).map_err(StackDeploymentError::ValidationError)?;
 
@@ -102,24 +101,29 @@ pub async fn deploy(
         .map_err(StackDeploymentError::FailedToDeployFunctions)?;
 
     // Step 2: Databases
-    let id_copy = id;
-    let databases = stack.databases().map(Clone::clone).collect::<Vec<_>>();
-    let db_names = spawn_blocking(move || {
-        let mut db_names = vec![];
-        for db in databases {
-            let db_name = DatabaseID::database_name(id_copy, &db.name);
-            if !MuDB::db_exists(&db_name)
-                .map_err(|e| StackDeploymentError::FailedToDeployDatabases(e.into()))?
-            {
-                MuDB::create_db_with_default_config(db_name.clone())
-                    .map_err(|e| StackDeploymentError::FailedToDeployDatabases(e.into()))?;
-            }
-            db_names.push(db_name);
+    let db_ids = stack
+        .databases()
+        .map(Clone::clone)
+        .into_iter()
+        .map(|db| {
+            let stack_id = id;
+            let db_name = db.name;
+            DatabaseID { stack_id, db_name }
+        })
+        .collect::<Vec<DatabaseID>>();
+
+    for db_id in &db_ids {
+        if !db_service
+            .is_db_exists(db_id)
+            .map_err(|e| StackDeploymentError::FailedToDeployDatabases(e.into()))?
+        {
+            db_service
+                // TODO: create if not exist
+                .create_db_with_default_config(db_id.clone())
+                .await
+                .map_err(|e| StackDeploymentError::FailedToDeployDatabases(e.into()))?;
         }
-        Ok(db_names)
-    })
-    .await
-    .map_err(|e| StackDeploymentError::FailedToDeployDatabases(e.into()))??;
+    }
 
     // Step 3: Gateways
     let mut gateway_names = vec![];
@@ -152,15 +156,11 @@ pub async fn deploy(
         .unwrap_or(());
 
     let prefix = format!("{id}_");
-    spawn_blocking(move || {
-        for db_name in MuDB::query_databases_by_prefix(&prefix).unwrap_or_default() {
-            if !db_names.contains(&db_name) {
-                MuDB::delete_db(&db_name).unwrap_or(());
-            }
+    for db_id in db_service.query_db_by_prefix(&prefix).unwrap_or_default() {
+        if !db_ids.contains(&db_id) {
+            db_service.drop_db(&db_id).await.unwrap_or(());
         }
-    })
-    .await
-    .unwrap_or(());
+    }
 
     let existing_function_names = runtime.get_function_names(id).await.unwrap_or_default();
     let mut functions_to_delete = vec![];

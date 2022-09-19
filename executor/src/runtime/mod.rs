@@ -18,7 +18,9 @@ use self::{
         RuntimeConfig,
     },
 };
-use crate::{gateway, mu_stack::StackID, runtime::message::ToMessage};
+use crate::{
+    gateway, mu_stack::StackID, mudb::service::Service as DbService, runtime::message::ToMessage,
+};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
@@ -66,18 +68,26 @@ struct RuntimeState {
     hashkey_dict: HashMap<FunctionID, wasmer_cache::Hash>,
     cache: FileSystemCache,
     store: Store, // We only need this store for it's configuration
+    db_service: DbService,
 }
 
 impl RuntimeState {
-    pub fn new(function_provider: Box<dyn FunctionProvider>, cache_path: &Path) -> Result<Self> {
+    pub async fn new(
+        function_provider: Box<dyn FunctionProvider>,
+        cache_path: &Path,
+        db_service: DbService,
+    ) -> Result<Self> {
+        let hashkey_dict = HashMap::new();
         let mut cache = FileSystemCache::new(cache_path).context("failed to create cache")?;
         cache.set_cache_extension(Some("wasmu"));
+        let store = create_store();
 
         Ok(Self {
-            hashkey_dict: HashMap::new(),
+            hashkey_dict,
             function_provider,
             cache,
-            store: create_store(),
+            store,
+            db_service,
         })
     }
 
@@ -127,6 +137,7 @@ impl Runtime for RuntimeImpl {
         let message = GatewayRequest::new(message)
             .to_message()
             .context("Failed to serialize request message")?;
+
         let result = self
             .mailbox
             .post_and_reply(|r| {
@@ -172,11 +183,12 @@ impl Runtime for RuntimeImpl {
     }
 }
 
-pub fn start(
+pub async fn start(
     function_provider: Box<dyn FunctionProvider>,
     config: RuntimeConfig,
+    db_service: DbService,
 ) -> Result<Box<dyn Runtime>> {
-    let state = RuntimeState::new(function_provider, &config.cache_path)?;
+    let state = RuntimeState::new(function_provider, &config.cache_path, db_service).await?;
     let mailbox = CallbackMailboxProcessor::start(mailbox_step, state, 10000);
     Ok(Box::new(RuntimeImpl { mailbox }))
 }
@@ -190,9 +202,13 @@ async fn mailbox_step(
     match msg {
         MailboxMessage::InvokeFunction(req) => {
             if let Ok(instance) = runtime.instantiate_function(req.function_id).await {
+                let db_service = runtime.db_service.clone();
                 tokio::spawn(async move {
                     let resp = tokio::task::spawn_blocking(move || {
-                        let instance = instance.start().context("can not run instance").unwrap(); //TODO: Handle Errors
+                        let instance = instance
+                            .start(db_service)
+                            .context("can not run instance")
+                            .unwrap(); //TODO: Handle Errors
                         instance.request(req.message)
                     })
                     .await
