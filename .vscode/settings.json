@@ -1,0 +1,7 @@
+{
+    "files.exclude": {
+        "marketplace": true,
+        "executor": true,
+        "mailbox_processor": true
+    }
+}

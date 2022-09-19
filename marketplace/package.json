@@ -1,7 +1,8 @@
 {
     "scripts": {
         "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
-        "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
+        "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
+        "test": "cross-env BROWSER=\"\" ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
     },
     "dependencies": {
         "@project-serum/anchor": "^0.24.2",
@@ -12,6 +13,7 @@
         "@types/chai": "^4.3.3",
         "@types/mocha": "^9.1.1",
         "chai": "^4.3.6",
+        "cross-env": "^7.0.3",
         "mocha": "^10.0.0",
         "prettier": "^2.6.2",
         "ts-mocha": "^10.0.0",
