@@ -19,7 +19,7 @@ use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 
 use infrastructure::{config, log_setup};
-use mudb::service::Service as DbService;
+use mudb::service::DatabaseManager;
 use network::{
     connection_manager::{self, ConnectionManager, ConnectionManagerNotification},
     gossip::{GossipNotification, KnownNodeConfig},
@@ -123,11 +123,11 @@ pub async fn run() -> Result<()> {
     .context("Failed to start gossip")?;
 
     let function_provider = runtime::providers::DefaultFunctionProvider::new();
-    let db_service = DbService::new().await?;
+    let database_manager = DatabaseManager::new().await?;
     let runtime = runtime::start(
         Box::new(function_provider),
         runtime_config,
-        db_service.clone(),
+        database_manager.clone(),
     )
     .await
     .context("Failed to initiate runtime")?;
@@ -148,6 +148,7 @@ pub async fn run() -> Result<()> {
         scheduler_notification_channel,
         runtime.clone(),
         gateway_manager.clone(),
+        database_manager.clone(),
     );
 
     // TODO: create a `Module`/`Subsystem`/`NotificationSource` trait to batch modules with their notification receivers?

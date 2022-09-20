@@ -4,7 +4,7 @@ use super::{
     message::{database::*, gateway::*, log::Log, FromMessage, Message, ToMessage},
     types::{FunctionHandle, FunctionID, FunctionUsage, InstanceID},
 };
-use crate::mudb::service::Service as DbService;
+use crate::mudb::service::DatabaseManager;
 use anyhow::{bail, Result};
 use bytes::BufMut;
 use futures::Future;
@@ -45,7 +45,7 @@ impl InstanceState for Loaded {}
 
 pub struct Running {
     handle: FunctionHandle,
-    db_service: DbService,
+    db_service: DatabaseManager,
 }
 impl InstanceState for Running {}
 
@@ -80,7 +80,7 @@ impl Instance<New> {
 }
 
 impl Instance<Loaded> {
-    pub fn start(self, db_service: DbService) -> Result<Instance<Running>> {
+    pub fn start(self, db_service: DatabaseManager) -> Result<Instance<Running>> {
         let handle = function::start(self.state.store, &self.state.module, self.state.envs)?;
         let state = Running { handle, db_service };
         Ok(Instance { id: self.id, state })

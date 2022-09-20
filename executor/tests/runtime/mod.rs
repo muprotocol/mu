@@ -3,7 +3,7 @@ use futures::FutureExt;
 use mu::{
     gateway,
     mu_stack::{self, FunctionRuntime, StackID},
-    mudb::service::{DatabaseID, Service as DbService},
+    mudb::service::{DatabaseID, DatabaseManager},
     runtime::{start, types::*, Runtime},
 };
 use serial_test::serial;
@@ -77,14 +77,16 @@ async fn create_map_function_provider(
 
 async fn create_runtime(
     projects: HashMap<&str, &Path>,
-) -> (Box<dyn Runtime>, Vec<FunctionID>, DbService) {
+) -> (Box<dyn Runtime>, Vec<FunctionID>, DatabaseManager) {
     let config = RuntimeConfig {
         cache_path: PathBuf::from_str("runtime-cache").unwrap(),
     };
 
     let (projects, provider) = create_map_function_provider(projects).await.unwrap();
-    let db_service = DbService::new().await.unwrap();
-    let runtime = start(Box::new(provider), config, db_service.clone()).unwrap();
+    let db_service = DatabaseManager::new().await.unwrap();
+    let runtime = start(Box::new(provider), config, db_service.clone())
+        .await
+        .unwrap();
 
     let functions: Vec<FunctionDefinition> = projects.into_values().collect();
     let function_ids = functions

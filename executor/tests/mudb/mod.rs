@@ -3,7 +3,7 @@ use serde_json::json;
 use serial_test::serial;
 
 async fn find_and_update_again(
-    db_service: &Service,
+    db_service: &DatabaseManager,
     database_id: &DatabaseID,
     table_1: &str,
 ) -> Result<()> {
@@ -48,7 +48,7 @@ async fn find_and_update_again(
 #[tokio::test]
 #[serial]
 async fn test_mudb_service() {
-    let db_service = Service::new().await.unwrap();
+    let db_service = DatabaseManager::new().await.unwrap();
 
     // init db
 

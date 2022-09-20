@@ -13,9 +13,9 @@ pub type Value = String;
 pub type Item = (Key, Value);
 
 #[derive(Debug, Clone)]
-pub struct Service(Manager);
+pub struct DatabaseManager(Manager);
 
-impl Service {
+impl DatabaseManager {
     pub async fn new() -> Result<Self> {
         Ok(Self(Manager::new().await?))
     }

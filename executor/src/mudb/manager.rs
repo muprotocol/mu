@@ -12,6 +12,7 @@ use super::{
     Db, Error, Result, ValueFilter,
 };
 
+// TODO: find a better name
 #[derive(Clone)]
 pub struct Manager {
     /// db_descriptions_table

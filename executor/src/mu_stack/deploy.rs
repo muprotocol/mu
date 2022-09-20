@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::{
     gateway::GatewayManager,
-    mudb::service::{DatabaseID, Service as DbService},
+    mudb::service::{DatabaseID, DatabaseManager},
     runtime::{
         types::{FunctionDefinition, FunctionID},
         Runtime,
@@ -60,9 +60,9 @@ pub enum StackDeploymentError {
 pub(super) async fn deploy(
     id: StackID,
     stack: Stack,
-    db_service: DbService,
     runtime: &dyn Runtime,
     gateway_manager: &dyn GatewayManager,
+    db_service: &DatabaseManager,
 ) -> Result<(), StackDeploymentError> {
     let stack = validate(stack).map_err(StackDeploymentError::ValidationError)?;
 

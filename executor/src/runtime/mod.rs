@@ -19,7 +19,7 @@ use self::{
     },
 };
 use crate::{
-    gateway, mu_stack::StackID, mudb::service::Service as DbService, runtime::message::ToMessage,
+    gateway, mu_stack::StackID, mudb::service::DatabaseManager, runtime::message::ToMessage,
 };
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -68,14 +68,14 @@ struct RuntimeState {
     hashkey_dict: HashMap<FunctionID, wasmer_cache::Hash>,
     cache: FileSystemCache,
     store: Store, // We only need this store for it's configuration
-    db_service: DbService,
+    db_service: DatabaseManager,
 }
 
 impl RuntimeState {
     pub async fn new(
         function_provider: Box<dyn FunctionProvider>,
         cache_path: &Path,
-        db_service: DbService,
+        db_service: DatabaseManager,
     ) -> Result<Self> {
         let hashkey_dict = HashMap::new();
         let mut cache = FileSystemCache::new(cache_path).context("failed to create cache")?;
@@ -186,7 +186,7 @@ impl Runtime for RuntimeImpl {
 pub async fn start(
     function_provider: Box<dyn FunctionProvider>,
     config: RuntimeConfig,
-    db_service: DbService,
+    db_service: DatabaseManager,
 ) -> Result<Box<dyn Runtime>> {
     let state = RuntimeState::new(function_provider, &config.cache_path, db_service).await?;
     let mailbox = CallbackMailboxProcessor::start(mailbox_step, state, 10000);
