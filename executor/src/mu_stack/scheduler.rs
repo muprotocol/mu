@@ -182,6 +182,7 @@ struct SchedulerState {
     database_manager: DatabaseManager,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn start(
     config: SchedulerConfig,
     my_hash: NodeHash,
