@@ -81,7 +81,7 @@ async fn create_runtime(projects: HashMap<&str, &Path>) -> (Box<dyn Runtime>, Ve
     };
 
     let (projects, provider) = create_map_function_provider(projects).await.unwrap();
-    let mut runtime = start(Box::new(provider), config).unwrap();
+    let runtime = start(Box::new(provider), config).unwrap();
 
     let functions: Vec<FunctionDefinition> = projects.into_values().collect();
     let function_ids = functions

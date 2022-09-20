@@ -59,11 +59,11 @@ pub enum StackDeploymentError {
     FailedToDeployDatabases(anyhow::Error),
 }
 
-pub async fn deploy(
+pub(super) async fn deploy(
     id: StackID,
     stack: Stack,
-    mut runtime: Box<dyn Runtime>,
-    gateway_manager: Box<dyn GatewayManager>,
+    runtime: &dyn Runtime,
+    gateway_manager: &dyn GatewayManager,
 ) -> Result<(), StackDeploymentError> {
     let stack = validate(stack).map_err(StackDeploymentError::ValidationError)?;
 

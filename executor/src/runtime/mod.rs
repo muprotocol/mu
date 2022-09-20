@@ -39,8 +39,8 @@ pub trait Runtime: Clone + Send + Sync {
 
     async fn shutdown(&self) -> Result<()>;
 
-    async fn add_functions(&mut self, functions: Vec<FunctionDefinition>) -> Result<()>;
-    async fn remove_functions(&mut self, stack_id: StackID, names: Vec<String>) -> Result<()>;
+    async fn add_functions(&self, functions: Vec<FunctionDefinition>) -> Result<()>;
+    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<()>;
     async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>>;
 }
 
@@ -150,14 +150,14 @@ impl Runtime for RuntimeImpl {
         Ok(())
     }
 
-    async fn add_functions(&mut self, functions: Vec<FunctionDefinition>) -> Result<()> {
+    async fn add_functions(&self, functions: Vec<FunctionDefinition>) -> Result<()> {
         self.mailbox
             .post(MailboxMessage::AddFunctions(functions))
             .await
             .map_err(Into::into)
     }
 
-    async fn remove_functions(&mut self, stack_id: StackID, names: Vec<String>) -> Result<()> {
+    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<()> {
         self.mailbox
             .post(MailboxMessage::RemoveFunctions(stack_id, names))
             .await

@@ -15,6 +15,7 @@ use std::{
 use anyhow::{bail, format_err, Context, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
+use dyn_clonable::clonable;
 use futures::{future, FutureExt, SinkExt, StreamExt};
 use log::*;
 use mailbox_processor::{
@@ -49,7 +50,8 @@ impl Default for ConnectionManagerConfig {
 }
 
 #[async_trait]
-pub trait ConnectionManager: Sync + Send {
+#[clonable]
+pub trait ConnectionManager: Clone + Sync + Send {
     async fn connect(&self, address: IpAddr, port: u16) -> Result<ConnectionID>;
     fn send_datagram(&self, id: ConnectionID, data: Bytes);
     async fn send_req_rep(&self, id: ConnectionID, data: Bytes) -> Result<Bytes>;
