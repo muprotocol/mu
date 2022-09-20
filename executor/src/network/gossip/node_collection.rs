@@ -9,7 +9,7 @@ use std::{
 use anyhow::{bail, Context, Result};
 use tokio::time::Instant;
 
-use crate::network::connection_manager::ConnectionID;
+use crate::{mu_stack::StackID, network::connection_manager::ConnectionID};
 
 use super::{Heartbeat, NodeAddress, NodeHash};
 
@@ -187,6 +187,7 @@ pub struct NodeInfo {
     pub(super) distance: u32,
     // The last seq number at which the distance was observed
     pub(super) distance_seq: u32,
+    pub(super) deployed_stacks: HashSet<StackID>,
 }
 
 impl NodeInfo {
@@ -197,6 +198,7 @@ impl NodeInfo {
             last_heartbeat_timestamp: last_heartbeat,
             distance,
             distance_seq: 0,
+            deployed_stacks: HashSet::new(),
         }
     }
 
@@ -207,6 +209,7 @@ impl NodeInfo {
             last_heartbeat_timestamp: Instant::now(),
             distance: heartbeat.distance,
             distance_seq: heartbeat.seq,
+            deployed_stacks: heartbeat.deployed_stacks.iter().cloned().collect(),
         }
     }
 

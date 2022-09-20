@@ -7,6 +7,8 @@ use config::{Config, Environment, File, FileFormat};
 
 use crate::{
     gateway::GatewayManagerConfig,
+    log_setup::LogConfig,
+    mu_stack::scheduler::SchedulerConfig,
     network::{
         connection_manager::ConnectionManagerConfig,
         gossip::{GossipConfig, KnownNodeConfig},
@@ -14,28 +16,30 @@ use crate::{
     runtime::types::RuntimeConfig,
 };
 
-use super::log_setup::LogConfig;
+pub struct SystemConfig(
+    pub ConnectionManagerConfig,
+    pub GossipConfig,
+    pub Vec<KnownNodeConfig>,
+    pub GatewayManagerConfig,
+    pub LogConfig,
+    pub RuntimeConfig,
+    pub SchedulerConfig,
+);
 
-pub fn initialize_config() -> Result<(
-    ConnectionManagerConfig,
-    GossipConfig,
-    Vec<KnownNodeConfig>,
-    GatewayManagerConfig,
-    LogConfig,
-    RuntimeConfig,
-)> {
+pub fn initialize_config() -> Result<SystemConfig> {
     let defaults = vec![
         ("log.level", "warn"),
         ("connection_manager.listen_ip", "0.0.0.0"),
         ("connection_manager.listen_port", "12012"),
         ("connection_manager.max_request_size_kb", "8192"),
-        ("gossip.heartbeat_interval_millis", "1000"),
+        ("gossip.heartbeat_interval", "1s"),
         ("gossip.assume_dead_after_missed_heartbeats", "10"),
         ("gossip.max_peers", "6"),
-        ("gossip.peer_update_interval_millis", "10000"),
-        ("gossip.liveness_check_interval_millis", "1000"),
+        ("gossip.peer_update_interval", "10s"),
+        ("gossip.liveness_check_interval", "1s"),
         ("gateway_manager.listen_ip", "0.0.0.0"),
         ("gateway_manager.listen_port", "12012"),
+        ("scheduler.tick_interval", "1s"),
     ];
 
     let default_arrays = vec!["log.filters", "gossip.seeds"];
@@ -94,12 +98,17 @@ pub fn initialize_config() -> Result<(
 
     let runtime_config = config.get("runtime").context("Invalid runtime config")?;
 
-    Ok((
+    let scheduler_config = config
+        .get("scheduler")
+        .context("Invalid scheduler config")?;
+
+    Ok(SystemConfig(
         connection_manager_config,
         gossip_config,
         known_node_config,
         gateway_config,
         log_config,
         runtime_config,
+        scheduler_config,
     ))
 }

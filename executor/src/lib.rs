@@ -6,13 +6,15 @@ pub mod network;
 pub mod runtime;
 pub mod util;
 
-use std::{process, time::SystemTime};
+use std::{
+    process,
+    time::{Duration, SystemTime},
+};
 
 use anyhow::{bail, Context, Result};
-use gateway::GatewayManager;
 use log::*;
 use mailbox_processor::NotificationChannel;
-use runtime::Runtime;
+use mu_stack::scheduler::{Scheduler, SchedulerNotification};
 use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 
@@ -23,7 +25,10 @@ use network::{
     gossip::{GossipNotification, KnownNodeConfig},
 };
 
-use crate::network::gossip::{self, Gossip, NodeAddress};
+use crate::{
+    mu_stack::scheduler,
+    network::gossip::{self, Gossip, NodeAddress},
+};
 
 pub async fn run() -> Result<()> {
     // TODO handle failures in components
@@ -34,13 +39,14 @@ pub async fn run() -> Result<()> {
     ctrlc::set_handler(move || cancellation_token_clone.cancel())
         .context("Failed to initialize Ctrl+C handler")?;
 
-    let (
+    let config::SystemConfig(
         connection_manager_config,
         gossip_config,
         mut known_nodes_config,
         gateway_manager_config,
         log_config,
         runtime_config,
+        scheduler_config,
     ) = config::initialize_config()?;
 
     let my_node = NodeAddress {
@@ -51,6 +57,7 @@ pub async fn run() -> Result<()> {
             .unwrap()
             .as_nanos(),
     };
+    let my_hash = my_node.get_hash();
 
     let is_seed = known_nodes_config
         .iter()
@@ -130,48 +137,78 @@ pub async fn run() -> Result<()> {
         .await
         .context("Failed to start gateway manager")?;
 
-    // TODO remove this
-    deploy_prototype_stack(runtime.clone(), gateway_manager.clone(), db_service).await;
+    // TODO: fetch stacks from blockchain before starting scheduler
+    let (scheduler_notification_channel, mut scheduler_notification_receiver) =
+        NotificationChannel::new();
+    let scheduler = scheduler::start(
+        scheduler_config,
+        my_hash,
+        gossip.get_nodes().await?.into_iter().map(|n| n.0).collect(),
+        vec![],
+        scheduler_notification_channel,
+        runtime.clone(),
+        gateway_manager.clone(),
+    );
 
     // TODO: create a `Module`/`Subsystem`/`NotificationSource` trait to batch modules with their notification receivers?
-    glue_modules(
-        cancellation_token,
-        connection_manager.as_ref(),
-        connection_manager_notification_receiver,
-        gossip.as_ref(),
-        &mut gossip_notification_receiver,
-    )
-    .await;
+    let scheduler_clone = scheduler.clone();
+    let glue_task = tokio::spawn(async move {
+        glue_modules(
+            cancellation_token,
+            connection_manager.as_ref(),
+            connection_manager_notification_receiver,
+            gossip.as_ref(),
+            &mut gossip_notification_receiver,
+            scheduler.as_ref(),
+            &mut scheduler_notification_receiver,
+        )
+        .await;
 
-    // Stop gateway manager first. This waits for rocket to shut down, essentially
-    // running all requests to completion or cancelling them safely before shutting
-    // the rest of the system down.
-    gateway_manager
-        .stop()
-        .await
-        .context("Failed to stop gateway manager")?;
+        // Stop gateway manager first. This waits for rocket to shut down, essentially
+        // running all requests to completion or cancelling them safely before shutting
+        // the rest of the system down.
+        gateway_manager
+            .stop()
+            .await
+            .context("Failed to stop gateway manager")?;
 
-    gossip.stop().await.context("Failed to stop gossip")?;
+        gossip.stop().await.context("Failed to stop gossip")?;
 
-    // The glue loop shouldn't stop as soon as it receives a ctrl+C
-    loop {
-        match gossip_notification_receiver.recv().await {
-            None => break,
-            Some(notification) => {
-                process_gossip_notification(
-                    Some(notification),
-                    connection_manager.as_ref(),
-                    gossip.as_ref(),
-                )
-                .await
+        // The glue loop shouldn't stop as soon as it receives a ctrl+C
+        loop {
+            match gossip_notification_receiver.recv().await {
+                None => break,
+                Some(notification) => {
+                    process_gossip_notification(
+                        Some(notification),
+                        connection_manager.as_ref(),
+                        gossip.as_ref(),
+                        scheduler.as_ref(),
+                    )
+                    .await
+                }
             }
         }
+
+        connection_manager
+            .stop()
+            .await
+            .context("Failed to stop connection manager")?;
+
+        Result::<()>::Ok(())
+    });
+
+    // TODO make the wait configurable
+    {
+        info!("Waiting 4 seconds for node discovery to complete");
+        tokio::time::sleep(Duration::from_secs(4)).await;
+
+        info!("Deploying prototype stack");
+        scheduler_clone.ready_to_schedule_stacks().await.unwrap();
+        deploy_prototype_stack(scheduler_clone.as_ref()).await;
     }
 
-    connection_manager
-        .stop()
-        .await
-        .context("Failed to stop connection manager")?;
+    glue_task.await??;
 
     info!("Goodbye!");
 
@@ -182,19 +219,12 @@ fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
     node.port == me.port && (node.address == me.address || node.address.is_loopback())
 }
 
-// TODO
-async fn deploy_prototype_stack(
-    runtime: Box<dyn Runtime>,
-    gateway_manager: Box<dyn GatewayManager>,
-    db_service: DbService,
-) {
+async fn deploy_prototype_stack(scheduler: &dyn Scheduler) {
     let yaml = std::fs::read_to_string("./prototype/stack.yaml").unwrap();
     let stack = serde_yaml::from_str::<mu_stack::Stack>(yaml.as_str()).unwrap();
     let id = mu_stack::StackID("00001111-2222-3333-4444-555566667777".parse().unwrap());
-    mu_stack::deploy::deploy(id, stack, runtime, gateway_manager, db_service)
-        .await
-        .unwrap();
-    warn!("Deployed prototype stack with ID {id}");
+    scheduler.stack_available(id, stack).await.unwrap();
+    warn!("Stack will be deployed with ID {id}");
 }
 
 async fn glue_modules(
@@ -205,6 +235,8 @@ async fn glue_modules(
     >,
     gossip: &dyn Gossip,
     gossip_notification_receiver: &mut mpsc::UnboundedReceiver<GossipNotification>,
+    scheduler: &dyn Scheduler,
+    scheduler_notification_receiver: &mut mpsc::UnboundedReceiver<SchedulerNotification>,
 ) {
     let mut debug_timer = tokio::time::interval(std::time::Duration::from_secs(3));
 
@@ -218,8 +250,13 @@ async fn glue_modules(
             _ = debug_timer.tick() => {
                 let nodes = gossip.get_nodes().await;
                 match nodes {
-                    Ok(peers) => warn!("Discovered nodes: {:?}", peers),
-                    Err(f) => error!("Failed to get nodes: {}", f)
+                    Ok(peers) => {
+                        warn!(
+                            "Discovered nodes: {:?}",
+                            peers.iter().map(|n| format!("{}:{}", n.1.address, n.1.port)).collect::<Vec<_>>()
+                        );
+                    },
+                    Err(f) => error!("Failed to get nodes: {}", f),
                 }
             }
 
@@ -228,7 +265,11 @@ async fn glue_modules(
             }
 
             notification = gossip_notification_receiver.recv() => {
-                process_gossip_notification(notification, connection_manager, gossip).await;
+                process_gossip_notification(notification, connection_manager, gossip, scheduler).await;
+            }
+
+            notification = scheduler_notification_receiver.recv() => {
+                process_scheduler_notification(notification, gossip).await;
             }
         }
     }
@@ -273,17 +314,34 @@ async fn process_gossip_notification(
     notification: Option<GossipNotification>,
     connection_manager: &dyn ConnectionManager,
     gossip: &dyn Gossip,
+    scheduler: &dyn Scheduler,
 ) {
     match notification {
         None => (), // TODO
         Some(GossipNotification::NodeDiscovered(node)) => {
             debug!("Node discovered: {node}");
+            scheduler.node_discovered(node.get_hash()).await.unwrap(); // TODO: unwrap
         }
         Some(GossipNotification::NodeDied(node, cleanly)) => {
             debug!(
                 "Node died {}: {node}",
                 if cleanly { "cleanly" } else { "uncleanly" }
             );
+            scheduler.node_died(node.get_hash()).await.unwrap(); // TODO: unwrap
+        }
+        Some(GossipNotification::NodeDeployedStacks(node, stack_ids)) => {
+            debug!("Node deployed stacks: {node} <- {stack_ids:?}");
+            scheduler
+                .node_deployed_stacks(node.get_hash(), stack_ids)
+                .await
+                .unwrap(); // TODO: unwrap
+        }
+        Some(GossipNotification::NodeUndeployedStacks(node, stack_ids)) => {
+            debug!("Node undeployed stack: {node} <- {stack_ids:?}");
+            scheduler
+                .node_undeployed_stacks(node.get_hash(), stack_ids)
+                .await
+                .unwrap(); // TODO: unwrap
         }
         Some(GossipNotification::Connect(req_id, address, port)) => {
             match connection_manager.connect(address, port).await {
@@ -296,6 +354,26 @@ async fn process_gossip_notification(
         }
         Some(GossipNotification::Disconnect(id)) => {
             connection_manager.disconnect(id).await.unwrap_or(());
+        }
+    }
+}
+
+async fn process_scheduler_notification(
+    notification: Option<SchedulerNotification>,
+    gossip: &dyn Gossip,
+) {
+    match notification {
+        None => (), // TODO
+        Some(SchedulerNotification::StackDeployed(id)) => {
+            debug!("Deployed stack {id}");
+            gossip.stack_deployed_locally(id).await.unwrap(); // TODO: unwrap
+        }
+        Some(SchedulerNotification::StackUndeployed(id)) => {
+            debug!("Undeployed stack {id}");
+            gossip.stack_undeployed_locally(id).await.unwrap(); // TODO: unwrap
+        }
+        Some(SchedulerNotification::FailedToDeployStack(id)) => {
+            debug!("Failed to deploy stack {id}");
         }
     }
 }

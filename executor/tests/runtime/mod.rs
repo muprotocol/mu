@@ -84,9 +84,7 @@ async fn create_runtime(
 
     let (projects, provider) = create_map_function_provider(projects).await.unwrap();
     let db_service = DbService::new().await.unwrap();
-    let mut runtime = start(Box::new(provider), config, db_service.clone())
-        .await
-        .unwrap();
+    let runtime = start(Box::new(provider), config, db_service.clone()).unwrap();
 
     let functions: Vec<FunctionDefinition> = projects.into_values().collect();
     let function_ids = functions

@@ -2,9 +2,8 @@ import * as anchor from "@project-serum/anchor";
 import { Program } from "@project-serum/anchor";
 import { publicKey } from "@project-serum/anchor/dist/cjs/utils";
 import { Marketplace } from "../target/types/marketplace";
-import { Keypair, LAMPORTS_PER_SOL, Transaction, SystemProgram, PublicKey } from '@solana/web3.js'
+import { Keypair, LAMPORTS_PER_SOL, Transaction, SystemProgram, PublicKey, ComputeBudgetProgram, ComputeBudgetInstruction } from '@solana/web3.js'
 import * as spl from '@solana/spl-token';
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { expect } from "chai";
 
 let createMint = async (provider): Promise<Keypair> => {
@@ -69,7 +68,6 @@ describe("marketplace", () => {
   anchor.setProvider(provider);
 
   const program = anchor.workspace.Marketplace as Program<Marketplace>;
-  console.log(program.programId.toBase58());
 
   let mint: Keypair;
 
@@ -78,8 +76,13 @@ describe("marketplace", () => {
   let providerPda: PublicKey;
 
   let regionPda: PublicKey;
+  let authSignerWallet: Keypair;
+  let authSignerPda: PublicKey;
 
+  let escrowPda: PublicKey;
+  let escrowBump;
   let userWallet: Keypair;
+  let stackPda;
 
   let statePda: PublicKey;
   let depositPda: PublicKey;
@@ -103,6 +106,16 @@ describe("marketplace", () => {
       [anchor.utils.bytes.utf8.encode("provider"), providerWallet.publicKey.toBuffer()],
       program.programId
     )[0];
+
+    authSignerWallet = Keypair.generate();
+    let fundTx = new Transaction();
+    fundTx.add(SystemProgram.transfer({
+      fromPubkey: provider.wallet.publicKey,
+      toPubkey: authSignerWallet.publicKey,
+      lamports: 5 * LAMPORTS_PER_SOL
+    }));
+    await provider.sendAndConfirm(fundTx);
+
   });
 
   it("Initializes", async () => {
@@ -152,21 +165,32 @@ describe("marketplace", () => {
       owner: providerWallet.publicKey
     }).signers([providerWallet]).rpc();
 
-    // const accounts = await provider.connection.getProgramAccounts(program.programId);
-    // console.log(accounts)
+  });
 
+  it("Creates an Authorized Usage Signer", async () => {
+    authSignerPda = publicKey.findProgramAddressSync(
+      [anchor.utils.bytes.utf8.encode("authorized_signer"), regionPda.toBytes()],
+      program.programId
+    )[0];
+
+    await program.methods.createAuthorizedUsageSigner(authSignerWallet.publicKey, providerTokenAccount).accounts({
+      provider: providerPda,
+      region: regionPda,
+      authorizedSigner: authSignerPda,
+      owner: providerWallet.publicKey,
+    }).signers([providerWallet]).rpc();
   });
 
   it("Creates an escrow account", async () => {
-    const escrowPda = publicKey.findProgramAddressSync(
+    [escrowPda, escrowBump] = publicKey.findProgramAddressSync(
       [anchor.utils.bytes.utf8.encode("escrow"), userWallet.publicKey.toBytes(), providerPda.toBytes()],
       program.programId
-    )[0];
+    );
 
     await program.methods.createProviderEscrowAccount().accounts({
       escrowAccount: escrowPda,
       mint: mint.publicKey,
-      owner: userWallet.publicKey,
+      user: userWallet.publicKey,
       provider: providerPda,
       state: statePda,
     }).signers([userWallet]).rpc();
@@ -177,15 +201,55 @@ describe("marketplace", () => {
 
   it("Creates a stack", async () => {
     const stack_seed = new anchor.BN(100);
-    const stackPda = publicKey.findProgramAddressSync(
+    stackPda = publicKey.findProgramAddressSync(
       [anchor.utils.bytes.utf8.encode("stack"), userWallet.publicKey.toBytes(), regionPda.toBytes(), stack_seed.toBuffer("be", 8)],
       program.programId
     )[0];
 
     await program.methods.createStack(9, stack_seed, Buffer.from([0, 1, 2, 3, 4, 5, 6, 7, 8])).accounts({
-      owner: userWallet.publicKey,
+      user: userWallet.publicKey,
       stack: stackPda,
       region: regionPda,
     }).signers([userWallet]).rpc();
   });
-}); 
+
+  it("Updates usage on a stack", async () => {
+    const updateSeed = new anchor.BN(100);
+    const [updatePda, updateBump] = publicKey.findProgramAddressSync(
+      [anchor.utils.bytes.utf8.encode("update"), updateSeed.toBuffer("be", 8)],
+      program.programId
+    );
+
+    //We need to deposit a prepaymet in the escrow account
+    let mintToTx = new Transaction();
+    mintToTx.add(spl.createMintToInstruction(mint.publicKey, escrowPda, provider.wallet.publicKey, 10000000));
+    await provider.sendAndConfirm(mintToTx);
+
+    await program.methods.updateUsage(
+      updateSeed,
+      escrowBump,
+      {
+        mudbGbMonth: new anchor.BN(2),
+        mufunctionCpuMem: new anchor.BN(5),
+        bandwidth: new anchor.BN(10),
+        gatewayMreqs: new anchor.BN(100)
+      }
+    ).accounts({
+      state: statePda,
+      authorizedSigner: authSignerPda,
+      region: regionPda,
+      tokenAccount: providerTokenAccount,
+      usageUpdate: updatePda,
+      escrowAccount: escrowPda,
+      stack: stackPda,
+      signer: authSignerWallet.publicKey,
+    }).signers([authSignerWallet]).rpc();
+
+
+    const providerAccount = await spl.getAccount(provider.connection, providerTokenAccount);
+    expect(providerAccount.amount).to.equals(142120n);
+
+    const escrowAccount = await spl.getAccount(provider.connection, escrowPda);
+    expect(escrowAccount.amount).to.equals(9867780n);
+  });
+});

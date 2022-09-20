@@ -1,7 +1,7 @@
 mod node_collection;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Display,
     net::IpAddr,
     pin::Pin,
@@ -26,8 +26,8 @@ use tokio_serde::{
 };
 
 use crate::{
-    infrastructure::config::ConfigDuration, network::connection_manager::ConnectionID,
-    util::id::IdExt,
+    infrastructure::config::ConfigDuration, mu_stack::StackID,
+    network::connection_manager::ConnectionID, util::id::IdExt,
 };
 
 pub use self::node_collection::KnownNodes;
@@ -49,7 +49,7 @@ macro_rules! error {
     ($state:expr, $($arg:tt)+) => (log::error!(target: &$state.log_target, $($arg)+))
 }
 
-type NodeHash = u128;
+pub type NodeHash = u128;
 
 /// A node in the network.
 /// Assumed to run all services (executor, gateway, DB, etc.) for now.
@@ -110,6 +110,7 @@ struct Heartbeat {
     distance: u32,
     // TODO: add number of known nodes to heartbeats, so we can have a general idea of
     // how "connected" we are.
+    deployed_stacks: Vec<StackID>,
 }
 
 // TODO: replace with version-tolerant solution
@@ -122,12 +123,14 @@ enum GossipProtocolMessage {
     /// Each node sends a Goodbye message when shutting down cleanly.
     /// This helps other nodes maintain an up-to-date state of the network.
     /// Nodes propagate Goodbye messages similarly to Hello messages.
+    // TODO: transmit goodbye messages repeatedly for a while to
+    // let more nodes get them
     Goodbye(NodeAddress),
 }
 
 #[async_trait]
 #[clonable]
-pub trait Gossip: Clone {
+pub trait Gossip: Clone + Sync + Send {
     fn connection_available(
         &self,
         connection_request_id: ConnectionRequestID,
@@ -137,6 +140,9 @@ pub trait Gossip: Clone {
     fn receive_message(&self, connection_id: ConnectionID, bytes: Bytes);
     async fn get_nodes(&self) -> Result<Vec<(NodeHash, NodeAddress)>>;
     async fn stop(&self) -> Result<()>;
+
+    async fn stack_deployed_locally(&self, stack_id: StackID) -> Result<()>;
+    async fn stack_undeployed_locally(&self, stack_id: StackID) -> Result<()>;
 
     #[cfg(debug_assertions)]
     async fn log_statistics(&self);
@@ -165,6 +171,9 @@ enum GossipControlMessage {
     ConnectionAvailable(ConnectionRequestID, ConnectionID),
     ConnectionFailed(ConnectionRequestID, Error),
 
+    StackDeployedLocally(StackID, ReplyChannel<()>),
+    StackUndeployedLocally(StackID, ReplyChannel<()>),
+
     ReceiveMessage(ConnectionID, Bytes),
     GetPeers(ReplyChannel<Vec<(NodeHash, NodeAddress)>>),
     Stop(ReplyChannel<()>),
@@ -178,6 +187,8 @@ pub enum GossipNotification {
     // Notifications
     NodeDiscovered(NodeAddress),
     NodeDied(NodeAddress, NodeDiedCleanly),
+    NodeDeployedStacks(NodeAddress, Vec<StackID>), // TODO
+    NodeUndeployedStacks(NodeAddress, Vec<StackID>), // TODO
 
     // Requests
     Connect(ConnectionRequestID, IpAddr, u16),
@@ -233,6 +244,20 @@ impl Gossip for GossipImpl {
             .map_err(Into::into)
     }
 
+    async fn stack_deployed_locally(&self, stack_id: StackID) -> Result<()> {
+        self.mailbox
+            .post_and_reply(|r| GossipControlMessage::StackDeployedLocally(stack_id, r))
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn stack_undeployed_locally(&self, stack_id: StackID) -> Result<()> {
+        self.mailbox
+            .post_and_reply(|r| GossipControlMessage::StackUndeployedLocally(stack_id, r))
+            .await
+            .map_err(Into::into)
+    }
+
     #[cfg(debug_assertions)]
     async fn log_statistics(&self) {
         self.mailbox
@@ -260,10 +285,12 @@ pub fn start(
 
 struct GossipState {
     config: GossipConfig,
-    my_address: NodeAddress,
     notification_channel: NotificationChannel,
     node_collection: NodeCollection,
+
+    my_address: NodeAddress,
     my_heartbeat: u32,
+    deployed_stacks: HashSet<StackID>,
     codec: Codec,
 
     // maintenance-related fields
@@ -299,10 +326,11 @@ async fn body(
 
     let mut state = GossipState {
         log_target: log_target(my_address.port),
-        my_address,
         notification_channel,
         node_collection: NodeCollection::new(known_nodes),
+        my_address,
         my_heartbeat: 0,
+        deployed_stacks: HashSet::new(),
         codec: Bincode::default(),
         next_heartbeat: now,
         next_peer_update: now + *config.peer_update_interval,
@@ -353,7 +381,16 @@ async fn body(
                     Some(GossipControlMessage::GetPeers(r)) => r.reply(
                         state.node_collection
                             .get_nodes_and_hashes()
-                            .map(|(hash, node)| (*hash, node.info().address.clone()))
+                            // We don't report nodes with generation 0, since we haven't
+                            // received a heartbeat from those nodes yet.
+                            .filter_map(|(hash, node)| {
+                                let info = node.info();
+                                if info.address.generation == 0 {
+                                    None
+                                } else {
+                                    Some((*hash, node.info().address.clone()))
+                                }
+                            })
                             .collect()
                     ),
 
@@ -363,6 +400,16 @@ async fn body(
                         }
                         r.reply(());
                         break 'main_loop;
+                    },
+
+                    Some(GossipControlMessage::StackDeployedLocally(stack_id, r)) => {
+                        state.deployed_stacks.insert(stack_id);
+                        r.reply(());
+                    },
+
+                    Some(GossipControlMessage::StackUndeployedLocally(stack_id, r)) => {
+                        state.deployed_stacks.remove(&stack_id);
+                        r.reply(());
                     },
 
                     #[cfg(debug_assertions)]
@@ -385,6 +432,7 @@ fn send_heartbeat(state: &mut GossipState) -> Result<()> {
         node_address: state.my_address.clone(),
         seq: state.my_heartbeat,
         distance: 1,
+        deployed_stacks: state.deployed_stacks.iter().cloned().collect(),
     });
 
     send_protocol_message(message, state, vec![])
@@ -451,15 +499,29 @@ fn receive_message(
                         "Heartbeat #{} from known node {}", heartbeat.seq, heartbeat.node_address
                     );
 
+                    // Step 1: sync generations
                     let mut same_generation = match occ {
                         OccupiedByGeneration::Same(same) => same,
                         OccupiedByGeneration::Older(old) => {
+                            let old_address = &old.get().info().address;
                             debug!(
                                 state,
                                 "Discovered newer generation {} of peer {}",
                                 heartbeat.node_address.generation,
-                                old.get().info().address
+                                old_address
                             );
+                            // If the old address has generation 0, this is actually the
+                            // first heartbeat we're receiving from this node
+                            if old_address.generation > 0 {
+                                state
+                                    .notification_channel
+                                    .send(GossipNotification::NodeDied(old_address.clone(), true))
+                            };
+                            state
+                                .notification_channel
+                                .send(GossipNotification::NodeDiscovered(
+                                    heartbeat.node_address.clone(),
+                                ));
                             old.update_generation(heartbeat.node_address.generation)
                         }
                         OccupiedByGeneration::Newer() => {
@@ -472,6 +534,7 @@ fn receive_message(
                         }
                     };
 
+                    // Step 2: update heartbeat seq and distance
                     let node = same_generation.get_mut();
                     let info = node.info_mut();
 
@@ -502,7 +565,34 @@ fn receive_message(
                         info.distance_seq = heartbeat.seq;
                     }
 
-                    if info.distance == 1 {
+                    // Step 3: sync deployed stacks
+                    let CompareDeployedStacksResult { added, removed } =
+                        compare_deployed_stack_list(
+                            &mut info.deployed_stacks,
+                            &heartbeat.deployed_stacks,
+                        );
+
+                    if !added.is_empty() {
+                        state
+                            .notification_channel
+                            .send(GossipNotification::NodeDeployedStacks(
+                                heartbeat.node_address.clone(),
+                                added,
+                            ));
+                    }
+
+                    if !removed.is_empty() {
+                        state
+                            .notification_channel
+                            .send(GossipNotification::NodeUndeployedStacks(
+                                heartbeat.node_address.clone(),
+                                removed,
+                            ));
+                    }
+
+                    if heartbeat.distance == 1 {
+                        // Step 4: Promote to peer if distance is 1 (i.e. the other node
+                        // chose us as a peer)
                         if let HashEntry::OccupiedBySameGeneration(mut occ) =
                             state.node_collection.hash_entry(&hash)
                         {
@@ -511,14 +601,14 @@ fn receive_message(
                                     .context("Failed to promote node to peer")?;
                             }
                         }
-                    }
 
-                    // TODO: this will cause missed messages when a peer disconnects and
-                    // then connects again later. We have no way around it anyway, since
-                    // a new connection can't immediately be identified and must present
-                    // its node information. This will be fixed when reconnections are
-                    // implemented in the connection manager.
-                    if heartbeat.distance == 1 {
+                        // Step 5: update connection ID for newly reconnected peers
+
+                        // TODO: this will cause missed messages when a peer disconnects and
+                        // then connects again later. We have no way around it anyway, since
+                        // a new connection can't immediately be identified and must present
+                        // its node information. This will be fixed when reconnections are
+                        // implemented in the connection manager.
                         if let Some(Node::Peer(peer)) = state.node_collection.get_node_mut(&hash) {
                             if peer.connection_id() != connection_id {
                                 debug!(
@@ -540,13 +630,21 @@ fn receive_message(
                     );
 
                     let info = NodeInfo::from_heartbeat(&heartbeat);
-                    let address = info.address.clone();
 
-                    vac.insert_remote(info);
+                    let info = vac.insert_remote(info).info();
 
                     state
                         .notification_channel
-                        .send(GossipNotification::NodeDiscovered(address));
+                        .send(GossipNotification::NodeDiscovered(info.address.clone()));
+
+                    if !info.deployed_stacks.is_empty() {
+                        state
+                            .notification_channel
+                            .send(GossipNotification::NodeDeployedStacks(
+                                heartbeat.node_address.clone(),
+                                info.deployed_stacks.iter().cloned().collect(),
+                            ));
+                    }
                 }
             }
 
@@ -593,6 +691,40 @@ fn receive_message(
     }
 
     Ok(())
+}
+
+struct CompareDeployedStacksResult {
+    added: Vec<StackID>,
+    removed: Vec<StackID>,
+}
+
+fn compare_deployed_stack_list(
+    current: &mut HashSet<StackID>,
+    incoming: &Vec<StackID>,
+) -> CompareDeployedStacksResult {
+    let mut added = vec![];
+    for id in incoming {
+        if !current.contains(id) {
+            added.push(*id);
+        }
+    }
+
+    let mut removed = vec![];
+    for id in current.iter() {
+        if !incoming.contains(id) {
+            removed.push(*id);
+        }
+    }
+
+    for id in &added {
+        current.insert(*id);
+    }
+
+    for id in &removed {
+        current.remove(id);
+    }
+
+    CompareDeployedStacksResult { added, removed }
 }
 
 async fn perform_maintenance(state: &mut GossipState) -> Instant {

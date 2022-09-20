@@ -1,10 +1,18 @@
 {
 	"folders": [
 		{
+			"name": "ROOT",
 			"path": "."
+		},
+		{
+			"name": "marketplace",
+			"path": "./marketplace"
+		},
+		{
+			"path": "mailbox_processor"
+		},
+		{
+			"path": "executor"
 		}
-	],
-	"settings": {
-		"powershell.cwd": "c:\\Users\\arshi\\source\\repos\\InnovationBerlin\\muprotocol"
-	}
+	]
 }

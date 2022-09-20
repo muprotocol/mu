@@ -1,4 +1,5 @@
 pub mod deploy;
+pub mod scheduler;
 
 // We must use a BTreeMap to ensure key ordering stays consistent.
 use std::{collections::HashMap, fmt::Display};
@@ -6,7 +7,7 @@ use std::{collections::HashMap, fmt::Display};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StackID(pub Uuid);
 
 impl Display for StackID {
@@ -15,7 +16,7 @@ impl Display for StackID {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Stack {
     pub name: String,
     pub version: String,
@@ -45,7 +46,7 @@ impl Stack {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum Service {
     Database(Database),
@@ -101,7 +102,7 @@ pub enum HttpMethod {
     Options,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Function {
     pub name: String,
     pub binary: String,
