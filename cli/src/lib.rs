@@ -20,7 +20,7 @@ pub mod commands;
 pub mod common;
 pub mod config;
 pub mod error;
-pub mod solana_client;
+pub mod mu_marketplace;
 
 /// Version number for this crate.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

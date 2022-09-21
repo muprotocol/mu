@@ -11,11 +11,10 @@ use std::{
 use crate::{
     arg_parser::parse_args_and_config,
     commands::Provider,
-    config::MuCliConfig,
     error::{AnyhowResultExt, PrettyError},
-    solana_client::SolanaClient,
+    mu_marketplace::MarketplaceClient,
 };
-use anchor_client::solana_sdk::signer::Signer;
+use anchor_client::{solana_sdk::signer::Signer, Cluster};
 use anyhow::{Context, Result};
 
 /// Subcommands for mu Command Line Interface
@@ -28,12 +27,13 @@ pub enum Command {
 /// The arguments for mu Command Line Interface
 pub struct Args {
     pub(crate) keypair: Box<dyn Signer>,
+    pub(crate) cluster: Cluster,
     pub(crate) command: Command,
 }
 
 impl Args {
-    fn execute(self, config: MuCliConfig) -> Result<()> {
-        let solana_client = SolanaClient::new(config.cluster, self.keypair)?;
+    fn execute(self) -> Result<()> {
+        let solana_client = MarketplaceClient::new(self.cluster, self.keypair)?;
         match self.command {
             Command::Provider(options) => options.execute(solana_client),
         }
@@ -46,7 +46,7 @@ pub fn mu_main() {
     #[cfg(windows)]
     colored::control::set_virtual_terminal(true).unwrap();
 
-    let (args, config) = parse_args_and_config(env::args_os()).print_and_exit_on_error();
+    let args = parse_args_and_config(env::args_os()).print_and_exit_on_error();
 
     let exit = Arc::new(AtomicBool::default());
     let _exit = exit.clone();
@@ -57,5 +57,5 @@ pub fn mu_main() {
     .context("Error setting Ctrl-C handler")
     .print_and_exit_on_error();
 
-    PrettyError::report(args.execute(config));
+    PrettyError::report(args.execute());
 }

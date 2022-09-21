@@ -1,9 +1,9 @@
 //! Create provider subcommand
 
 use anyhow::Result;
-use clap::ArgMatches;
+use clap::{value_t, ArgMatches};
 
-use crate::solana_client::SolanaClient;
+use crate::mu_marketplace::MarketplaceClient;
 
 /// The options for the `mu provider create` subcommand
 #[derive(Debug)]
@@ -14,11 +14,12 @@ pub struct Create {
 
 impl Create {
     /// Runs logic for the `mu provider create` subcommand
-    pub fn execute(self, solana_client: SolanaClient) -> Result<()> {
+    pub fn execute(self, solana_client: MarketplaceClient) -> Result<()> {
         solana_client.create_provider(self.name)
     }
 }
 
-pub(crate) fn parse(_matches: &ArgMatches<'_>) -> Result<Create> {
-    todo!()
+pub(crate) fn parse(matches: &ArgMatches<'_>) -> Result<Create> {
+    let name = value_t!(matches, "name", String)?;
+    Ok(Create { name })
 }

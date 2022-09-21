@@ -6,7 +6,7 @@ use std::process::exit;
 
 mod create;
 
-use crate::solana_client::SolanaClient;
+use crate::mu_marketplace::MarketplaceClient;
 use create::*;
 
 /// The options for the `mu provider` subcommand
@@ -18,7 +18,7 @@ pub enum Provider {
 
 impl Provider {
     /// Runs logic for the `mu provider` subcommand
-    pub fn execute(self, solana_client: SolanaClient) -> Result<()> {
+    pub fn execute(self, solana_client: MarketplaceClient) -> Result<()> {
         match self {
             Self::Create(options) => options.execute(solana_client),
         }

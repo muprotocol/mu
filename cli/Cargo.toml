@@ -22,3 +22,4 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 config = { version = "0.13", features = ["yaml"], default-features = false }
 ctrlc = { version = "3.2", features = ["termination"] }
+marketplace = { path = "../marketplace/programs/marketplace/", features = ["no-entrypoint"] }

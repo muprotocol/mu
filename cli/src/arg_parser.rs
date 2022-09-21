@@ -11,10 +11,12 @@ use {
     std::{ffi::OsString, process::exit},
 };
 
-use crate::{
-    cli::{Args, Command},
-    config::MuCliConfig,
-};
+use std::str::FromStr;
+
+use anchor_client::Cluster;
+use anyhow::Context;
+
+use crate::cli::{Args, Command};
 
 fn get_matches<'a, I, T>(args: I) -> ArgMatches<'a>
 where
@@ -26,8 +28,8 @@ where
         .about(crate_description!())
         .version(crate_version!())
         .arg(
-            Arg::with_name("cluster_url")
-                .long("cluster-url")
+            Arg::with_name("cluster")
+                .long("cluster")
                 .global(true)
                 .takes_value(true)
                 .value_name("Cluster URL")
@@ -53,7 +55,7 @@ where
 }
 
 /// Parse CLI arguments
-pub fn parse_args_and_config<I, T>(args: I) -> Result<(Args, MuCliConfig)>
+pub fn parse_args_and_config<I, T>(args: I) -> Result<Args>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
@@ -76,6 +78,18 @@ where
     let keypair = signer_from_path(&matches, &keypair_str, "sender", &mut wallet_manager)
         .map_err(|e| anyhow!("Error while reading keypair {e} "))?;
 
+    let cluster = match value_t!(matches, "cluster", String) {
+        Ok(s) => Cluster::from_str(&s).context("Invalid cluster value")?,
+        Err(e) if e.kind == clap::ErrorKind::ArgumentNotFound => config
+            .cluster
+            .clone()
+            .ok_or(anyhow!("cluster is required"))?,
+        Err(e) => {
+            println!("Some bad error happened");
+            return Err(e.into());
+        }
+    };
+
     let command = match matches.subcommand() {
         ("provider", Some(matches)) => Command::Provider(provider::parse(matches)?),
         _ => {
@@ -84,6 +98,11 @@ where
         }
     };
 
-    let args = Args { keypair, command };
-    Ok((args, config))
+    let args = Args {
+        keypair,
+        cluster,
+        command,
+    };
+
+    Ok(args)
 }
