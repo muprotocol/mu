@@ -12,3 +12,4 @@ wallet = "/home/vscode/.config/solana/id.json"
 
 [scripts]
 test = "npm run test"
+deploy-empty = "npx ts-node ./scripts/cmd-deploy-empty.ts"

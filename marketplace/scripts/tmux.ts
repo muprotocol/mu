@@ -17,6 +17,12 @@ export class TmuxSession {
     }
 
     attach() {
-        util.run(`tmux attach -t ${this.name}`);
+        let command = `tmux attach -t ${this.name}`;
+        if (!util.tryRun(command)) {
+            console.log("Failed to attach to tmux session, attach manually by running:");
+            console.log("");
+            console.log("    " + command);
+            console.log("");
+        }
     }
 }

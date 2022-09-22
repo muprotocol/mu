@@ -1,3 +1,4 @@
+import path from "path";
 import { TmuxSession } from "./tmux";
 import util from "./util"
 
@@ -16,7 +17,7 @@ util.asyncMain(async () => {
     await util.sleep(2);
 
     console.log("Deploying Mu smart contract");
-    tmuxSession.splitWindow("npx ts-node ./deploy-contract.ts", 0, true);
+    tmuxSession.splitWindow(`cd ${process.cwd()} && npx ts-node ${path.resolve(__dirname, "deploy-contract.ts")}`, 0, true);
 
     tmuxSession.attach();
 })

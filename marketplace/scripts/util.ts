@@ -16,14 +16,13 @@ const tryRun = (command: string) => spawnSync(command, { shell: true, stdio: 'in
 
 const sleep = (secs: number) => setTimeout(secs * 1000);
 
-const asyncMain = (f: (() => Promise<number | void>)) => (async () => {
-    try {
-        exit(await f() || 0);
-    } catch (e) {
-        console.error(e);
-        exit(-1);
-    }
-})();
+const asyncMain = (f: (() => Promise<number | void>)) =>
+    f()
+        .then(r => exit(r || 0))
+        .catch(e => {
+            console.error(e);
+            exit(-1);
+        });
 
 export default {
     waitUntilPortUsed,
