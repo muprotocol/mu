@@ -1,5 +1,4 @@
 import util from "./util"
-import { exit } from "process";
 
 util.asyncMain(async () => {
     console.log("Deploying Mu smart contract");
