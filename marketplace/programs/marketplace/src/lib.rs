@@ -158,7 +158,7 @@ pub struct ServiceUnits {
 pub struct MuState {
     account_type: u8, // Always 0
     authority: Pubkey,
-    mint: Pubkey,
+    pub mint: Pubkey,
     deposit_token: Pubkey,
     bump: u8,
 }

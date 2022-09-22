@@ -17,7 +17,10 @@ clap = "2.33"
 solana-cli-config = "1.10"
 solana-clap-utils = "1.10"
 solana-remote-wallet = "1.10"
+spl-token = "3.3"
+spl-associated-token-account = "1.0"
 anchor-client = "0.25"
+anchor-spl = "0.25"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 config = { version = "0.13", features = ["yaml"], default-features = false }
