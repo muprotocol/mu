@@ -130,7 +130,7 @@ where
     T: Default + ToString + Serialize,
 {
     fn from(cb: ConfigBase<T>) -> Self {
-        Self::from(serde_json::to_value(cb).unwrap())
+        Self::try_from(serde_json::to_value(cb).unwrap()).unwrap()
     }
 }
 

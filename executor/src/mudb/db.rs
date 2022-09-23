@@ -11,40 +11,46 @@ pub struct Db {
     inner: sled::Db,
     pub id: String,
     pub conf: ConfigInner,
-    // table_descriptions_table
-    tdt: Table,
+    /// table_descriptions_table
+    td_table: Table,
 }
 
 impl Db {
     /// Open new or existed Db
     pub fn open(conf: ConfigInner) -> Result<Self> {
-        let inner: sled::Config = conf.clone().into();
-        let inner: sled::Db = inner.open()?;
+        let inner = sled::Config::from(conf.clone()).open()?;
         // TODO: consider syncing tdt with sled::Db::tree_names
-        let tdt = Table::new(inner.open_tree(TABLE_DESCRIPTIONS_TABLE)?);
+        let primary_key = "table_name".to_string();
+        let indexes = Indexes { primary_key };
+        let td_table = Table::new(inner.open_tree(TABLE_DESCRIPTIONS_TABLE)?, indexes);
         let id = conf.database_id.clone();
+
         Ok(Db {
             inner,
-            tdt,
+            td_table,
             id,
             conf,
         })
     }
 
     /// Create new table otherwise return err table already exists
-    pub fn create_table(&self, table_name: TableNameInput) -> Result<(Table, TableDescription)> {
+    pub fn create_table(
+        &self,
+        table_name: TableNameInput,
+        indexes: Indexes,
+    ) -> Result<(Table, TableDescription)> {
         // create table if not exist otherwise just open it.
-        let table = Table::new(self.inner.open_tree(table_name.clone())?);
-
+        let table = Table::new(self.inner.open_tree(table_name.clone())?, indexes.clone());
         let td = TableDescription {
             table_name: table_name.to_string(),
+            indexes,
         };
 
         // save schema
         // check and if table_schema was sets before,
         // return err `TableAlreadyExist`
-        self.tdt
-            .insert_one(table_name.clone().into(), td.clone().into())
+        self.td_table
+            .insert_one(td.clone().into())
             .map_err(|_| Error::TableAlreadyExist(table_name.to_string()))
             .map(|_| (table, td))
     }
@@ -53,8 +59,10 @@ impl Db {
         if !self.is_table_exists(table_name.clone())? {
             return Err(Error::TableDoseNotExist(table_name.into()));
         }
-        let tree = self.inner.open_tree(table_name)?;
-        Ok(Table::new(tree))
+        let tree = self.inner.open_tree(table_name.clone())?;
+        let indexes = self.table_description(table_name)?.unwrap().indexes;
+
+        Ok(Table::new(tree, indexes))
     }
 
     /// Delete table `TableDescription` if existed or `None` if not.
@@ -63,7 +71,7 @@ impl Db {
         let is_dropped_success = self.inner.drop_tree(table_name.clone())?;
 
         if is_table_exists && is_dropped_success {
-            self.tdt
+            self.td_table
                 .delete(KeyFilter::Exact(table_name.into()), ValueFilter::none())
                 .map(|vec| Some(vec[0].1.clone().try_into().unwrap()))
                 .map_err(Into::into)
@@ -74,16 +82,30 @@ impl Db {
 
     // TODO: maybe remove
     pub fn _table_names(&self) -> Result<Vec<String>> {
-        Ok(self
-            .tdt
+        let x = self
+            .td_table
             .find_by_key_filter(KeyFilter::Prefix("".into()))?
             .into_iter()
             .map(|(k, _)| k.into())
-            .collect())
+            .collect();
+
+        Ok(x)
+    }
+
+    fn table_description(&self, table_name: TableNameInput) -> Result<Option<TableDescription>> {
+        let x = self
+            .td_table
+            .find_by_key_filter(KeyFilter::Exact(table_name.into()))?
+            .pop()
+            .map(|(_, v)| v.try_into().unwrap());
+
+        Ok(x)
     }
 
     fn is_table_exists(&self, table_name: TableNameInput) -> Result<bool> {
-        self.tdt.contains_key(table_name.into()).map_err(Into::into)
+        self.td_table
+            .contains_key(table_name.into())
+            .map_err(Into::into)
     }
 
     /// Returns the on-disk size of the storage files for this database.
@@ -98,8 +120,6 @@ mod test {
     use assert_matches::assert_matches;
     use serial_test::serial;
     use std::ops::Deref;
-
-    const TEST_TABLE: &str = "test_table";
 
     struct TestDb(Db);
 
@@ -132,9 +152,20 @@ mod test {
             Self(Db::open(conf).unwrap())
         }
 
+        fn table_name() -> String {
+            "test_table".into()
+        }
+
+        fn indexes() -> Indexes {
+            let primary_key = "id".to_string();
+            Indexes { primary_key }
+        }
+
         fn init_and_seed() -> Self {
             let td = TestDb::init();
-            td.create_table(TEST_TABLE.try_into().unwrap()).unwrap();
+            td.create_table(TestDb::table_name().try_into().unwrap(), Self::indexes())
+                .unwrap();
+
             td
         }
     }
@@ -161,24 +192,35 @@ mod test {
     #[serial]
     fn create_table_r_ok_table_description() {
         let db = TestDb::init();
-
         let name = "create_table_test";
-        let res = db.create_table(name.try_into().unwrap()).unwrap();
+        let primary_key = "id".to_string();
+        let indexes = Indexes { primary_key };
+        let res = db
+            .create_table(name.try_into().unwrap(), indexes.clone())
+            .unwrap();
+
         assert_eq!(
             res.1,
             TableDescription {
-                table_name: name.into()
+                table_name: name.into(),
+                indexes
             }
         );
+
+        assert!(db.is_table_exists(name.try_into().unwrap()).unwrap());
     }
 
     #[test]
     #[serial]
     fn create_table_r_err_already_exist() {
         let db = TestDb::init_and_seed();
-
-        let res = db.create_table(TEST_TABLE.try_into().unwrap());
-        assert_eq!(res.err(), Some(Error::TableAlreadyExist(TEST_TABLE.into())));
+        let primary_key = "id".to_string();
+        let indexes = Indexes { primary_key };
+        let res = db.create_table(TestDb::table_name().try_into().unwrap(), indexes);
+        assert_eq!(
+            res.err(),
+            Some(Error::TableAlreadyExist(TestDb::table_name()))
+        );
     }
 
     // get_table
@@ -188,7 +230,7 @@ mod test {
     fn get_table_r_ok_table() {
         let db = TestDb::init_and_seed();
 
-        let res = db.get_table(TEST_TABLE.try_into().unwrap());
+        let res = db.get_table(TestDb::table_name().try_into().unwrap());
         assert_matches!(res, Ok(Table { .. }));
     }
 
@@ -197,8 +239,11 @@ mod test {
     fn get_table_r_err_dose_not_exist() {
         let db = TestDb::init();
 
-        let res = db.get_table(TEST_TABLE.try_into().unwrap());
-        assert_eq!(res.err(), Some(Error::TableDoseNotExist(TEST_TABLE.into())));
+        let res = db.get_table(TestDb::table_name().try_into().unwrap());
+        assert_eq!(
+            res.err(),
+            Some(Error::TableDoseNotExist(TestDb::table_name()))
+        );
     }
 
     // delete_table
@@ -208,11 +253,12 @@ mod test {
     fn delete_table_r_table_description() {
         let db = TestDb::init_and_seed();
 
-        let res = db.delete_table(TEST_TABLE.try_into().unwrap());
+        let res = db.delete_table(TestDb::table_name().try_into().unwrap());
         assert_eq!(
             res,
             Ok(Some(TableDescription {
-                table_name: TEST_TABLE.into(),
+                table_name: TestDb::table_name(),
+                indexes: TestDb::indexes()
             }))
         );
     }
@@ -222,7 +268,7 @@ mod test {
     fn delete_table_r_none() {
         let db = TestDb::init();
 
-        let res = db.delete_table(TEST_TABLE.try_into().unwrap());
+        let res = db.delete_table(TestDb::table_name().try_into().unwrap());
         assert_eq!(res, Ok(None))
     }
 }

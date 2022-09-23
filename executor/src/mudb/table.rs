@@ -3,18 +3,28 @@ use super::{types::*, Error, Result, Updater, ValueFilter};
 #[derive(Debug, Clone)]
 pub struct Table {
     inner: sled::Tree,
+    indexes: Indexes,
 }
 
 impl Table {
-    pub fn new(inner: sled::Tree) -> Self {
-        Self { inner }
+    pub fn new(inner: sled::Tree, indexes: Indexes) -> Self {
+        Self { inner, indexes }
     }
 
-    pub fn insert_one(&self, key: Key, value: Value) -> Result<Key> {
+    pub fn insert_one(&self, value: Value) -> Result<Key> {
+        // primary key attribute
+        let pk_attr = &self.indexes.primary_key;
+        let key_opt = value.get(pk_attr);
+        let key = key_opt.map_or(
+            Err(Error::MissingIndexAttribute(pk_attr.clone())),
+            |key_v| Key::try_from(key_v),
+        )?;
+
+        // let key = Key::from()
         self.inner
             .compare_and_swap(key.clone(), None as Option<&[u8]>, Some(value))?
             .map(|_| key.clone())
-            .map_err(|_| Error::KeyAlreadyExist(key))
+            .map_err(|_| Error::PkAlreadyExist(pk_attr.into(), key))
     }
 
     fn partial_find<T: Default>(
@@ -114,6 +124,8 @@ mod test {
     use serde_json::json;
     use serial_test::serial;
 
+    const PK_ATTR: &str = "id";
+
     fn init_table() -> (Table, Table) {
         let path = format!("./mudb/{}", MANAGER_DB);
         let path = std::path::Path::new(&path);
@@ -123,9 +135,15 @@ mod test {
             .open()
             .unwrap();
 
-        let table_1 = Table::new(db.open_tree("test_1").unwrap());
+        let inner = db.open_tree("test_1").unwrap();
+        let primary_key = "id".to_string();
+        let indexes = Indexes { primary_key };
+        let table_1 = Table::new(inner, indexes);
 
-        let table_2 = Table::new(db.open_tree("test_2").unwrap());
+        let inner = db.open_tree("test_2").unwrap();
+        let primary_key = "id".to_string();
+        let indexes = Indexes { primary_key };
+        let table_2 = Table::new(inner, indexes);
 
         (table_1, table_2)
     }
@@ -134,9 +152,9 @@ mod test {
         let mut items = vec![];
 
         for i in 1..4 {
-            let key = Key::from(format!("ex::{}", i));
-
+            let id = format!("ex::{}", i);
             let value: Value = json!({
+                "id": id,
                 "num_item": i,
                 "array_item": [1, 2, 3, 4],
                 "obj_item": {
@@ -144,18 +162,23 @@ mod test {
                     "in_2": "world",
                 }
             })
-            .into();
+            .try_into()
+            .unwrap();
 
-            table.insert_one(key.clone(), value.clone()).unwrap();
-            items.push((key, value));
+            table.insert_one(value.clone()).unwrap();
+            items.push((id.into(), value));
         }
 
         for i in 1..4 {
-            let key = Key::from(format!("other::{}", i));
-            let value = Value::from(json!("sth"));
+            let id = format!("other::{}", i);
+            let value = Value::try_from(json!({
+                "id": id,
+                "a_field": "sth"
+            }))
+            .unwrap();
 
-            table.insert_one(key.clone(), value.clone()).unwrap();
-            items.push((key, value));
+            table.insert_one(value.clone()).unwrap();
+            items.push((id.into(), value));
         }
 
         items
@@ -168,7 +191,12 @@ mod test {
     fn insert_one_r_ok_inserted_key_w_no_problem() {
         let (table_1, _) = init_table();
 
-        let res = table_1.insert_one("ex::1".into(), json!("VALUE1").into());
+        let value = Value::try_from(json!({
+            "id": "ex::1",
+            "field_1": "VALUE1"
+        }))
+        .unwrap();
+        let res = table_1.insert_one(value);
         assert_eq!(res, Ok(Key::from("ex::1")));
     }
 
@@ -177,13 +205,17 @@ mod test {
     fn insert_one_r_err_key_already_exist_w_happen() {
         let (table_1, _) = init_table();
 
-        let key = Key::from("ex::1");
-        let value = Value::from(json!("VALUE1"));
+        let id = "ex::1";
+        let value = Value::try_from(json!({
+            "id": id,
+            "field_1": "VALUE1"
+        }))
+        .unwrap();
 
-        table_1.insert_one(key.clone(), value.clone()).unwrap();
+        table_1.insert_one(value.clone()).unwrap();
         // again insert
-        // let res = table_1.insert_one(key.clone(), value.clone());
-        // assert_eq!(res, Err(Error::KeyAlreadyExist(key)));
+        let res = table_1.insert_one(value.clone());
+        assert_eq!(res, Err(Error::PkAlreadyExist(PK_ATTR.into(), id.into())));
     }
 
     // find
@@ -337,14 +369,16 @@ mod test {
         }))
         .unwrap();
 
-        let updated_item = Value::from(json!({
+        let updated_item = Value::try_from(json!({
+            "id": "ex::1",
             "num_item": 1,
             "array_item": [10, 7, 3, 4],
             "obj_item": {
                 "in_1": "hello",
                 "in_2": "world",
             }
-        }));
+        }))
+        .unwrap();
 
         let res = table_1.update(
             key_filter.clone(),
@@ -370,14 +404,16 @@ mod test {
         .try_into()
         .unwrap();
 
-        let updated_item = Value::from(json!({
+        let updated_item = Value::try_from(json!({
+            "id": "ex::2",
             "num_item": 2,
             "array_item": [10, 7, 3, 4],
             "obj_item": {
                 "in_1": "hello",
                 "in_2": "world",
             }
-        }));
+        }))
+        .unwrap();
 
         let res = table_1.update(
             key_filter.clone(),

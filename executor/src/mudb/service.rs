@@ -4,7 +4,7 @@
 use super::{error::Result, manager::Manager, Config, Db, Error};
 
 pub use super::{
-    types::{DatabaseID, KeyFilter, TableDescription},
+    types::{DatabaseID, Indexes, KeyFilter, TableDescription},
     Updater, ValueFilter,
 };
 
@@ -119,9 +119,11 @@ impl DatabaseManager {
         &self,
         database_id: DatabaseID,
         table_name: String,
+        indexes: Indexes,
     ) -> Result<TableDescription> {
         self.partial_run(database_id, move |db| {
-            db.create_table(table_name.try_into()?).map(|(_, td)| td)
+            db.create_table(table_name.try_into()?, indexes)
+                .map(|(_, td)| td)
         })
         .await
     }
@@ -143,12 +145,11 @@ impl DatabaseManager {
         &self,
         database_id: DatabaseID,
         table_name: String,
-        key: Key,
         value: Value,
     ) -> Result<Key> {
         self.partial_run(database_id, move |db| {
             db.get_table(table_name.try_into()?)?
-                .insert_one(key.into(), value.try_into()?)
+                .insert_one(value.try_into()?)
                 .map(Into::into)
         })
         .await

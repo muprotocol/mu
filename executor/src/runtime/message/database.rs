@@ -1,5 +1,5 @@
 use crate::{
-    mudb::service::{DatabaseID, Item, Key, KeyFilter, TableDescription},
+    mudb::service::{DatabaseID, Indexes, Item, Key, KeyFilter, TableDescription},
     runtime::types::FunctionID,
 };
 
@@ -28,10 +28,10 @@ macro_rules! make_request {
     };
 }
 
-make_request!(CreateTableRequest);
+make_request!(CreateTableRequest, indexes: Indexes);
 make_request!(DropTableRequest);
 make_request!(FindRequest, key_filter: KeyFilter, value_filter: String);
-make_request!(InsertRequest, key: String, value: String);
+make_request!(InsertRequest, value: String);
 make_request!(
     UpdateRequest,
     key_filter: KeyFilter,

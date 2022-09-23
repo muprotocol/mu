@@ -45,6 +45,8 @@ async fn find_and_update_again(
     Ok(())
 }
 
+const PK_ATTR: &str = "id";
+
 #[tokio::test]
 #[serial]
 async fn test_mudb_service() {
@@ -56,35 +58,35 @@ async fn test_mudb_service() {
         db_name: "test_mudb_service".into(),
         ..Default::default()
     };
-
     let conf = Config {
         database_id: database_id.clone(),
         ..Default::default()
     };
-
     db_service.create_db(conf).await.unwrap();
 
     // create table 1
 
     let table_1 = "table_1";
-
+    let indexes = Indexes {
+        primary_key: PK_ATTR.into(),
+    };
     db_service
-        .create_table(database_id.clone(), table_1.into())
+        .create_table(database_id.clone(), table_1.into(), indexes.clone())
         .await
         .unwrap();
 
     // create table 2
 
     let table_2 = "table_2";
-
     db_service
-        .create_table(database_id.clone(), table_2.into())
+        .create_table(database_id.clone(), table_2.into(), indexes.clone())
         .await
         .unwrap();
 
     // insert one item
 
     let value1 = json!({
+        PK_ATTR: "ex::1",
         "num_item": 1,
         "array_item": [1, 2, 3, 4],
         "obj_item": {
@@ -95,12 +97,7 @@ async fn test_mudb_service() {
     .to_string();
 
     let res1 = db_service
-        .insert_one_item(
-            database_id.clone(),
-            table_1.into(),
-            "ex::1".into(),
-            value1.clone(),
-        )
+        .insert_one_item(database_id.clone(), table_1.into(), value1.clone())
         .await;
 
     assert_eq!(res1, Ok("ex::1".to_string()));
@@ -111,8 +108,8 @@ async fn test_mudb_service() {
         .insert_one_item(
             database_id.clone(),
             table_2.into(),
-            "ex::5".into(),
             json!({
+                PK_ATTR: "ex::5",
                 "array_item": ["h", "e", "l", "l", "o"],
                 "obj_item": {
                     "a": 10,
@@ -222,6 +219,7 @@ async fn test_mudb_service() {
         res,
         Ok(Some(TableDescription {
             table_name: "table_1".into(),
+            indexes: indexes.clone()
         }))
     );
 
@@ -235,6 +233,7 @@ async fn test_mudb_service() {
         res,
         Ok(Some(TableDescription {
             table_name: "table_2".into(),
+            indexes: indexes.clone()
         }))
     );
 

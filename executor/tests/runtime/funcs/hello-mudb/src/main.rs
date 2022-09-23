@@ -62,16 +62,21 @@ enum DbRequest {
 }
 
 #[derive(Debug, Serialize)]
+pub struct Indexes {
+    pub primary_key: String,
+}
+
+#[derive(Debug, Serialize)]
 struct CreateTableRequest {
     db_name: String,
     table_name: String,
+    indexes: Indexes,
 }
 
 #[derive(Debug, Serialize)]
 struct InsertRequest {
     db_name: String,
     table_name: String,
-    key: String,
     value: String,
 }
 
@@ -191,6 +196,9 @@ fn main() {
     db_request(DbRequest::CreateTable(CreateTableRequest {
         db_name: "my_db".into(),
         table_name: "test_table".into(),
+        indexes: Indexes {
+            primary_key: "id".into(),
+        },
     }));
 
     let db_resp_msg = read_stdin(&log);
@@ -199,12 +207,17 @@ fn main() {
         .map_err(|e| log(e.to_string()))
         .unwrap();
 
+    let value = json!({
+        "id": "secret",
+        "x": "Mu Rocks!"
+    })
+    .to_string();
+
     // Insert data
     db_request(DbRequest::Insert(InsertRequest {
         db_name: "my_db".into(),
         table_name: "test_table".into(),
-        key: "secret".into(),
-        value: "\"Mu Rocks!\"".into(),
+        value: value.clone(),
     }));
 
     let db_resp_msg = read_stdin(&log);
@@ -227,10 +240,12 @@ fn main() {
 
     if let DbResponse::Find(db_resp) = db_resp {
         match db_resp {
-            Ok(r) => {
-                assert_eq!(r[0], ("secret".into(), "\"Mu Rocks!\"".into()))
-            }
             Err(e) => log(format!("Database Error: {e}")),
+            Ok(r) if r[0] == ("secret".into(), value.clone()) => (),
+            Ok(r) => {
+                log(format!("Find Error"));
+                assert_eq!(r[0], ("secret".into(), value))
+            }
         }
     }
 

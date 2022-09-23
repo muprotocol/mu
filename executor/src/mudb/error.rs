@@ -14,12 +14,18 @@ pub enum Error {
     TableDoseNotExist(String),
     #[error("mudb_error> table {0} is reserved")]
     TableIsReserved(String),
-    #[error("mudb_error> key {0} already exist")]
-    KeyAlreadyExist(Key),
+    #[error("mudb_error> primary-key {{ {0}: {1} }} already exist")]
+    PkAlreadyExist(String, Key),
     #[error("mudb_error> invalid_table_name> {0} {1}")]
     InvalidTableName(String, String),
     #[error("mudb_error> invalid_json_command> {0}")]
     InvalidJsonCommand(String),
+    #[error("mudb_error> expected object value> {0}")]
+    ExpectedObjectValue(String),
+    #[error("mudb_error> missing index attribute> {0}")]
+    MissingIndexAttribute(String),
+    #[error("mudb_error> missing index attribute> {0}")]
+    IndexAttributeShouldBeString(String),
 
     // outer error
     #[error("mudb_error> sled> {0}")]

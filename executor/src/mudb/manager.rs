@@ -8,7 +8,7 @@ use super::{
     config::ConfigInner,
     error::ManagerMailBoxError,
     table::Table,
-    types::{KeyFilter, DB_DESCRIPTION_TABLE, MANAGER_DB},
+    types::{Indexes, KeyFilter, DB_DESCRIPTION_TABLE, MANAGER_DB},
     Db, Error, Result, ValueFilter,
 };
 
@@ -37,10 +37,13 @@ impl Manager {
             database_id: MANAGER_DB.into(),
             ..Default::default()
         };
-        // TODO: maybe store db, to avoid open multiple Manager
         let db = Db::open(conf)?;
+        let indexes = Indexes {
+            primary_key: "database_id".into(),
+        };
         // TODO: sync ddt to filesystem
-        let ddt = match db.create_table(DB_DESCRIPTION_TABLE.try_into().unwrap()) {
+        let x = db.create_table(DB_DESCRIPTION_TABLE.try_into().unwrap(), indexes);
+        let ddt = match x {
             Ok((table, _)) => Ok(table),
             Err(Error::TableAlreadyExist(table)) => db.get_table(table.try_into().unwrap()),
             Err(e) => Err(e),
@@ -74,29 +77,35 @@ impl Manager {
     }
 
     pub fn is_db_exists(&self, name: &str) -> Result<bool> {
-        Ok(!self
+        let x = !self
             .ddt
             .find_by_key_filter(KeyFilter::Exact(name.into()))?
-            .is_empty())
+            .is_empty();
+
+        Ok(x)
     }
 
     // TODO: write test
     /// read database config from database descriptiont table
     pub fn get_db_conf(&self, name: &str) -> Result<Option<ConfigInner>> {
-        Ok(self
+        let x = self
             .ddt
             .find_by_key_filter(KeyFilter::Exact(name.into()))?
             .pop()
-            .map(|(_, v)| v.try_into().unwrap()))
+            .map(|(_, v)| v.try_into().unwrap());
+
+        Ok(x)
     }
 
     pub fn query_db_by_prefix(&self, prefix: &str) -> Result<Vec<String>> {
-        Ok(self
+        let x = self
             .ddt
             .find_by_key_filter(KeyFilter::Prefix(prefix.into()))?
             .into_iter()
             .map(|(k, _)| k.into())
-            .collect())
+            .collect();
+
+        Ok(x)
     }
 
     pub async fn get_cache(&self) -> Result<State> {
@@ -139,7 +148,6 @@ async fn step(_: MailBox, msg: Message, mut state: State) -> State {
     match msg {
         Message::CreateDb(manager, conf, rcr) => {
             let join_res = ::tokio::task::spawn_blocking(move || create_db(manager, conf)).await;
-            dbg!(&join_res);
             flatten_result!(join_res, rcr, |_| ())
         }
         Message::DropDb(manager, name, rcr) => {
@@ -167,10 +175,7 @@ fn create_db(manager: Manager, conf: ConfigInner) -> Result<()> {
         Err(Error::DbAlreadyExist(conf.database_id))
     } else {
         let db = Db::open(conf.clone())?;
-        manager
-            .ddt
-            .insert_one(db.conf.database_id.into(), conf.into())?;
-
+        manager.ddt.insert_one(db.conf.clone().into())?;
         Ok(())
     }
 }

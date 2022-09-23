@@ -36,6 +36,16 @@ impl From<String> for Key {
     }
 }
 
+impl TryFrom<&serde_json::Value> for Key {
+    type Error = super::Error;
+    fn try_from(v: &serde_json::Value) -> Result<Self, Self::Error> {
+        match v {
+            serde_json::Value::String(s) => Ok(s.as_str().into()),
+            _ => Err(super::Error::IndexAttributeShouldBeString(v.to_string())),
+        }
+    }
+}
+
 impl From<Key> for String {
     fn from(value: Key) -> Self {
         value.0
@@ -69,8 +79,10 @@ impl Display for Key {
 
 // Value
 
+// TODO: rename to Item after remove Key
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Value {
+    // TODO: rename to string
     raw: String,
     json: serde_json::Value,
 }
@@ -110,11 +122,23 @@ impl Deref for Value {
     }
 }
 
-impl From<serde_json::Value> for Value {
-    fn from(json: serde_json::Value) -> Self {
-        Self {
-            raw: json.to_string(),
-            json,
+// impl From<serde_json::Value> for Value {
+//     fn from(json: serde_json::Value) -> Self {
+//         Self {
+//             raw: json.to_string(),
+//             json,
+//         }
+//     }
+// }
+
+impl TryFrom<serde_json::Value> for Value {
+    type Error = super::Error;
+    fn try_from(json: serde_json::Value) -> Result<Self, Self::Error> {
+        if json.is_object() {
+            let raw = json.to_string();
+            Ok(Self { raw, json })
+        } else {
+            Err(super::Error::ExpectedObjectValue(json.to_string()))
         }
     }
 }
@@ -230,11 +254,27 @@ impl AsRef<[u8]> for TableNameInput {
     }
 }
 
+// Schema
+
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+pub struct Indexes {
+    // TODO: rename to pk_attr
+    pub primary_key: String,
+}
+
+// TODO
+// pub trait Schema {
+//     fn primary_key() ->  {
+//
+//     }
+// }
+
 // TableDescription
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct TableDescription {
     pub table_name: String,
+    pub indexes: Indexes,
     // TODO
     // pub creation_date_time: DateTime,
 }
@@ -242,7 +282,7 @@ pub struct TableDescription {
 impl From<TableDescription> for Value {
     fn from(td: TableDescription) -> Self {
         let json = serde_json::to_value(td).unwrap();
-        Self::from(json)
+        Self::try_from(json).unwrap()
     }
 }
 

@@ -146,6 +146,7 @@ impl Instance<Running> {
                                     .block_on(self.state.db_service.create_table(
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
+                                        req.indexes,
                                     ))
                                     .map_err(|e| e.to_string());
 
@@ -190,7 +191,6 @@ impl Instance<Running> {
                                         self.state.db_service.insert_one_item(
                                             database_id(&self.id.function_id, req.db_name),
                                             req.table_name,
-                                            req.key,
                                             req.value,
                                         )
                                     })
