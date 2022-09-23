@@ -39,7 +39,7 @@ impl Manager {
         };
         let db = Db::open(conf)?;
         let indexes = Indexes {
-            primary_key: "database_id".into(),
+            pk: "database_id".into(),
         };
         // TODO: sync ddt to filesystem
         let x = db.create_table(DB_DESCRIPTION_TABLE.try_into().unwrap(), indexes);

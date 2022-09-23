@@ -67,9 +67,7 @@ async fn test_mudb_service() {
     // create table 1
 
     let table_1 = "table_1";
-    let indexes = Indexes {
-        primary_key: PK_ATTR.into(),
-    };
+    let indexes = Indexes { pk: PK_ATTR.into() };
     db_service
         .create_table(database_id.clone(), table_1.into(), indexes.clone())
         .await

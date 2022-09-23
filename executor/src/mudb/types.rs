@@ -259,7 +259,8 @@ impl AsRef<[u8]> for TableNameInput {
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Indexes {
     // TODO: rename to pk_attr
-    pub primary_key: String,
+    /// primary key
+    pub pk: String,
 }
 
 // TODO

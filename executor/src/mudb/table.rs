@@ -12,19 +12,18 @@ impl Table {
     }
 
     pub fn insert_one(&self, value: Value) -> Result<Key> {
-        // primary key attribute
-        let pk_attr = &self.indexes.primary_key;
-        let key_opt = value.get(pk_attr);
-        let key = key_opt.map_or(
-            Err(Error::MissingIndexAttribute(pk_attr.clone())),
-            |key_v| Key::try_from(key_v),
-        )?;
+        // primary key
+        let pk = &self.indexes.pk;
+        let key_opt = value.get(pk);
+        let key = key_opt.map_or(Err(Error::MissingIndexAttribute(pk.clone())), |key_v| {
+            Key::try_from(key_v)
+        })?;
 
         // let key = Key::from()
         self.inner
             .compare_and_swap(key.clone(), None as Option<&[u8]>, Some(value))?
             .map(|_| key.clone())
-            .map_err(|_| Error::PkAlreadyExist(pk_attr.into(), key))
+            .map_err(|_| Error::PkAlreadyExist(pk.into(), key))
     }
 
     fn partial_find<T: Default>(
@@ -136,13 +135,13 @@ mod test {
             .unwrap();
 
         let inner = db.open_tree("test_1").unwrap();
-        let primary_key = "id".to_string();
-        let indexes = Indexes { primary_key };
+        let pk = "id".to_string();
+        let indexes = Indexes { pk };
         let table_1 = Table::new(inner, indexes);
 
         let inner = db.open_tree("test_2").unwrap();
-        let primary_key = "id".to_string();
-        let indexes = Indexes { primary_key };
+        let pk = "id".to_string();
+        let indexes = Indexes { pk };
         let table_2 = Table::new(inner, indexes);
 
         (table_1, table_2)

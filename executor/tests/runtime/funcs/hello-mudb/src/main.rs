@@ -63,7 +63,7 @@ enum DbRequest {
 
 #[derive(Debug, Serialize)]
 pub struct Indexes {
-    pub primary_key: String,
+    pub pk: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -196,9 +196,7 @@ fn main() {
     db_request(DbRequest::CreateTable(CreateTableRequest {
         db_name: "my_db".into(),
         table_name: "test_table".into(),
-        indexes: Indexes {
-            primary_key: "id".into(),
-        },
+        indexes: Indexes { pk: "id".into() },
     }));
 
     let db_resp_msg = read_stdin(&log);

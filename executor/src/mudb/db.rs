@@ -20,8 +20,8 @@ impl Db {
     pub fn open(conf: ConfigInner) -> Result<Self> {
         let inner = sled::Config::from(conf.clone()).open()?;
         // TODO: consider syncing tdt with sled::Db::tree_names
-        let primary_key = "table_name".to_string();
-        let indexes = Indexes { primary_key };
+        let pk = "table_name".to_string();
+        let indexes = Indexes { pk };
         let td_table = Table::new(inner.open_tree(TABLE_DESCRIPTIONS_TABLE)?, indexes);
         let id = conf.database_id.clone();
 
@@ -97,7 +97,7 @@ impl Db {
             .td_table
             .find_by_key_filter(KeyFilter::Exact(table_name.into()))?
             .pop()
-            .map(|(_, v)| v.try_into().unwrap());
+            .map(|(_, td)| td.try_into().unwrap());
 
         Ok(x)
     }
@@ -120,6 +120,8 @@ mod test {
     use assert_matches::assert_matches;
     use serial_test::serial;
     use std::ops::Deref;
+
+    const TEST_TABLE: &str = "test_table";
 
     struct TestDb(Db);
 
@@ -152,18 +154,13 @@ mod test {
             Self(Db::open(conf).unwrap())
         }
 
-        fn table_name() -> String {
-            "test_table".into()
-        }
-
         fn indexes() -> Indexes {
-            let primary_key = "id".to_string();
-            Indexes { primary_key }
+            Indexes { pk: "id".into() }
         }
 
         fn init_and_seed() -> Self {
             let td = TestDb::init();
-            td.create_table(TestDb::table_name().try_into().unwrap(), Self::indexes())
+            td.create_table(TEST_TABLE.try_into().unwrap(), Self::indexes())
                 .unwrap();
 
             td
@@ -193,8 +190,8 @@ mod test {
     fn create_table_r_ok_table_description() {
         let db = TestDb::init();
         let name = "create_table_test";
-        let primary_key = "id".to_string();
-        let indexes = Indexes { primary_key };
+        let pk = "id".to_string();
+        let indexes = Indexes { pk };
         let res = db
             .create_table(name.try_into().unwrap(), indexes.clone())
             .unwrap();
@@ -214,13 +211,10 @@ mod test {
     #[serial]
     fn create_table_r_err_already_exist() {
         let db = TestDb::init_and_seed();
-        let primary_key = "id".to_string();
-        let indexes = Indexes { primary_key };
-        let res = db.create_table(TestDb::table_name().try_into().unwrap(), indexes);
-        assert_eq!(
-            res.err(),
-            Some(Error::TableAlreadyExist(TestDb::table_name()))
-        );
+        let pk = "id".to_string();
+        let indexes = Indexes { pk };
+        let res = db.create_table(TEST_TABLE.try_into().unwrap(), indexes);
+        assert_eq!(res.err(), Some(Error::TableAlreadyExist(TEST_TABLE.into())));
     }
 
     // get_table
@@ -230,7 +224,7 @@ mod test {
     fn get_table_r_ok_table() {
         let db = TestDb::init_and_seed();
 
-        let res = db.get_table(TestDb::table_name().try_into().unwrap());
+        let res = db.get_table(TEST_TABLE.try_into().unwrap());
         assert_matches!(res, Ok(Table { .. }));
     }
 
@@ -239,11 +233,8 @@ mod test {
     fn get_table_r_err_dose_not_exist() {
         let db = TestDb::init();
 
-        let res = db.get_table(TestDb::table_name().try_into().unwrap());
-        assert_eq!(
-            res.err(),
-            Some(Error::TableDoseNotExist(TestDb::table_name()))
-        );
+        let res = db.get_table(TEST_TABLE.try_into().unwrap());
+        assert_eq!(res.err(), Some(Error::TableDoseNotExist(TEST_TABLE.into())));
     }
 
     // delete_table
@@ -253,11 +244,11 @@ mod test {
     fn delete_table_r_table_description() {
         let db = TestDb::init_and_seed();
 
-        let res = db.delete_table(TestDb::table_name().try_into().unwrap());
+        let res = db.delete_table(TEST_TABLE.try_into().unwrap());
         assert_eq!(
             res,
             Ok(Some(TableDescription {
-                table_name: TestDb::table_name(),
+                table_name: TEST_TABLE.into(),
                 indexes: TestDb::indexes()
             }))
         );
@@ -268,7 +259,7 @@ mod test {
     fn delete_table_r_none() {
         let db = TestDb::init();
 
-        let res = db.delete_table(TestDb::table_name().try_into().unwrap());
+        let res = db.delete_table(TEST_TABLE.try_into().unwrap());
         assert_eq!(res, Ok(None))
     }
 }
