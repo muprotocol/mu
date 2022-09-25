@@ -79,7 +79,7 @@ impl Manager {
     pub fn is_db_exists(&self, name: &str) -> Result<bool> {
         let x = !self
             .ddt
-            .find_by_key_filter(KeyFilter::Exact(name.into()))?
+            .find_by_key(KeyFilter::Exact(name.into()))?
             .is_empty();
 
         Ok(x)
@@ -90,7 +90,7 @@ impl Manager {
     pub fn get_db_conf(&self, name: &str) -> Result<Option<ConfigInner>> {
         let x = self
             .ddt
-            .find_by_key_filter(KeyFilter::Exact(name.into()))?
+            .find_by_key(KeyFilter::Exact(name.into()))?
             .pop()
             .map(|(_, v)| v.try_into().unwrap());
 
@@ -100,7 +100,7 @@ impl Manager {
     pub fn query_db_by_prefix(&self, prefix: &str) -> Result<Vec<String>> {
         let x = self
             .ddt
-            .find_by_key_filter(KeyFilter::Prefix(prefix.into()))?
+            .find_by_key(KeyFilter::Prefix(prefix.into()))?
             .into_iter()
             .map(|(k, _)| k.into())
             .collect();
@@ -243,7 +243,7 @@ mod test {
     async fn clean(manager: Manager) {
         let list = manager
             .ddt
-            .find_by_key_filter(KeyFilter::Prefix("".into()))
+            .find_by_key(KeyFilter::Prefix("".into()))
             .unwrap();
 
         for (name, _) in list {

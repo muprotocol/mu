@@ -9,8 +9,7 @@ pub use super::{
 };
 
 pub type Key = String;
-pub type Value = String;
-pub type Item = (Key, Value);
+pub type Doc = String;
 
 #[derive(Debug, Clone)]
 pub struct DatabaseManager(Manager);
@@ -145,29 +144,29 @@ impl DatabaseManager {
         &self,
         database_id: DatabaseID,
         table_name: String,
-        value: Value,
+        doc: Doc,
     ) -> Result<Key> {
         self.partial_run(database_id, move |db| {
             db.get_table(table_name.try_into()?)?
-                .insert_one(value.try_into()?)
+                .insert_one(doc.try_into()?)
                 .map(Into::into)
         })
         .await
     }
 
-    pub async fn find_item(
+    pub async fn query(
         &self,
         database_id: DatabaseID,
         table_name: String,
         key_filter: KeyFilter,
         value_filter: ValueFilter,
-    ) -> Result<Vec<Item>> {
+    ) -> Result<Vec<Doc>> {
         self.partial_run(database_id, move |db| {
             Ok(db
                 .get_table(table_name.try_into()?)?
-                .find(key_filter, value_filter)?
+                .query(key_filter, value_filter)?
                 .into_iter()
-                .map(|(k, v)| (k.into(), v.into()))
+                .map(|(_, doc)| doc.into())
                 .collect())
         })
         .await
@@ -180,13 +179,13 @@ impl DatabaseManager {
         key_filter: KeyFilter,
         value_filter: ValueFilter,
         update: Updater,
-    ) -> Result<Vec<Item>> {
+    ) -> Result<Vec<Doc>> {
         self.partial_run(database_id, move |db| {
             Ok(db
                 .get_table(table_name.try_into()?)?
                 .update(key_filter, value_filter, update)?
                 .into_iter()
-                .map(|(k, v)| (k.into(), v.into()))
+                .map(|(_, doc)| doc.into())
                 .collect())
         })
         .await
@@ -198,13 +197,13 @@ impl DatabaseManager {
         table_name: String,
         key_filter: KeyFilter,
         value_filter: ValueFilter,
-    ) -> Result<Vec<Item>> {
+    ) -> Result<Vec<Doc>> {
         self.partial_run(database_id, move |db| {
             Ok(db
                 .get_table(table_name.try_into()?)?
                 .delete(key_filter, value_filter)?
                 .into_iter()
-                .map(|(k, v)| (k.into(), v.into()))
+                .map(|(_, doc)| doc.into())
                 .collect())
         })
         .await

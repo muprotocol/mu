@@ -9,7 +9,7 @@ async fn find_and_update_again(
 ) -> Result<()> {
     // find
     db_service
-        .find_item(
+        .query(
             database_id.clone(),
             table_1.into(),
             KeyFilter::Prefix("".into()),
@@ -131,7 +131,7 @@ async fn test_mudb_service() {
     // find
 
     let find_res = db_service
-        .find_item(
+        .query(
             database_id.clone(),
             table_1.into(),
             KeyFilter::Prefix("".into()),
@@ -146,8 +146,7 @@ async fn test_mudb_service() {
         .unwrap();
 
     dbg!(&find_res);
-    assert_eq!(find_res[0].0, "ex::1".to_string());
-    assert_eq!(find_res[0].1, value1);
+    assert_eq!(find_res[0], value1);
 
     // update
 

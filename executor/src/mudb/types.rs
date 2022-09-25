@@ -203,6 +203,22 @@ pub enum KeyFilterFrom<T: Into<Key>> {
     Prefix(String),
 }
 
+// TODO
+// #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+// pub enum KeyFilterFrom<T: Into<Key>> {
+//     /// primary key
+//     PK(KfType<T>),
+//     /// secondary key
+//     SK(String, KfType<T>),
+// }
+//
+// /// key filter type
+// #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+// pub enum KfType<T: Into<Key>> {
+//     Exact(T),
+//     Prefix(String),
+// }
+
 // TableName
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -256,19 +272,15 @@ impl AsRef<[u8]> for TableNameInput {
 
 // Schema
 
+// TODO: choose better name
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Indexes {
-    // TODO: rename to pk_attr
+    // TODO: make Key
     /// primary key
     pub pk: String,
+    // TODO
+    // pub sk: Vec<String>,
 }
-
-// TODO
-// pub trait Schema {
-//     fn primary_key() ->  {
-//
-//     }
-// }
 
 // TableDescription
 

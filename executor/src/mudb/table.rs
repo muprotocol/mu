@@ -26,20 +26,20 @@ impl Table {
             .map_err(|_| Error::PkAlreadyExist(pk.into(), key))
     }
 
-    fn partial_find<T: Default>(
+    fn partial_query<T: Default>(
         &self,
         kf: KeyFilter,
         vf: ValueFilter,
         fold: impl FnMut(T, Item) -> T,
     ) -> Result<T> {
         Ok(self
-            .find_by_key_filter(kf)?
+            .find_by_key(kf)?
             .into_iter()
             .filter(|(_, value)| vf.eval(value))
             .fold(T::default(), fold))
     }
 
-    pub fn find_by_key_filter(&self, kf: KeyFilter) -> Result<Vec<Item>> {
+    pub fn find_by_key(&self, kf: KeyFilter) -> Result<Vec<Item>> {
         match kf {
             KeyFilter::Exact(k) => match self.inner.get(k.clone())? {
                 Some(v_ivec) => Ok(vec![(k.into(), v_ivec.try_into().unwrap())]),
@@ -59,8 +59,8 @@ impl Table {
     }
 
     /// Selects items in a table and returns a list of selected items.
-    pub fn find(&self, kf: KeyFilter, vf: ValueFilter) -> Result<Vec<Item>> {
-        self.partial_find(kf, vf, |mut acc: Vec<Item>, item| {
+    pub fn query(&self, kf: KeyFilter, vf: ValueFilter) -> Result<Vec<Item>> {
+        self.partial_query(kf, vf, |mut acc: Vec<Item>, item| {
             acc.push(item);
             acc
         })
@@ -69,7 +69,7 @@ impl Table {
     /// Updates all Values that match the specified filter and key for a Table.
     pub fn update(&self, kf: KeyFilter, vf: ValueFilter, updater: Updater) -> Result<Vec<Item>> {
         let (items, batch) =
-            self.partial_find(kf, vf, |mut acc: (Vec<Item>, sled::Batch), (k, v)| {
+            self.partial_query(kf, vf, |mut acc: (Vec<Item>, sled::Batch), (k, v)| {
                 let (v, u_res) = v.update(&updater);
                 if !u_res.is_empty() {
                     acc.0.push((k.clone(), v.clone()));
@@ -85,7 +85,7 @@ impl Table {
     /// Deletes all Values that match the specified filter and key for a Table.
     pub fn delete(&self, kf: KeyFilter, vf: ValueFilter) -> Result<Vec<Item>> {
         let (items, batch) =
-            self.partial_find(kf, vf, |mut acc: (Vec<Item>, sled::Batch), (key, value)| {
+            self.partial_query(kf, vf, |mut acc: (Vec<Item>, sled::Batch), (key, value)| {
                 acc.0.push((key.clone(), value));
                 acc.1.remove(key);
                 acc
@@ -217,15 +217,15 @@ mod test {
         assert_eq!(res, Err(Error::PkAlreadyExist(PK_ATTR.into(), id.into())));
     }
 
-    // find
+    // query
 
     #[test]
     #[serial]
-    fn find_r_ok_empty_w_not_match() {
+    fn query_r_ok_empty_w_not_match() {
         let (table_1, _) = init_table();
         let _ = seed_item(&table_1);
 
-        let res = table_1.find(
+        let res = table_1.query(
             KeyFilter::Prefix("ex".into()),
             json!({
                 "hello": "null"
@@ -235,7 +235,7 @@ mod test {
         );
         assert_eq!(res, Ok(vec![]));
 
-        let res = table_1.find(
+        let res = table_1.query(
             KeyFilter::Prefix("ex".into()),
             json!({
                 "num_item": 10
@@ -245,7 +245,7 @@ mod test {
         );
         assert_eq!(res, Ok(vec![]));
 
-        let res = table_1.find(
+        let res = table_1.query(
             KeyFilter::Prefix("ex::2".into()),
             json!({
                 "num_item": 1  // it's not ok for key:2
@@ -258,11 +258,11 @@ mod test {
 
     #[test]
     #[serial]
-    fn find_r_ok_list_w_match() {
+    fn query_r_ok_list_w_match() {
         let (table_1, _) = init_table();
         let items = seed_item(&table_1);
 
-        let res = table_1.find(
+        let res = table_1.query(
             KeyFilter::Prefix("ex".into()),
             json!({
                 "array_item": [1, 2, 3, 4]
@@ -272,7 +272,7 @@ mod test {
         );
         assert_eq!(res.unwrap().len(), 3);
 
-        let res = table_1.find(
+        let res = table_1.query(
             KeyFilter::Prefix("ex".into()),
             json!({
                 "obj_item": {
@@ -284,13 +284,13 @@ mod test {
         );
         assert_eq!(res.unwrap().len(), 3);
 
-        let res = table_1.find(
+        let res = table_1.query(
             KeyFilter::Prefix("ex".into()),
             json!({}).try_into().unwrap(),
         );
         assert_eq!(res.unwrap().len(), 3);
 
-        let res = table_1.find(
+        let res = table_1.query(
             KeyFilter::Prefix("ex".into()),
             json!({
                 "num_item": 1
@@ -301,7 +301,7 @@ mod test {
         assert_eq!(res.as_ref().unwrap().len(), 1);
         assert_eq!(res.unwrap().get(0), Some(&items[0]));
 
-        let res = table_1.find(
+        let res = table_1.query(
             KeyFilter::Prefix("ex::2".into()),
             json!({
                 "num_item": 2
@@ -312,7 +312,7 @@ mod test {
         assert_eq!(res.as_ref().unwrap().len(), 1);
         assert_eq!(res.unwrap().get(0), Some(&items[1]));
 
-        let res = table_1.find(
+        let res = table_1.query(
             KeyFilter::Prefix("ex".into()),
             json!({
                 "num_item": { "$in": [1, 2] }
@@ -322,27 +322,27 @@ mod test {
         );
         assert_eq!(res.unwrap().len(), 2);
 
-        // find all ex prefixed
-        let res = table_1.find(KeyFilter::Prefix("ex".into()), ValueFilter::none());
+        // query all ex prefixed
+        let res = table_1.query(KeyFilter::Prefix("ex".into()), ValueFilter::none());
         assert_eq!(res.unwrap().len(), 3);
 
-        // find all ex other
-        let res = table_1.find(KeyFilter::Prefix("other".into()), ValueFilter::none());
+        // query all ex other
+        let res = table_1.query(KeyFilter::Prefix("other".into()), ValueFilter::none());
         assert_eq!(res.unwrap().len(), 3);
 
-        // find all
-        let res = table_1.find(KeyFilter::Prefix("".into()), ValueFilter::none());
+        // query all
+        let res = table_1.query(KeyFilter::Prefix("".into()), ValueFilter::none());
         assert_eq!(res.unwrap().len(), 6);
     }
 
     #[test]
     #[serial]
     #[should_panic(expected = "filter error")]
-    fn find_r_err_query_filter_w_invalid_filter() {
+    fn query_r_err_query_filter_w_invalid_filter() {
         let (table_1, _) = init_table();
         let _ = seed_item(&table_1);
 
-        let _ = table_1.find(
+        let _ = table_1.query(
             KeyFilter::Prefix("ex".into()),
             json!({
                 "hello": { "$in": 5 } // it should be and array
@@ -391,7 +391,7 @@ mod test {
         );
         assert_eq!(res, Ok(vec![(Key::from("ex::1"), updated_item.clone())]));
 
-        let f_res = table_1.find(key_filter, filter);
+        let f_res = table_1.query(key_filter, filter);
         assert_eq!(f_res, Ok(vec![(Key::from("ex::1"), updated_item)]));
 
         // Without key
@@ -426,7 +426,7 @@ mod test {
         );
         assert_eq!(res, Ok(vec![(Key::from("ex::2"), updated_item.clone())]));
 
-        let f_res = table_1.find(key_filter, filter);
+        let f_res = table_1.query(key_filter, filter);
         assert_eq!(f_res, Ok(vec![(Key::from("ex::2"), updated_item)]));
 
         // Multiple item
@@ -450,7 +450,7 @@ mod test {
         );
         assert_eq!(res.as_ref().unwrap().len(), 3);
 
-        let f_res = table_1.find(key_filter, filter);
+        let f_res = table_1.query(key_filter, filter);
         assert_eq!(res.unwrap(), f_res.unwrap());
     }
 
@@ -480,7 +480,7 @@ mod test {
             vec![Key::from("ex::1")]
         );
 
-        let f_res = table_1.find(key_filter, filter);
+        let f_res = table_1.query(key_filter, filter);
         assert_eq!(f_res, Ok(vec![]));
 
         // Multiple item
@@ -500,7 +500,7 @@ mod test {
             vec![Key::from("ex::2"), Key::from("ex::3")]
         );
 
-        let f_res = table_1.find(KeyFilter::Prefix("ex".into()), filter);
+        let f_res = table_1.query(KeyFilter::Prefix("ex".into()), filter);
         assert_eq!(f_res, Ok(vec![]));
     }
 
@@ -515,7 +515,7 @@ mod test {
         let res = table_1.delete_all();
         assert_eq!(res, Ok(()));
 
-        let f_res = table_1.find(KeyFilter::Prefix("ex".into()), ValueFilter::none());
+        let f_res = table_1.query(KeyFilter::Prefix("ex".into()), ValueFilter::none());
         assert_eq!(f_res, Ok(vec![]));
     }
 }

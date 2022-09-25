@@ -172,7 +172,7 @@ impl Instance<Running> {
 
                             DbRequestDetails::Find(req) => {
                                 let res = tokio::runtime::Handle::current()
-                                    .block_on(self.state.db_service.find_item(
+                                    .block_on(self.state.db_service.query(
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                         req.key_filter,

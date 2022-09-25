@@ -97,12 +97,11 @@ pub enum KeyFilter {
 
 pub type Key = String;
 pub type Value = String;
-pub type Item = (Key, Value);
 
 #[derive(Debug, Deserialize)]
 pub enum DbResponse {
     CreateTable(Result<TableDescription, String>),
-    Find(Result<Vec<Item>, String>),
+    Find(Result<Vec<Value>, String>),
     Insert(Result<Key, String>),
 }
 
@@ -239,10 +238,10 @@ fn main() {
     if let DbResponse::Find(db_resp) = db_resp {
         match db_resp {
             Err(e) => log(format!("Database Error: {e}")),
-            Ok(r) if r[0] == ("secret".into(), value.clone()) => (),
+            Ok(r) if r[0] == value.clone() => (),
             Ok(r) => {
                 log(format!("Find Error"));
-                assert_eq!(r[0], ("secret".into(), value))
+                assert_eq!(r[0], value)
             }
         }
     }

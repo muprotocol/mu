@@ -1,5 +1,5 @@
 use crate::{
-    mudb::service::{DatabaseID, Indexes, Item, Key, KeyFilter, TableDescription},
+    mudb::service::{DatabaseID, Doc, Indexes, Key, KeyFilter, TableDescription},
     runtime::types::FunctionID,
 };
 
@@ -71,9 +71,9 @@ impl FromMessage for DbRequest {
 pub enum DbResponseDetails {
     CreateTable(Result<TableDescription, String>),
     DropTable(Result<Option<TableDescription>, String>),
-    Find(Result<Vec<Item>, String>),
+    Find(Result<Vec<Doc>, String>),
     Insert(Result<Key, String>),
-    Update(Result<Vec<Item>, String>),
+    Update(Result<Vec<Doc>, String>),
 }
 
 #[derive(Serialize)]

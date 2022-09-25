@@ -84,7 +84,7 @@ impl Db {
     pub fn _table_names(&self) -> Result<Vec<String>> {
         let x = self
             .td_table
-            .find_by_key_filter(KeyFilter::Prefix("".into()))?
+            .find_by_key(KeyFilter::Prefix("".into()))?
             .into_iter()
             .map(|(k, _)| k.into())
             .collect();
@@ -95,7 +95,7 @@ impl Db {
     fn table_description(&self, table_name: TableNameInput) -> Result<Option<TableDescription>> {
         let x = self
             .td_table
-            .find_by_key_filter(KeyFilter::Exact(table_name.into()))?
+            .find_by_key(KeyFilter::Exact(table_name.into()))?
             .pop()
             .map(|(_, td)| td.try_into().unwrap());
 
