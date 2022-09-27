@@ -5,7 +5,6 @@ util.asyncMain(async () => {
 
     if (util.tryRun("anchor deploy")) {
         console.log("Mu smart contract deployed");
-        await util.sleep(3);
     } else {
         console.log("FAILED TO DEPLOY MU SMART CONTRACT")
         await util.sleep(20);

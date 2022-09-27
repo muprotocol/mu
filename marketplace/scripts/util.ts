@@ -1,5 +1,5 @@
 import { spawnSync } from 'child_process';
-import { exit } from 'process';
+import { exit, openStdin } from 'process';
 import { waitUntilUsed } from 'tcp-port-used';
 import { setTimeout } from 'timers/promises';
 
@@ -21,6 +21,7 @@ export const asyncMain = (f: (() => Promise<number | void>)) =>
         .then(r => exit(r || 0))
         .catch(e => {
             console.error(e);
+            run("sleep 20");
             exit(-1);
         });
 
