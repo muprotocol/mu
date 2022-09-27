@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::{
     config::ConfigInner,
     error::{Error, Result},
@@ -20,9 +22,11 @@ impl Db {
     pub fn open(conf: ConfigInner) -> Result<Self> {
         let inner = sled::Config::from(conf.clone()).open()?;
         // TODO: consider syncing tdt with sled::Db::tree_names
-        let pk = "table_name".to_string();
-        let indexes = Indexes { pk };
-        let td_table = Table::new(inner.open_tree(TABLE_DESCRIPTIONS_TABLE)?, indexes);
+        let indexes = Indexes {
+            pk: "table_name".into(),
+            sk: vec![],
+        };
+        let td_table = Self::open_table(&inner, &indexes, TABLE_DESCRIPTIONS_TABLE)?;
         let id = conf.database_id.clone();
 
         Ok(Db {
@@ -33,36 +37,48 @@ impl Db {
         })
     }
 
+    fn open_table<T>(sled_db: &sled::Db, indexes: &Indexes, table_name: T) -> Result<Table>
+    where
+        T: AsRef<[u8]>,
+    {
+        let pk = indexes.pk.clone();
+        let sk_trees = indexes.sk.iter().try_fold(HashMap::new(), |mut acc, sk| {
+            let tree = sled_db.open_tree(sk)?;
+            acc.insert(sk.clone(), tree);
+            Ok(acc) as Result<_>
+        })?;
+
+        let tree = sled_db.open_tree(table_name)?;
+        Table::new(sk_trees, pk, tree)
+    }
+
     /// Create new table otherwise return err table already exists
     pub fn create_table(
         &self,
         table_name: TableNameInput,
         indexes: Indexes,
     ) -> Result<(Table, TableDescription)> {
-        // create table if not exist otherwise just open it.
-        let table = Table::new(self.inner.open_tree(table_name.clone())?, indexes.clone());
-        let td = TableDescription {
-            table_name: table_name.to_string(),
-            indexes,
-        };
-
-        // save schema
-        // check and if table_schema was sets before,
-        // return err `TableAlreadyExist`
-        self.td_table
-            .insert_one(td.clone().into())
-            .map_err(|_| Error::TableAlreadyExist(table_name.to_string()))
-            .map(|_| (table, td))
+        if self.is_table_exists(table_name.clone())? {
+            Err(Error::TableAlreadyExist(table_name.into()))
+        } else {
+            let table = Self::open_table(&self.inner, &indexes, &table_name)?;
+            let td = TableDescription {
+                table_name: table_name.to_string(),
+                indexes,
+            };
+            // save table description
+            self.td_table
+                .insert_one(td.clone().into())
+                .map(|_| (table, td))
+        }
     }
 
     pub fn get_table(&self, table_name: TableNameInput) -> Result<Table> {
         if !self.is_table_exists(table_name.clone())? {
             return Err(Error::TableDoseNotExist(table_name.into()));
         }
-        let tree = self.inner.open_tree(table_name.clone())?;
-        let indexes = self.table_description(table_name)?.unwrap().indexes;
-
-        Ok(Table::new(tree, indexes))
+        let indexes = self.table_description(table_name.clone())?.unwrap().indexes;
+        Self::open_table(&self.inner, &indexes, table_name)
     }
 
     /// Delete table `TableDescription` if existed or `None` if not.
@@ -84,7 +100,7 @@ impl Db {
     pub fn _table_names(&self) -> Result<Vec<String>> {
         let x = self
             .td_table
-            .find_by_key(KeyFilter::Prefix("".into()))?
+            .query_by_key(KeyFilter::Prefix("".into()))?
             .into_iter()
             .map(|(k, _)| k.into())
             .collect();
@@ -95,7 +111,7 @@ impl Db {
     fn table_description(&self, table_name: TableNameInput) -> Result<Option<TableDescription>> {
         let x = self
             .td_table
-            .find_by_key(KeyFilter::Exact(table_name.into()))?
+            .query_by_key(KeyFilter::Exact(table_name.into()))?
             .pop()
             .map(|(_, td)| td.try_into().unwrap());
 
@@ -155,7 +171,9 @@ mod test {
         }
 
         fn indexes() -> Indexes {
-            Indexes { pk: "id".into() }
+            let pk = "id".into();
+            let sk = vec![];
+            Indexes { pk, sk }
         }
 
         fn init_and_seed() -> Self {
@@ -190,8 +208,9 @@ mod test {
     fn create_table_r_ok_table_description() {
         let db = TestDb::init();
         let name = "create_table_test";
-        let pk = "id".to_string();
-        let indexes = Indexes { pk };
+        let pk = "id".into();
+        let sk = vec![];
+        let indexes = Indexes { pk, sk };
         let res = db
             .create_table(name.try_into().unwrap(), indexes.clone())
             .unwrap();
@@ -212,7 +231,8 @@ mod test {
     fn create_table_r_err_already_exist() {
         let db = TestDb::init_and_seed();
         let pk = "id".to_string();
-        let indexes = Indexes { pk };
+        let sk = vec![];
+        let indexes = Indexes { pk, sk };
         let res = db.create_table(TEST_TABLE.try_into().unwrap(), indexes);
         assert_eq!(res.err(), Some(Error::TableAlreadyExist(TEST_TABLE.into())));
     }

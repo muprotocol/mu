@@ -33,9 +33,9 @@ fn validate_items(key: &str, value: &JsonValue) -> JsonCommandResult<()> {
     match (key, value) {
         ("$gt" | "$gte" | "$lt" | "$lte", Number(_)) | ("$in" | "$nin", Array(_)) => Ok(()),
 
-        ("$gt" | "$gte" | "$lt" | "$lte", _) => Err(ExpectNum),
+        ("$gt" | "$gte" | "$lt" | "$lte", _) => Err(ExpectNum(key.into())),
 
-        ("$in" | "$nin", _) => Err(ExpectArr),
+        ("$in" | "$nin", _) => Err(ExpectArr(key.into())),
 
         // "$eq", "$ne" or sth else...
         (_, v) => validate(v),
@@ -294,26 +294,26 @@ mod test {
         let filter = json!({
             "$in": 5
         });
-        assert_eq!(validate(&filter), Err(ExpectArr));
+        assert_eq!(validate(&filter), Err(ExpectArr("$in".into())));
 
         let filter = json!({
             "payload": {
                 "features": { "$lte": [ "serde", "json" ] }
             }
         });
-        assert_eq!(validate(&filter), Err(ExpectNum));
+        assert_eq!(validate(&filter), Err(ExpectNum("$lte".into())));
 
         let filter = json!({
             "$gt": "5"
         });
-        assert_eq!(validate(&filter), Err(ExpectNum));
+        assert_eq!(validate(&filter), Err(ExpectNum("$gt".into())));
 
         let filter = json!({
             "payload": {
                 "features": { "$nin": 5 }
             }
         });
-        assert_eq!(validate(&filter), Err(ExpectArr));
+        assert_eq!(validate(&filter), Err(ExpectArr("$nin".into())));
     }
 
     #[test]

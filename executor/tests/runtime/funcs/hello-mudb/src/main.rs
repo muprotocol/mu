@@ -64,6 +64,7 @@ enum DbRequest {
 #[derive(Debug, Serialize)]
 pub struct Indexes {
     pub pk: String,
+    pub sk: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -192,10 +193,14 @@ fn main() {
         .unwrap();
 
     // Create table
+
     db_request(DbRequest::CreateTable(CreateTableRequest {
         db_name: "my_db".into(),
         table_name: "test_table".into(),
-        indexes: Indexes { pk: "id".into() },
+        indexes: Indexes {
+            pk: "id".into(),
+            sk: vec![],
+        },
     }));
 
     let db_resp_msg = read_stdin(&log);

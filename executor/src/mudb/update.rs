@@ -1,4 +1,4 @@
-use super::error::{self, JsonCommandError::*, JsonCommandResult};
+use super::error::{Error, JsonCommandError::*, JsonCommandResult, Result};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{
@@ -15,7 +15,7 @@ pub(crate) fn validate(update: &JsonValue) -> JsonCommandResult<()> {
             }
             Ok(())
         }
-        _ => Err(ExpectObj),
+        _ => Err(ExpectObj("".into())),
     }
 }
 
@@ -35,13 +35,13 @@ fn validate_items(key: &str, value: &JsonValue) -> JsonCommandResult<()> {
             if value.is_number() {
                 Ok(())
             } else {
-                Err(ExpectNum)
+                Err(ExpectNum(key.into()))
             }
         }),
 
-        ("$set" | "$unset" | "$inc" | "$mul", _) => Err(ExpectObj),
+        ("$set" | "$unset" | "$inc" | "$mul", _) => Err(ExpectObj(key.into())),
 
-        _ => Err(InvalidOpr),
+        _ => Err(InvalidOpr(key.into())),
     }
 }
 
@@ -207,37 +207,70 @@ fn update(doc: &mut JsonValue, update: &JsonValue) -> Vec<Vec<(String, JsonValue
     }
 }
 
-pub type ChangedSections = Vec<Vec<(String, JsonValue)>>;
+// fn affect_attribute(updater: &Updater, attribute: &str) -> bool {
+//     updater.0.as_object().unwrap().values().any(|y| {
+//         y.as_object()
+//             .unwrap()
+//             .keys()
+//             .any(|x| x.split('.').zip(attribute.split('.')).all(|(a, b)| a == b))
+//     })
+// }
+
+pub type Changes = Vec<Vec<(String, JsonValue)>>;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Updater(JsonValue);
 
 impl Updater {
-    pub fn update(&self, doc: &mut JsonValue) -> ChangedSections {
-        update(doc, &self.0)
+    pub fn affect_attributes(&self, attributes: Vec<String>) -> Vec<String> {
+        attributes
+            .into_iter()
+            .filter(|x| self.affect_attribute(&x))
+            .collect()
+    }
+
+    fn affect_attribute(&self, attribute: &str) -> bool {
+        self.0.as_object().unwrap().values().any(|y| {
+            y.as_object()
+                .unwrap()
+                .keys()
+                .any(|x| x.split('.').zip(attribute.split('.')).all(|(a, b)| a == b))
+        })
     }
 }
 
+pub trait Update {
+    fn update(mut self, updater: &Updater) -> (Self, Changes)
+    where
+        Self: Sized,
+    {
+        let changes = update(self.doc(), &updater.0);
+        let new = self.finalize(&changes);
+        (new, changes)
+    }
+
+    fn doc(&mut self) -> &mut JsonValue;
+    fn finalize(self, changes: &Changes) -> Self;
+}
+
 impl TryFrom<JsonValue> for Updater {
-    type Error = error::Error;
-    fn try_from(jv: JsonValue) -> Result<Self, Self::Error> {
+    type Error = Error;
+    fn try_from(jv: JsonValue) -> Result<Self> {
         validate(&jv)?;
         Ok(Self(jv))
     }
 }
 
 impl TryFrom<&str> for Updater {
-    type Error = error::Error;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    type Error = Error;
+    fn try_from(value: &str) -> Result<Self> {
         serde_json::from_str(value).map(Self).map_err(Into::into)
     }
 }
 
 impl TryFrom<String> for Updater {
-    type Error = error::Error;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
+    type Error = Error;
+    fn try_from(value: String) -> Result<Self> {
         serde_json::from_str(&value).map(Self).map_err(Into::into)
     }
 }
@@ -348,45 +381,45 @@ mod test {
         // exe
 
         let update = json!(1000);
-        assert_eq!(validate(&update), Err(ExpectObj));
+        assert_eq!(validate(&update), Err(ExpectObj("".into())));
 
         // `$set`
 
         let update = json!({
             "$set": "code"
         });
-        assert_eq!(validate(&update), Err(ExpectObj));
+        assert_eq!(validate(&update), Err(ExpectObj("$set".into())));
 
         let update = json!({
             "$set": [1, 2, 3]
         });
-        assert_eq!(validate(&update), Err(ExpectObj));
+        assert_eq!(validate(&update), Err(ExpectObj("$set".into())));
 
         // `$unset`
 
         let update = json!({
             "$unset": [1, 2, 3]
         });
-        assert_eq!(validate(&update), Err(ExpectObj));
+        assert_eq!(validate(&update), Err(ExpectObj("$unset".into())));
 
         // `$inc`
 
         let update = json!({
             "$inc": { "code": "hello" }
         });
-        assert_eq!(validate(&update), Err(ExpectNum));
+        assert_eq!(validate(&update), Err(ExpectNum("$inc".into())));
 
         let update = json!({
             "$inc": 2
         });
-        assert_eq!(validate(&update), Err(ExpectObj));
+        assert_eq!(validate(&update), Err(ExpectObj("$inc".into())));
 
         // `$mul`
 
         let update = json!({
             "$mul": { "code": "hello" }
         });
-        assert_eq!(validate(&update), Err(ExpectNum));
+        assert_eq!(validate(&update), Err(ExpectNum("$mul".into())));
     }
 
     #[test]
@@ -604,5 +637,56 @@ mod test {
                 vec![("code_2".to_owned(), Null)]
             ]
         );
+    }
+
+    fn updater_gen() -> Updater {
+        json!({
+            "$unset": {
+                "code": "" ,
+                "success": ""
+            },
+            "$mul": { "payload.features": 3 },
+            "$inc": { "hello": 4 },
+            "$set": { "bob": "moran" },
+        })
+        .try_into()
+        .unwrap()
+    }
+
+    #[test]
+    fn affect_attribute_r_true_w_happend() {
+        let updater = updater_gen();
+
+        let attr = "hello".into();
+        assert_eq!(updater.affect_attribute(attr), true);
+
+        let attr = "bob".into();
+        assert_eq!(updater.affect_attribute(attr), true);
+
+        let attr = "bob.abcd".into();
+        assert_eq!(updater.affect_attribute(attr), true);
+
+        let attr = "payload".into();
+        assert_eq!(updater.affect_attribute(attr), true);
+
+        let attr = "payload.features".into();
+        assert_eq!(updater.affect_attribute(attr), true);
+
+        let attr = "payload.features.sth".into();
+        assert_eq!(updater.affect_attribute(attr), true);
+    }
+
+    #[test]
+    fn affect_attribute_r_false_w_happend() {
+        let updater = updater_gen();
+
+        let attr = "payload.abcd".into();
+        assert_eq!(updater.affect_attribute(attr), false);
+
+        let attr = "mouse".into();
+        assert_eq!(updater.affect_attribute(attr), false);
+
+        let attr = "abcd.features".into();
+        assert_eq!(updater.affect_attribute(attr), false);
     }
 }

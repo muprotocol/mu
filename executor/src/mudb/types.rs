@@ -4,7 +4,10 @@ use crate::mu_stack::StackID;
 use serde::{Deserialize, Serialize};
 use sled::IVec;
 
-use super::{update::ChangedSections, Updater, ValueFilter};
+use super::{
+    update::{Changes, Update},
+    ValueFilter,
+};
 
 pub(crate) const MANAGER_DB: &str = "mudb_manager";
 pub(crate) const DB_DESCRIPTION_TABLE: &str = "db_list";
@@ -41,7 +44,7 @@ impl TryFrom<&serde_json::Value> for Key {
     fn try_from(v: &serde_json::Value) -> Result<Self, Self::Error> {
         match v {
             serde_json::Value::String(s) => Ok(s.as_str().into()),
-            _ => Err(super::Error::IndexAttributeShouldBeString(v.to_string())),
+            _ => Err(super::Error::IndexAttrShouldBeString(v.to_string())),
         }
     }
 }
@@ -104,14 +107,28 @@ impl Value {
         // }
     }
 
-    pub fn update(self, updater: &Updater) -> (Self, ChangedSections) {
-        let mut value = self;
-        let u_res = updater.update(&mut value.json);
-        if !u_res.is_empty() {
-            value.raw = value.json.to_string();
-        }
-        (value, u_res)
-    }
+    // pub fn update(
+    //     self,
+    //     updater: &Updater,
+    //     exceptions: Vec<String>,
+    // ) -> Result<(Self, Changes), Error> {
+    //     let mut value = self;
+
+    //     exceptions.into_iter().try_for_each(|x| {
+    //         if updater.contains_attribute(&x) {
+    //             Err(Error::KeyAttributeCantUpdate(x))
+    //         } else {
+    //             Ok(())
+    //         }
+    //     })?;
+
+    //     let updated = updater.update(&mut value.json);
+    //     if !updated.is_empty() {
+    //         value.raw = value.json.to_string();
+    //     }
+
+    //     Ok((value, updated))
+    // }
 }
 
 impl Deref for Value {
@@ -122,14 +139,19 @@ impl Deref for Value {
     }
 }
 
-// impl From<serde_json::Value> for Value {
-//     fn from(json: serde_json::Value) -> Self {
-//         Self {
-//             raw: json.to_string(),
-//             json,
-//         }
-//     }
-// }
+impl Update for Value {
+    fn doc(&mut self) -> &mut serde_json::Value {
+        &mut self.json
+    }
+
+    fn finalize(self, changes: &Changes) -> Self {
+        let mut value = self;
+        if !changes.is_empty() {
+            value.raw = value.json.to_string();
+        }
+        value
+    }
+}
 
 impl TryFrom<serde_json::Value> for Value {
     type Error = super::Error;
@@ -219,6 +241,18 @@ pub enum KeyFilterFrom<T: Into<Key>> {
 //     Prefix(String),
 // }
 
+// Indexes
+
+// TODO: choose better name
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+pub struct Indexes {
+    /// primary key
+    pub pk: String,
+    // TODO: rename to sk_list
+    /// secondary keys
+    pub sk: Vec<String>,
+}
+
 // TableName
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -268,18 +302,6 @@ impl AsRef<[u8]> for TableNameInput {
     fn as_ref(&self) -> &[u8] {
         self.deref().as_ref()
     }
-}
-
-// Schema
-
-// TODO: choose better name
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
-pub struct Indexes {
-    // TODO: make Key
-    /// primary key
-    pub pk: String,
-    // TODO
-    // pub sk: Vec<String>,
 }
 
 // TableDescription

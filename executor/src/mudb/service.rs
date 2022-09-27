@@ -178,12 +178,12 @@ impl DatabaseManager {
         table_name: String,
         key_filter: KeyFilter,
         value_filter: ValueFilter,
-        update: Updater,
+        updater: Updater,
     ) -> Result<Vec<Doc>> {
         self.partial_run(database_id, move |db| {
             Ok(db
                 .get_table(table_name.try_into()?)?
-                .update(key_filter, value_filter, update)?
+                .update(key_filter, value_filter, updater)?
                 .into_iter()
                 .map(|(_, doc)| doc.into())
                 .collect())
