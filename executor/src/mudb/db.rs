@@ -23,8 +23,8 @@ impl Db {
         let inner = sled::Config::from(conf.clone()).open()?;
         // TODO: consider syncing tdt with sled::Db::tree_names
         let indexes = Indexes {
-            pk: "table_name".into(),
-            sk: vec![],
+            pk_attr: "table_name".into(),
+            sk_attr_list: vec![],
         };
         let td_table = Self::open_table(&inner, &indexes, TABLE_DESCRIPTIONS_TABLE)?;
         let id = conf.database_id.clone();
@@ -41,12 +41,15 @@ impl Db {
     where
         T: AsRef<[u8]>,
     {
-        let pk = indexes.pk.clone();
-        let sk_trees = indexes.sk.iter().try_fold(HashMap::new(), |mut acc, sk| {
-            let tree = sled_db.open_tree(sk)?;
-            acc.insert(sk.clone(), tree);
-            Ok(acc) as Result<_>
-        })?;
+        let pk = indexes.pk_attr.clone();
+        let sk_trees = indexes
+            .sk_attr_list
+            .iter()
+            .try_fold(HashMap::new(), |mut acc, sk| {
+                let tree = sled_db.open_tree(sk)?;
+                acc.insert(sk.clone(), tree);
+                Ok(acc) as Result<_>
+            })?;
 
         let tree = sled_db.open_tree(table_name)?;
         Table::new(sk_trees, pk, tree)
@@ -88,7 +91,10 @@ impl Db {
 
         if is_table_exists && is_dropped_success {
             self.td_table
-                .delete(KeyFilter::Exact(table_name.into()), ValueFilter::none())
+                .delete(
+                    KeyFilter::PK(KfBy::Exact(table_name.into())),
+                    ValueFilter::none(),
+                )
                 .map(|vec| Some(vec[0].1.clone().try_into().unwrap()))
                 .map_err(Into::into)
         } else {
@@ -100,7 +106,7 @@ impl Db {
     pub fn _table_names(&self) -> Result<Vec<String>> {
         let x = self
             .td_table
-            .query_by_key(KeyFilter::Prefix("".into()))?
+            .query_by_key(KeyFilter::PK(KfBy::Prefix("".into())))?
             .into_iter()
             .map(|(k, _)| k.into())
             .collect();
@@ -111,7 +117,7 @@ impl Db {
     fn table_description(&self, table_name: TableNameInput) -> Result<Option<TableDescription>> {
         let x = self
             .td_table
-            .query_by_key(KeyFilter::Exact(table_name.into()))?
+            .query_by_key(KeyFilter::PK(KfBy::Exact(table_name.into())))?
             .pop()
             .map(|(_, td)| td.try_into().unwrap());
 
@@ -173,7 +179,10 @@ mod test {
         fn indexes() -> Indexes {
             let pk = "id".into();
             let sk = vec![];
-            Indexes { pk, sk }
+            Indexes {
+                pk_attr: pk,
+                sk_attr_list: sk,
+            }
         }
 
         fn init_and_seed() -> Self {
@@ -208,9 +217,10 @@ mod test {
     fn create_table_r_ok_table_description() {
         let db = TestDb::init();
         let name = "create_table_test";
-        let pk = "id".into();
-        let sk = vec![];
-        let indexes = Indexes { pk, sk };
+        let indexes = Indexes {
+            pk_attr: "id".into(),
+            sk_attr_list: vec![],
+        };
         let res = db
             .create_table(name.try_into().unwrap(), indexes.clone())
             .unwrap();
@@ -230,9 +240,10 @@ mod test {
     #[serial]
     fn create_table_r_err_already_exist() {
         let db = TestDb::init_and_seed();
-        let pk = "id".to_string();
-        let sk = vec![];
-        let indexes = Indexes { pk, sk };
+        let indexes = Indexes {
+            pk_attr: "id".into(),
+            sk_attr_list: vec![],
+        };
         let res = db.create_table(TEST_TABLE.try_into().unwrap(), indexes);
         assert_eq!(res.err(), Some(Error::TableAlreadyExist(TEST_TABLE.into())));
     }

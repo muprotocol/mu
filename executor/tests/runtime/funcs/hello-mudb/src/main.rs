@@ -63,8 +63,8 @@ enum DbRequest {
 
 #[derive(Debug, Serialize)]
 pub struct Indexes {
-    pub pk: String,
-    pub sk: Vec<String>,
+    pub pk_attr: String,
+    pub sk_attr_list: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -89,9 +89,16 @@ struct FindRequest {
     value_filter: String,
 }
 
-// TODO: considraton KeyFilter<T>
 #[derive(Debug, Serialize)]
 pub enum KeyFilter {
+    /// primary key
+    PK(KfBy),
+    /// secondary key
+    SK(String, KfBy),
+}
+
+#[derive(Debug, Serialize)]
+pub enum KfBy {
     Exact(String),
     Prefix(String),
 }
@@ -198,8 +205,8 @@ fn main() {
         db_name: "my_db".into(),
         table_name: "test_table".into(),
         indexes: Indexes {
-            pk: "id".into(),
-            sk: vec![],
+            pk_attr: "id".into(),
+            sk_attr_list: vec![],
         },
     }));
 
@@ -231,7 +238,7 @@ fn main() {
     db_request(DbRequest::Find(FindRequest {
         db_name: "my_db".into(),
         table_name: "test_table".into(),
-        key_filter: KeyFilter::Exact("secret".into()),
+        key_filter: KeyFilter::PK(KfBy::Exact("secret".into())),
         value_filter: json!({}).to_string(),
     }));
 

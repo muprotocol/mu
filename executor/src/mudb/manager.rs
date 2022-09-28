@@ -8,7 +8,7 @@ use super::{
     config::ConfigInner,
     error::ManagerMailBoxError,
     table::Table,
-    types::{Indexes, KeyFilter, DB_DESCRIPTION_TABLE, MANAGER_DB},
+    types::{Indexes, KeyFilter, KfBy, DB_DESCRIPTION_TABLE, MANAGER_DB},
     Db, Error, Result, ValueFilter,
 };
 
@@ -40,8 +40,8 @@ impl Manager {
         let db = Db::open(conf)?;
 
         let indexes = Indexes {
-            pk: "database_id".into(),
-            sk: vec![],
+            pk_attr: "database_id".into(),
+            sk_attr_list: vec![],
         };
 
         // TODO: sync ddt to filesystem
@@ -84,7 +84,7 @@ impl Manager {
     pub fn is_db_exists(&self, name: &str) -> Result<bool> {
         let x = !self
             .ddt
-            .query_by_key(KeyFilter::Exact(name.into()))?
+            .query_by_key(KeyFilter::PK(KfBy::Exact(name.into())))?
             .is_empty();
 
         Ok(x)
@@ -95,7 +95,7 @@ impl Manager {
     pub fn get_db_conf(&self, name: &str) -> Result<Option<ConfigInner>> {
         let x = self
             .ddt
-            .query_by_key(KeyFilter::Exact(name.into()))?
+            .query_by_key(KeyFilter::PK(KfBy::Exact(name.into())))?
             .pop()
             .map(|(_, v)| v.try_into().unwrap());
 
@@ -105,7 +105,7 @@ impl Manager {
     pub fn query_db_by_prefix(&self, prefix: &str) -> Result<Vec<String>> {
         let x = self
             .ddt
-            .query_by_key(KeyFilter::Prefix(prefix.into()))?
+            .query_by_key(KeyFilter::PK(KfBy::Prefix(prefix.into())))?
             .into_iter()
             .map(|(k, _)| k.into())
             .collect();
@@ -196,7 +196,7 @@ fn drop_db(manager: Manager, name: &str) -> Result<()> {
         drop(db);
         manager
             .ddt
-            .delete(KeyFilter::Exact(name.into()), ValueFilter::none())?;
+            .delete(KeyFilter::PK(KfBy::Exact(name.into())), ValueFilter::none())?;
 
         Ok(())
     } else {
@@ -248,7 +248,7 @@ mod test {
     async fn clean(manager: Manager) {
         let list = manager
             .ddt
-            .query_by_key(KeyFilter::Prefix("".into()))
+            .query_by_key(KeyFilter::PK(KfBy::Prefix("".into())))
             .unwrap();
 
         for (name, _) in list {

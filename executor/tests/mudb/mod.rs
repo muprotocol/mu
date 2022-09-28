@@ -12,7 +12,7 @@ async fn find_and_update_again(
         .query(
             database_id.clone(),
             table_1.into(),
-            KeyFilter::Prefix("".into()),
+            KeyFilter::PK(KfBy::Prefix("".into())),
             json!({
                 "num_item": { "$lt": 5 },
                 "array_item": [2, 3]
@@ -27,7 +27,7 @@ async fn find_and_update_again(
         .update_item(
             database_id.clone(),
             table_1.into(),
-            KeyFilter::Exact("ex::1".into()),
+            KeyFilter::PK(KfBy::Exact("ex::1".into())),
             json!({
                 "num_item": 1
             })
@@ -67,9 +67,10 @@ async fn test_mudb_service() {
     // create table 1
 
     let table_1 = "table_1";
-    let pk = PK_ATTR.into();
-    let sk = vec![];
-    let indexes = Indexes { pk, sk };
+    let indexes = Indexes {
+        pk_attr: PK_ATTR.into(),
+        sk_attr_list: vec![],
+    };
     db_service
         .create_table(database_id.clone(), table_1.into(), indexes.clone())
         .await
@@ -136,7 +137,7 @@ async fn test_mudb_service() {
         .query(
             database_id.clone(),
             table_1.into(),
-            KeyFilter::Prefix("".into()),
+            KeyFilter::PK(KfBy::Prefix("".into())),
             json!({
                 "num_item": { "$lt": 5 },
                 "array_item": [2, 3]
@@ -156,7 +157,7 @@ async fn test_mudb_service() {
         .update_item(
             database_id.clone(),
             table_1.into(),
-            KeyFilter::Exact("ex::1".into()),
+            KeyFilter::PK(KfBy::Exact("ex::1".into())),
             json!({
                 "num_item": 1
             })
@@ -196,7 +197,7 @@ async fn test_mudb_service() {
         .delete_item(
             database_id.clone(),
             table_2.into(),
-            KeyFilter::Prefix("".into()),
+            KeyFilter::PK(KfBy::Prefix("".into())),
             json!({
                 "obj_item": { "a": 10 }
             })

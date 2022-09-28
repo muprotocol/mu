@@ -84,13 +84,13 @@ impl Display for Key {
 
 // TODO: rename to Item after remove Key
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Value {
+pub struct Doc {
     // TODO: rename to string
     raw: String,
     json: serde_json::Value,
 }
 
-impl Value {
+impl Doc {
     pub fn raw(&self) -> &str {
         self.raw.as_str()
     }
@@ -131,7 +131,7 @@ impl Value {
     // }
 }
 
-impl Deref for Value {
+impl Deref for Doc {
     type Target = serde_json::Value;
 
     fn deref(&self) -> &Self::Target {
@@ -139,7 +139,7 @@ impl Deref for Value {
     }
 }
 
-impl Update for Value {
+impl Update for Doc {
     fn doc(&mut self) -> &mut serde_json::Value {
         &mut self.json
     }
@@ -153,7 +153,7 @@ impl Update for Value {
     }
 }
 
-impl TryFrom<serde_json::Value> for Value {
+impl TryFrom<serde_json::Value> for Doc {
     type Error = super::Error;
     fn try_from(json: serde_json::Value) -> Result<Self, Self::Error> {
         if json.is_object() {
@@ -165,19 +165,19 @@ impl TryFrom<serde_json::Value> for Value {
     }
 }
 
-impl From<Value> for serde_json::Value {
-    fn from(v: Value) -> Self {
+impl From<Doc> for serde_json::Value {
+    fn from(v: Doc) -> Self {
         v.json
     }
 }
 
-impl From<Value> for String {
-    fn from(value: Value) -> Self {
+impl From<Doc> for String {
+    fn from(value: Doc) -> Self {
         value.raw
     }
 }
 
-impl TryFrom<String> for Value {
+impl TryFrom<String> for Doc {
     type Error = serde_json::Error;
     fn try_from(raw: String) -> Result<Self, Self::Error> {
         let json = serde_json::from_str(&raw)?;
@@ -185,7 +185,7 @@ impl TryFrom<String> for Value {
     }
 }
 
-impl TryFrom<&str> for Value {
+impl TryFrom<&str> for Doc {
     type Error = serde_json::Error;
     fn try_from(raw: &str) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -195,7 +195,7 @@ impl TryFrom<&str> for Value {
     }
 }
 
-impl TryFrom<IVec> for Value {
+impl TryFrom<IVec> for Doc {
     type Error = String;
     fn try_from(ivec: IVec) -> Result<Self, Self::Error> {
         String::from_utf8(ivec.to_vec())
@@ -205,41 +205,42 @@ impl TryFrom<IVec> for Value {
     }
 }
 
-impl From<Value> for IVec {
-    fn from(value: Value) -> Self {
+impl From<Doc> for IVec {
+    fn from(value: Doc) -> Self {
         value.raw.as_str().into()
     }
 }
 
 // Item
 
-pub type Item = (Key, Value);
+pub type Item = (Key, Doc);
 
 // KeyFilter
 
-pub type KeyFilter = KeyFilterFrom<String>;
+pub type KeyFilter = KeyFilterFor<String>;
+pub type KfBy = KfByFor<String>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub enum KeyFilterFrom<T: Into<Key>> {
-    Exact(T),
-    Prefix(String),
-}
-
-// TODO
 // #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 // pub enum KeyFilterFrom<T: Into<Key>> {
-//     /// primary key
-//     PK(KfType<T>),
-//     /// secondary key
-//     SK(String, KfType<T>),
-// }
-//
-// /// key filter type
-// #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-// pub enum KfType<T: Into<Key>> {
 //     Exact(T),
 //     Prefix(String),
 // }
+
+// TODO
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub enum KeyFilterFor<T: Into<Key>> {
+    /// primary key
+    PK(KfByFor<T>),
+    /// secondary key
+    SK(String, KfByFor<T>),
+}
+
+/// key filter by exact or prefix
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub enum KfByFor<T: Into<Key>> {
+    Exact(T),
+    Prefix(String),
+}
 
 // Indexes
 
@@ -247,10 +248,10 @@ pub enum KeyFilterFrom<T: Into<Key>> {
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Indexes {
     /// primary key
-    pub pk: String,
+    pub pk_attr: String,
     // TODO: rename to sk_list
     /// secondary keys
-    pub sk: Vec<String>,
+    pub sk_attr_list: Vec<String>,
 }
 
 // TableName
@@ -314,16 +315,16 @@ pub struct TableDescription {
     // pub creation_date_time: DateTime,
 }
 
-impl From<TableDescription> for Value {
+impl From<TableDescription> for Doc {
     fn from(td: TableDescription) -> Self {
         let json = serde_json::to_value(td).unwrap();
         Self::try_from(json).unwrap()
     }
 }
 
-impl TryFrom<Value> for TableDescription {
+impl TryFrom<Doc> for TableDescription {
     type Error = serde_json::Error;
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
+    fn try_from(value: Doc) -> Result<Self, Self::Error> {
         serde_json::from_value(value.json)
     }
 }

@@ -17,10 +17,6 @@ pub enum Error {
     TableAlreadyExist(String),
     #[error("mudb_error|> table dose not exist|> {0}")]
     TableDoseNotExist(String),
-    #[error("mudb_error|> table is reserved|> {0}")]
-    TableIsReserved(String),
-    #[error("mudb_error|> primary-key already exist|> {{ {0}: {1} }}")]
-    PkAlreadyExist(String, Key),
     #[error("mudb_error|> table name is invalid|> {0} {1}")]
     InvalidTableName(String, String),
     #[error("mudb_error|> json command is invalid|> {0}")]
@@ -31,8 +27,12 @@ pub enum Error {
     MissingIndexAttr(String),
     #[error("mudb_error|> index attribute should be a String|> {0}")]
     IndexAttrShouldBeString(String),
-    #[error("mudb_error|> this attributes are indexed and can't update|> {0:?}")]
+    #[error("mudb_error|> this attributes are indexed and can't update|> {0}")]
     IndexAttrCantUpdate(List<String>),
+    #[error("mudb_error|> there is no index tree with name|> {0}")]
+    HaveNoIndexTree(String),
+    #[error("mudb_error|> secondary key already exist|> {0}")]
+    SecondaryKeyAlreadyExist(String, Key),
 
     // outer error
     #[error("mudb_error|> sled|> {0}")]
@@ -83,9 +83,12 @@ impl From<tokio::task::JoinError> for Error {
 }
 
 #[derive(Debug)]
-pub struct List<T>(Vec<T>);
+pub struct List<T: PartialEq + ToString>(Vec<T>);
 
-impl<T> Deref for List<T> {
+impl<T> Deref for List<T>
+where
+    T: PartialEq + ToString,
+{
     type Target = Vec<T>;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -94,22 +97,29 @@ impl<T> Deref for List<T> {
 
 impl<T> PartialEq for List<T>
 where
-    T: PartialEq,
+    T: PartialEq + ToString,
 {
     fn eq(&self, other: &Self) -> bool {
         self.iter().all(|x| other.contains(x)) && self.len() == other.len()
     }
 }
 
-// TODO
-// impl<String> Display for VarList<String> {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         let x = self.0.join::<String>(" ");
-//         write!(f, "{ }", x)
-//     }
-// }
+impl<T> Display for List<T>
+where
+    T: PartialEq + ToString,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let x = self
+            .iter()
+            .fold(String::new(), |acc, y| acc + &y.to_string() + " ,");
+        write!(f, "[ {} ]", x)
+    }
+}
 
-impl<T> From<Vec<T>> for List<T> {
+impl<T> From<Vec<T>> for List<T>
+where
+    T: PartialEq + ToString,
+{
     fn from(x: Vec<T>) -> Self {
         Self(x)
     }

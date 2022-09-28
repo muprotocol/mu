@@ -125,7 +125,7 @@ where
     }
 }
 
-impl<T> From<ConfigBase<T>> for super::types::Value
+impl<T> From<ConfigBase<T>> for super::types::Doc
 where
     T: Default + ToString + Serialize,
 {
@@ -134,12 +134,12 @@ where
     }
 }
 
-impl<T> TryFrom<super::types::Value> for ConfigBase<T>
+impl<T> TryFrom<super::types::Doc> for ConfigBase<T>
 where
     T: Default + ToString + for<'a> Deserialize<'a>,
 {
     type Error = Error;
-    fn try_from(v: super::types::Value) -> Result<Self, Self::Error> {
+    fn try_from(v: super::types::Doc) -> Result<Self, Self::Error> {
         serde_json::from_value(v.into()).map_err(Into::into)
     }
 }

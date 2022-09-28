@@ -4,7 +4,7 @@
 use super::{error::Result, manager::Manager, Config, Db, Error};
 
 pub use super::{
-    types::{DatabaseID, Indexes, KeyFilter, TableDescription},
+    types::{DatabaseID, Indexes, KeyFilter, KfBy, TableDescription},
     Updater, ValueFilter,
 };
 
