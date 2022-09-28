@@ -53,7 +53,7 @@ impl Table {
 
         match x {
             None => self.update_sk_indexes(&doc, |sk_attr, sk, tree| {
-                unique_insert!(&tree, sk_attr.into(), sk, Some(pk.clone()));
+                unique_insert!(tree, sk_attr.into(), sk, Some(pk.clone()));
                 Ok(())
             }),
             Some((_, prev_doc)) => self.update_sk_indexes(&doc, |sk_attr, sk, tree| {
@@ -62,7 +62,7 @@ impl Table {
                     .map(|x| Key::try_from(x).unwrap())
                     .unwrap();
                 tree.remove(prev_sk)?;
-                unique_insert!(&tree, sk_attr.into(), sk, Some(pk.clone()));
+                unique_insert!(tree, sk_attr.into(), sk, Some(pk.clone()));
                 Ok(())
             }),
         }?;
@@ -142,11 +142,10 @@ impl Table {
         vf: ValueFilter,
         fold: impl FnMut(T, Item) -> Result<T>,
     ) -> Result<T> {
-        Ok(self
-            .query_by_key(kf)?
+        self.query_by_key(kf)?
             .into_iter()
             .filter(|(_, value)| vf.eval(value))
-            .try_fold(T::default(), fold)?)
+            .try_fold(T::default(), fold)
     }
 
     pub fn query_by_key(&self, kf: KeyFilter) -> Result<Vec<Item>> {

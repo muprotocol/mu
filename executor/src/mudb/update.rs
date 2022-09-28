@@ -225,7 +225,7 @@ impl Updater {
     pub fn affect_attributes(&self, attributes: Vec<String>) -> Vec<String> {
         attributes
             .into_iter()
-            .filter(|x| self.affect_attribute(&x))
+            .filter(|x| self.affect_attribute(x))
             .collect()
     }
 

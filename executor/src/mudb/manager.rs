@@ -181,8 +181,8 @@ fn create_db(manager: Manager, conf: ConfigInner) -> Result<()> {
     if manager.is_db_exists(&conf.database_id)? {
         Err(Error::DbAlreadyExist(conf.database_id))
     } else {
-        let db = Db::open(conf.clone())?;
-        manager.ddt.insert_one(db.conf.clone().into())?;
+        let db = Db::open(conf)?;
+        manager.ddt.insert_one(db.conf.into())?;
         Ok(())
     }
 }
