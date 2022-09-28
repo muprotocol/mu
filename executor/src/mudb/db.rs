@@ -5,7 +5,7 @@ use super::{
     error::{Error, Result},
     table::Table,
     types::*,
-    ValueFilter,
+    value_filter::ValueFilter,
 };
 
 #[derive(Debug, Clone)]

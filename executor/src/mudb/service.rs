@@ -1,11 +1,12 @@
 //! Statefull Service
 //! purpose is provide statefull api
 
-use super::{error::Result, manager::Manager, Config, Db, Error};
+use super::{db::Db, error::Result, manager::Manager, Config, Error};
 
 pub use super::{
     types::{DatabaseID, Indexes, KeyFilter, KfBy, TableDescription},
-    Updater, ValueFilter,
+    update::Updater,
+    value_filter::ValueFilter,
 };
 
 pub type Key = String;

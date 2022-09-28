@@ -6,7 +6,7 @@ use sled::IVec;
 
 use super::{
     update::{Changes, Update},
-    ValueFilter,
+    value_filter::ValueFilter,
 };
 
 pub(crate) const MANAGER_DB: &str = "mudb_manager";
@@ -82,19 +82,13 @@ impl Display for Key {
 
 // Value
 
-// TODO: rename to Item after remove Key
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Doc {
-    // TODO: rename to string
     raw: String,
     json: serde_json::Value,
 }
 
 impl Doc {
-    pub fn raw(&self) -> &str {
-        self.raw.as_str()
-    }
-
     pub fn filter(self, filter: &ValueFilter) -> Option<Self> {
         if filter.eval(&self.json) {
             Some(self)
@@ -106,29 +100,6 @@ impl Doc {
         //     _ => Some(self),
         // }
     }
-
-    // pub fn update(
-    //     self,
-    //     updater: &Updater,
-    //     exceptions: Vec<String>,
-    // ) -> Result<(Self, Changes), Error> {
-    //     let mut value = self;
-
-    //     exceptions.into_iter().try_for_each(|x| {
-    //         if updater.contains_attribute(&x) {
-    //             Err(Error::KeyAttributeCantUpdate(x))
-    //         } else {
-    //             Ok(())
-    //         }
-    //     })?;
-
-    //     let updated = updater.update(&mut value.json);
-    //     if !updated.is_empty() {
-    //         value.raw = value.json.to_string();
-    //     }
-
-    //     Ok((value, updated))
-    // }
 }
 
 impl Deref for Doc {
@@ -226,7 +197,6 @@ pub type KfBy = KfByFor<String>;
 //     Prefix(String),
 // }
 
-// TODO
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub enum KeyFilterFor<T: Into<Key>> {
     /// primary key
@@ -244,12 +214,10 @@ pub enum KfByFor<T: Into<Key>> {
 
 // Indexes
 
-// TODO: choose better name
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Indexes {
     /// primary key
     pub pk_attr: String,
-    // TODO: rename to sk_list
     /// secondary keys
     pub sk_attr_list: Vec<String>,
 }

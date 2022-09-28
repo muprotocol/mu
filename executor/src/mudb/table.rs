@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 
-use super::{types::*, update::Update, Error, Result, Updater, ValueFilter};
+use super::{
+    types::*,
+    update::{Update, Updater},
+    value_filter::ValueFilter,
+    Error, Result,
+};
 
 #[derive(Debug, Clone)]
 pub struct Table {
@@ -25,7 +30,6 @@ impl Table {
         })
     }
 
-    // TODO: index integrity
     pub fn insert_one(&self, doc: Doc) -> Result<Key> {
         let pk = match doc.get(&self.pk_attr) {
             None => Err(Error::MissingIndexAttr(self.pk_attr.clone())),

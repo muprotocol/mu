@@ -6,10 +6,12 @@ use std::{collections::HashMap, fmt};
 
 use super::{
     config::ConfigInner,
+    db::Db,
     error::ManagerMailBoxError,
     table::Table,
     types::{Indexes, KeyFilter, KfBy, DB_DESCRIPTION_TABLE, MANAGER_DB},
-    Db, Error, Result, ValueFilter,
+    value_filter::ValueFilter,
+    Error, Result,
 };
 
 // TODO: find a better name
