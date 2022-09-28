@@ -5,14 +5,13 @@
 			"path": "."
 		},
 		{
-			"name": "marketplace",
-			"path": "./marketplace"
+			"path": "executor"
 		},
 		{
 			"path": "mailbox_processor"
 		},
 		{
-			"path": "executor"
+			"path": "marketplace"
 		}
 	]
 }
