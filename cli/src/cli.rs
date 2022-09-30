@@ -32,7 +32,8 @@ pub struct Args {
 }
 
 impl Args {
-    fn execute(self) -> Result<()> {
+    /// Execute the arguments
+    pub fn execute(self) -> Result<()> {
         let solana_client = MarketplaceClient::new(self.cluster, self.keypair)?;
         match self.command {
             Command::Provider(options) => options.execute(solana_client),

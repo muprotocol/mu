@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount, Transfer};
 
-declare_id!("9YNk2WSJ4rXsvJFM2teXJhJ2LZL3XDUPP2FAiNuGsFtx");
+declare_id!("2MZLka8nfoAf1LKCCbgCw5ZXfpMbKGDuLjQ88MNMyti2");
 
 #[error_code]
 pub enum Errors {
