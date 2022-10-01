@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use sled::IVec;
 
 use super::{
+    doc_filter::DocFilter,
     update::{Changes, Update},
-    value_filter::ValueFilter,
 };
 
 pub(crate) const MANAGER_DB: &str = "mudb_manager";
@@ -89,7 +89,7 @@ pub struct Doc {
 }
 
 impl Doc {
-    pub fn filter(self, filter: &ValueFilter) -> Option<Self> {
+    pub fn filter(self, filter: &DocFilter) -> Option<Self> {
         if filter.eval(&self.json) {
             Some(self)
         } else {

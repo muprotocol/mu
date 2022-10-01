@@ -1,26 +1,26 @@
 //! Statefull Service
 //! purpose is provide statefull api
 
-use super::{db::Db, error::Result, manager::Manager, Config, Error};
+use super::{agent::Agent, db::Db, error::Result, Config, Error};
 
 pub use super::{
+    doc_filter::DocFilter,
     types::{DatabaseID, Indexes, KeyFilter, KfBy, TableDescription},
     update::Updater,
-    value_filter::ValueFilter,
 };
 
 pub type Key = String;
 pub type Doc = String;
 
 #[derive(Debug, Clone)]
-pub struct DatabaseManager(Manager);
+pub struct DatabaseManager(Agent);
 
 impl DatabaseManager {
     pub async fn new() -> Result<Self> {
-        Ok(Self(Manager::new().await?))
+        Ok(Self(Agent::new().await?))
     }
 
-    fn manager(&self) -> &Manager {
+    fn manager(&self) -> &Agent {
         &self.0
     }
 
@@ -160,7 +160,7 @@ impl DatabaseManager {
         database_id: DatabaseID,
         table_name: String,
         key_filter: KeyFilter,
-        value_filter: ValueFilter,
+        value_filter: DocFilter,
     ) -> Result<Vec<Doc>> {
         self.partial_run(database_id, move |db| {
             Ok(db
@@ -178,7 +178,7 @@ impl DatabaseManager {
         database_id: DatabaseID,
         table_name: String,
         key_filter: KeyFilter,
-        value_filter: ValueFilter,
+        value_filter: DocFilter,
         updater: Updater,
     ) -> Result<Vec<Doc>> {
         self.partial_run(database_id, move |db| {
@@ -197,7 +197,7 @@ impl DatabaseManager {
         database_id: DatabaseID,
         table_name: String,
         key_filter: KeyFilter,
-        value_filter: ValueFilter,
+        value_filter: DocFilter,
     ) -> Result<Vec<Doc>> {
         self.partial_run(database_id, move |db| {
             Ok(db

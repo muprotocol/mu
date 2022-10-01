@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use super::{
+    doc_filter::DocFilter,
     types::*,
     update::{Update, Updater},
-    value_filter::ValueFilter,
     Error, Result,
 };
 
@@ -39,7 +39,7 @@ impl Table {
         let x = self
             .query(
                 KeyFilter::PK(KfBy::Exact(pk.clone().into())),
-                ValueFilter::none(),
+                DocFilter::none(),
             )?
             .pop();
 
@@ -89,7 +89,7 @@ impl Table {
     }
 
     /// Selects items in a table and returns a list of selected items.
-    pub fn query(&self, kf: KeyFilter, vf: ValueFilter) -> Result<Vec<Item>> {
+    pub fn query(&self, kf: KeyFilter, vf: DocFilter) -> Result<Vec<Item>> {
         self.partial_query(kf, vf, |mut acc: Vec<Item>, item| {
             acc.push(item);
             Ok(acc)
@@ -97,7 +97,7 @@ impl Table {
     }
 
     /// Updates all Values that match the specified filter and key for a Table.
-    pub fn update(&self, kf: KeyFilter, vf: ValueFilter, updater: Updater) -> Result<Vec<Item>> {
+    pub fn update(&self, kf: KeyFilter, vf: DocFilter, updater: Updater) -> Result<Vec<Item>> {
         let affect_indexes = updater.affect_attributes(self.all_indexes());
         if affect_indexes.is_empty() {
             let (items, batch) =
@@ -124,7 +124,7 @@ impl Table {
     }
 
     /// Deletes all Values that match the specified filter and key for a Table.
-    pub fn delete(&self, kf: KeyFilter, vf: ValueFilter) -> Result<Vec<Item>> {
+    pub fn delete(&self, kf: KeyFilter, vf: DocFilter) -> Result<Vec<Item>> {
         let (items, batch) =
             self.partial_query(kf, vf, |mut acc: (Vec<Item>, sled::Batch), (key, value)| {
                 acc.0.push((key.clone(), value));
@@ -139,7 +139,7 @@ impl Table {
     fn partial_query<T: Default>(
         &self,
         kf: KeyFilter,
-        vf: ValueFilter,
+        vf: DocFilter,
         fold: impl FnMut(T, Item) -> Result<T>,
     ) -> Result<T> {
         self.query_by_key(kf)?
@@ -461,7 +461,7 @@ mod test {
 
         let res = table_1.query(
             KeyFilter::SK(SK_ATTR_1.into(), KfBy::Exact("c".into())),
-            ValueFilter::none(),
+            DocFilter::none(),
         );
         assert_eq!(res, Ok(vec![]));
 
@@ -568,26 +568,23 @@ mod test {
 
         let res = table.query(
             KeyFilter::SK("sk2".into(), KfBy::Exact("b::1".into())),
-            ValueFilter::none(),
+            DocFilter::none(),
         );
         assert_eq!(res.unwrap().len(), 1);
 
         // query all ex prefixed
-        let res = table.query(
-            KeyFilter::PK(KfBy::Prefix("ex".into())),
-            ValueFilter::none(),
-        );
+        let res = table.query(KeyFilter::PK(KfBy::Prefix("ex".into())), DocFilter::none());
         assert_eq!(res.unwrap().len(), 3);
 
         // query all ex other
         let res = table.query(
             KeyFilter::PK(KfBy::Prefix("other".into())),
-            ValueFilter::none(),
+            DocFilter::none(),
         );
         assert_eq!(res.unwrap().len(), 3);
 
         // query all
-        let res = table.query(KeyFilter::PK(KfBy::Prefix("".into())), ValueFilter::none());
+        let res = table.query(KeyFilter::PK(KfBy::Prefix("".into())), DocFilter::none());
         assert_eq!(res.unwrap().len(), 6);
     }
 
@@ -619,7 +616,7 @@ mod test {
         // With key and filter
 
         let key_filter = KeyFilter::PK(KfBy::Exact("ex::1".into()));
-        let filter = ValueFilter::try_from(json!({
+        let filter = DocFilter::try_from(json!({
             "num_item": 1
         }))
         .unwrap();
@@ -655,7 +652,7 @@ mod test {
         // Without key
 
         let key_filter = KeyFilter::PK(KfBy::Prefix("ex".into()));
-        let filter: ValueFilter = json!({
+        let filter: DocFilter = json!({
             "num_item": 2
         })
         .try_into()
@@ -692,7 +689,7 @@ mod test {
         // Multiple item
 
         let key_filter = KeyFilter::PK(KfBy::Prefix("ex".into()));
-        let filter: ValueFilter = json!({
+        let filter: DocFilter = json!({
             "obj_item": { "in_1": "hello" }
         })
         .try_into()
@@ -724,7 +721,7 @@ mod test {
         let key_filter = KeyFilter::PK(KfBy::Exact("ex::1".into()));
         let res = table.update(
             key_filter.clone(),
-            ValueFilter::none(),
+            DocFilter::none(),
             json!({
                 "$set": { PK_ATTR: "new_id" },
             })
@@ -743,7 +740,7 @@ mod test {
 
         let res = table.update(
             key_filter,
-            ValueFilter::none(),
+            DocFilter::none(),
             json!({
                 "$set": {
                     SK_ATTR_1: "new_id",
@@ -773,7 +770,7 @@ mod test {
         // With key and filter
 
         let key_filter = KeyFilter::PK(KfBy::Exact("ex::1".into()));
-        let filter: ValueFilter = json!({
+        let filter: DocFilter = json!({
             "num_item": 1
         })
         .try_into()
@@ -793,7 +790,7 @@ mod test {
 
         // Multiple item
 
-        let filter: ValueFilter = json!({
+        let filter: DocFilter = json!({
             "obj_item": { "in_1": "hello" }
         })
         .try_into()
@@ -823,10 +820,7 @@ mod test {
         let res = table_1.delete_all();
         assert_eq!(res, Ok(()));
 
-        let f_res = table_1.query(
-            KeyFilter::PK(KfBy::Prefix("ex".into())),
-            ValueFilter::none(),
-        );
+        let f_res = table_1.query(KeyFilter::PK(KfBy::Prefix("ex".into())), DocFilter::none());
         assert_eq!(f_res, Ok(vec![]));
     }
 }

@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use crate::{
     gateway::GatewayManager, infrastructure::config::ConfigDuration,
-    mudb::service::DatabaseManager, network::gossip::NodeHash, runtime::Runtime,
+    mudb::database_manager::DatabaseManager, network::gossip::NodeHash, runtime::Runtime,
     util::TakeAndReplaceWithDefault,
 };
 

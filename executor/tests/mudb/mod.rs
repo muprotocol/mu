@@ -1,4 +1,4 @@
-use mu::mudb::{service::*, Config, Error, Result};
+use mu::mudb::{database_manager::*, Config, Error, Result};
 use serde_json::json;
 use serial_test::serial;
 
@@ -52,13 +52,13 @@ const TABLE_2_NAME: &str = "table_2";
 
 #[tokio::test]
 #[serial]
-async fn test_mudb_service() {
+async fn test_database_manager() {
     let database_manager = DatabaseManager::new().await.unwrap();
 
     // == init db ==
 
     let database_id = DatabaseID {
-        db_name: "test_mudb_service".into(),
+        db_name: "test_database_manager".into(),
         ..Default::default()
     };
     let conf = Config {

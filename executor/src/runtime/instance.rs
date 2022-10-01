@@ -4,7 +4,7 @@ use super::{
     message::{database::*, gateway::*, log::Log, FromMessage, Message, ToMessage},
     types::{FunctionHandle, FunctionID, FunctionUsage, InstanceID},
 };
-use crate::mudb::service::DatabaseManager;
+use crate::mudb::database_manager::DatabaseManager;
 use anyhow::{bail, Result};
 use bytes::BufMut;
 use futures::Future;
@@ -45,7 +45,7 @@ impl InstanceState for Loaded {}
 
 pub struct Running {
     handle: FunctionHandle,
-    db_service: DatabaseManager,
+    db_manager: DatabaseManager,
 }
 impl InstanceState for Running {}
 
@@ -80,9 +80,9 @@ impl Instance<New> {
 }
 
 impl Instance<Loaded> {
-    pub fn start(self, db_service: DatabaseManager) -> Result<Instance<Running>> {
+    pub fn start(self, db_manager: DatabaseManager) -> Result<Instance<Running>> {
         let handle = function::start(self.state.store, &self.state.module, self.state.envs)?;
-        let state = Running { handle, db_service };
+        let state = Running { handle, db_manager };
         Ok(Instance { id: self.id, state })
     }
 }
@@ -143,7 +143,7 @@ impl Instance<Running> {
                         let db_resp = match db_req.request {
                             DbRequestDetails::CreateTable(req) => {
                                 let res = tokio::runtime::Handle::current()
-                                    .block_on(self.state.db_service.create_table(
+                                    .block_on(self.state.db_manager.create_table(
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                         req.indexes,
@@ -158,7 +158,7 @@ impl Instance<Running> {
 
                             DbRequestDetails::DropTable(req) => {
                                 let res = tokio::runtime::Handle::current()
-                                    .block_on(self.state.db_service.delete_table(
+                                    .block_on(self.state.db_manager.delete_table(
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                     ))
@@ -172,7 +172,7 @@ impl Instance<Running> {
 
                             DbRequestDetails::Find(req) => {
                                 let res = tokio::runtime::Handle::current()
-                                    .block_on(self.state.db_service.query(
+                                    .block_on(self.state.db_manager.query(
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                         req.key_filter,
@@ -188,7 +188,7 @@ impl Instance<Running> {
                             DbRequestDetails::Insert(req) => {
                                 let res = tokio::runtime::Handle::current()
                                     .block_on({
-                                        self.state.db_service.insert_one_item(
+                                        self.state.db_manager.insert_one_item(
                                             database_id(&self.id.function_id, req.db_name),
                                             req.table_name,
                                             req.value,
@@ -203,7 +203,7 @@ impl Instance<Running> {
                             }
                             DbRequestDetails::Update(req) => {
                                 let res = tokio::runtime::Handle::current()
-                                    .block_on(self.state.db_service.update_item(
+                                    .block_on(self.state.db_manager.update_item(
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                         req.key_filter,

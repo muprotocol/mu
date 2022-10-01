@@ -1,5 +1,5 @@
 use crate::{
-    mudb::service::{DatabaseID, Doc, Indexes, Key, KeyFilter, TableDescription},
+    mudb::database_manager::{DatabaseID, Doc, Indexes, Key, KeyFilter, TableDescription},
     runtime::types::FunctionID,
 };
 

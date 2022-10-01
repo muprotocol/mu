@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::{
     gateway::GatewayManager,
-    mudb::service::{DatabaseID, DatabaseManager},
+    mudb::database_manager::{DatabaseID, DatabaseManager},
     runtime::{
         types::{FunctionDefinition, FunctionID},
         Runtime,
@@ -62,7 +62,7 @@ pub(super) async fn deploy(
     stack: Stack,
     runtime: &dyn Runtime,
     gateway_manager: &dyn GatewayManager,
-    db_service: &DatabaseManager,
+    db_manager: &DatabaseManager,
 ) -> Result<(), StackDeploymentError> {
     let stack = validate(stack).map_err(StackDeploymentError::ValidationError)?;
 
@@ -113,11 +113,11 @@ pub(super) async fn deploy(
         .collect::<Vec<DatabaseID>>();
 
     for db_id in &db_ids {
-        if !db_service
+        if !db_manager
             .is_db_exists(db_id)
             .map_err(|e| StackDeploymentError::FailedToDeployDatabases(e.into()))?
         {
-            db_service
+            db_manager
                 // TODO: create if not exist
                 .create_db_with_default_config(db_id.clone())
                 .await
@@ -156,9 +156,9 @@ pub(super) async fn deploy(
         .unwrap_or(());
 
     let prefix = format!("{id}_");
-    for db_id in db_service.query_db_by_prefix(&prefix).unwrap_or_default() {
+    for db_id in db_manager.query_db_by_prefix(&prefix).unwrap_or_default() {
         if !db_ids.contains(&db_id) {
-            db_service.drop_db(&db_id).await.unwrap_or(());
+            db_manager.drop_db(&db_id).await.unwrap_or(());
         }
     }
 

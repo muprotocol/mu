@@ -19,7 +19,7 @@ use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 
 use infrastructure::{config, log_setup};
-use mudb::service::DatabaseManager;
+use mudb::database_manager::DatabaseManager;
 use network::{
     connection_manager::{self, ConnectionManager, ConnectionManagerNotification},
     gossip::{GossipNotification, KnownNodeConfig},

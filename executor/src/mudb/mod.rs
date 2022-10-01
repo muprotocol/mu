@@ -1,13 +1,13 @@
+mod agent;
 mod config;
 mod db;
+mod doc_filter;
 mod error;
-mod manager;
 mod table;
 mod types;
 mod update;
-mod value_filter;
 
-pub mod service;
+pub mod database_manager;
 
 // re-exports
 pub use self::config::Config;

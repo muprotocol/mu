@@ -3,7 +3,7 @@ use futures::FutureExt;
 use mu::{
     gateway,
     mu_stack::{self, FunctionRuntime, StackID},
-    mudb::service::{DatabaseID, DatabaseManager},
+    mudb::database_manager::{DatabaseID, DatabaseManager},
     runtime::{start, types::*, Runtime},
 };
 use serial_test::serial;
@@ -83,8 +83,8 @@ async fn create_runtime(
     };
 
     let (projects, provider) = create_map_function_provider(projects).await.unwrap();
-    let db_service = DatabaseManager::new().await.unwrap();
-    let runtime = start(Box::new(provider), config, db_service.clone())
+    let db_manager = DatabaseManager::new().await.unwrap();
+    let runtime = start(Box::new(provider), config, db_manager.clone())
         .await
         .unwrap();
 
@@ -97,7 +97,7 @@ async fn create_runtime(
 
     runtime.add_functions(functions).await.unwrap();
 
-    (runtime, function_ids, db_service)
+    (runtime, function_ids, db_manager)
 }
 
 #[tokio::test]
@@ -131,14 +131,14 @@ async fn can_query_mudb() {
     let mut projects = HashMap::new();
     projects.insert("hello-mudb", Path::new("tests/runtime/funcs/hello-mudb"));
 
-    let (runtime, function_ids, db_service) = create_runtime(projects.clone()).await;
+    let (runtime, function_ids, db_manager) = create_runtime(projects.clone()).await;
 
     let database_id = DatabaseID {
         stack_id: function_ids[0].stack_id.clone(),
         db_name: "my_db".into(),
     };
 
-    create_db_if_not_exist(db_service, database_id)
+    create_db_if_not_exist(db_manager, database_id)
         .await
         .unwrap();
 

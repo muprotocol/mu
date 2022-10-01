@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use mu::mudb::{
     self,
-    service::{DatabaseID, DatabaseManager},
+    database_manager::{DatabaseID, DatabaseManager},
 };
 use std::{
     env,
@@ -59,7 +59,7 @@ pub async fn clean_wasm_project(project_dir: &Path) -> Result<()> {
 }
 
 pub async fn create_db_if_not_exist(
-    db_service: DatabaseManager,
+    db_manager: DatabaseManager,
     database_id: DatabaseID,
 ) -> Result<()> {
     let conf = mudb::Config {
@@ -67,7 +67,7 @@ pub async fn create_db_if_not_exist(
         ..Default::default()
     };
 
-    db_service.create_db_if_not_exist(conf).await?;
+    db_manager.create_db_if_not_exist(conf).await?;
 
     Ok(())
 }

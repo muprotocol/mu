@@ -201,9 +201,9 @@ fn nin(value: &JsonValue, filter: &JsonValue) -> bool {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ValueFilter(JsonValue);
+pub struct DocFilter(JsonValue);
 
-impl ValueFilter {
+impl DocFilter {
     pub fn eval(&self, doc: &JsonValue) -> bool {
         eq(doc, &self.0)
     }
@@ -214,7 +214,7 @@ impl ValueFilter {
     }
 }
 
-impl TryFrom<JsonValue> for ValueFilter {
+impl TryFrom<JsonValue> for DocFilter {
     type Error = error::Error;
     fn try_from(jv: JsonValue) -> Result<Self, Self::Error> {
         validate(&jv)?;
@@ -222,7 +222,7 @@ impl TryFrom<JsonValue> for ValueFilter {
     }
 }
 
-impl TryFrom<std::string::String> for ValueFilter {
+impl TryFrom<std::string::String> for DocFilter {
     type Error = error::Error;
     fn try_from(s: std::string::String) -> Result<Self, Self::Error> {
         let json_v: JsonValue = serde_json::from_str(&s)?;
@@ -250,8 +250,8 @@ mod test {
 
     #[test]
     fn none_r_empty_object() {
-        let none_filter = ValueFilter::none();
-        assert_eq!(none_filter, ValueFilter::try_from(json!({})).unwrap())
+        let none_filter = DocFilter::none();
+        assert_eq!(none_filter, DocFilter::try_from(json!({})).unwrap())
     }
 
     #[test]

@@ -7,29 +7,29 @@ use std::{collections::HashMap, fmt};
 use super::{
     config::ConfigInner,
     db::Db,
+    doc_filter::DocFilter,
     error::ManagerMailBoxError,
     table::Table,
     types::{Indexes, KeyFilter, KfBy, DB_DESCRIPTION_TABLE, MANAGER_DB},
-    value_filter::ValueFilter,
     Error, Result,
 };
 
 // TODO: find a better name
 #[derive(Clone)]
-pub struct Manager {
-    /// db_descriptions_table
+pub struct Agent {
+    /// databases_description_table
     ddt: Table,
     /// mailbox
     mb: MailBox,
 }
 
-impl fmt::Debug for Manager {
+impl fmt::Debug for Agent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Manager").field("ddt", &self.ddt).finish()
     }
 }
 
-impl Manager {
+impl Agent {
     pub async fn new() -> Result<Self> {
         ::tokio::task::spawn_blocking(Self::sync_new).await?
     }
@@ -47,12 +47,8 @@ impl Manager {
         };
 
         // TODO: sync ddt to filesystem
-        let x = db.create_table(DB_DESCRIPTION_TABLE.try_into().unwrap(), indexes);
-        let ddt = match x {
-            Ok((table, _)) => Ok(table),
-            Err(Error::TableAlreadyExist(table)) => db.get_table(table.try_into().unwrap()),
-            Err(e) => Err(e),
-        }?;
+        let ddt =
+            db.get_or_create_table_if_not_exist(DB_DESCRIPTION_TABLE.try_into().unwrap(), indexes)?;
 
         // TODO: consider buffer_size 100
         let mb = CallbackMailboxProcessor::start(step, HashMap::new(), 100);
@@ -127,9 +123,9 @@ impl Manager {
 type Rcr<T> = ReplyChannel<Result<T>>;
 
 enum Message {
-    CreateDb(Manager, ConfigInner, Rcr<()>),
-    DropDb(Manager, String, Rcr<()>),
-    GetDb(Manager, String, Rcr<Db>),
+    CreateDb(Agent, ConfigInner, Rcr<()>),
+    DropDb(Agent, String, Rcr<()>),
+    GetDb(Agent, String, Rcr<Db>),
     GetCache(ReplyChannel<State>),
 }
 
@@ -177,7 +173,7 @@ async fn step(_: MailBox, msg: Message, mut state: State) -> State {
     state
 }
 
-fn create_db(manager: Manager, conf: ConfigInner) -> Result<()> {
+fn create_db(manager: Agent, conf: ConfigInner) -> Result<()> {
     if manager.is_db_exists(&conf.database_id)? {
         Err(Error::DbAlreadyExist(conf.database_id))
     } else {
@@ -187,7 +183,7 @@ fn create_db(manager: Manager, conf: ConfigInner) -> Result<()> {
     }
 }
 
-fn drop_db(manager: Manager, name: &str) -> Result<()> {
+fn drop_db(manager: Agent, name: &str) -> Result<()> {
     if manager.is_db_exists(name)? {
         let conf = ConfigInner {
             database_id: name.into(),
@@ -198,7 +194,7 @@ fn drop_db(manager: Manager, name: &str) -> Result<()> {
         drop(db);
         manager
             .ddt
-            .delete(KeyFilter::PK(KfBy::Exact(name.into())), ValueFilter::none())?;
+            .delete(KeyFilter::PK(KfBy::Exact(name.into())), DocFilter::none())?;
 
         Ok(())
     } else {
@@ -207,7 +203,7 @@ fn drop_db(manager: Manager, name: &str) -> Result<()> {
 }
 
 /// Opens a `MuDB` from filesystem base on the it's config.
-fn open_db(manager: Manager, db_id: &str) -> Result<Db> {
+fn open_db(manager: Agent, db_id: &str) -> Result<Db> {
     match manager.get_db_conf(db_id)? {
         Some(conf) => {
             let db = Db::open(conf)?;
@@ -225,11 +221,11 @@ mod test {
 
     const TEST_DB: &str = "manager_test_db";
 
-    async fn init() -> Manager {
-        Manager::new().await.unwrap()
+    async fn init() -> Agent {
+        Agent::new().await.unwrap()
     }
 
-    async fn seed(manager: &Manager) {
+    async fn seed(manager: &Agent) {
         let conf = ConfigInner {
             database_id: TEST_DB.into(),
             ..Default::default()
@@ -237,7 +233,7 @@ mod test {
         manager.create_db(conf).await.unwrap();
     }
 
-    async fn seed_with(manager: &Manager, list: Vec<&str>) {
+    async fn seed_with(manager: &Agent, list: Vec<&str>) {
         for name in list {
             let conf = ConfigInner {
                 database_id: name.into(),
@@ -247,7 +243,7 @@ mod test {
         }
     }
 
-    async fn clean(manager: Manager) {
+    async fn clean(manager: Agent) {
         let list = manager
             .ddt
             .query_by_key(KeyFilter::PK(KfBy::Prefix("".into())))
@@ -261,10 +257,10 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn just_one_new_manager() {
-        let m1 = Manager::new().await;
-        assert_matches!(m1, Ok(Manager { .. }));
+        let m1 = Agent::new().await;
+        assert_matches!(m1, Ok(Agent { .. }));
 
-        let m2 = Manager::new().await;
+        let m2 = Agent::new().await;
         assert_matches!(m2.err(), Some(Error::Sled(_)));
     }
 
