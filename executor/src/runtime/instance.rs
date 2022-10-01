@@ -145,8 +145,8 @@ impl Instance<Running> {
                                 let res = tokio::runtime::Handle::current()
                                     .block_on(self.state.db_manager.create_table(
                                         database_id(&self.id.function_id, req.db_name),
-                                        req.table_name,
                                         req.indexes,
+                                        req.table_name,
                                     ))
                                     .map_err(|e| e.to_string());
 

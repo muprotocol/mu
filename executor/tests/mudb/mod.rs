@@ -74,7 +74,7 @@ async fn test_database_manager() {
         sk_attr_list: vec![],
     };
     database_manager
-        .create_table(database_id.clone(), TABLE_1_NAME.into(), indexes.clone())
+        .create_table(database_id.clone(), indexes.clone(), TABLE_1_NAME.into())
         .await
         .unwrap();
 
@@ -85,7 +85,7 @@ async fn test_database_manager() {
         sk_attr_list: vec![SK_ATTR.into()],
     };
     database_manager
-        .create_table(database_id.clone(), TABLE_2_NAME.into(), indexes_2.clone())
+        .create_table(database_id.clone(), indexes_2.clone(), TABLE_2_NAME.into())
         .await
         .unwrap();
 

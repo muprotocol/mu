@@ -37,12 +37,12 @@ impl Db {
         })
     }
 
-    fn open_table<T>(sled_db: &sled::Db, indexes: &Indexes, table_name: T) -> Result<Table>
+    fn open_table<T>(sled_db: &sled::Db, x: &Indexes, table_name: T) -> Result<Table>
     where
         T: AsRef<[u8]>,
     {
-        let pk = indexes.pk_attr.clone();
-        let sk_trees = indexes
+        let pk = x.pk_attr.clone();
+        let sk_trees = x
             .sk_attr_list
             .iter()
             .try_fold(HashMap::new(), |mut acc, sk| {
@@ -56,14 +56,14 @@ impl Db {
     }
 
     /// Create new table otherwise return err table already exists
-    pub fn create_table(&self, t: TableNameInput, i: Indexes) -> Result<(Table, TableDescription)> {
-        if self.is_table_exists(t.clone())? {
-            Err(Error::TableAlreadyExist(t.into()))
+    pub fn create_table(&self, x: Indexes, y: TableNameInput) -> Result<(Table, TableDescription)> {
+        if self.is_table_exists(y.clone())? {
+            Err(Error::TableAlreadyExist(y.into()))
         } else {
-            let table = Self::open_table(&self.inner, &i, &t)?;
+            let table = Self::open_table(&self.inner, &x, &y)?;
             let td = TableDescription {
-                table_name: t.to_string(),
-                indexes: i,
+                table_name: y.to_string(),
+                indexes: x,
             };
             // save table description
             self.td_table
@@ -72,17 +72,17 @@ impl Db {
         }
     }
 
-    pub fn get_table(&self, t: TableNameInput) -> Result<Table> {
-        if self.is_table_exists(t.clone())? {
-            let indexes = self.table_description(t.clone())?.unwrap().indexes;
-            Self::open_table(&self.inner, &indexes, t)
+    pub fn get_table(&self, x: TableNameInput) -> Result<Table> {
+        if self.is_table_exists(x.clone())? {
+            let indexes = self.table_description(x.clone())?.unwrap().indexes;
+            Self::open_table(&self.inner, &indexes, x)
         } else {
-            return Err(Error::TableDoseNotExist(t.into()));
+            Err(Error::TableDoseNotExist(x.into()))
         }
     }
 
-    pub fn get_or_create_table_if_not_exist(&self, t: TableNameInput, i: Indexes) -> Result<Table> {
-        let x = self.create_table(t, i);
+    pub fn get_or_create_table_if_not_exist(&self, x: Indexes, y: TableNameInput) -> Result<Table> {
+        let x = self.create_table(x, y);
         match x {
             Ok((table, _)) => Ok(table),
             Err(Error::TableAlreadyExist(table)) => self.get_table(table.try_into().unwrap()),
@@ -91,13 +91,13 @@ impl Db {
     }
 
     /// Delete table `TableDescription` if existed or `None` if not.
-    pub fn delete_table(&self, t: TableNameInput) -> Result<Option<TableDescription>> {
-        let is_table_exists = self.is_table_exists(t.clone())?;
-        let is_dropped_success = self.inner.drop_tree(t.clone())?;
+    pub fn delete_table(&self, x: TableNameInput) -> Result<Option<TableDescription>> {
+        let is_table_exists = self.is_table_exists(x.clone())?;
+        let is_dropped_success = self.inner.drop_tree(x.clone())?;
 
         if is_table_exists && is_dropped_success {
             self.td_table
-                .delete(KeyFilter::PK(KfBy::Exact(t.into())), DocFilter::none())
+                .delete(KeyFilter::PK(KfBy::Exact(x.into())), DocFilter::none())
                 .map(|vec| Some(vec[0].1.clone().try_into().unwrap()))
                 .map_err(Into::into)
         } else {
@@ -117,18 +117,18 @@ impl Db {
         Ok(x)
     }
 
-    fn table_description(&self, t: TableNameInput) -> Result<Option<TableDescription>> {
+    fn table_description(&self, x: TableNameInput) -> Result<Option<TableDescription>> {
         let x = self
             .td_table
-            .query_by_key(KeyFilter::PK(KfBy::Exact(t.into())))?
+            .query_by_key(KeyFilter::PK(KfBy::Exact(x.into())))?
             .pop()
             .map(|(_, td)| td.try_into().unwrap());
 
         Ok(x)
     }
 
-    fn is_table_exists(&self, t: TableNameInput) -> Result<bool> {
-        self.td_table.contains_key(t.into()).map_err(Into::into)
+    fn is_table_exists(&self, x: TableNameInput) -> Result<bool> {
+        self.td_table.contains_key(x.into()).map_err(Into::into)
     }
 
     /// Returns the on-disk size of the storage files for this database.
@@ -188,7 +188,7 @@ mod test {
 
         fn init_and_seed() -> Self {
             let td = TestDb::init();
-            td.create_table(TEST_TABLE.try_into().unwrap(), Self::indexes())
+            td.create_table(Self::indexes(), TEST_TABLE.try_into().unwrap())
                 .unwrap();
 
             td
@@ -223,7 +223,7 @@ mod test {
             sk_attr_list: vec![],
         };
         let res = db
-            .create_table(name.try_into().unwrap(), indexes.clone())
+            .create_table(indexes.clone(), name.try_into().unwrap())
             .unwrap();
 
         assert_eq!(
@@ -245,7 +245,7 @@ mod test {
             pk_attr: "id".into(),
             sk_attr_list: vec![],
         };
-        let res = db.create_table(TEST_TABLE.try_into().unwrap(), indexes);
+        let res = db.create_table(indexes, TEST_TABLE.try_into().unwrap());
         assert_eq!(res.err(), Some(Error::TableAlreadyExist(TEST_TABLE.into())));
     }
 

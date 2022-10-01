@@ -48,7 +48,7 @@ impl Agent {
 
         // TODO: sync ddt to filesystem
         let ddt =
-            db.get_or_create_table_if_not_exist(DB_DESCRIPTION_TABLE.try_into().unwrap(), indexes)?;
+            db.get_or_create_table_if_not_exist(indexes, DB_DESCRIPTION_TABLE.try_into().unwrap())?;
 
         // TODO: consider buffer_size 100
         let mb = CallbackMailboxProcessor::start(step, HashMap::new(), 100);

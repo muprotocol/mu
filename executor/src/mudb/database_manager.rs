@@ -118,11 +118,11 @@ impl DatabaseManager {
     pub async fn create_table(
         &self,
         database_id: DatabaseID,
-        table_name: String,
         indexes: Indexes,
+        table_name: String,
     ) -> Result<TableDescription> {
         self.partial_run(database_id, move |db| {
-            db.create_table(table_name.try_into()?, indexes)
+            db.create_table(indexes, table_name.try_into()?)
                 .map(|(_, td)| td)
         })
         .await
@@ -160,12 +160,12 @@ impl DatabaseManager {
         database_id: DatabaseID,
         table_name: String,
         key_filter: KeyFilter,
-        value_filter: DocFilter,
+        doc_filter: DocFilter,
     ) -> Result<Vec<Doc>> {
         self.partial_run(database_id, move |db| {
             Ok(db
                 .get_table(table_name.try_into()?)?
-                .query(key_filter, value_filter)?
+                .query(key_filter, doc_filter)?
                 .into_iter()
                 .map(|(_, doc)| doc.into())
                 .collect())
@@ -178,13 +178,13 @@ impl DatabaseManager {
         database_id: DatabaseID,
         table_name: String,
         key_filter: KeyFilter,
-        value_filter: DocFilter,
+        doc_filter: DocFilter,
         updater: Updater,
     ) -> Result<Vec<Doc>> {
         self.partial_run(database_id, move |db| {
             Ok(db
                 .get_table(table_name.try_into()?)?
-                .update(key_filter, value_filter, updater)?
+                .update(key_filter, doc_filter, updater)?
                 .into_iter()
                 .map(|(_, doc)| doc.into())
                 .collect())
@@ -197,12 +197,12 @@ impl DatabaseManager {
         database_id: DatabaseID,
         table_name: String,
         key_filter: KeyFilter,
-        value_filter: DocFilter,
+        doc_filter: DocFilter,
     ) -> Result<Vec<Doc>> {
         self.partial_run(database_id, move |db| {
             Ok(db
                 .get_table(table_name.try_into()?)?
-                .delete(key_filter, value_filter)?
+                .delete(key_filter, doc_filter)?
                 .into_iter()
                 .map(|(_, doc)| doc.into())
                 .collect())
