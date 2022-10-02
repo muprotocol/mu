@@ -20,16 +20,16 @@ impl DatabaseManager {
         Ok(Self(Agent::new().await?))
     }
 
-    fn manager(&self) -> &Agent {
+    fn agent(&self) -> &Agent {
         &self.0
     }
 
     /// clear all databases and make `./mudb` clean
     /// usefull in tests
     pub async fn clean(&self) -> Result<()> {
-        let list = self.manager().query_db_by_prefix("")?;
+        let list = self.agent().query_db_by_prefix("")?;
         for name in list {
-            self.manager().drop_db(&name).await?;
+            self.agent().drop_db(&name).await?;
         }
 
         Ok(())
@@ -38,7 +38,7 @@ impl DatabaseManager {
     // manager stuff
 
     pub async fn create_db(&self, conf: Config) -> Result<()> {
-        self.manager().create_db(conf.into()).await
+        self.agent().create_db(conf.into()).await
     }
 
     pub async fn create_db_if_not_exist(&self, conf: Config) -> Result<()> {
@@ -69,12 +69,12 @@ impl DatabaseManager {
     }
 
     pub async fn drop_db(&self, database_id: &DatabaseID) -> Result<()> {
-        self.manager().drop_db(&database_id.to_string()).await
+        self.agent().drop_db(&database_id.to_string()).await
     }
 
     pub fn query_db_by_prefix(&self, prefix: &str) -> Result<Vec<DatabaseID>> {
         Ok(self
-            .manager()
+            .agent()
             .query_db_by_prefix(prefix)?
             .into_iter()
             .map(|s| s.parse().unwrap())
@@ -82,18 +82,18 @@ impl DatabaseManager {
     }
 
     pub fn is_db_exists(&self, database_id: &DatabaseID) -> Result<bool> {
-        self.manager().is_db_exists(&database_id.to_string())
+        self.agent().is_db_exists(&database_id.to_string())
     }
 
     pub fn get_db_conf(&self, name: &str) -> Result<Option<Config>> {
         Ok(self
-            .manager()
+            .agent()
             .get_db_conf(name)?
             .map(|c| c.try_into().unwrap()))
     }
 
     pub async fn cached_db_names(&self) -> Result<Vec<String>> {
-        Ok(self.manager().get_cache().await?.into_keys().collect())
+        Ok(self.agent().get_cache().await?.into_keys().collect())
     }
 
     // db stuff
@@ -106,7 +106,7 @@ impl DatabaseManager {
     where
         T: Send + Sync + 'static,
     {
-        let db = self.manager().get_db(&database_id.to_string()).await?;
+        let db = self.agent().get_db(&database_id.to_string()).await?;
         ::tokio::task::spawn_blocking(move || run(db)).await?
     }
 

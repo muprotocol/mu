@@ -57,58 +57,57 @@ impl Agent {
     }
 
     /// Attempts to exclusively open the database, failing if it already exists
-    pub async fn create_db(&self, conf: ConfigInner) -> Result<()> {
+    pub async fn create_db(&self, x: ConfigInner) -> Result<()> {
         self.mb
-            .post_and_reply(|tx| Message::CreateDb(self.clone(), conf, tx))
+            .post_and_reply(|tx| Message::CreateDb(self.clone(), x, tx))
             .await
             .map_err(ManagerMailBoxError::CreateDb)?
     }
 
-    pub async fn drop_db(&self, name: &str) -> Result<()> {
+    pub async fn drop_db(&self, x: &str) -> Result<()> {
         self.mb
-            .post_and_reply(|tx| Message::DropDb(self.clone(), name.into(), tx))
+            .post_and_reply(|tx| Message::DropDb(self.clone(), x.into(), tx))
             .await
             .map_err(ManagerMailBoxError::DropDb)?
     }
 
     /// get db from cache or open it from file system if has not cached.
-    pub async fn get_db(&self, name: &str) -> Result<Db> {
+    pub async fn get_db(&self, x: &str) -> Result<Db> {
         self.mb
-            .post_and_reply(|tx| Message::GetDb(self.clone(), name.into(), tx))
+            .post_and_reply(|tx| Message::GetDb(self.clone(), x.into(), tx))
             .await
             .map_err(ManagerMailBoxError::GetDb)?
     }
 
-    pub fn is_db_exists(&self, name: &str) -> Result<bool> {
+    pub fn is_db_exists(&self, x: &str) -> Result<bool> {
         let x = !self
             .ddt
-            .query_by_key(KeyFilter::PK(KfBy::Exact(name.into())))?
+            .query_by_key(KeyFilter::PK(KfBy::Exact(x.into())))?
             .is_empty();
 
         Ok(x)
     }
 
-    // TODO: write test
     /// read database config from database descriptiont table
-    pub fn get_db_conf(&self, name: &str) -> Result<Option<ConfigInner>> {
-        let x = self
+    pub fn get_db_conf(&self, x: &str) -> Result<Option<ConfigInner>> {
+        let y = self
             .ddt
-            .query_by_key(KeyFilter::PK(KfBy::Exact(name.into())))?
+            .query_by_key(KeyFilter::PK(KfBy::Exact(x.into())))?
             .pop()
-            .map(|(_, v)| v.try_into().unwrap());
+            .map(|(_, doc)| doc.try_into().unwrap());
 
-        Ok(x)
+        Ok(y)
     }
 
-    pub fn query_db_by_prefix(&self, prefix: &str) -> Result<Vec<String>> {
-        let x = self
+    pub fn query_db_by_prefix(&self, x: &str) -> Result<Vec<String>> {
+        let y = self
             .ddt
-            .query_by_key(KeyFilter::PK(KfBy::Prefix(prefix.into())))?
+            .query_by_key(KeyFilter::PK(KfBy::Prefix(x.into())))?
             .into_iter()
-            .map(|(k, _)| k.into())
+            .map(|(name, _)| name.into())
             .collect();
 
-        Ok(x)
+        Ok(y)
     }
 
     pub async fn get_cache(&self) -> Result<State> {
@@ -173,43 +172,42 @@ async fn step(_: MailBox, msg: Message, mut state: State) -> State {
     state
 }
 
-fn create_db(manager: Agent, conf: ConfigInner) -> Result<()> {
-    if manager.is_db_exists(&conf.database_id)? {
-        Err(Error::DbAlreadyExist(conf.database_id))
+fn create_db(x: Agent, y: ConfigInner) -> Result<()> {
+    if x.is_db_exists(&y.database_id)? {
+        Err(Error::DbAlreadyExist(y.database_id))
     } else {
-        let db = Db::open(conf)?;
-        manager.ddt.insert_one(db.conf.into())?;
+        let db = Db::open(y)?;
+        x.ddt.insert_one(db.conf.into())?;
         Ok(())
     }
 }
 
-fn drop_db(manager: Agent, name: &str) -> Result<()> {
-    if manager.is_db_exists(name)? {
+fn drop_db(x: Agent, y: &str) -> Result<()> {
+    if x.is_db_exists(y)? {
         let conf = ConfigInner {
-            database_id: name.into(),
+            database_id: y.into(),
             ..Default::default()
         };
         // set temporary true, to remove db after drop it
         let db = sled::Config::from(conf).temporary(true).open()?;
         drop(db);
-        manager
-            .ddt
-            .delete(KeyFilter::PK(KfBy::Exact(name.into())), DocFilter::none())?;
+        x.ddt
+            .delete(KeyFilter::PK(KfBy::Exact(y.into())), DocFilter::none())?;
 
         Ok(())
     } else {
-        Err(Error::DbDoseNotExist(name.into()))
+        Err(Error::DbDoseNotExist(y.into()))
     }
 }
 
 /// Opens a `MuDB` from filesystem base on the it's config.
-fn open_db(manager: Agent, db_id: &str) -> Result<Db> {
-    match manager.get_db_conf(db_id)? {
+fn open_db(x: Agent, y: &str) -> Result<Db> {
+    match x.get_db_conf(y)? {
         Some(conf) => {
             let db = Db::open(conf)?;
             Ok(db)
         }
-        _ => Err(Error::DbDoseNotExist(db_id.into())),
+        _ => Err(Error::DbDoseNotExist(y.into())),
     }
 }
 
