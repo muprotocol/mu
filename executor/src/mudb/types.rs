@@ -188,26 +188,20 @@ pub type Item = (Key, Doc);
 
 // KeyFilter
 
-pub type KeyFilter = KeyFilterFor<String>;
-pub type KfBy = KfByFor<String>;
-
-// #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-// pub enum KeyFilterFrom<T: Into<Key>> {
-//     Exact(T),
-//     Prefix(String),
-// }
+pub type KeyFilter = GenericKeyFilter<String>;
+pub type KfBy = GenericKfBy<String>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub enum KeyFilterFor<T: Into<Key>> {
+pub enum GenericKeyFilter<T: Into<Key>> {
     /// primary key
-    PK(KfByFor<T>),
+    PK(GenericKfBy<T>),
     /// secondary key
-    SK(String, KfByFor<T>),
+    SK(String, GenericKfBy<T>),
 }
 
 /// key filter by exact or prefix
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub enum KfByFor<T: Into<Key>> {
+pub enum GenericKfBy<T: Into<Key>> {
     Exact(T),
     Prefix(String),
 }

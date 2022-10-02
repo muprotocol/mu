@@ -90,7 +90,7 @@ impl Table {
 
     /// Selects items in a table and returns a list of selected items.
     pub fn query(&self, kf: KeyFilter, vf: DocFilter) -> Result<Vec<Item>> {
-        self.partial_query(kf, vf, |mut acc: Vec<Item>, item| {
+        self.query_then_fold(kf, vf, |mut acc: Vec<Item>, item| {
             acc.push(item);
             Ok(acc)
         })
@@ -98,10 +98,10 @@ impl Table {
 
     /// Updates all Values that match the specified filter and key for a Table.
     pub fn update(&self, kf: KeyFilter, vf: DocFilter, updater: Updater) -> Result<Vec<Item>> {
-        let affect_indexes = updater.affect_attributes(self.all_indexes());
-        if affect_indexes.is_empty() {
+        let affected_indexes = updater.affect_attributes(self.all_indexes());
+        if affected_indexes.is_empty() {
             let (items, batch) =
-                self.partial_query(kf, vf, |mut acc: (Vec<Item>, sled::Batch), (k, v)| {
+                self.query_then_fold(kf, vf, |mut acc: (Vec<Item>, sled::Batch), (k, v)| {
                     let (uv, changes) = v.update(&updater);
                     if !changes.is_empty() {
                         acc.0.push((k.clone(), uv.clone()));
@@ -113,7 +113,7 @@ impl Table {
             self.inner.apply_batch(batch)?;
             Ok(items)
         } else {
-            Err(Error::IndexAttrCantUpdate(affect_indexes.into()))
+            Err(Error::IndexAttrCantUpdate(affected_indexes.into()))
         }
     }
 
@@ -126,7 +126,7 @@ impl Table {
     /// Deletes all Values that match the specified filter and key for a Table.
     pub fn delete(&self, kf: KeyFilter, vf: DocFilter) -> Result<Vec<Item>> {
         let (items, batch) =
-            self.partial_query(kf, vf, |mut acc: (Vec<Item>, sled::Batch), (key, value)| {
+            self.query_then_fold(kf, vf, |mut acc: (Vec<Item>, sled::Batch), (key, value)| {
                 acc.0.push((key.clone(), value));
                 acc.1.remove(key);
                 Ok(acc)
@@ -136,7 +136,7 @@ impl Table {
         Ok(items)
     }
 
-    fn partial_query<T: Default>(
+    fn query_then_fold<T: Default>(
         &self,
         kf: KeyFilter,
         vf: DocFilter,

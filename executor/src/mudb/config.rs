@@ -80,6 +80,7 @@ where
     pub compression_factor: i32,
     pub print_profile_on_drop: bool,
     pub idgen_persist_interval: u64,
+    // TODO: remove?
     // useful in testing
     pub temporary: bool,
 }

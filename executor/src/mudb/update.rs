@@ -207,15 +207,6 @@ fn update(doc: &mut JsonValue, update: &JsonValue) -> Vec<Vec<(String, JsonValue
     }
 }
 
-// fn affect_attribute(updater: &Updater, attribute: &str) -> bool {
-//     updater.0.as_object().unwrap().values().any(|y| {
-//         y.as_object()
-//             .unwrap()
-//             .keys()
-//             .any(|x| x.split('.').zip(attribute.split('.')).all(|(a, b)| a == b))
-//     })
-// }
-
 pub type Changes = Vec<Vec<(String, JsonValue)>>;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -225,16 +216,17 @@ impl Updater {
     pub fn affect_attributes(&self, attributes: Vec<String>) -> Vec<String> {
         attributes
             .into_iter()
-            .filter(|x| self.affect_attribute(x))
+            .filter(|attr| self.affect_attribute(attr))
             .collect()
     }
 
     fn affect_attribute(&self, attribute: &str) -> bool {
-        self.0.as_object().unwrap().values().any(|y| {
-            y.as_object()
-                .unwrap()
-                .keys()
-                .any(|x| x.split('.').zip(attribute.split('.')).all(|(a, b)| a == b))
+        self.0.as_object().unwrap().values().any(|value| {
+            value.as_object().unwrap().keys().any(|key| {
+                key.split('.')
+                    .zip(attribute.split('.'))
+                    .all(|(a, b)| a == b)
+            })
         })
     }
 }
