@@ -1,84 +1,129 @@
-//! The configuration that will be used in CLI
-//TODO: add logging
-
+use anchor_client::Cluster;
+use anyhow::{anyhow, Context, Error, Result};
+use clap::Parser;
+use serde::{Deserialize, Serialize};
+use solana_cli_config::{Config as SolanaConfig, CONFIG_FILE};
+use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::Keypair;
+use std::fs;
+use std::io;
+use std::path::Path;
 use std::str::FromStr;
 
-use anchor_client::Cluster;
-use anyhow::{Context, Result};
-use config::{Config, ConfigError, Environment, File, FileFormat};
-use serde::Deserialize;
+const MU_PROGRAM_ID: &str = "2MZLka8nfoAf1LKCCbgCw5ZXfpMbKGDuLjQ88MNMyti2"; //TODO: Replace with actual deployed ID
 
-use crate::error::MuCliError;
-
-/// Mu CLI Configurations
-#[derive(Deserialize)]
-pub struct MuCliConfig {
-    /// The cluster to use, (Mainnet, Devnet, Testnet, Custom, ...)
+#[derive(Default, Debug, Parser)]
+pub struct ConfigOverride {
+    /// Program ID override.
+    #[clap(global = true, long = "program-id")]
+    pub program_id: Option<Pubkey>,
+    /// Cluster override.
+    #[clap(global = true, long = "cluster")]
     pub cluster: Option<Cluster>,
-
-    /// Keypair of the signer to be used in operations
-    pub keypair_path: Option<String>,
+    /// Wallet override.
+    #[clap(global = true, long = "wallet")]
+    pub wallet: Option<WalletPath>,
 }
 
-impl MuCliConfig {
-    /// Initialize configurations from config files and env vars
-    pub fn initialize() -> Result<MuCliConfig> {
-        let solana_config_file = solana_cli_config::CONFIG_FILE
-            .as_ref()
-            .ok_or_else(|| MuCliError::ConfigFileNotFound)?;
-        let solana_cli_config = solana_cli_config::Config::load(&solana_config_file)
-            .context("Can not read solana cli config")?;
+#[derive(Debug)]
+pub struct Config {
+    pub program_id: Pubkey,
+    pub cluster: Cluster,
+    pub wallet: WalletPath,
+}
 
-        let mut defaults = vec![];
-
-        if !solana_cli_config.websocket_url.is_empty() {
-            defaults.push(("cluster", solana_cli_config.websocket_url));
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            program_id: Pubkey::from_str(MU_PROGRAM_ID).expect("valid Program ID value"),
+            cluster: Cluster::default(),
+            wallet: WalletPath::default(),
         }
-        if !solana_cli_config.keypair_path.is_empty() {
-            defaults.push(("keypair_path", solana_cli_config.keypair_path));
+    }
+}
+
+impl Config {
+    pub fn discover(cfg_override: &ConfigOverride) -> Result<Config> {
+        let mut cfg = Config::_discover()?.unwrap_or_default();
+
+        if let Some(program_id) = cfg_override.program_id.clone() {
+            cfg.program_id = program_id;
         }
-
-        let env = Environment::default()
-            .prefix("MUCLI")
-            .prefix_separator("__")
-            .keep_prefix(false)
-            .separator("__")
-            .try_parsing(true);
-
-        let mut builder = Config::builder();
-
-        for (key, val) in defaults {
-            builder = builder
-                .set_default(key, val)
-                .context("Failed to add default config")?;
+        if let Some(cluster) = cfg_override.cluster.clone() {
+            cfg.cluster = cluster;
+        }
+        if let Some(wallet) = cfg_override.wallet.clone() {
+            cfg.wallet = wallet;
         }
 
-        if std::path::Path::new("mucli-conf.yaml").exists() {
-            builder = builder.add_source(File::new("mucli-conf.yaml", FileFormat::Yaml));
+        Ok(cfg)
+    }
+
+    fn _discover() -> Result<Option<Config>> {
+        let mut path = std::env::current_dir()?;
+        path.push("mu-cli.yaml");
+
+        if path.try_exists()? {
+            let cfg = Self::from_path(&path)?;
+            Ok(Some(cfg))
+        } else {
+            Ok(None)
         }
+    }
 
-        #[cfg(debug_assertions)]
-        {
-            if std::path::Path::new("mucli-conf.dev.yaml").exists() {
-                builder = builder.add_source(File::new("mucli-conf.dev.yaml", FileFormat::Yaml));
-            }
-        }
+    fn from_path(p: impl AsRef<Path>) -> Result<Self> {
+        fs::read_to_string(&p)
+            .with_context(|| format!("Error reading the file with path: {}", p.as_ref().display()))?
+            .parse::<Self>()
+    }
 
-        builder = builder.add_source(env);
+    pub fn wallet_kp(&self) -> Result<Keypair> {
+        solana_sdk::signature::read_keypair_file(&self.wallet.to_string())
+            .map_err(|_| anyhow!("Unable to read keypair file"))
+    }
+}
 
-        let config = builder
-            .build()
-            .context("Failed to initialize configuration")?;
+#[derive(Debug, Serialize, Deserialize)]
+struct _Config {
+    program_id: String,
+    cluster: String,
+    wallet: String,
+}
 
-        let cluster = match config.get::<String>("cluster") {
-            Ok(c) => Some(Cluster::from_str(&c)?),
-            Err(ConfigError::NotFound(_)) => None,
-            Err(e) => return Err(e.into()),
+impl ToString for Config {
+    fn to_string(&self) -> String {
+        let cfg = _Config {
+            cluster: format!("{}", self.cluster),
+            wallet: self.wallet.to_string(),
+            program_id: self.program_id.to_string(),
         };
 
-        Ok(Self {
-            cluster,
-            keypair_path: config.get("keypair_path")?,
+        serde_yaml::to_string(&cfg).expect("Must be well formed")
+    }
+}
+
+impl FromStr for Config {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let cfg: _Config = serde_yaml::from_str(s)
+            .map_err(|e| anyhow::format_err!("Unable to deserialize config: {}", e.to_string()))?;
+        Ok(Config {
+            cluster: cfg.cluster.parse()?,
+            wallet: shellexpand::tilde(&cfg.wallet).parse()?,
+            program_id: Pubkey::from_str(&cfg.program_id)?,
         })
     }
 }
+
+pub fn get_solana_cfg_url() -> Result<String, io::Error> {
+    let config_file = CONFIG_FILE.as_ref().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "Default Solana config was not found",
+        )
+    })?;
+    SolanaConfig::load(config_file).map(|config| config.json_rpc_url)
+}
+
+crate::home_path!(WalletPath, ".config/solana/id.json");

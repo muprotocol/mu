@@ -1,5 +1,7 @@
-use mu_cli::cli::mu_main;
+use anyhow::Result;
+use clap::Parser;
+use mu_cli::Opts;
 
-fn main() {
-    mu_main();
+fn main() -> Result<()> {
+    mu_cli::entry(Opts::parse())
 }

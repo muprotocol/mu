@@ -184,12 +184,12 @@ impl Drop for DropableChild {
 
 pub fn start_test_validator() -> Result<DropableChild> {
     let mut validator_handle = std::process::Command::new("solana-test-validator")
-        //.arg("-q")
-        .arg("--log")
+        .arg("-q")
+        //.arg("--log")
         .arg("-r")
         .arg("-l")
         .arg("target/test-ledger")
-        .env("RUST_LOG", "solana_runtime::system_instruction_processor=trace,solana_runtime::message_processor=debug,solana_bpf_loader=debug,solana_rbpf=debug")
+        //.env("RUST_LOG", "solana_runtime::system_instruction_processor=trace,solana_runtime::message_processor=debug,solana_bpf_loader=debug,solana_rbpf=debug")
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()

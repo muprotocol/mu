@@ -202,6 +202,10 @@ impl MuProgram<Initialized> {
 
         Ok((wallet, token_account))
     }
+
+    pub fn id(&self) -> Pubkey {
+        self.state.program_keypair.keypair.pubkey()
+    }
 }
 
 pub fn setup_env() -> Result<(MuProgram<Initialized>, DropableChild)> {

@@ -1,18 +1,35 @@
 mod utils;
 
-use mu_cli::arg_parser::parse_args_and_config;
+use clap::Parser;
+use mu_cli::{entry, Opts};
 use utils::program::setup_env;
 
 #[test]
 fn can_create_provider() {
     let (mu_program, _validator_handler) = setup_env().unwrap();
-    let args = vec!["mu", "provider", "create", "--name", "SomeProvider"];
+    let mu_program_id = mu_program.id().to_string();
 
-    let (provider_wallet, associated_token_account_address) = mu_program
+    let (provider_wallet, _associated_token_account_address) = mu_program
         .create_wallet_and_associated_token_account()
         .unwrap();
+    let provider_wallet_path = provider_wallet.path.display().to_string();
 
-    parse_args_and_config(args).unwrap().execute().unwrap();
+    let args = vec![
+        "mu",
+        "--wallet",
+        &provider_wallet_path,
+        "--cluster",
+        "localnet",
+        "--program-id",
+        &mu_program_id,
+        "provider",
+        "create",
+        "--name",
+        "SomeProvider",
+    ];
+
+    let opts = Opts::try_parse_from(args).unwrap();
+    entry(opts).unwrap();
 }
 
 #[test]

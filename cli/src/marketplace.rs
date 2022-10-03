@@ -1,12 +1,16 @@
-//! Communicating with Mu smart contracts
+//! Communicating with Mu smart contract
+
+use std::rc::Rc;
 
 use anchor_client::{
-    solana_sdk::{pubkey::Pubkey, signer::Signer, system_program, sysvar},
-    Cluster, Program,
+    solana_sdk::{pubkey::Pubkey, system_program, sysvar},
+    Program,
 };
 use anchor_spl::associated_token::get_associated_token_address;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use marketplace::MuState;
+
+use crate::config::Config;
 
 /// Marketplace Client for communicating with Mu smart contracts
 pub struct MarketplaceClient {
@@ -14,15 +18,19 @@ pub struct MarketplaceClient {
 }
 
 impl MarketplaceClient {
-    /// Create new Solana client
-    pub fn new(cluster: Cluster, owner: Box<dyn Signer>) -> Result<Self> {
+    /// Create new Solana client with provided config
+    pub fn new(config: Config) -> Result<Self> {
+        println!("[marketpalce] Program_id: {}", config.program_id);
+
+        let wallet = config.wallet_kp()?;
         Ok(Self {
-            program: anchor_client::Client::new(cluster, owner.into()).program(marketplace::id()),
+            program: anchor_client::Client::new(config.cluster, Rc::new(wallet))
+                .program(config.program_id),
         })
     }
 
     fn fetch_program_state(&self) -> Result<MuState> {
-        self.program.state().map_err(Into::into)
+        self.program.state().context("can not fetch program state")
     }
 
     fn program_mint_address(&self) -> Result<Pubkey> {
@@ -57,7 +65,8 @@ impl MarketplaceClient {
             .request()
             .args(marketplace::instruction::CreateProvider { name })
             .accounts(accounts)
-            .send()?;
+            .send()
+            .context("error in creating provider")?;
 
         println!("Sig: {}", a);
         Ok(())
