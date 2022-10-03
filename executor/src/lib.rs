@@ -1,10 +1,9 @@
 pub mod gateway;
 pub mod infrastructure;
-pub mod mu_stack;
 pub mod mudb;
 pub mod network;
-pub mod protos;
 pub mod runtime;
+pub mod stack;
 pub mod util;
 
 use std::{
@@ -15,19 +14,16 @@ use std::{
 use anyhow::{bail, Context, Result};
 use log::*;
 use mailbox_processor::NotificationChannel;
-use mu_stack::scheduler::{Scheduler, SchedulerNotification};
 use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 
-use infrastructure::{config, log_setup};
-use network::{
-    connection_manager::{self, ConnectionManager, ConnectionManagerNotification},
-    gossip::{GossipNotification, KnownNodeConfig},
-};
-
 use crate::{
-    mu_stack::scheduler,
-    network::gossip::{self, Gossip, NodeAddress},
+    infrastructure::{config, log_setup},
+    network::{
+        connection_manager::{self, ConnectionManager, ConnectionManagerNotification},
+        gossip::{self, Gossip, GossipNotification, KnownNodeConfig, NodeAddress},
+    },
+    stack::scheduler::{self, Scheduler, SchedulerNotification},
 };
 
 pub async fn run() -> Result<()> {

@@ -1,6 +1,5 @@
-pub mod deploy;
 pub mod protobuf;
-pub mod scheduler;
+pub mod protos;
 
 use std::{collections::HashMap, fmt::Display};
 
@@ -79,7 +78,7 @@ pub struct Gateway {
 
 impl Gateway {
     // Strip leading slashes from urls, since that's the format rocket provides
-    fn clone_normalized(&self) -> Self {
+    pub fn clone_normalized(&self) -> Self {
         let mut ep = HashMap::new();
         for (url, endpoint) in &self.endpoints {
             if let Some(stripped) = url.strip_prefix('/') {

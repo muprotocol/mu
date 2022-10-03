@@ -804,11 +804,9 @@ dependencies = [
  "futures",
  "log",
  "mailbox_processor",
+ "mu_stack",
  "num",
  "pin-project",
- "protobuf",
- "protobuf-codegen",
- "protoc-bin-vendored",
  "quinn",
  "rand",
  "rcgen",
@@ -1500,6 +1498,21 @@ name = "more-asserts"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7843ec2de400bcbc6a6328c958dc38e5359da6e93e72e37bc5246bf1ae776389"
+
+[[package]]
+name = "mu_stack"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "log",
+ "protobuf",
+ "protobuf-codegen",
+ "protoc-bin-vendored",
+ "serde",
+ "serde_yaml",
+ "uuid",
+]
 
 [[package]]
 name = "multer"

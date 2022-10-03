@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use mu::{mu_stack::StackID, runtime::types::*};
+use mu::runtime::types::*;
+use mu_stack::StackID;
 use std::collections::HashMap;
 
 pub struct MapFunctionProvider {
