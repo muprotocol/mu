@@ -5,7 +5,9 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
+base64 = "0.13"
 bytes = "1.2"
+clap = { version = "4.0", features = ["derive"] }
 log = "0.4"
 protobuf = "3.2"
 serde = { version = "1", features = ["derive"] }
