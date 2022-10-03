@@ -3,6 +3,7 @@ pub mod infrastructure;
 pub mod mu_stack;
 pub mod mudb;
 pub mod network;
+pub mod protos;
 pub mod runtime;
 pub mod util;
 

@@ -46,10 +46,15 @@ reqwest = "0.11"
 sled = "0.34"
 assert_matches = "1.5"
 validator = { version = "0.16", features = ["derive"] }
+protobuf = "3.2"
 
 [dev-dependencies]
 serial_test = "0.8"
 test-log = "0.2"
+
+[build-dependencies]
+protobuf-codegen = "3.2"
+protoc-bin-vendored = "3.0"
 
 [lib]
 name = "mu"
