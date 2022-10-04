@@ -27,6 +27,9 @@ util.asyncMain(async () => {
     // Wait an additional 2 seconds for the node to become healthy
     await util.sleep(2);
 
+    console.log("Starting local HTTP server to serve function code");
+    tmuxSession.splitWindow(`npx ts-node ${path.resolve(__dirname, "start-local-http-server.ts")}`, 0, true);
+
     console.log("Deploying Mu smart contract");
     tmuxSession.splitWindow(
         `export BROWSER='' ANCHOR_WALLET='~/.config/solana/id.json' && ` +

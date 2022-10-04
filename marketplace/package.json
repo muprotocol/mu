@@ -6,8 +6,7 @@
     },
     "dependencies": {
         "@project-serum/anchor": "^0.24.2",
-        "@solana/spl-token": "^0.3.4",
-        "prompt-sync": "^4.2.0"
+        "@solana/spl-token": "^0.3.4"
     },
     "devDependencies": {
         "@types/bn.js": "^5.1.0",
@@ -18,8 +17,10 @@
         "@types/tcp-port-used": "^1.0.1",
         "chai": "^4.3.6",
         "cross-env": "^7.0.3",
+        "http-server": "^14.1.1",
         "mocha": "^10.0.0",
         "prettier": "^2.6.2",
+        "prompt-sync": "^4.2.0",
         "tcp-port-used": "^1.0.2",
         "ts-mocha": "^10.0.0",
         "ts-node": "^10.9.1",

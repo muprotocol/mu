@@ -5,7 +5,7 @@ services:
     name: my_db
   - type: Function
     name: my_function
-    binary: http://localhost/hello-mudb.wasm
+    binary: http://localhost:8080/test-function.wasm
     runtime: wasi1.0
     env: {}
   - type: Gateway
