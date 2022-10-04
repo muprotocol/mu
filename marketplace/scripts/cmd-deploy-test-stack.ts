@@ -1,8 +1,19 @@
+import { existsSync } from "fs";
 import path from "path";
 import { TmuxSession } from "./tmux";
 import util from "./util"
+import promptSync from "prompt-sync";
 
 util.asyncMain(async () => {
+    if (existsSync("test-ledger")) {
+        let prompt = promptSync();
+        if (!process.argv.includes("-y") &&
+            prompt("This command will delete the Solana ledger in ./test-ledger, are you sure? [y/n] ") != "y")
+            return;
+
+        util.run("rm -rf test-ledger");
+    }
+
     console.log("Building anchor project");
     util.run("anchor build");
 

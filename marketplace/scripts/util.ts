@@ -5,6 +5,14 @@ import { setTimeout } from 'timers/promises';
 
 export const waitUntilPortUsed = (port: number) => waitUntilUsed(port);
 
+export const runAndGetOutput = (command: string): string => {
+    let result = spawnSync(command, { shell: true });
+    if (result.status !== 0) {
+        throw `Command failed with status ${result.status} and output ${result.output}`;
+    }
+    return result.stdout.toString();
+}
+
 export const run = (command: string) => {
     let result = spawnSync(command, { shell: true, stdio: 'inherit' });
     if (result.status !== 0) {
@@ -27,6 +35,7 @@ export const asyncMain = (f: (() => Promise<number | void>)) =>
 
 export default {
     waitUntilPortUsed,
+    runAndGetOutput,
     run,
     tryRun,
     sleep,

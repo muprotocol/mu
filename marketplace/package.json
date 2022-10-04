@@ -6,13 +6,15 @@
     },
     "dependencies": {
         "@project-serum/anchor": "^0.24.2",
-        "@solana/spl-token": "^0.3.4"
+        "@solana/spl-token": "^0.3.4",
+        "prompt-sync": "^4.2.0"
     },
     "devDependencies": {
         "@types/bn.js": "^5.1.0",
         "@types/chai": "^4.3.3",
         "@types/mocha": "^9.1.1",
         "@types/node": "^18.7.18",
+        "@types/prompt-sync": "^4.2.0",
         "@types/tcp-port-used": "^1.0.1",
         "chai": "^4.3.6",
         "cross-env": "^7.0.3",

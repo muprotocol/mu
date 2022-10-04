@@ -1,7 +1,7 @@
 import { Keypair, PublicKey } from '@solana/web3.js'
 import * as spl from '@solana/spl-token';
 import { expect } from "chai";
-import { createAndFundWallet, createAuthorizedUsageSigner, createEscrowAccount, createMint, createProvider, createRegion, deployStack, initializeMu, mintToAccount, MuAuthorizedSignerInfo, MuEscrowAccountInfo, MuProgram, MuProviderInfo, MuRegionInfo, MuStackInfo, updateStackUsage } from "../scripts/anchor-utils";
+import { createAuthorizedUsageSigner, createEscrowAccount, createMint, createProvider, createRegion, deployStack, initializeMu, mintToAccount, MuAuthorizedSignerInfo, MuEscrowAccountInfo, MuProgram, MuProviderInfo, MuRegionInfo, MuStackInfo, readOrCreateUserWallet, updateStackUsage } from "../scripts/anchor-utils";
 import { AnchorProvider } from '@project-serum/anchor';
 
 describe("marketplace", () => {
@@ -46,7 +46,7 @@ describe("marketplace", () => {
 	});
 
 	it("Creates an escrow account", async () => {
-		userWallet = await createAndFundWallet(mu.anchorProvider, mu.mint)[0];
+		userWallet = (await readOrCreateUserWallet(mu)).keypair;
 		escrow = await createEscrowAccount(mu, userWallet, provider);
 
 		const escrowAccount = await spl.getAccount(mu.anchorProvider.connection, escrow.pda);

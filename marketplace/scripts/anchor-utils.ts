@@ -77,7 +77,7 @@ export const createMint = async (provider: anchor.AnchorProvider, useStaticKeypa
 
 export const readMintFromStaticKeypair = () => readOrCreateKeypair("mint");
 
-export const createAndFundWallet = async (provider: anchor.AnchorProvider, mint: Keypair, keypairName?: string): Promise<[Keypair, PublicKey]> => {
+const createAndFundWallet = async (provider: anchor.AnchorProvider, mint: Keypair, keypairName?: string): Promise<[Keypair, PublicKey]> => {
 	let wallet = readOrCreateKeypair(keypairName);
 
 	let account = await provider.connection.getAccountInfo(wallet.publicKey);
@@ -218,14 +218,7 @@ export interface MuRegionInfo {
 	pda: PublicKey
 }
 
-export const createRegion = async (
-	mu: MuProgram,
-	provider: MuProviderInfo,
-	name: string,
-	regionNum: number,
-	rates: ServiceUnits,
-	zones: number,
-): Promise<MuRegionInfo> => {
+export const getRegion = (mu: MuProgram, provider: MuProviderInfo, regionNum: number): MuRegionInfo => {
 	const pda = publicKey.findProgramAddressSync(
 		[
 			anchor.utils.bytes.utf8.encode("region"),
@@ -235,6 +228,19 @@ export const createRegion = async (
 		mu.program.programId
 	)[0];
 
+	return { pda };
+}
+
+export const createRegion = async (
+	mu: MuProgram,
+	provider: MuProviderInfo,
+	name: string,
+	regionNum: number,
+	rates: ServiceUnits,
+	zones: number,
+): Promise<MuRegionInfo> => {
+	let region = getRegion(mu, provider, regionNum);
+
 	await mu.program.methods.createRegion(
 		regionNum,
 		name,
@@ -242,11 +248,11 @@ export const createRegion = async (
 		serviceUnitsToAnchorTypes(rates)
 	).accounts({
 		provider: provider.pda,
-		region: pda,
+		region: region.pda,
 		owner: provider.wallet.publicKey
 	}).signers([provider.wallet]).rpc();
 
-	return { pda };
+	return region;
 }
 
 export interface MuAuthorizedSignerInfo {
