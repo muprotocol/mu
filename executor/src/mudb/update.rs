@@ -229,20 +229,30 @@ impl Updater {
             })
         })
     }
+
+    pub fn update<T>(&self, mut updatable: T) -> (T, Changes)
+    where
+        T: Update,
+    {
+        let changes = update(updatable.doc(), &self.0);
+        let new = updatable.finalize(&changes);
+        (new, changes)
+    }
 }
 
 pub trait Update {
-    fn update(mut self, updater: &Updater) -> (Self, Changes)
-    where
-        Self: Sized,
-    {
-        let changes = update(self.doc(), &updater.0);
-        let new = self.finalize(&changes);
-        (new, changes)
-    }
-
     fn doc(&mut self) -> &mut JsonValue;
     fn finalize(self, changes: &Changes) -> Self;
+}
+
+impl Update for JsonValue {
+    fn doc(&mut self) -> &mut JsonValue {
+        self
+    }
+
+    fn finalize(self, _: &Changes) -> Self {
+        self
+    }
 }
 
 impl TryFrom<JsonValue> for Updater {

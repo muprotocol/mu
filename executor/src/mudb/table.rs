@@ -1,11 +1,6 @@
 use std::collections::HashMap;
 
-use super::{
-    doc_filter::DocFilter,
-    types::*,
-    update::{Update, Updater},
-    Error, Result,
-};
+use super::{doc_filter::DocFilter, types::*, update::Updater, Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct Table {
@@ -102,7 +97,7 @@ impl Table {
         if affected_indexes.is_empty() {
             let (items, batch) =
                 self.query_then_fold(kf, vf, |mut acc: (Vec<Item>, sled::Batch), (k, v)| {
-                    let (uv, changes) = v.update(&updater);
+                    let (uv, changes) = updater.update(v); //v.update(&updater);
                     if !changes.is_empty() {
                         acc.0.push((k.clone(), uv.clone()));
                         acc.1.insert(k, uv);
