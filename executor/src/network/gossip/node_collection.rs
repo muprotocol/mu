@@ -7,9 +7,10 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
+use mu_stack::StackID;
 use tokio::time::Instant;
 
-use crate::{mu_stack::StackID, network::connection_manager::ConnectionID};
+use crate::network::connection_manager::ConnectionID;
 
 use super::{Heartbeat, NodeAddress, NodeHash};
 

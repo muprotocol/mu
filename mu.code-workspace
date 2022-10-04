@@ -5,6 +5,9 @@
 			"path": "."
 		},
 		{
+			"path": "cli"
+		},
+		{
 			"path": "executor"
 		},
 		{
@@ -12,6 +15,9 @@
 		},
 		{
 			"path": "marketplace"
+		},
+		{
+			"path": "mu_stack"
 		}
 	]
 }

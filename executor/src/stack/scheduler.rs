@@ -15,7 +15,7 @@ use crate::{
     runtime::Runtime, util::TakeAndReplaceWithDefault,
 };
 
-use super::{Stack, StackID};
+use mu_stack::{Stack, StackID};
 
 #[async_trait]
 #[clonable]

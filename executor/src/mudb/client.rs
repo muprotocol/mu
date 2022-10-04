@@ -1,5 +1,5 @@
 use super::{input::*, output::*, Config, MuDB, Result};
-use crate::mu_stack::StackID;
+use mu_stack::StackID;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DatabaseID {
