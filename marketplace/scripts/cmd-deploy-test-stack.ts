@@ -29,7 +29,8 @@ util.asyncMain(async () => {
 
     console.log("Deploying Mu smart contract");
     tmuxSession.splitWindow(
-        `env -C '${process.cwd()}' BROWSER='' ANCHOR_WALLET='/home/vscode/.config/solana/id.json' ` +
+        `export BROWSER='' ANCHOR_WALLET='~/.config/solana/id.json' && ` +
+        `cd '${process.cwd()}' && ` +
         `npx ts-node ${path.resolve(__dirname, "deploy-contract.ts")} && ` +
         `npx ts-node ${path.resolve(__dirname, "deploy-mint-and-provider.ts")} && ` +
         `npx ts-node ${path.resolve(__dirname, "deploy-developer.ts")} && ` +

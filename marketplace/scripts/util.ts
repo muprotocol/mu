@@ -29,7 +29,7 @@ export const asyncMain = (f: (() => Promise<number | void>)) =>
         .then(r => exit(r || 0))
         .catch(e => {
             console.error(e);
-            run("sleep 20");
+            run("sleep 60");
             exit(-1);
         });
 
