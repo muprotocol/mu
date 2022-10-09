@@ -1,16 +1,15 @@
-use anchor_client::Cluster;
+use anchor_client::{
+    solana_sdk::{
+        pubkey::Pubkey,
+        signature::{read_keypair_file, Keypair},
+    },
+    Cluster,
+};
 use anyhow::{anyhow, Context, Error, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use solana_cli_config::{Config as SolanaConfig, CONFIG_FILE};
-use solana_sdk::pubkey::Pubkey;
-use solana_sdk::signature::Keypair;
-use std::fs;
-use std::io;
-use std::path::Path;
-use std::str::FromStr;
-
-const MU_PROGRAM_ID: &str = "2MZLka8nfoAf1LKCCbgCw5ZXfpMbKGDuLjQ88MNMyti2"; //TODO: Replace with actual deployed ID
+use std::{fs, io, path::Path, str::FromStr};
 
 #[derive(Default, Debug, Parser)]
 pub struct ConfigOverride {
@@ -35,7 +34,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            program_id: Pubkey::from_str(MU_PROGRAM_ID).expect("valid Program ID value"),
+            program_id: marketplace::id(),
             cluster: Cluster::default(),
             wallet: WalletPath::default(),
         }
@@ -78,7 +77,7 @@ impl Config {
     }
 
     pub fn wallet_kp(&self) -> Result<Keypair> {
-        solana_sdk::signature::read_keypair_file(&self.wallet.to_string())
+        read_keypair_file(&self.wallet.to_string())
             .map_err(|_| anyhow!("Unable to read keypair file"))
     }
 }

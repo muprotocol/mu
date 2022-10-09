@@ -7,8 +7,9 @@ use anchor_client::{
     },
     Client, Program,
 };
-use anchor_spl::token;
 use anyhow::{bail, Context, Result};
+
+use crate::utils::create_rpc_client;
 
 use super::{
     airdrop_account, common::KeypairWithPath, create_anchor_client, create_mint,
@@ -90,8 +91,6 @@ impl MuProgramState for Deployed {}
 
 impl MuProgram<Deployed> {
     pub fn deploy(client: Client, owner: KeypairWithPath) -> Result<Self> {
-        println!("owner: {}", owner.keypair.pubkey());
-
         let program_keypair = deploy_program(&owner)?;
         let program = client.program(program_keypair.keypair.pubkey());
 
@@ -112,15 +111,6 @@ impl MuProgram<Deployed> {
 
         let mint = create_mint(&self.client, &self.owner.keypair)?;
 
-        println!("owner: {}", self.owner.keypair.pubkey());
-        println!("state_pda: {}", state_pda);
-        println!("deposit_pda: {}", deposit_pda);
-        println!("mint: {}", mint.keypair.pubkey());
-        println!(
-            "program_keypair: {}",
-            self.state.program_keypair.keypair.pubkey()
-        );
-
         self.state
             .program
             .request()
@@ -129,9 +119,9 @@ impl MuProgram<Deployed> {
                 mint: mint.keypair.pubkey(),
                 deposit_token: deposit_pda,
                 authority: self.owner.keypair.pubkey(),
-                system_program: system_program::ID,
-                token_program: token::ID,
-                rent: solana_sdk::sysvar::rent::ID,
+                system_program: system_program::id(),
+                token_program: spl_token::id(),
+                rent: solana_sdk::sysvar::rent::id(),
             })
             .args(marketplace::instruction::Initialize)
             .signer(self.owner.keypair.as_ref())
@@ -157,7 +147,7 @@ impl MuProgram<Initialized> {
         let wallet = KeypairWithPath::new()?;
 
         self.client
-            .program(system_program::ID)
+            .program(system_program::id())
             .request()
             .instruction(system_instruction::transfer(
                 &self.owner.keypair.pubkey(),
@@ -167,9 +157,25 @@ impl MuProgram<Initialized> {
             .send()
             .context("can not fund wallet")?;
 
-        let associated_token_program = self.client.program(spl_associated_token_account::ID);
+        let token_account = spl_associated_token_account::get_associated_token_address(
+            &wallet.keypair.pubkey(),
+            &self.state.mint.keypair.pubkey(),
+        );
 
-        associated_token_program
+        println!(
+            "AccountInfo: {:?}",
+            create_rpc_client().get_account(&wallet.pubkey()).unwrap()
+        );
+
+        println!(
+            "TokenAccountInfo: {:?}",
+            create_rpc_client()
+                .get_token_account(&token_account)
+                .unwrap()
+        );
+
+        self.client
+            .program(spl_associated_token_account::id())
             .request()
             .instruction(
                 spl_associated_token_account::instruction::create_associated_token_account(
@@ -179,32 +185,35 @@ impl MuProgram<Initialized> {
                 ),
             )
             .send()
-            .context("can not create associated token account")?;
+            .context("can not create associated token account")
+            .unwrap();
 
-        let token_account = spl_associated_token_account::get_associated_token_address(
-            &wallet.keypair.pubkey(),
-            &self.state.mint.keypair.pubkey(),
+        println!(
+            "[in create wallet and associated_token_account] Balance: {:?}",
+            create_rpc_client().get_balance(&token_account).unwrap()
         );
 
-        associated_token_program
+        self.client
+            .program(spl_token::id())
             .request()
             .instruction(spl_token::instruction::mint_to(
-                &spl_token::ID,
+                &spl_token::id(),
                 &self.state.mint.keypair.pubkey(),
                 &token_account,
-                &self.owner.keypair.pubkey(),
-                &[&self.state.mint.keypair.pubkey()],
+                &wallet.keypair.pubkey(),
+                &[],
                 10000,
             )?)
-            .signer(self.state.mint.keypair.as_ref())
+            .signer(wallet.keypair.as_ref())
             .send()
             .context("can not mint to associated token account")?;
 
-        Ok((wallet, token_account))
-    }
+        println!(
+            "[in create wallet and associated_token_account] Balance: {:?}",
+            create_rpc_client().get_balance(&token_account).unwrap()
+        );
 
-    pub fn id(&self) -> Pubkey {
-        self.state.program_keypair.keypair.pubkey()
+        Ok((wallet, token_account))
     }
 }
 

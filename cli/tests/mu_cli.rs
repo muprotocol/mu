@@ -7,7 +7,6 @@ use utils::program::setup_env;
 #[test]
 fn can_create_provider() {
     let (mu_program, _validator_handler) = setup_env().unwrap();
-    let mu_program_id = mu_program.id().to_string();
 
     let (provider_wallet, _associated_token_account_address) = mu_program
         .create_wallet_and_associated_token_account()
@@ -20,8 +19,6 @@ fn can_create_provider() {
         &provider_wallet_path,
         "--cluster",
         "localnet",
-        "--program-id",
-        &mu_program_id,
         "provider",
         "create",
         "--name",

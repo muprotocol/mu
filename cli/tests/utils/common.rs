@@ -9,14 +9,16 @@ use anchor_client::{
     solana_client::rpc_client::RpcClient,
     solana_sdk::{
         commitment_config::CommitmentConfig,
+        program_pack::Pack,
+        pubkey::Pubkey,
         signature::{read_keypair_file, Keypair},
         signer::Signer,
         system_instruction, system_program,
     },
     Client, Cluster,
 };
-use anchor_spl::token::Mint;
 use anyhow::{anyhow, bail, Context, Result};
+use spl_token::state::Mint;
 
 pub struct KeypairWithPath {
     pub keypair: Rc<Keypair>,
@@ -65,6 +67,10 @@ impl KeypairWithPath {
         } else {
             Self::_new(Some(name))
         }
+    }
+
+    pub fn pubkey(&self) -> Pubkey {
+        self.keypair.pubkey()
     }
 
     fn _new<S>(name: Option<S>) -> Result<Self>
@@ -184,12 +190,12 @@ impl Drop for DropableChild {
 
 pub fn start_test_validator() -> Result<DropableChild> {
     let mut validator_handle = std::process::Command::new("solana-test-validator")
-        .arg("-q")
-        //.arg("--log")
+        //.arg("-q")
+        .arg("--log")
         .arg("-r")
         .arg("-l")
         .arg("target/test-ledger")
-        //.env("RUST_LOG", "solana_runtime::system_instruction_processor=trace,solana_runtime::message_processor=debug,solana_bpf_loader=debug,solana_rbpf=debug")
+        .env("RUST_LOG", "solana_runtime::system_instruction_processor=trace,solana_runtime::message_processor=debug,solana_bpf_loader=debug,solana_rbpf=debug")
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
