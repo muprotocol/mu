@@ -17,7 +17,6 @@ use rocket::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::{sync::RwLock, task::JoinHandle};
-use uuid::Uuid;
 
 use crate::runtime::{types::FunctionID, Runtime};
 
@@ -219,13 +218,13 @@ async fn step(
     }
 }
 
-struct UuidParam(Uuid);
+struct StackIDParam(StackID);
 
-impl<'a> FromParam<'a> for UuidParam {
-    type Error = uuid::Error;
+impl<'a> FromParam<'a> for StackIDParam {
+    type Error = ();
 
     fn from_param(param: &'a str) -> Result<Self, Self::Error> {
-        Uuid::parse_str(param).map(UuidParam)
+        param.parse().map(StackIDParam)
     }
 }
 
@@ -329,7 +328,7 @@ impl<'r, 'o: 'r> rocket::response::Responder<'r, 'o> for Response {
 }
 
 async fn handle_request<'a>(
-    stack_id: Uuid,
+    stack_id: StackIDParam,
     gateway_name: &'a str,
     method: HttpMethod,
     path: PathBuf,
@@ -338,7 +337,7 @@ async fn handle_request<'a>(
     data: Option<&'a str>,
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
-    let stack_id = StackID(stack_id);
+    let stack_id = stack_id.0;
 
     let path = match path.to_str() {
         Some(x) => x,
@@ -405,7 +404,7 @@ async fn handle_request<'a>(
 
 #[get("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
 async fn get<'a>(
-    stack_id: UuidParam,
+    stack_id: StackIDParam,
     gateway_name: &'a str,
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
@@ -414,7 +413,7 @@ async fn get<'a>(
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
-        stack_id.0,
+        stack_id,
         gateway_name,
         HttpMethod::Get,
         path,
@@ -428,7 +427,7 @@ async fn get<'a>(
 
 #[post("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
 async fn post<'a>(
-    stack_id: UuidParam,
+    stack_id: StackIDParam,
     gateway_name: &'a str,
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
@@ -437,7 +436,7 @@ async fn post<'a>(
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
-        stack_id.0,
+        stack_id,
         gateway_name,
         HttpMethod::Post,
         path,
@@ -451,7 +450,7 @@ async fn post<'a>(
 
 #[put("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
 async fn put<'a>(
-    stack_id: UuidParam,
+    stack_id: StackIDParam,
     gateway_name: &'a str,
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
@@ -460,7 +459,7 @@ async fn put<'a>(
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
-        stack_id.0,
+        stack_id,
         gateway_name,
         HttpMethod::Put,
         path,
@@ -474,7 +473,7 @@ async fn put<'a>(
 
 #[delete("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
 async fn delete<'a>(
-    stack_id: UuidParam,
+    stack_id: StackIDParam,
     gateway_name: &'a str,
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
@@ -483,7 +482,7 @@ async fn delete<'a>(
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
-        stack_id.0,
+        stack_id,
         gateway_name,
         HttpMethod::Delete,
         path,
@@ -497,7 +496,7 @@ async fn delete<'a>(
 
 #[head("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
 async fn head<'a>(
-    stack_id: UuidParam,
+    stack_id: StackIDParam,
     gateway_name: &'a str,
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
@@ -506,7 +505,7 @@ async fn head<'a>(
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
-        stack_id.0,
+        stack_id,
         gateway_name,
         HttpMethod::Head,
         path,
@@ -520,7 +519,7 @@ async fn head<'a>(
 
 #[patch("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
 async fn patch<'a>(
-    stack_id: UuidParam,
+    stack_id: StackIDParam,
     gateway_name: &'a str,
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
@@ -529,7 +528,7 @@ async fn patch<'a>(
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
-        stack_id.0,
+        stack_id,
         gateway_name,
         HttpMethod::Patch,
         path,
@@ -543,7 +542,7 @@ async fn patch<'a>(
 
 #[options("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
 async fn options<'a>(
-    stack_id: UuidParam,
+    stack_id: StackIDParam,
     gateway_name: &'a str,
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
@@ -552,7 +551,7 @@ async fn options<'a>(
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
-        stack_id.0,
+        stack_id,
         gateway_name,
         HttpMethod::Options,
         path,

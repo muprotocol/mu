@@ -213,7 +213,9 @@ fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
 async fn deploy_prototype_stack(scheduler: &dyn Scheduler) {
     let yaml = std::fs::read_to_string("./prototype/stack.yaml").unwrap();
     let stack = serde_yaml::from_str::<mu_stack::Stack>(yaml.as_str()).unwrap();
-    let id = mu_stack::StackID("00001111-2222-3333-4444-555566667777".parse().unwrap());
+    let id = "s_2gytfyZ3brG89ZF7TFnRGwGmysiWhBfjxh1hDKcBHegY"
+        .parse()
+        .unwrap();
     scheduler.stack_available(id, stack).await.unwrap();
     warn!("Stack will be deployed with ID {id}");
 }

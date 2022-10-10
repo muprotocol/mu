@@ -1,20 +1,69 @@
 pub mod protobuf;
 pub mod protos;
 
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 
 use ::protobuf::Message;
 use anyhow::Result;
+use base58::{FromBase58, ToBase58};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StackID(pub Uuid);
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StackID {
+    SolanaPublicKey([u8; 32]),
+}
+
+impl StackID {
+    pub fn get_bytes(&self) -> &[u8; 32] {
+        match self {
+            Self::SolanaPublicKey(key) => key,
+        }
+    }
+}
+
+impl Debug for StackID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SolanaPublicKey(pk) => {
+                write!(f, "<Solana public key (base58): {}>", pk.to_base58())
+            }
+        }
+    }
+}
 
 impl Display for StackID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        match self {
+            Self::SolanaPublicKey(pk) => write!(f, "s_{}", pk.to_base58()),
+        }
+    }
+}
+
+impl FromStr for StackID {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() < 3 || s.chars().nth(1) != Some('_') {
+            return Err(());
+        }
+
+        let variant_code = s.chars().nth(0);
+
+        match variant_code {
+            Some('s') => {
+                let (_, code) = s.split_at(2);
+                let bytes = code.from_base58().map_err(|_| ())?;
+                Ok(Self::SolanaPublicKey(
+                    bytes.as_slice().try_into().map_err(|_| ())?,
+                ))
+            }
+            _ => Err(()),
+        }
     }
 }
 
