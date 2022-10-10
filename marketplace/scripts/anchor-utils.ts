@@ -382,7 +382,6 @@ export const deployStack = async (
 
 	await
 		mu.program.methods.createStack(
-			stack.byteLength,
 			stack_seed,
 			stack,
 		).accounts({

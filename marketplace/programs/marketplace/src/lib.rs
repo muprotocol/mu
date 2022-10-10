@@ -16,13 +16,22 @@ fn calc_usage(rates: &ServiceUnits, usage: &ServiceUnits) -> u64 {
         + rates.mufunction_cpu_mem * usage.mufunction_cpu_mem
 }
 
+pub enum MuAccountType {
+    MuState = 0,
+    Provider = 1,
+    ProviderRegion = 2,
+    UsageUpdate = 3,
+    AuthorizedUsageSigner = 4,
+    Stack = 5,
+}
+
 #[program]
 pub mod marketplace {
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
         ctx.accounts.state.set_inner(MuState {
-            account_type: 0,
+            account_type: MuAccountType::MuState as u8,
             authority: ctx.accounts.authority.key(),
             mint: ctx.accounts.mint.key(),
             deposit_token: ctx.accounts.deposit_token.key(),
@@ -46,7 +55,7 @@ pub mod marketplace {
         }
 
         ctx.accounts.provider.set_inner(Provider {
-            account_type: 1,
+            account_type: MuAccountType::Provider as u8,
             name,
             owner: ctx.accounts.owner.key(),
             bump: *ctx.bumps.get("provider").unwrap(),
@@ -57,15 +66,15 @@ pub mod marketplace {
 
     pub fn create_stack(
         ctx: Context<CreateStack>,
-        _stack_size: u32,
-        _stack_seed: u64,
-        stack: Vec<u8>,
+        stack_seed: u64,
+        stack_data: Vec<u8>,
     ) -> Result<()> {
         ctx.accounts.stack.set_inner(Stack {
-            account_type: 2,
-            stack,
+            account_type: MuAccountType::Stack as u8,
+            stack: stack_data,
             user: ctx.accounts.user.key(),
             region: ctx.accounts.region.key(),
+            seed: stack_seed,
         });
 
         Ok(())
@@ -79,7 +88,7 @@ pub mod marketplace {
         rates: ServiceUnits,
     ) -> Result<()> {
         ctx.accounts.region.set_inner(ProviderRegion {
-            account_type: 3,
+            account_type: MuAccountType::ProviderRegion as u8,
             name,
             zones,
             rates,
@@ -98,7 +107,7 @@ pub mod marketplace {
         ctx.accounts
             .authorized_signer
             .set_inner(AuthorizedUsageSigner {
-                account_type: 4,
+                account_type: MuAccountType::AuthorizedUsageSigner as u8,
                 signer,
                 token_account,
             });
@@ -124,7 +133,7 @@ pub mod marketplace {
             to: ctx.accounts.token_account.to_account_info(),
             authority: ctx.accounts.state.to_account_info(),
         };
-        let bump = ctx.bumps.get("state").unwrap().to_le_bytes();
+        let bump = ctx.accounts.state.bump.to_le_bytes();
         let pito = vec![b"state".as_ref(), bump.as_ref()];
         let outpito = vec![pito.as_slice()];
         let transfer_ctx = CpiContext::new_with_signer(
@@ -134,74 +143,25 @@ pub mod marketplace {
         );
         anchor_spl::token::transfer(transfer_ctx, usage_tokens)?;
 
-        // ctx.accounts.usage_update.set_inner(UsageUpdate {
-        //     account_type: 4,
-        //     region: ctx.accounts.region.key(),
-        //     stack: ctx.accounts.stack.key(),
-        //     usage,
-        // });
+        ctx.accounts.usage_update.set_inner(UsageUpdate {
+            account_type: MuAccountType::UsageUpdate as u8,
+            region: ctx.accounts.region.key(),
+            stack: ctx.accounts.stack.key(),
+            usage,
+        });
 
         Ok(())
     }
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct ServiceUnits {
-    mudb_gb_month: u64,
-    mufunction_cpu_mem: u64,
-    bandwidth: u64,
-    gateway_mreqs: u64,
-}
-
 #[account]
 #[derive(Default)]
 pub struct MuState {
-    account_type: u8, // Always 0
+    account_type: u8, // See MuAccountType
     authority: Pubkey,
     mint: Pubkey,
     deposit_token: Pubkey,
     bump: u8,
-}
-
-#[account]
-pub struct Provider {
-    account_type: u8, // Always 1
-    name: String,     // Max 20 Chars
-    owner: Pubkey,
-    bump: u8,
-}
-
-#[account]
-pub struct ProviderRegion {
-    account_type: u8, // Always 2
-    provider: Pubkey,
-    name: String, // Max 20
-    zones: u8,
-    rates: ServiceUnits,
-    bump: u8,
-}
-
-#[account]
-pub struct UsageUpdate {
-    account_type: u8, // Always 3
-    region: Pubkey,
-    stack: Pubkey,
-    usage: ServiceUnits,
-}
-
-#[account]
-pub struct AuthorizedUsageSigner {
-    account_type: u8,
-    signer: Pubkey,
-    token_account: Pubkey,
-}
-
-#[account]
-pub struct Stack {
-    account_type: u8, // Always 4
-    user: Pubkey,
-    region: Pubkey,
-    stack: Vec<u8>,
 }
 
 #[derive(Accounts)]
@@ -235,7 +195,16 @@ pub struct Initialize<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
+#[account]
+pub struct Provider {
+    account_type: u8, // See MuAccountType
+    name: String,     // Max 20 Chars
+    owner: Pubkey,
+    bump: u8,
+}
+
 #[derive(Accounts)]
+#[instruction(name: String)]
 pub struct CreateProvider<'info> {
     #[account(
         seeds = [b"state"],
@@ -247,7 +216,7 @@ pub struct CreateProvider<'info> {
     #[account(
         init,
         payer = owner,
-        space = 8 + 1 + 20 + 32 + 32 + 1,
+        space = 8 + 1 + 4 + name.as_bytes().len() + 32 + 1,
         seeds = [b"provider", owner.key().as_ref()],
         bump
     )]
@@ -267,15 +236,33 @@ pub struct CreateProvider<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct ServiceUnits {
+    mudb_gb_month: u64,
+    mufunction_cpu_mem: u64,
+    bandwidth: u64,
+    gateway_mreqs: u64,
+}
+
+#[account]
+pub struct ProviderRegion {
+    account_type: u8, // See MuAccountType
+    provider: Pubkey,
+    name: String, // Max 20
+    zones: u8,
+    rates: ServiceUnits,
+    bump: u8,
+}
+
 #[derive(Accounts)]
-#[instruction(region_num: u8)]
+#[instruction(region_num: u8, name: String)]
 pub struct CreateRegion<'info> {
     #[account(has_one = owner)]
     pub provider: Account<'info, Provider>,
 
     #[account(
         init,
-        space = 8 + 20 + 1 + (8 + 8 + 8 + 8) + 32 + 1,
+        space = 8 + 1 + 32 + 4 + name.as_bytes().len() + 1 + (8 + 8 + 8 + 8) + 1,
         payer = owner,
         seeds = [b"region", owner.key().as_ref(), region_num.to_le_bytes().as_ref()],
         bump
@@ -290,7 +277,11 @@ pub struct CreateRegion<'info> {
 
 #[derive(Accounts)]
 pub struct CreateProviderEscrowAccount<'info> {
-    #[account(has_one = mint)]
+    #[account(
+        seeds = [b"state"],
+        bump = state.bump,
+        has_one = mint
+    )]
     pub state: Account<'info, MuState>,
     pub mint: Account<'info, Mint>,
 
@@ -314,15 +305,24 @@ pub struct CreateProviderEscrowAccount<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
+#[account]
+pub struct Stack {
+    account_type: u8, // See MuAccountType
+    user: Pubkey,
+    region: Pubkey,
+    stack: Vec<u8>,
+    seed: u64,
+}
+
 #[derive(Accounts)]
-#[instruction(stack_size: u32, stack_seed: u64)]
+#[instruction(stack_seed: u64, stack_data: Vec<u8>)]
 pub struct CreateStack<'info> {
     pub region: Account<'info, ProviderRegion>,
 
     #[account(
         init,
         payer = user,
-        space = 8 + 1 + 32 + 32 + 4 + stack_size as usize,
+        space = 8 + 1 + 32 + 32 + 4 + stack_data.len() + 8,
         seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_le_bytes().as_ref()],
         bump
     )]
@@ -333,6 +333,13 @@ pub struct CreateStack<'info> {
 
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
+}
+
+#[account]
+pub struct AuthorizedUsageSigner {
+    account_type: u8, // See MuAccountType
+    signer: Pubkey,
+    token_account: Pubkey,
 }
 
 #[derive(Accounts)]
@@ -362,12 +369,20 @@ pub struct CreateAuthorizedUsageSigner<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[account]
+pub struct UsageUpdate {
+    account_type: u8, // See MuAccountType
+    region: Pubkey,
+    stack: Pubkey,
+    usage: ServiceUnits,
+}
+
 #[derive(Accounts)]
 #[instruction(update_seed: u64, escrow_bump: u8)]
 pub struct UpdateUsage<'info> {
     #[account(
         seeds = [b"state"],
-        bump
+        bump = state.bump
     )]
     pub state: Account<'info, MuState>,
 
