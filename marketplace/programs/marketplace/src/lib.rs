@@ -75,6 +75,7 @@ pub mod marketplace {
             user: ctx.accounts.user.key(),
             region: ctx.accounts.region.key(),
             seed: stack_seed,
+            revision: 1,
         });
 
         Ok(())
@@ -312,6 +313,7 @@ pub struct Stack {
     region: Pubkey,
     stack: Vec<u8>,
     seed: u64,
+    revision: u32,
 }
 
 #[derive(Accounts)]
@@ -322,7 +324,7 @@ pub struct CreateStack<'info> {
     #[account(
         init,
         payer = user,
-        space = 8 + 1 + 32 + 32 + 4 + stack_data.len() + 8,
+        space = 8 + 1 + 32 + 32 + 4 + stack_data.len() + 8 + 4,
         seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_le_bytes().as_ref()],
         bump
     )]
