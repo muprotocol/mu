@@ -2,13 +2,10 @@ mod utils;
 
 use clap::Parser;
 use mu_cli::{entry, Opts};
-use utils::program::setup_env;
 
 #[test]
 fn can_create_provider() {
-    let (mu_program, _validator_handler) = setup_env().unwrap();
-
-    let (provider_wallet, _associated_token_account_address) = mu_program
+    let (provider_wallet, _associated_token_account_address) = todo!()
         .create_wallet_and_associated_token_account()
         .unwrap();
     let provider_wallet_path = provider_wallet.path.display().to_string();

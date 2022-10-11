@@ -25,7 +25,7 @@ util.asyncMain(async () => {
     console.log("Waiting for validator to start");
     util.waitUntilPortUsed(8899);
     // Wait an additional 2 seconds for the node to become healthy
-    await util.sleep(2);
+    await util.sleep(10);
 
     console.log("Starting local HTTP server to serve function code");
     tmuxSession.splitWindow(`npx ts-node ${path.resolve(__dirname, "start-local-http-server.ts")}`, 0, true);
