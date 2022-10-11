@@ -5,14 +5,19 @@
 			"path": "."
 		},
 		{
-			"name": "marketplace",
-			"path": "./marketplace"
+			"path": "cli"
+		},
+		{
+			"path": "executor"
 		},
 		{
 			"path": "mailbox_processor"
 		},
 		{
-			"path": "executor"
+			"path": "marketplace"
+		},
+		{
+			"path": "mu_stack"
 		}
 	]
 }

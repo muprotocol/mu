@@ -1,12 +1,11 @@
 import * as anchor from "@project-serum/anchor";
-import { Address, Program } from "@project-serum/anchor";
+import { Program } from "@project-serum/anchor";
 import { publicKey } from "@project-serum/anchor/dist/cjs/utils";
 import { Marketplace } from "../target/types/marketplace";
 import { Keypair, LAMPORTS_PER_SOL, Transaction, SystemProgram, PublicKey } from '@solana/web3.js'
 import * as spl from '@solana/spl-token';
 import path from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import NodeWallet from "@project-serum/anchor/dist/cjs/nodewallet";
 
 export class ServiceUnits {
 	mudb_gb_month: number;
@@ -43,6 +42,7 @@ export const readOrCreateKeypair = (name?: string): Keypair => {
 	let keypair = Keypair.generate(); // anchor.Wallet has no constructor
 	console.log(`Generated keypair ${name}, public key is:`, keypair.publicKey.toBase58());
 	writeFileSync(walletPath, keypair.secretKey);
+	return keypair;
 }
 
 export const createMint = async (provider: anchor.AnchorProvider, useStaticKeypair?: boolean): Promise<Keypair> => {
@@ -75,30 +75,44 @@ export const createMint = async (provider: anchor.AnchorProvider, useStaticKeypa
 	return mint;
 }
 
-export const createAndFundWallet = async (provider: anchor.AnchorProvider, mint: Keypair, keypairName?: string): Promise<[Keypair, PublicKey]> => {
+export const readMintFromStaticKeypair = () => readOrCreateKeypair("mint");
+
+const createAndFundWallet = async (provider: anchor.AnchorProvider, mint: Keypair, keypairName?: string): Promise<[Keypair, PublicKey]> => {
 	let wallet = readOrCreateKeypair(keypairName);
 
-	let fundTx = new Transaction();
-	fundTx.add(SystemProgram.transfer({
-		fromPubkey: provider.wallet.publicKey,
-		toPubkey: wallet.publicKey,
-		lamports: 5 * LAMPORTS_PER_SOL
-	}));
-	await provider.sendAndConfirm(fundTx);
+	let account = await provider.connection.getAccountInfo(wallet.publicKey);
 
-	let tokenAccount = await spl.createAssociatedTokenAccount(
+	if (!account || account.lamports < 5 * LAMPORTS_PER_SOL) {
+		let fundTx = new Transaction();
+		fundTx.add(SystemProgram.transfer({
+			fromPubkey: provider.wallet.publicKey,
+			toPubkey: wallet.publicKey,
+			lamports: 5 * LAMPORTS_PER_SOL
+		}));
+		await provider.sendAndConfirm(fundTx);
+	}
+
+	let tokenAccount = await spl.getOrCreateAssociatedTokenAccount(
 		provider.connection,
 		wallet,
 		mint.publicKey,
 		wallet.publicKey
 	);
 
-	let mintToTx = new Transaction();
-	mintToTx.add(spl.createMintToInstruction(mint.publicKey, tokenAccount, provider.wallet.publicKey, 10000));
-	await provider.sendAndConfirm(mintToTx);
+	if (tokenAccount.amount < 10000) {
+		let mintToTx = new Transaction();
+		mintToTx.add(spl.createMintToInstruction(mint.publicKey, tokenAccount.address, provider.wallet.publicKey, 10000));
+		await provider.sendAndConfirm(mintToTx);
+	}
 
-	return [wallet, tokenAccount];
+	return [wallet, tokenAccount.address];
 };
+
+export const loadWallet = async (provider: anchor.AnchorProvider, name: string, mint: Keypair): Promise<[Keypair, PublicKey]> => {
+	let wallet = readOrCreateKeypair(name);
+	let tokenAccount = await spl.getAssociatedTokenAddress(mint.publicKey, wallet.publicKey);
+	return [wallet, tokenAccount];
+}
 
 export const mintToAccount = async (provider: anchor.AnchorProvider, account: PublicKey, mint: Keypair, amount: number) => {
 	let mintToTx = new Transaction();
@@ -119,7 +133,7 @@ export interface MuProgram {
 	depositPda: anchor.web3.PublicKey;
 }
 
-export const initializeMu = async (anchorProvider: anchor.AnchorProvider, mint: Keypair): Promise<MuProgram> => {
+export const getMu = (anchorProvider: anchor.AnchorProvider, mint: Keypair) => {
 	anchor.setProvider(anchorProvider);
 
 	const program = anchor.workspace.Marketplace as Program<Marketplace>;
@@ -134,13 +148,6 @@ export const initializeMu = async (anchorProvider: anchor.AnchorProvider, mint: 
 		program.programId
 	)[0];
 
-	await program.methods.initialize().accounts({
-		authority: anchorProvider.wallet.publicKey,
-		state: statePda,
-		depositToken: depositPda,
-		mint: mint.publicKey,
-	}).rpc();
-
 	return {
 		anchorProvider,
 		mint,
@@ -148,6 +155,20 @@ export const initializeMu = async (anchorProvider: anchor.AnchorProvider, mint: 
 		statePda,
 		depositPda
 	};
+
+}
+
+export const initializeMu = async (anchorProvider: anchor.AnchorProvider, mint: Keypair): Promise<MuProgram> => {
+	let mu = getMu(anchorProvider, mint);
+
+	await mu.program.methods.initialize().accounts({
+		authority: anchorProvider.wallet.publicKey,
+		state: mu.statePda,
+		depositToken: mu.depositPda,
+		mint: mint.publicKey,
+	}).rpc();
+
+	return mu;
 }
 
 export interface MuProviderInfo {
@@ -156,7 +177,7 @@ export interface MuProviderInfo {
 	tokenAccount: anchor.web3.PublicKey;
 }
 
-export const createProvider = async (mu: MuProgram, name: string, useStaticKeypair?: boolean) => {
+export const createProvider = async (mu: MuProgram, name: string, useStaticKeypair?: boolean): Promise<MuProviderInfo> => {
 	const [wallet, tokenAccount] =
 		await createAndFundWallet(mu.anchorProvider, mu.mint, useStaticKeypair ? `provider_${name}` : undefined);
 
@@ -179,8 +200,35 @@ export const createProvider = async (mu: MuProgram, name: string, useStaticKeypa
 	return { wallet, pda, tokenAccount };
 }
 
+export const loadProviderFromStaticKeypair = async (mu: MuProgram, name: string): Promise<MuProviderInfo> => {
+	let [wallet, tokenAccount] = await loadWallet(mu.anchorProvider, `provider_${name}`, mu.mint);
+
+	const [pda, _] = publicKey.findProgramAddressSync(
+		[
+			anchor.utils.bytes.utf8.encode("provider"),
+			wallet.publicKey.toBuffer()
+		],
+		mu.program.programId
+	);
+
+	return { wallet, pda, tokenAccount };
+}
+
 export interface MuRegionInfo {
 	pda: PublicKey
+}
+
+export const getRegion = (mu: MuProgram, provider: MuProviderInfo, regionNum: number): MuRegionInfo => {
+	const pda = publicKey.findProgramAddressSync(
+		[
+			anchor.utils.bytes.utf8.encode("region"),
+			provider.wallet.publicKey.toBytes(),
+			new Uint8Array([regionNum])
+		],
+		mu.program.programId
+	)[0];
+
+	return { pda };
 }
 
 export const createRegion = async (
@@ -191,14 +239,7 @@ export const createRegion = async (
 	rates: ServiceUnits,
 	zones: number,
 ): Promise<MuRegionInfo> => {
-	const pda = publicKey.findProgramAddressSync(
-		[
-			anchor.utils.bytes.utf8.encode("region"),
-			provider.wallet.publicKey.toBytes(),
-			new Uint8Array([regionNum])
-		],
-		mu.program.programId
-	)[0];
+	let region = getRegion(mu, provider, regionNum);
 
 	await mu.program.methods.createRegion(
 		regionNum,
@@ -207,11 +248,11 @@ export const createRegion = async (
 		serviceUnitsToAnchorTypes(rates)
 	).accounts({
 		provider: provider.pda,
-		region: pda,
+		region: region.pda,
 		owner: provider.wallet.publicKey
 	}).signers([provider.wallet]).rpc();
 
-	return { pda };
+	return region;
 }
 
 export interface MuAuthorizedSignerInfo {
@@ -257,8 +298,14 @@ export const createAuthorizedUsageSigner = async (
 	return { wallet, pda };
 }
 
-export const createUserWallet = (userIndex?: number) => {
-	readOrCreateKeypair(userIndex === undefined ? undefined : `user_${userIndex}`);
+export interface UserWallet {
+	keypair: Keypair,
+	tokenAccount: PublicKey
+}
+
+export const readOrCreateUserWallet = async (mu: MuProgram, userIndex?: number): Promise<UserWallet> => {
+	let [keypair, tokenAccount] = await createAndFundWallet(mu.anchorProvider, mu.mint, userIndex === undefined ? undefined : `user_${userIndex}`);
+	return { keypair, tokenAccount };
 }
 
 export interface MuEscrowAccountInfo {
@@ -293,6 +340,25 @@ export const createEscrowAccount = async (
 	return { pda, bump };
 }
 
+export const getEscrowAccount = (
+	mu: MuProgram,
+	userWallet: Keypair,
+	provider: MuProviderInfo,
+): MuEscrowAccountInfo => {
+	// Note: the escrow accounts are SPL token accounts, so we can't store a bump in them
+	// and need to calculate it on the client side each time.
+	const [pda, bump] = publicKey.findProgramAddressSync(
+		[
+			anchor.utils.bytes.utf8.encode("escrow"),
+			userWallet.publicKey.toBytes(),
+			provider.pda.toBytes()
+		],
+		mu.program.programId
+	);
+
+	return { pda, bump };
+}
+
 export interface MuStackInfo {
 	pda: PublicKey
 }
@@ -310,7 +376,7 @@ export const deployStack = async (
 			anchor.utils.bytes.utf8.encode("stack"),
 			userWallet.publicKey.toBytes(),
 			region.pda.toBytes(),
-			stack_seed.toBuffer("be", 8)],
+			stack_seed.toBuffer("le", 8)],
 		mu.program.programId
 	)[0];
 
@@ -349,7 +415,7 @@ export const updateStackUsage = async (
 	const [pda, bump] = publicKey.findProgramAddressSync(
 		[
 			anchor.utils.bytes.utf8.encode("update"),
-			new anchor.BN(updateSeed).toBuffer("be", 8)
+			new anchor.BN(updateSeed).toBuffer("le", 8)
 		],
 		mu.program.programId
 	);

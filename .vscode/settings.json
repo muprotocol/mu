@@ -2,6 +2,8 @@
     "files.exclude": {
         "marketplace": true,
         "executor": true,
-        "mailbox_processor": true
+        "mailbox_processor": true,
+        "cli": true,
+        "mu_stack": true
     }
 }

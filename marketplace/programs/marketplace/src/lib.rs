@@ -277,7 +277,7 @@ pub struct CreateRegion<'info> {
         init,
         space = 8 + 20 + 1 + (8 + 8 + 8 + 8) + 32 + 1,
         payer = owner,
-        seeds = [b"region", owner.key().as_ref(), region_num.to_be_bytes().as_ref()],
+        seeds = [b"region", owner.key().as_ref(), region_num.to_le_bytes().as_ref()],
         bump
     )]
     pub region: Account<'info, ProviderRegion>,
@@ -323,7 +323,7 @@ pub struct CreateStack<'info> {
         init,
         payer = user,
         space = 8 + 1 + 32 + 32 + 4 + stack_size as usize,
-        seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_be_bytes().as_ref()],
+        seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_le_bytes().as_ref()],
         bump
     )]
     pub stack: Account<'info, Stack>,
@@ -389,7 +389,7 @@ pub struct UpdateUsage<'info> {
         init,
         payer = signer,
         space = 8 + 1 + 32 + 32 + (8 + 8 + 8 + 8),
-        seeds = [b"update", update_seed.to_be_bytes().as_ref()],
+        seeds = [b"update", update_seed.to_le_bytes().as_ref()],
         bump
     )]
     usage_update: Account<'info, UsageUpdate>,

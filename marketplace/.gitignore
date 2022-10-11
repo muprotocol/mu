@@ -7,3 +7,10 @@ node_modules
 test-ledger
 Cargo.lock
 __pycache__
+/scripts/.tools
+
+# See stackoverflow.com/questions/2820255
+!/target
+/target/*
+!/target/deploy
+/target/deploy/*.so

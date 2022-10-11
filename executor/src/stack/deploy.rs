@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-use super::{HttpMethod, Stack, StackID};
+use mu_stack::{HttpMethod, Stack, StackID};
 
 #[derive(Error, Debug)]
 pub enum StackValidationError {
