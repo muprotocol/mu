@@ -19,16 +19,16 @@ pub struct ConfigOverride {
     /// Cluster override.
     #[clap(global = true, long = "cluster")]
     pub cluster: Option<Cluster>,
-    /// Wallet override.
+    /// payer override.
     #[clap(global = true, long = "wallet")]
-    pub wallet: Option<WalletPath>,
+    pub payer: Option<PayerWalletPath>,
 }
 
 #[derive(Debug)]
 pub struct Config {
     pub program_id: Pubkey,
     pub cluster: Cluster,
-    pub wallet: WalletPath,
+    pub payer: PayerWalletPath,
 }
 
 impl Default for Config {
@@ -36,7 +36,7 @@ impl Default for Config {
         Self {
             program_id: marketplace::id(),
             cluster: Cluster::default(),
-            wallet: WalletPath::default(),
+            payer: PayerWalletPath::default(),
         }
     }
 }
@@ -51,8 +51,8 @@ impl Config {
         if let Some(cluster) = cfg_override.cluster.clone() {
             cfg.cluster = cluster;
         }
-        if let Some(wallet) = cfg_override.wallet.clone() {
-            cfg.wallet = wallet;
+        if let Some(payer) = cfg_override.payer.clone() {
+            cfg.payer = payer;
         }
 
         Ok(cfg)
@@ -76,8 +76,8 @@ impl Config {
             .parse::<Self>()
     }
 
-    pub fn wallet_kp(&self) -> Result<Keypair> {
-        read_keypair_file(&self.wallet.to_string())
+    pub fn payer_kp(&self) -> Result<Keypair> {
+        read_keypair_file(&self.payer.to_string())
             .map_err(|_| anyhow!("Unable to read keypair file"))
     }
 }
@@ -86,14 +86,14 @@ impl Config {
 struct _Config {
     program_id: String,
     cluster: String,
-    wallet: String,
+    payer: String,
 }
 
 impl ToString for Config {
     fn to_string(&self) -> String {
         let cfg = _Config {
             cluster: format!("{}", self.cluster),
-            wallet: self.wallet.to_string(),
+            payer: self.payer.to_string(),
             program_id: self.program_id.to_string(),
         };
 
@@ -109,7 +109,7 @@ impl FromStr for Config {
             .map_err(|e| anyhow::format_err!("Unable to deserialize config: {}", e.to_string()))?;
         Ok(Config {
             cluster: cfg.cluster.parse()?,
-            wallet: shellexpand::tilde(&cfg.wallet).parse()?,
+            payer: shellexpand::tilde(&cfg.payer).parse()?,
             program_id: Pubkey::from_str(&cfg.program_id)?,
         })
     }
@@ -125,4 +125,4 @@ pub fn get_solana_cfg_url() -> Result<String, io::Error> {
     SolanaConfig::load(config_file).map(|config| config.json_rpc_url)
 }
 
-crate::home_path!(WalletPath, ".config/solana/id.json");
+crate::home_path!(PayerWalletPath, ".config/solana/id.json");

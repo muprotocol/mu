@@ -117,7 +117,7 @@ pub fn create_anchor_client(payer: Rc<Keypair>) -> Result<Client> {
     Ok(Client::new_with_options(
         Cluster::Localnet,
         payer,
-        CommitmentConfig::processed(),
+        CommitmentConfig::finalized(),
     ))
 }
 

@@ -14,7 +14,7 @@ path = "src/bin/mu.rs"
 doc = false
 
 [dependencies]
-clap = { version = "3.0.13", features = ["derive"] }
+clap = { version = "4.0", features = ["derive"] }
 anyhow = "1.0"
 thiserror = "1.0"
 shellexpand = "2.1"

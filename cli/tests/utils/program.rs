@@ -146,7 +146,8 @@ impl MuProgram<Initialized> {
     pub fn create_wallet_and_associated_token_account(self) -> Result<(KeypairWithPath, Pubkey)> {
         let wallet = KeypairWithPath::new()?;
 
-        self.client
+        let sig = self
+            .client
             .program(system_program::id())
             .request()
             .instruction(system_instruction::transfer(
@@ -157,20 +158,12 @@ impl MuProgram<Initialized> {
             .send()
             .context("can not fund wallet")?;
 
-        let token_account = spl_associated_token_account::get_associated_token_address(
-            &wallet.keypair.pubkey(),
-            &self.state.mint.keypair.pubkey(),
-        );
+        create_rpc_client().confirm_transaction(&sig).unwrap();
 
         println!(
-            "AccountInfo: {:?}",
-            create_rpc_client().get_account(&wallet.pubkey()).unwrap()
-        );
-
-        println!(
-            "TokenAccountInfo: {:?}",
+            "[TEST] Balance: {:?}",
             create_rpc_client()
-                .get_token_account(&token_account)
+                .get_balance(&wallet.keypair.pubkey())
                 .unwrap()
         );
 
@@ -179,18 +172,26 @@ impl MuProgram<Initialized> {
             .request()
             .instruction(
                 spl_associated_token_account::instruction::create_associated_token_account(
-                    &self.owner.keypair.pubkey(),
+                    &wallet.keypair.pubkey(),
                     &wallet.keypair.pubkey(),
                     &self.state.mint.keypair.pubkey(),
                 ),
             )
+            .signer(wallet.keypair.as_ref())
             .send()
             .context("can not create associated token account")
             .unwrap();
 
+        let token_account = spl_associated_token_account::get_associated_token_address(
+            &wallet.keypair.pubkey(),
+            &self.state.mint.keypair.pubkey(),
+        );
+
         println!(
             "[in create wallet and associated_token_account] Balance: {:?}",
-            create_rpc_client().get_balance(&token_account).unwrap()
+            create_rpc_client()
+                .get_balance(&wallet.keypair.pubkey())
+                .unwrap()
         );
 
         self.client
