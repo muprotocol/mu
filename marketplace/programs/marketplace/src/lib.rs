@@ -83,7 +83,7 @@ pub mod marketplace {
 
     pub fn create_region(
         ctx: Context<CreateRegion>,
-        _region_num: u8,
+        region_num: u32,
         name: String,
         zones: u8,
         rates: ServiceUnits,
@@ -92,6 +92,7 @@ pub mod marketplace {
             account_type: MuAccountType::ProviderRegion as u8,
             name,
             zones,
+            region_num,
             rates,
             provider: ctx.accounts.provider.key(),
             bump: *ctx.bumps.get("region").unwrap(),
@@ -158,11 +159,11 @@ pub mod marketplace {
 #[account]
 #[derive(Default)]
 pub struct MuState {
-    account_type: u8, // See MuAccountType
-    authority: Pubkey,
-    mint: Pubkey,
-    deposit_token: Pubkey,
-    bump: u8,
+    pub account_type: u8, // See MuAccountType
+    pub authority: Pubkey,
+    pub mint: Pubkey,
+    pub deposit_token: Pubkey,
+    pub bump: u8,
 }
 
 #[derive(Accounts)]
@@ -198,10 +199,10 @@ pub struct Initialize<'info> {
 
 #[account]
 pub struct Provider {
-    account_type: u8, // See MuAccountType
-    name: String,     // Max 20 Chars
-    owner: Pubkey,
-    bump: u8,
+    pub account_type: u8, // See MuAccountType
+    pub name: String,     // Max 20 Chars
+    pub owner: Pubkey,
+    pub bump: u8,
 }
 
 #[derive(Accounts)]
@@ -239,31 +240,32 @@ pub struct CreateProvider<'info> {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct ServiceUnits {
-    mudb_gb_month: u64,
-    mufunction_cpu_mem: u64,
-    bandwidth: u64,
-    gateway_mreqs: u64,
+    pub mudb_gb_month: u64,
+    pub mufunction_cpu_mem: u64,
+    pub bandwidth: u64,
+    pub gateway_mreqs: u64,
 }
 
 #[account]
 pub struct ProviderRegion {
-    account_type: u8, // See MuAccountType
-    provider: Pubkey,
-    name: String, // Max 20
-    zones: u8,
-    rates: ServiceUnits,
-    bump: u8,
+    pub account_type: u8, // See MuAccountType
+    pub provider: Pubkey,
+    pub zones: u8,
+    pub region_num: u32,
+    pub rates: ServiceUnits,
+    pub bump: u8,
+    pub name: String, // Max 20
 }
 
 #[derive(Accounts)]
-#[instruction(region_num: u8, name: String)]
+#[instruction(region_num: u32, name: String)]
 pub struct CreateRegion<'info> {
     #[account(has_one = owner)]
     pub provider: Account<'info, Provider>,
 
     #[account(
         init,
-        space = 8 + 1 + 32 + 4 + name.as_bytes().len() + 1 + (8 + 8 + 8 + 8) + 1,
+        space = 8 + 1 + 32 + 4 + name.as_bytes().len() + 1 + 4 + (8 + 8 + 8 + 8) + 1,
         payer = owner,
         seeds = [b"region", owner.key().as_ref(), region_num.to_le_bytes().as_ref()],
         bump
@@ -308,12 +310,12 @@ pub struct CreateProviderEscrowAccount<'info> {
 
 #[account]
 pub struct Stack {
-    account_type: u8, // See MuAccountType
-    user: Pubkey,
-    region: Pubkey,
-    stack: Vec<u8>,
-    seed: u64,
-    revision: u32,
+    pub account_type: u8, // See MuAccountType
+    pub user: Pubkey,
+    pub region: Pubkey,
+    pub stack: Vec<u8>,
+    pub seed: u64,
+    pub revision: u32,
 }
 
 #[derive(Accounts)]
@@ -339,9 +341,9 @@ pub struct CreateStack<'info> {
 
 #[account]
 pub struct AuthorizedUsageSigner {
-    account_type: u8, // See MuAccountType
-    signer: Pubkey,
-    token_account: Pubkey,
+    pub account_type: u8, // See MuAccountType
+    pub signer: Pubkey,
+    pub token_account: Pubkey,
 }
 
 #[derive(Accounts)]
@@ -373,10 +375,10 @@ pub struct CreateAuthorizedUsageSigner<'info> {
 
 #[account]
 pub struct UsageUpdate {
-    account_type: u8, // See MuAccountType
-    region: Pubkey,
-    stack: Pubkey,
-    usage: ServiceUnits,
+    pub account_type: u8, // See MuAccountType
+    pub region: Pubkey,
+    pub stack: Pubkey,
+    pub usage: ServiceUnits,
 }
 
 #[derive(Accounts)]

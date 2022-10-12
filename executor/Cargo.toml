@@ -11,7 +11,7 @@ wasmer-wasi = "3.0.0-beta"
 wasmer-middlewares = "3.0.0-beta"
 wasmer-cache = "3.0.0-beta"
 wasmer-compiler-llvm = "3.0.0-beta"
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -47,7 +47,9 @@ sled = "0.34"
 assert_matches = "1.5"
 validator = { version = "0.16", features = ["derive"] }
 mu_stack = { path = "../mu_stack" }
+marketplace = { path = "../marketplace/programs/marketplace" }
 base64 = "0.13"
+base58 = "0.2"
 anchor-client = "0.25.0"
 solana-account-decoder = "1.10"
 solana-client = "1.10"

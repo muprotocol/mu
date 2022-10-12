@@ -80,8 +80,8 @@ impl Stack {
         Ok(stack.write_to_bytes()?.into())
     }
 
-    pub fn try_deserialize_proto(bytes: Bytes) -> Result<Stack> {
-        crate::protos::stack::Stack::parse_from_bytes(bytes.as_ref())?.try_into()
+    pub fn try_deserialize_proto<'a>(bytes: impl Into<&'a [u8]>) -> Result<Stack> {
+        crate::protos::stack::Stack::parse_from_bytes(bytes.into())?.try_into()
     }
 
     pub fn databases(&self) -> impl Iterator<Item = &Database> {

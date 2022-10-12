@@ -27,3 +27,10 @@ runtime:
   cache_path: runtime-cache
 scheduler:
   tick_interval: 1s
+blockchain_monitor:
+  solana_cluster_rpc_url: https://api.mainnet-beta.solana.com:8899/
+  solana_cluster_pub_sub_url: https://api.mainnet-beta.solana.com:8900/
+  solana_provider_public_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  solana_region_number: 1
+  solana_usage_signer_private_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  solana_min_escrow_balance: 50
