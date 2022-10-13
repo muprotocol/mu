@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, marker::PhantomPinned, ops::Deref, pin::Pin};
 
 use anchor_client::anchor_lang::AnchorDeserialize;
 use anyhow::{anyhow, Context, Result};
@@ -50,17 +50,29 @@ pub struct BlockchainMonitorConfig {
 
 type SolanaUnsubscribeFn = Box<dyn FnOnce() -> BoxFuture<'static, ()> + Send>;
 
+// Since subscription streams hold a reference to the `PubsubClient`, we
+// need to keep the client in a fixed memory location, so we pin it using
+// this struct.
+struct SolanaPubSubClientWrapper {
+    client: PubsubClient,
+    _phantom_pinned: PhantomPinned,
+}
+
+struct SolanaPubSub<'a> {
+    client_wrapper: Pin<Box<SolanaPubSubClientWrapper>>,
+    stream: BoxStream<'a, Response<RpcKeyedAccount>>,
+    unsub_callback: SolanaUnsubscribeFn,
+}
+
 struct BlockchainMonitorState<'a> {
     known_stacks: HashMap<StackID, StackWithMetadata>,
 
-    solana_pub_sub_stream: BoxStream<'a, Response<RpcKeyedAccount>>,
-    solana_unsub_callback: SolanaUnsubscribeFn,
+    solana_pub_sub: SolanaPubSub<'a>,
     solana_get_stacks_config: RpcProgramAccountsConfig,
 }
 
 #[derive(Debug)]
 enum BlockchainMonitorMessage {
-    Initialize(ReplyChannel<Result<()>>),
     GetStack(StackID, ReplyChannel<Option<StackWithMetadata>>),
     GetMetadata(StackID, ReplyChannel<Option<StackMetadata>>),
     Stop(ReplyChannel<()>),
@@ -103,166 +115,6 @@ pub async fn start(
 )> {
     let (notification_channel, rx) = NotificationChannel::new();
 
-    let mailbox = PlainMailboxProcessor::start(
-        |_mailbox, message_receiver| mailbox_body(config, message_receiver, notification_channel),
-        10000,
-    );
-
-    mailbox
-        .post_and_reply(BlockchainMonitorMessage::Initialize)
-        .await??;
-
-    // TODO: track deployed/undeployed stacks due to escrow balance
-    Ok((BlockchainMonitorImpl { mailbox }, rx))
-}
-
-fn read_solana_account((pubkey, account): (Pubkey, Account)) -> Result<StackWithMetadata> {
-    let stack_data = marketplace::Stack::deserialize(&mut account.data.as_ref())
-        .context("Failed to deserialize Stack data")?;
-
-    let stack_definition =
-        mu_stack::Stack::try_deserialize_proto(stack_data.stack.into_boxed_slice().as_ref())
-            .context("Failed to deserialize stack definition")?;
-
-    // TODO: state
-    Ok(StackWithMetadata {
-        stack: stack_definition,
-        revision: stack_data.revision,
-        metadata: StackMetadata::Solana(super::SolanaStackMetadata {
-            account_id: pubkey,
-            owner: stack_data.user,
-        }),
-        state: super::StackState::Normal,
-    })
-}
-
-fn read_solana_rpc_keyed_account(stack: Response<RpcKeyedAccount>) -> Result<StackWithMetadata> {
-    let pubkey = stack
-        .value
-        .pubkey
-        .parse()
-        .context("Failed to parse public key")?;
-    let account = stack
-        .value
-        .account
-        .decode()
-        .ok_or_else(|| anyhow!("Failed to decode Account"))?;
-    read_solana_account((pubkey, account))
-}
-
-// We usually handle errors in the `start` function, but we need to create
-// the pub-sub client in the mailbox body so we can borrow a channel from it.
-// This is why we need this logic to catch initialization errors from the
-// mailbox. `start` will send an `Initialize` message after creating the
-// mailbox. If everything goes well, `mailbox_body_impl` will get this message
-// and reply with an OK. If not, it will be caught here and the error will be
-// returned.
-async fn mailbox_body<'a>(
-    config: BlockchainMonitorConfig,
-    message_receiver: MessageReceiver<BlockchainMonitorMessage>,
-    notification_channel: NotificationChannel<BlockchainMonitorNotifications>,
-) {
-    if let Err((mut message_receiver, f)) =
-        mailbox_body_impl(config, message_receiver, notification_channel).await
-    {
-        // Failures can only occur in the initialization phase
-        let msg = message_receiver.receive().await;
-        if let Some(BlockchainMonitorMessage::Initialize(r)) = msg {
-            r.reply(Err(f));
-        } else {
-            panic!("Blockchain monitor failed to initialize, received unexpected message {msg:?}");
-        }
-    }
-}
-
-async fn mailbox_body_impl<'a>(
-    config: BlockchainMonitorConfig,
-    mut message_receiver: MessageReceiver<BlockchainMonitorMessage>,
-    notification_channel: NotificationChannel<BlockchainMonitorNotifications>,
-) -> std::result::Result<(), (MessageReceiver<BlockchainMonitorMessage>, anyhow::Error)> {
-    let pub_sub_client = match PubsubClient::new(&config.solana_cluster_pub_sub_url)
-        .await
-        .context("Failed to start Solana pub-sub client")
-    {
-        Err(f) => return Err((message_receiver, f)),
-        Ok(x) => x,
-    };
-
-    let mut state = match initialize_state(&config, &pub_sub_client).await {
-        Err(f) => return Err((message_receiver, f)),
-        Ok(x) => x,
-    };
-
-    if let Some(BlockchainMonitorMessage::Initialize(r)) = message_receiver.receive().await {
-        r.reply(Ok(()));
-    } else {
-        panic!("Expected to receive an `Initialize` message");
-    }
-
-    notification_channel.send(BlockchainMonitorNotifications::StacksAvailable(
-        state.known_stacks.values().cloned().collect(),
-    ));
-
-    let mut stop_reply_channel = None;
-
-    'main_loop: loop {
-        select! {
-            message = message_receiver.receive() => {
-                match message {
-                    None => {
-                        warn!("All senders were dropped, stopping");
-                        break 'main_loop;
-                    }
-
-                    Some(BlockchainMonitorMessage::Initialize(_)) => {
-                        panic!("Received unexpected `Initialize` message");
-                    }
-
-                    Some(BlockchainMonitorMessage::Stop(r)) => {
-                        stop_reply_channel = Some(r);
-                        break 'main_loop;
-                    }
-
-                    Some(BlockchainMonitorMessage::GetMetadata(stack_id, r)) => {
-                        r.reply(
-                            state.known_stacks.get(&stack_id).map(|s| s.metadata.clone())
-                        );
-                    }
-
-                    Some(BlockchainMonitorMessage::GetStack(stack_id, r)) => {
-                        r.reply(
-                            state.known_stacks.get(&stack_id).map(Clone::clone)
-                        );
-                    }
-                }
-            }
-
-            stack = state.solana_pub_sub_stream.next() => {
-                if let Some(stack) = stack {
-                    on_new_stack_received(&mut state, stack, &notification_channel);
-                } else {
-                    warn!("Solana notification stream disconnected, attempting to reconnect");
-                    // TODO: this will make the mailbox stop processing messages while waiting to reconnect
-                    // should probably handle subscriptions on a separate task
-                    state = reconnect_solana_subscriber(&pub_sub_client, state).await;
-                }
-            }
-        }
-    }
-
-    (state.solana_unsub_callback)();
-
-    if let Some(r) = stop_reply_channel {
-        r.reply(());
-    }
-
-    Ok(())
-}
-
-async fn initialize_state<'a>(
-    config: &BlockchainMonitorConfig,
-    pub_sub_client: &'a PubsubClient,
-) -> Result<BlockchainMonitorState<'a>> {
     let get_stacks_config = RpcProgramAccountsConfig {
         filters: Some(vec![
             RpcFilterType::Memcmp(Memcmp {
@@ -297,11 +149,6 @@ async fn initialize_state<'a>(
         with_context: Some(false),
     };
 
-    let (subscription_stream, unsubscribe_fn) = pub_sub_client
-        .program_subscribe(&marketplace::id(), Some(get_stacks_config.clone()))
-        .await
-        .context("Failed to setup Solana subscription for new stacks")?;
-
     let rpc_client = RpcClient::new_with_commitment(
         config.solana_cluster_rpc_url.clone(),
         CommitmentConfig::finalized(),
@@ -326,22 +173,120 @@ async fn initialize_state<'a>(
         existing_stacks.len()
     );
 
-    Ok(BlockchainMonitorState {
+    let solana_pub_sub = {
+        let client_wrapper = Box::pin(SolanaPubSubClientWrapper {
+            client: PubsubClient::new(&config.solana_cluster_pub_sub_url)
+                .await
+                .context("Failed to start Solana pub-sub client")?,
+            _phantom_pinned: PhantomPinned,
+        });
+
+        let (subscription_stream, unsubscribe_fn) =
+            unsafe { (client_wrapper.deref() as *const SolanaPubSubClientWrapper).as_ref() }
+                .unwrap()
+                .client
+                .program_subscribe(&marketplace::id(), Some(get_stacks_config.clone()))
+                .await
+                .context("Failed to setup Solana subscription for new stacks")?;
+
+        SolanaPubSub {
+            client_wrapper,
+            stream: subscription_stream,
+            unsub_callback: unsubscribe_fn,
+        }
+    };
+
+    let state = BlockchainMonitorState {
         known_stacks: existing_stacks,
-        solana_pub_sub_stream: subscription_stream,
-        solana_unsub_callback: unsubscribe_fn,
         solana_get_stacks_config: get_stacks_config,
-    })
+        solana_pub_sub,
+    };
+
+    let mailbox = PlainMailboxProcessor::start(
+        |_mailbox, message_receiver| {
+            mailbox_body(config, state, message_receiver, notification_channel)
+        },
+        10000,
+    );
+
+    // TODO: track deployed/undeployed stacks due to escrow balance
+    Ok((BlockchainMonitorImpl { mailbox }, rx))
 }
 
-async fn reconnect_solana_subscriber<'a>(
-    pub_sub_client: &'a PubsubClient,
-    state: BlockchainMonitorState<'a>,
-) -> BlockchainMonitorState<'a> {
-    (state.solana_unsub_callback)();
+async fn mailbox_body(
+    _config: BlockchainMonitorConfig,
+    mut state: BlockchainMonitorState<'_>,
+    mut message_receiver: MessageReceiver<BlockchainMonitorMessage>,
+    notification_channel: NotificationChannel<BlockchainMonitorNotifications>,
+) {
+    notification_channel.send(BlockchainMonitorNotifications::StacksAvailable(
+        state.known_stacks.values().cloned().collect(),
+    ));
+
+    let mut stop_reply_channel = None;
+
+    'main_loop: loop {
+        select! {
+            message = message_receiver.receive() => {
+                match message {
+                    None => {
+                        warn!("All senders were dropped, stopping");
+                        break 'main_loop;
+                    }
+
+                    Some(BlockchainMonitorMessage::Stop(r)) => {
+                        stop_reply_channel = Some(r);
+                        break 'main_loop;
+                    }
+
+                    Some(BlockchainMonitorMessage::GetMetadata(stack_id, r)) => {
+                        r.reply(
+                            state.known_stacks.get(&stack_id).map(|s| s.metadata.clone())
+                        );
+                    }
+
+                    Some(BlockchainMonitorMessage::GetStack(stack_id, r)) => {
+                        r.reply(
+                            state.known_stacks.get(&stack_id).map(Clone::clone)
+                        );
+                    }
+                }
+            }
+
+            stack = state.solana_pub_sub.stream.next() => {
+                if let Some(stack) = stack {
+                    on_new_stack_received(&mut state, stack, &notification_channel);
+                } else {
+                    warn!("Solana notification stream disconnected, attempting to reconnect");
+                    // TODO: this will make the mailbox stop processing messages while waiting to reconnect
+                    // should probably handle subscriptions on a separate task
+                    state = reconnect_solana_subscriber(state).await;
+                }
+            }
+        }
+    }
+
+    (state.solana_pub_sub.unsub_callback)().await;
+
+    if let Some(r) = stop_reply_channel {
+        r.reply(());
+    }
+}
+
+async fn reconnect_solana_subscriber(
+    state: BlockchainMonitorState<'_>,
+) -> BlockchainMonitorState<'_> {
+    (state.solana_pub_sub.unsub_callback)().await;
 
     let (stream, unsub) = loop {
-        match pub_sub_client
+        let client_wrapper = unsafe {
+            (state.solana_pub_sub.client_wrapper.deref() as *const SolanaPubSubClientWrapper)
+                .as_ref()
+        }
+        .unwrap();
+
+        match client_wrapper
+            .client
             .program_subscribe(
                 &marketplace::id(),
                 Some(state.solana_get_stacks_config.clone()),
@@ -355,8 +300,11 @@ async fn reconnect_solana_subscriber<'a>(
     };
 
     BlockchainMonitorState {
-        solana_pub_sub_stream: stream,
-        solana_unsub_callback: unsub,
+        solana_pub_sub: SolanaPubSub {
+            stream,
+            unsub_callback: unsub,
+            ..state.solana_pub_sub
+        },
         ..state
     }
 }
@@ -376,4 +324,38 @@ fn on_new_stack_received(
             notification_channel.send(BlockchainMonitorNotifications::StacksAvailable(vec![stack]));
         }
     }
+}
+
+fn read_solana_account((pubkey, account): (Pubkey, Account)) -> Result<StackWithMetadata> {
+    let stack_data = marketplace::Stack::deserialize(&mut account.data.as_ref())
+        .context("Failed to deserialize Stack data")?;
+
+    let stack_definition =
+        mu_stack::Stack::try_deserialize_proto(stack_data.stack.into_boxed_slice().as_ref())
+            .context("Failed to deserialize stack definition")?;
+
+    // TODO: state
+    Ok(StackWithMetadata {
+        stack: stack_definition,
+        revision: stack_data.revision,
+        metadata: StackMetadata::Solana(super::SolanaStackMetadata {
+            account_id: pubkey,
+            owner: stack_data.user,
+        }),
+        state: super::StackState::Normal,
+    })
+}
+
+fn read_solana_rpc_keyed_account(stack: Response<RpcKeyedAccount>) -> Result<StackWithMetadata> {
+    let pubkey = stack
+        .value
+        .pubkey
+        .parse()
+        .context("Failed to parse public key")?;
+    let account = stack
+        .value
+        .account
+        .decode()
+        .ok_or_else(|| anyhow!("Failed to decode Account"))?;
+    read_solana_account((pubkey, account))
 }

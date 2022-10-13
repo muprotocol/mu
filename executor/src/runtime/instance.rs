@@ -88,7 +88,8 @@ impl Instance<Loaded> {
 
 impl Instance<Running> {
     pub fn is_finished(&self) -> bool {
-        self.state.handle.join_handle.is_finished()
+        // TODO self.state.handle.join_handle.is_finished()
+        false
     }
 
     fn write_to_stdin(&mut self, input: Message) -> Result<()> {
