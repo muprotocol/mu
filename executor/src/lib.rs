@@ -14,6 +14,7 @@ use std::{
 use anyhow::{bail, Context, Result};
 use log::*;
 use mailbox_processor::NotificationChannel;
+use stack::blockchain_monitor::{BlockchainMonitor, BlockchainMonitorNotification};
 use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 
@@ -23,7 +24,10 @@ use crate::{
         connection_manager::{self, ConnectionManager, ConnectionManagerNotification},
         gossip::{self, Gossip, GossipNotification, KnownNodeConfig, NodeAddress},
     },
-    stack::scheduler::{self, Scheduler, SchedulerNotification},
+    stack::{
+        blockchain_monitor,
+        scheduler::{self, Scheduler, SchedulerNotification},
+    },
 };
 
 pub async fn run() -> Result<()> {
@@ -43,6 +47,7 @@ pub async fn run() -> Result<()> {
         log_config,
         runtime_config,
         scheduler_config,
+        blockchain_monitor_config,
     ) = config::initialize_config()?;
 
     let my_node = NodeAddress {
@@ -140,6 +145,11 @@ pub async fn run() -> Result<()> {
         gateway_manager.clone(),
     );
 
+    let (blockchain_monitor, mut blockchain_monitor_notification_receiver) =
+        blockchain_monitor::start(blockchain_monitor_config)
+            .await
+            .context("Failed to start blockchain monitor")?;
+
     // TODO: create a `Module`/`Subsystem`/`NotificationSource` trait to batch modules with their notification receivers?
     let scheduler_clone = scheduler.clone();
     let glue_task = tokio::spawn(async move {
@@ -151,8 +161,17 @@ pub async fn run() -> Result<()> {
             &mut gossip_notification_receiver,
             scheduler.as_ref(),
             &mut scheduler_notification_receiver,
+            blockchain_monitor.as_ref(),
+            &mut blockchain_monitor_notification_receiver,
         )
         .await;
+
+        blockchain_monitor
+            .stop()
+            .await
+            .context("Failed to stop blockchain monitor")?;
+
+        scheduler.stop().await.context("Failed to stop scheduler")?;
 
         // Stop gateway manager first. This waits for rocket to shut down, essentially
         // running all requests to completion or cancelling them safely before shutting
@@ -230,6 +249,10 @@ async fn glue_modules(
     gossip_notification_receiver: &mut mpsc::UnboundedReceiver<GossipNotification>,
     scheduler: &dyn Scheduler,
     scheduler_notification_receiver: &mut mpsc::UnboundedReceiver<SchedulerNotification>,
+    _blockchain_monitor: &dyn BlockchainMonitor,
+    blockchain_monitor_notification_receiver: &mut mpsc::UnboundedReceiver<
+        BlockchainMonitorNotification,
+    >,
 ) {
     let mut debug_timer = tokio::time::interval(std::time::Duration::from_secs(3));
 
@@ -263,6 +286,10 @@ async fn glue_modules(
 
             notification = scheduler_notification_receiver.recv() => {
                 process_scheduler_notification(notification, gossip).await;
+            }
+
+            notification = blockchain_monitor_notification_receiver.recv() => {
+                process_blockchain_monitor_notification(notification).await;
             }
         }
     }
@@ -367,6 +394,17 @@ async fn process_scheduler_notification(
         }
         Some(SchedulerNotification::FailedToDeployStack(id)) => {
             debug!("Failed to deploy stack {id}");
+        }
+    }
+}
+
+async fn process_blockchain_monitor_notification(
+    notification: Option<BlockchainMonitorNotification>,
+) {
+    match notification {
+        None => (), // TODO
+        Some(BlockchainMonitorNotification::StacksAvailable(stacks)) => {
+            println!("Stacks available: {stacks:?}");
         }
     }
 }

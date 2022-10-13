@@ -33,7 +33,7 @@ pub trait BlockchainMonitor: Clone + Send + Sync {
     async fn stop(&self) -> Result<()>;
 }
 
-pub enum BlockchainMonitorNotifications {
+pub enum BlockchainMonitorNotification {
     // TODO: monitor for removed/undeployed stacks
     StacksAvailable(Vec<StackWithMetadata>),
 }
@@ -110,8 +110,8 @@ impl BlockchainMonitor for BlockchainMonitorImpl {
 pub async fn start(
     config: BlockchainMonitorConfig,
 ) -> Result<(
-    impl BlockchainMonitor,
-    UnboundedReceiver<BlockchainMonitorNotifications>,
+    Box<dyn BlockchainMonitor>,
+    UnboundedReceiver<BlockchainMonitorNotification>,
 )> {
     let (notification_channel, rx) = NotificationChannel::new();
 
@@ -210,16 +210,16 @@ pub async fn start(
     );
 
     // TODO: track deployed/undeployed stacks due to escrow balance
-    Ok((BlockchainMonitorImpl { mailbox }, rx))
+    Ok((Box::new(BlockchainMonitorImpl { mailbox }), rx))
 }
 
 async fn mailbox_body(
     _config: BlockchainMonitorConfig,
     mut state: BlockchainMonitorState<'_>,
     mut message_receiver: MessageReceiver<BlockchainMonitorMessage>,
-    notification_channel: NotificationChannel<BlockchainMonitorNotifications>,
+    notification_channel: NotificationChannel<BlockchainMonitorNotification>,
 ) {
-    notification_channel.send(BlockchainMonitorNotifications::StacksAvailable(
+    notification_channel.send(BlockchainMonitorNotification::StacksAvailable(
         state.known_stacks.values().cloned().collect(),
     ));
 
@@ -312,7 +312,7 @@ async fn reconnect_solana_subscriber(
 fn on_new_stack_received(
     state: &mut BlockchainMonitorState,
     stack: Response<RpcKeyedAccount>,
-    notification_channel: &NotificationChannel<BlockchainMonitorNotifications>,
+    notification_channel: &NotificationChannel<BlockchainMonitorNotification>,
 ) {
     match read_solana_rpc_keyed_account(stack) {
         Err(f) => {
@@ -321,7 +321,7 @@ fn on_new_stack_received(
 
         Ok(stack) => {
             state.known_stacks.insert(stack.id(), stack.clone());
-            notification_channel.send(BlockchainMonitorNotifications::StacksAvailable(vec![stack]));
+            notification_channel.send(BlockchainMonitorNotification::StacksAvailable(vec![stack]));
         }
     }
 }

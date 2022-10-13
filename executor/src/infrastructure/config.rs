@@ -13,7 +13,7 @@ use crate::{
         gossip::{GossipConfig, KnownNodeConfig},
     },
     runtime::types::RuntimeConfig,
-    stack::scheduler::SchedulerConfig,
+    stack::{blockchain_monitor::BlockchainMonitorConfig, scheduler::SchedulerConfig},
 };
 
 pub struct SystemConfig(
@@ -24,6 +24,7 @@ pub struct SystemConfig(
     pub LogConfig,
     pub RuntimeConfig,
     pub SchedulerConfig,
+    pub BlockchainMonitorConfig,
 );
 
 pub fn initialize_config() -> Result<SystemConfig> {
@@ -40,6 +41,12 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("gateway_manager.listen_ip", "0.0.0.0"),
         ("gateway_manager.listen_port", "12012"),
         ("scheduler.tick_interval", "1s"),
+        ("blockchain_monitor.solana_cluster_rpc_url", "https://api.mainnet-beta.solana.com:8899/"),
+        ("blockchain_monitor.solana_cluster_pub_sub_url", "https://api.mainnet-beta.solana.com:8900/"),
+        ("blockchain_monitor.solana_provider_public_key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+        ("blockchain_monitor.solana_region_number", "1"),
+        ("blockchain_monitor.solana_usage_signer_private_key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+        ("blockchain_monitor.solana_min_escrow_balance", "50"),
     ];
 
     let default_arrays = vec!["log.filters", "gossip.seeds"];
@@ -102,6 +109,10 @@ pub fn initialize_config() -> Result<SystemConfig> {
         .get("scheduler")
         .context("Invalid scheduler config")?;
 
+    let blockchain_monitor_config = config
+        .get("blockchain_monitor")
+        .context("Invalid blockchain mnonitor config")?;
+
     Ok(SystemConfig(
         connection_manager_config,
         gossip_config,
@@ -110,5 +121,6 @@ pub fn initialize_config() -> Result<SystemConfig> {
         log_config,
         runtime_config,
         scheduler_config,
+        blockchain_monitor_config,
     ))
 }
