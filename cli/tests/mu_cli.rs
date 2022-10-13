@@ -2,17 +2,17 @@ mod utils;
 
 use clap::Parser;
 use mu_cli::{entry, Opts};
+use utils::{create_rpc_client, create_wallet_and_associated_token_account};
 
 #[test]
 fn can_create_provider() {
-    let (provider_wallet, _associated_token_account_address) = todo!()
-        .create_wallet_and_associated_token_account()
-        .unwrap();
+    let rpc_client = create_rpc_client();
+    let provider_wallet = create_wallet_and_associated_token_account(&rpc_client).unwrap();
     let provider_wallet_path = provider_wallet.path.display().to_string();
 
     let args = vec![
         "mu",
-        "--wallet",
+        "--payer",
         &provider_wallet_path,
         "--cluster",
         "localnet",
@@ -20,6 +20,8 @@ fn can_create_provider() {
         "create",
         "--name",
         "SomeProvider",
+        "--provider-keypair",
+        &provider_wallet_path,
     ];
 
     let opts = Opts::try_parse_from(args).unwrap();

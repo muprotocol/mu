@@ -20,7 +20,7 @@ pub struct ConfigOverride {
     #[clap(global = true, long = "cluster")]
     pub cluster: Option<Cluster>,
     /// payer override.
-    #[clap(global = true, long = "wallet")]
+    #[clap(global = true, long = "payer")]
     pub payer: Option<PayerWalletPath>,
 }
 

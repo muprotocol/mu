@@ -1,16 +1,22 @@
 use std::{
     io::Write,
     path::{Path, PathBuf},
-    process::Stdio,
     rc::Rc,
 };
 
-use anchor_client::solana_sdk::{
-    pubkey::Pubkey,
-    signature::{read_keypair_file, Keypair},
-    signer::Signer,
+use anchor_client::{
+    solana_client::rpc_client::RpcClient,
+    solana_sdk::{
+        commitment_config::{CommitmentConfig, CommitmentLevel},
+        native_token::LAMPORTS_PER_SOL,
+        pubkey::Pubkey,
+        signature::{read_keypair_file, Keypair, Signature},
+        signer::Signer,
+        signers::Signers,
+        transaction::Transaction,
+    },
 };
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 pub struct KeypairWithPath {
     pub keypair: Rc<Keypair>,
@@ -18,12 +24,21 @@ pub struct KeypairWithPath {
 }
 
 impl KeypairWithPath {
-    pub fn load_with_path<P>(path: P) -> Result<Self>
+    pub fn load_with_path<P>(path: P, binary: bool) -> Result<Self>
     where
         P: AsRef<Path>,
     {
-        let keypair = read_keypair_file(path.as_ref())
-            .map_err(|_| anyhow!("Error reading keypair from file"))?;
+        let keypair = if binary {
+            let bytes = std::fs::read(&path)?;
+            Keypair::from_bytes(&bytes).map_err(Into::into)
+        } else {
+            read_keypair_file(&path).map_err(|_| {
+                anyhow!(
+                    "Error reading keypair from file {}",
+                    path.as_ref().display()
+                )
+            })
+        }?;
 
         Ok(Self {
             keypair: Rc::new(keypair),
@@ -31,13 +46,18 @@ impl KeypairWithPath {
         })
     }
 
-    pub fn load_with_name<S>(name: S) -> Result<Self>
+    pub fn load_with_name<S>(name: S, binary: bool) -> Result<Self>
     where
         S: AsRef<str>,
     {
         let path = Self::get_keypair_path(name)?;
-        let keypair = read_keypair_file(&path)
-            .map_err(|_| anyhow!("Error reading keypair from file {}", &path.display()))?;
+        let keypair = if binary {
+            let bytes = std::fs::read(&path)?;
+            Keypair::from_bytes(&bytes).map_err(Into::into)
+        } else {
+            read_keypair_file(&path)
+                .map_err(|_| anyhow!("Error reading keypair from file {}", &path.display()))
+        }?;
 
         Ok(Self {
             keypair: Rc::new(keypair),
@@ -45,19 +65,19 @@ impl KeypairWithPath {
         })
     }
 
-    pub fn new() -> Result<Self> {
-        Self::_new::<&str>(None)
+    pub fn new(store_binary: bool) -> Result<Self> {
+        Self::_new::<&str>(None, store_binary)
     }
 
-    pub fn load_or_create_with_name<S>(name: S) -> Result<Self>
+    pub fn load_or_create_with_name<S>(name: S, binary: bool) -> Result<Self>
     where
         S: AsRef<str>,
     {
         let path = Self::get_keypair_path(name.as_ref())?;
         if path.try_exists()? {
-            Self::load_with_name(name)
+            Self::load_with_name(name, binary)
         } else {
-            Self::_new(Some(name))
+            Self::_new(Some(name), binary)
         }
     }
 
@@ -65,7 +85,7 @@ impl KeypairWithPath {
         self.keypair.pubkey()
     }
 
-    fn _new<S>(name: Option<S>) -> Result<Self>
+    fn _new<S>(name: Option<S>, store_binary: bool) -> Result<Self>
     where
         S: AsRef<str>,
     {
@@ -81,7 +101,11 @@ impl KeypairWithPath {
             "Error creating file with path: {}",
             path.to_string_lossy()
         ))?;
-        file.write_all(format!("{:?}", &keypair.to_bytes()).as_bytes())?;
+        if store_binary {
+            file.write_all(&keypair.to_bytes())?;
+        } else {
+            file.write_all(format!("{:?}", &keypair.to_bytes()).as_bytes())?;
+        }
 
         Ok(Self {
             keypair: Rc::new(keypair),
@@ -94,32 +118,67 @@ impl KeypairWithPath {
         S: AsRef<str>,
     {
         let mut path = std::env::current_dir()?;
-        path.push("target/keypairs/");
+        path.push("../marketplace/scripts/test-wallets/");
 
         if !path.is_dir() {
             std::fs::create_dir_all(&path)?;
         }
 
-        path.push(format!("{}.json", name.as_ref()));
+        path.push(name.as_ref());
         Ok(path)
     }
 }
 
-pub fn airdrop_account(keypair_path: &Path, sols: u64) -> Result<()> {
-    let exit = std::process::Command::new("solana")
-        .arg("airdrop")
-        .arg("--url")
-        .arg("http://127.0.0.1:8899")
-        .arg(sols.to_string())
-        .arg("--keypair")
-        .arg(keypair_path.display().to_string())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .output()
-        .expect("Must get airdrop");
+pub fn create_rpc_client() -> RpcClient {
+    RpcClient::new_with_commitment(
+        "http://localhost:8899",
+        CommitmentConfig {
+            commitment: CommitmentLevel::Finalized,
+        },
+    )
+}
 
-    if !exit.status.success() {
-        bail!("There was a problem getting airdrop: {:?}.", exit)
-    }
+pub fn send_trx<S>(rpc_client: &RpcClient, mut trx: Transaction, signers: &S) -> Result<Signature>
+where
+    S: Signers,
+{
+    let recent_blockhash = rpc_client.get_latest_blockhash()?;
+    trx.sign(signers, recent_blockhash);
+
+    rpc_client
+        .send_and_confirm_transaction_with_spinner(&trx)
+        .map_err(Into::into)
+}
+
+pub fn request_airdrop(rpc_client: &RpcClient, to_pubkey: &Pubkey, lamports: u64) -> Result<()> {
+    let recent_blockhash = rpc_client.get_latest_blockhash()?;
+    let signature =
+        rpc_client.request_airdrop_with_blockhash(to_pubkey, lamports, &recent_blockhash)?;
+    rpc_client.confirm_transaction_with_spinner(
+        &signature,
+        &recent_blockhash,
+        CommitmentConfig {
+            commitment: CommitmentLevel::Finalized,
+        },
+    )?;
     Ok(())
+}
+
+pub fn create_wallet_and_associated_token_account(
+    rpc_client: &RpcClient,
+) -> Result<KeypairWithPath> {
+    let wallet = KeypairWithPath::new(false)?;
+    let mint = KeypairWithPath::load_with_name("mint", true)?;
+
+    request_airdrop(rpc_client, &wallet.pubkey(), 1 * LAMPORTS_PER_SOL)?;
+
+    let ins = spl_associated_token_account::instruction::create_associated_token_account(
+        &wallet.pubkey(),
+        &wallet.pubkey(),
+        &mint.pubkey(),
+    );
+    let trx = Transaction::new_with_payer(&[ins], Some(&wallet.pubkey()));
+
+    send_trx(rpc_client, trx, &[wallet.keypair.as_ref()])?;
+    Ok(wallet)
 }
