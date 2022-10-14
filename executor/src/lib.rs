@@ -213,8 +213,7 @@ pub async fn run() -> Result<()> {
         tokio::time::sleep(Duration::from_secs(4)).await;
 
         info!("Deploying prototype stack");
-        scheduler_clone.ready_to_schedule_stacks().await.unwrap();
-        deploy_prototype_stack(scheduler_clone.as_ref()).await;
+        scheduler_clone.ready_to_schedule_stacks().await?;
     }
 
     glue_task.await??;
@@ -226,17 +225,6 @@ pub async fn run() -> Result<()> {
 
 fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
     node.port == me.port && (node.address == me.address || node.address.is_loopback())
-}
-
-// TODO
-async fn deploy_prototype_stack(scheduler: &dyn Scheduler) {
-    let yaml = std::fs::read_to_string("./prototype/stack.yaml").unwrap();
-    let stack = serde_yaml::from_str::<mu_stack::Stack>(yaml.as_str()).unwrap();
-    let id = "s_2gytfyZ3brG89ZF7TFnRGwGmysiWhBfjxh1hDKcBHegY"
-        .parse()
-        .unwrap();
-    scheduler.stack_available(id, stack).await.unwrap();
-    warn!("Stack will be deployed with ID {id}");
 }
 
 async fn glue_modules(
@@ -404,7 +392,7 @@ async fn process_blockchain_monitor_notification(
     match notification {
         None => (), // TODO
         Some(BlockchainMonitorNotification::StacksAvailable(stacks)) => {
-            println!("Stacks available: {stacks:?}");
+            warn!("Stacks available: {stacks:?}");
         }
     }
 }

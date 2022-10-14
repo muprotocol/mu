@@ -115,6 +115,26 @@ pub async fn start(
 )> {
     let (notification_channel, rx) = NotificationChannel::new();
 
+    let (region_pda, _) = Pubkey::find_program_address(
+        &[
+            "region".as_bytes(),
+            config
+                .solana_provider_public_key
+                .public_key
+                .to_bytes()
+                .as_ref(),
+            config.solana_region_number.to_le_bytes().as_ref(),
+        ],
+        &marketplace::id(),
+    );
+
+    let rpc_client = RpcClient::new_with_commitment(
+        config.solana_cluster_rpc_url.clone(),
+        CommitmentConfig::finalized(),
+    );
+
+    ensure_region_exists(&region_pda, &rpc_client).await?;
+
     let get_stacks_config = RpcProgramAccountsConfig {
         filters: Some(vec![
             RpcFilterType::Memcmp(Memcmp {
@@ -123,21 +143,8 @@ pub async fn start(
                 encoding: Some(MemcmpEncoding::Binary),
             }),
             RpcFilterType::Memcmp(Memcmp {
-                offset: 8 + 1,
-                bytes: MemcmpEncodedBytes::Bytes(
-                    config
-                        .solana_provider_public_key
-                        .public_key
-                        .to_bytes()
-                        .to_vec(),
-                ),
-                encoding: Some(MemcmpEncoding::Binary),
-            }),
-            RpcFilterType::Memcmp(Memcmp {
-                offset: 8 + 1 + 32 + 1,
-                bytes: MemcmpEncodedBytes::Bytes(
-                    config.solana_region_number.to_le_bytes().to_vec(),
-                ),
+                offset: 8 + 1 + 32,
+                bytes: MemcmpEncodedBytes::Bytes(region_pda.to_bytes().to_vec()),
                 encoding: Some(MemcmpEncoding::Binary),
             }),
         ]),
@@ -148,11 +155,6 @@ pub async fn start(
         },
         with_context: Some(false),
     };
-
-    let rpc_client = RpcClient::new_with_commitment(
-        config.solana_cluster_rpc_url.clone(),
-        CommitmentConfig::finalized(),
-    );
 
     let existing_stacks = rpc_client
         .get_program_accounts_with_config(&marketplace::id(), get_stacks_config.clone())
@@ -219,9 +221,11 @@ async fn mailbox_body(
     mut message_receiver: MessageReceiver<BlockchainMonitorMessage>,
     notification_channel: NotificationChannel<BlockchainMonitorNotification>,
 ) {
-    notification_channel.send(BlockchainMonitorNotification::StacksAvailable(
-        state.known_stacks.values().cloned().collect(),
-    ));
+    if !state.known_stacks.is_empty() {
+        notification_channel.send(BlockchainMonitorNotification::StacksAvailable(
+            state.known_stacks.values().cloned().collect(),
+        ));
+    }
 
     let mut stop_reply_channel = None;
 
@@ -327,6 +331,7 @@ fn on_new_stack_received(
 }
 
 fn read_solana_account((pubkey, account): (Pubkey, Account)) -> Result<StackWithMetadata> {
+    println!("XXXXXXXXXXXXXX {}", account.data.len());
     let stack_data = marketplace::Stack::deserialize(&mut account.data.as_ref())
         .context("Failed to deserialize Stack data")?;
 
@@ -358,4 +363,18 @@ fn read_solana_rpc_keyed_account(stack: Response<RpcKeyedAccount>) -> Result<Sta
         .decode()
         .ok_or_else(|| anyhow!("Failed to decode Account"))?;
     read_solana_account((pubkey, account))
+}
+
+async fn ensure_region_exists(region: &Pubkey, rpc_client: &RpcClient) -> Result<()> {
+    let account = rpc_client.get_account(region).await.context(format!(
+        "Failed to fetch region {region} from Solana, make sure the `solana_provider_public_key` and \
+            `solana_region_num` config values are correct and the region is already created",
+    ))?;
+
+    // deserialize to ensure the account data is of the correct type
+    let _ = marketplace::ProviderRegion::deserialize(&mut &account.data[..]).context(format!(
+        "Failed to deserialize region {region}, ensure the region was deployed correctly"
+    ))?;
+
+    Ok(())
 }

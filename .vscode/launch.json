@@ -6,9 +6,9 @@
     "configurations": [
         {
             "name": "Debug executor",
-            "type": "cppvsdbg",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceRoot}/executor/target/debug/mu-executor.exe",
+            "program": "${workspaceRoot}/executor/target/debug/mu-executor",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceRoot}/executor",
