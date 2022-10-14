@@ -3,7 +3,7 @@ import { exit, openStdin } from 'process';
 import { waitUntilUsed } from 'tcp-port-used';
 import { setTimeout } from 'timers/promises';
 
-export const waitUntilPortUsed = (port: number) => waitUntilUsed(port);
+export const waitUntilPortUsed = (port: number) => waitUntilUsed(port, 100, 10000);
 
 export const runAndGetOutput = (command: string): string => {
     let result = spawnSync(command, { shell: true });

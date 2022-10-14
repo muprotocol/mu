@@ -223,7 +223,7 @@ export const getRegion = (mu: MuProgram, provider: MuProviderInfo, regionNum: nu
 		[
 			anchor.utils.bytes.utf8.encode("region"),
 			provider.wallet.publicKey.toBytes(),
-			new Uint8Array([regionNum])
+			new anchor.BN(regionNum, 10, "le").toBuffer("le", 4)
 		],
 		mu.program.programId
 	)[0];
