@@ -212,7 +212,7 @@ pub async fn run() -> Result<()> {
         info!("Waiting 4 seconds for node discovery to complete");
         tokio::time::sleep(Duration::from_secs(4)).await;
 
-        info!("Deploying prototype stack");
+        info!("Will start to schedule stacks now");
         scheduler_clone.ready_to_schedule_stacks().await?;
     }
 
@@ -277,7 +277,7 @@ async fn glue_modules(
             }
 
             notification = blockchain_monitor_notification_receiver.recv() => {
-                process_blockchain_monitor_notification(notification).await;
+                process_blockchain_monitor_notification(notification, scheduler).await;
             }
         }
     }
@@ -388,11 +388,18 @@ async fn process_scheduler_notification(
 
 async fn process_blockchain_monitor_notification(
     notification: Option<BlockchainMonitorNotification>,
+    scheduler: &dyn Scheduler,
 ) {
     match notification {
         None => (), // TODO
         Some(BlockchainMonitorNotification::StacksAvailable(stacks)) => {
-            warn!("Stacks available: {stacks:?}");
+            debug!("Stacks available: {stacks:?}");
+            for stack in stacks {
+                scheduler
+                    .stack_available(stack.id(), stack.stack)
+                    .await
+                    .unwrap();
+            }
         }
     }
 }
