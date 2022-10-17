@@ -8,12 +8,13 @@
             "name": "Debug executor",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceRoot}/executor/target/debug/mu-executor",
+            "program": "${workspaceRoot}/target/debug/mu-executor",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${workspaceRoot}/executor",
+            "cwd": "${workspaceRoot}",
             "environment": [],
-            "externalConsole": true
+            "externalConsole": true,
+            "preLaunchTask": "rust: cargo build",
         }
     ]
 }

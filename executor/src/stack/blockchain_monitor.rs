@@ -1,6 +1,6 @@
 use std::{collections::HashMap, marker::PhantomPinned, ops::Deref, pin::Pin};
 
-use anchor_client::anchor_lang::AnchorDeserialize;
+use anchor_client::anchor_lang::AccountDeserialize;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
@@ -331,8 +331,7 @@ fn on_new_stack_received(
 }
 
 fn read_solana_account((pubkey, account): (Pubkey, Account)) -> Result<StackWithMetadata> {
-    println!("XXXXXXXXXXXXXX {}", account.data.len());
-    let stack_data = marketplace::Stack::deserialize(&mut account.data.as_ref())
+    let stack_data = marketplace::Stack::try_deserialize(&mut &account.data[..])
         .context("Failed to deserialize Stack data")?;
 
     let stack_definition =
@@ -372,9 +371,9 @@ async fn ensure_region_exists(region: &Pubkey, rpc_client: &RpcClient) -> Result
     ))?;
 
     // deserialize to ensure the account data is of the correct type
-    let _ = marketplace::ProviderRegion::deserialize(&mut &account.data[..]).context(format!(
-        "Failed to deserialize region {region}, ensure the region was deployed correctly"
-    ))?;
+    let _ = marketplace::ProviderRegion::try_deserialize(&mut &account.data[..]).context(
+        format!("Failed to deserialize region {region}, ensure the region was deployed correctly"),
+    )?;
 
     Ok(())
 }
