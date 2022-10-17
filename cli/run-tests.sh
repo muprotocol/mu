@@ -26,13 +26,14 @@ main() {
     #
     # Bootup validator.
     #
+	export RUST_LOG=solana_runtime::system_instruction_processor=trace,solana_runtime::message_processor=debug,solana_bpf_loader=debug,solana_rbpf=debug
     solana-test-validator -r \
-				--no-accounts-db-caching \
+				--log \
 				-l target/test-ledger \
 				--bpf-program $mu_pid ../marketplace/target/deploy/marketplace.so \
-				> target/test-validator.log &
-    sleep 5
+				&> target/test-validator.log &
     validator_pid=$!
+    sleep 5
 
     #
     # Initialize mu
@@ -50,8 +51,8 @@ main() {
 }
 
 cleanup() {
-    kill $validator_pid || true
-    pkill -P $$ || true
+    kill -9 $validator_pid || true
+    kill -9 $$ || true
     wait || true
 }
 

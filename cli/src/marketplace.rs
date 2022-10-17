@@ -3,6 +3,7 @@
 use std::rc::Rc;
 
 use anchor_client::{
+    solana_client::rpc_config::RpcSendTransactionConfig,
     solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer, system_program, sysvar},
     Program,
 };
@@ -32,7 +33,7 @@ impl MarketplaceClient {
         let (state_pda, _) = Pubkey::find_program_address(&[b"state"], &self.program.id());
         let (deposit_pda, _) = Pubkey::find_program_address(&[b"deposit"], &self.program.id());
         let (provider_pda, _) = Pubkey::find_program_address(
-            &[b"deposit", &provider_keypair.pubkey().to_bytes()],
+            &[b"provider", &provider_keypair.pubkey().to_bytes()],
             &self.program.id(),
         );
 
@@ -52,15 +53,19 @@ impl MarketplaceClient {
             rent: sysvar::rent::id(),
         };
 
-        let a = self
-            .program
+        self.program
             .request()
-            .args(marketplace::instruction::CreateProvider { name })
             .accounts(accounts)
-            .send()
+            .args(marketplace::instruction::CreateProvider { name })
+            .signer(&provider_keypair)
+            .send_with_spinner_and_config(RpcSendTransactionConfig {
+                skip_preflight: cfg!(debug_assertions),
+                preflight_commitment: None,
+                encoding: None,
+                max_retries: None,
+                min_context_slot: None,
+            })
             .context("error in creating provider")?;
-
-        println!("Signature: {}", a);
         Ok(())
     }
 }

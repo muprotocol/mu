@@ -6,6 +6,7 @@ import { Keypair, LAMPORTS_PER_SOL, Transaction, SystemProgram, PublicKey } from
 import * as spl from '@solana/spl-token';
 import path from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
+import { json } from "stream/consumers";
 
 export class ServiceUnits {
 	mudb_gb_month: number;
@@ -28,10 +29,13 @@ export const readOrCreateKeypair = (name?: string): Keypair => {
 		return Keypair.generate();
 	}
 
-	let walletPath = path.join(__dirname, "test-wallets", name);
+	let walletPath = path.join(__dirname, "test-wallets", name + ".json");
 	if (existsSync(walletPath)) {
 		try {
-			let bytes: Uint8Array = readFileSync(walletPath);
+			let content: Uint8Array = readFileSync(walletPath);
+            let text = Buffer.from(content).toString();
+            let json = JSON.parse(text);
+            let bytes = Uint8Array.from(json);
 			let wallet = Keypair.fromSecretKey(bytes);
 			return wallet;
 		} catch (e) {
@@ -41,7 +45,8 @@ export const readOrCreateKeypair = (name?: string): Keypair => {
 
 	let keypair = Keypair.generate(); // anchor.Wallet has no constructor
 	console.log(`Generated keypair ${name}, public key is:`, keypair.publicKey.toBase58());
-	writeFileSync(walletPath, keypair.secretKey);
+	let secretkey = Array.from(keypair.secretKey);
+	writeFileSync(walletPath, JSON.stringify(secretkey));
 	return keypair;
 }
 

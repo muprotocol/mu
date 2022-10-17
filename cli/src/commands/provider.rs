@@ -50,9 +50,10 @@ pub fn parse(cfg_override: &ConfigOverride, subcmd: Command) -> Result<()> {
 
 fn create(cfg_override: &ConfigOverride, args: CreateArgs) -> Result<()> {
     let cfg = Config::discover(cfg_override)?;
-    let marketplace = MarketplaceClient::new(cfg)?;
+    let marketplace = MarketplaceClient::new(cfg).unwrap(); //TODO
     let provider_keypair = read_keypair_file(args.provider_keypair)
-        .map_err(|e| anyhow!("can not read keypair: {}", e.to_string()))?;
+        .map_err(|e| anyhow!("can not read keypair: {}", e.to_string()))
+        .unwrap(); //TODO
 
     marketplace.create_provider(args.name, provider_keypair)
 }
