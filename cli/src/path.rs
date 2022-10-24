@@ -1,3 +1,5 @@
+// TODO: why make this a macro and a wrapper type? The type provides no guarantees anyway
+// due to the FromStr implementation, and forces cloning to access the path due to ToString.
 #[macro_export]
 macro_rules! home_path {
     ($my_struct:ident, $path:literal) => {

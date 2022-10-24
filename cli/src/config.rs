@@ -1,3 +1,5 @@
+//! TODO: more descriptive error context messages
+
 use anchor_client::{
     solana_sdk::{
         pubkey::Pubkey,
@@ -13,12 +15,16 @@ use std::{fs, io, path::Path, str::FromStr};
 
 #[derive(Default, Debug, Parser)]
 pub struct ConfigOverride {
+    // TODO: why override the program ID? At best, we'd only want to do this during development,
+    // so it should be behind a feature/debug_assertions flag.
     /// Program ID override.
     #[clap(global = true, long = "program-id")]
     pub program_id: Option<Pubkey>,
     /// Cluster override.
     #[clap(global = true, long = "cluster")]
     pub cluster: Option<Cluster>,
+    // TODO: a simple path won't be enough here. Any sane user would want to secure their stacks
+    // with something more secure than a plain-text private key on their hard drive.
     /// payer override.
     #[clap(global = true, long = "payer")]
     pub payer: Option<PayerWalletPath>,
@@ -26,6 +32,7 @@ pub struct ConfigOverride {
 
 #[derive(Debug)]
 pub struct Config {
+    // TODO: see TODOs in `ConfigOverride`
     pub program_id: Pubkey,
     pub cluster: Cluster,
     pub payer: PayerWalletPath,
@@ -45,7 +52,7 @@ impl Config {
     pub fn discover(cfg_override: &ConfigOverride) -> Result<Config> {
         let mut cfg = Config::_discover()?.unwrap_or_default();
 
-        if let Some(program_id) = cfg_override.program_id.clone() {
+        if let Some(program_id) = cfg_override.program_id {
             cfg.program_id = program_id;
         }
         if let Some(cluster) = cfg_override.cluster.clone() {
@@ -58,6 +65,7 @@ impl Config {
         Ok(cfg)
     }
 
+    // TODO: naming
     fn _discover() -> Result<Option<Config>> {
         let mut path = std::env::current_dir()?;
         path.push("mu-cli.yaml");
@@ -83,12 +91,15 @@ impl Config {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+// TODO: naming, also why have two of this?
 struct _Config {
     program_id: String,
     cluster: String,
     payer: String,
 }
 
+// TODO: Bad practice to dress serialization up as FromStr/ToString (as
+// evidenced by the `expect` call below)
 impl ToString for Config {
     fn to_string(&self) -> String {
         let cfg = _Config {
@@ -101,6 +112,7 @@ impl ToString for Config {
     }
 }
 
+// TODO: see ToString above
 impl FromStr for Config {
     type Err = Error;
 
@@ -125,4 +137,5 @@ pub fn get_solana_cfg_url() -> Result<String, io::Error> {
     SolanaConfig::load(config_file).map(|config| config.json_rpc_url)
 }
 
+// TODO: Bad idea
 crate::home_path!(PayerWalletPath, ".config/solana/id.json");
