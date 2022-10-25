@@ -8,12 +8,12 @@ use config::{Config, Environment, File, FileFormat};
 use crate::{
     gateway::GatewayManagerConfig,
     log_setup::LogConfig,
-    mu_stack::scheduler::SchedulerConfig,
     network::{
         connection_manager::ConnectionManagerConfig,
         gossip::{GossipConfig, KnownNodeConfig},
     },
     runtime::types::RuntimeConfig,
+    stack::scheduler::SchedulerConfig,
 };
 
 pub struct SystemConfig(

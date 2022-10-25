@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::error;
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
+use mu_stack::{Gateway, HttpMethod, StackID};
 use rocket::{
     catch, catchers, delete, get, head,
     http::Status,
@@ -18,10 +19,7 @@ use serde::{Deserialize, Serialize};
 use tokio::{sync::RwLock, task::JoinHandle};
 use uuid::Uuid;
 
-use crate::{
-    mu_stack::{Gateway, HttpMethod, StackID},
-    runtime::{types::FunctionID, Runtime},
-};
+use crate::runtime::{types::FunctionID, Runtime};
 
 #[async_trait]
 #[clonable]

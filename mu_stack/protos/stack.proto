@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package mu_stack;
+
+message Stack {
+    string name = 1;
+    string version = 2;
+    repeated Service services = 3;
+}
+
+message Service {
+    oneof service {
+        Gateway gateway = 1;
+        Function function = 2;
+        Database database = 3;
+    }
+}
+
+message Database {
+    string name = 1;
+}
+
+message Gateway {
+    string name = 1;
+    repeated GatewayEndpoints endpoints = 2;
+}
+
+message GatewayEndpoints {
+    string path = 1;
+    repeated GatewayEndpoint endpoints = 2;
+}
+
+enum HttpMethod {
+    GET = 0;
+    HEAD = 1;
+    POST = 2;
+    PUT = 3;
+    PATCH = 4;
+    DELETE = 5;
+    OPTIONS = 6;
+}
+
+message GatewayEndpoint {
+    HttpMethod method = 1;
+    string route_to = 2;
+}
+
+enum FunctionRuntime {
+    WASI1_0 = 0;
+}
+
+message Function {
+    string name = 1;
+    string binary = 2;
+    FunctionRuntime runtime = 3;
+    repeated EnvVar env = 4;
+}
+
+message EnvVar {
+    string name = 1;
+    string value = 2;
+}

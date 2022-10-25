@@ -1,6 +1,6 @@
 use std::{fmt::Display, ops::Deref, str::FromStr};
 
-use crate::mu_stack::StackID;
+use mu_stack::StackID;
 use serde::{Deserialize, Serialize};
 use sled::IVec;
 
