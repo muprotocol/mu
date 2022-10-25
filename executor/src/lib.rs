@@ -25,6 +25,7 @@ use crate::{
     },
     stack::scheduler::{self, Scheduler, SchedulerNotification},
 };
+use mudb::service::DatabaseManager;
 
 pub async fn run() -> Result<()> {
     // TODO handle failures in components
@@ -119,8 +120,14 @@ pub async fn run() -> Result<()> {
     .context("Failed to start gossip")?;
 
     let function_provider = runtime::providers::DefaultFunctionProvider::new();
-    let runtime = runtime::start(Box::new(function_provider), runtime_config)
-        .context("Failed to initiate runtime")?;
+    let database_manager = DatabaseManager::new().await?;
+    let runtime = runtime::start(
+        Box::new(function_provider),
+        runtime_config,
+        database_manager.clone(),
+    )
+    .await
+    .context("Failed to initiate runtime")?;
 
     // TODO: no notification channel for now, requests are sent straight to runtime
     let gateway_manager = gateway::start(gateway_manager_config, runtime.clone())
@@ -138,6 +145,7 @@ pub async fn run() -> Result<()> {
         scheduler_notification_channel,
         runtime.clone(),
         gateway_manager.clone(),
+        database_manager.clone(),
     );
 
     // TODO: create a `Module`/`Subsystem`/`NotificationSource` trait to batch modules with their notification receivers?
@@ -209,7 +217,6 @@ fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
     node.port == me.port && (node.address == me.address || node.address.is_loopback())
 }
 
-// TODO
 async fn deploy_prototype_stack(scheduler: &dyn Scheduler) {
     let yaml = std::fs::read_to_string("./prototype/stack.yaml").unwrap();
     let stack = serde_yaml::from_str::<mu_stack::Stack>(yaml.as_str()).unwrap();

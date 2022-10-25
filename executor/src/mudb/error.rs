@@ -1,87 +1,60 @@
-use super::input::Key;
+use super::types::Key;
 use thiserror::Error;
 
-// TODO: encapsolate some error into internal error.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum Error {
     // user error
-    #[error("table {0} already exist")]
+    #[error("mudb_error> database {0} already exist")]
+    DbAlreadyExist(String),
+    #[error("mudb_error> database {0} dose not exist")]
+    DbDoseNotExist(String),
+    #[error("mudb_error> table {0} already exist")]
     TableAlreadyExist(String),
-    #[error("table {0} dose not exist")]
+    #[error("mudb_error> table {0} dose not exist")]
     TableDoseNotExist(String),
-    #[error("table {0} is reserved")]
+    #[error("mudb_error> table {0} is reserved")]
     TableIsReserved(String),
-    #[error("trying to set key, {0}, while it's auto increment")]
-    TryingToSetKeyWhileItIsAutoIncrement(String),
-    #[error("trying to insert item with no key")]
-    TryingToInsertItemWithNoKey,
-    #[error("key {0} already exist")]
+    #[error("mudb_error> key {0} already exist")]
     KeyAlreadyExist(Key),
-    #[error("validation errors: {0}")]
-    InputValidationErr(validator::ValidationErrors),
+    #[error("mudb_error> invalid_table_name> {0} {1}")]
+    InvalidTableName(String, String),
+    #[error("mudb_error> invalid_json_command> {0}")]
+    InvalidJsonCommand(String),
 
-    // internal error
-    #[error("sled error: {0}")]
-    SledErr(sled::Error),
-    #[error("sled transaction error: {0}")]
-    SledTransErr(sled::transaction::TransactionError),
-    #[error("serde_json error")]
-    SerdeJsonErr(serde_json::Error), // (serde_json::error::Error)
-    #[error("command was cancelled")]
+    // outer error
+    #[error("mudb_error> sled> {0}")]
+    Sled(sled::Error),
+    #[error("mudb_error> sled_transaction> {0}")]
+    SledTrans(sled::transaction::TransactionError),
+    #[error("mudb_error> serde_json> {0}")]
+    SerdeJson(String),
+    #[error("mudb_error> command was cancelled")]
     CommandCancelled,
-    #[error("command panicked")]
+    #[error("mudb_error> command panicked")]
     CommandPanicked,
-}
-
-impl PartialEq for Error {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Error::TableAlreadyExist(l), Error::TableAlreadyExist(r)) => l == r,
-            (Error::TableDoseNotExist(l), Error::TableDoseNotExist(r)) => l == r,
-            (Error::TableIsReserved(l), Error::TableIsReserved(r)) => l == r,
-            (
-                Error::TryingToSetKeyWhileItIsAutoIncrement(l),
-                Error::TryingToSetKeyWhileItIsAutoIncrement(r),
-            ) => l == r,
-            (Error::TryingToInsertItemWithNoKey, Error::TryingToInsertItemWithNoKey) => true,
-            (Error::KeyAlreadyExist(l), Error::KeyAlreadyExist(r)) => l == r,
-            (Error::InputValidationErr(l), Error::InputValidationErr(r)) => l == r,
-            (Error::SledErr(l), Error::SledErr(r)) => l == r,
-            (Error::SledTransErr(l), Error::SledTransErr(r)) => l == r,
-            (Error::SerdeJsonErr(l), Error::SerdeJsonErr(r)) => {
-                l.line() == r.line() && l.column() == r.column()
-            }
-            (Error::CommandCancelled, Error::CommandCancelled) => true,
-            (Error::CommandPanicked, Error::CommandPanicked) => true,
-            _ => false,
-        }
-    }
+    #[error("mudb_error> invalid_database_id> {0}")]
+    InvalidDbId(String),
+    #[error("mudb_error> manager_mailbox> {0}")]
+    ManagerMailBox(ManagerMailBoxError),
 }
 
 impl Eq for Error {}
 
 impl From<sled::Error> for Error {
     fn from(err: sled::Error) -> Self {
-        Self::SledErr(err)
+        Self::Sled(err)
     }
 }
 
 impl From<sled::transaction::TransactionError> for Error {
     fn from(err: sled::transaction::TransactionError) -> Self {
-        Self::SledTransErr(err)
+        Self::SledTrans(err)
     }
 }
 
 impl From<serde_json::error::Error> for Error {
     fn from(err: serde_json::error::Error) -> Self {
-        // Self::SerdeJsonErr(err)
-        Self::SerdeJsonErr(err)
-    }
-}
-
-impl From<validator::ValidationErrors> for Error {
-    fn from(err: validator::ValidationErrors) -> Self {
-        Self::InputValidationErr(err)
+        Self::SerdeJson(err.to_string())
     }
 }
 
@@ -96,34 +69,49 @@ impl From<tokio::task::JoinError> for Error {
     }
 }
 
+// impl From<mailbox_processor::Error> for Error {
+//     fn from(err: mailbox_processor::Error) -> Self {
+//         Self::ManagerErr(err)
+//     }
+// }
+
 #[derive(Clone, Error, Debug, PartialEq, Eq)]
-pub enum InvalidQueryError {
-    #[error("InvalidOprErr")]
-    InvalidOprErr,
-    #[error("ExpectNumErr")]
-    ExpectNumErr,
-    #[error("ExpectArrErr")]
-    ExpectArrErr,
-    #[error("ExpectObjErr")]
-    ExpectObjErr,
-    #[error("ExpectStrErr")]
-    ExpectStrErr,
+pub enum JsonCommandError {
+    #[error("invalid operation")]
+    InvalidOpr,
+    #[error("expect number")]
+    ExpectNum,
+    #[error("expect array")]
+    ExpectArr,
+    #[error("expect object")]
+    ExpectObj,
+    #[error("expect string")]
+    ExpectStr,
 }
 
-impl From<InvalidQueryError> for validator::ValidationError {
-    fn from(err: InvalidQueryError) -> Self {
-        use validator::ValidationError;
-        use InvalidQueryError::*;
-        match err {
-            InvalidOprErr => ValidationError::new("invalid query err: expected `$ operation`"),
-            ExpectNumErr => ValidationError::new("invalid query err: expected `Number`"),
-            ExpectArrErr => ValidationError::new("invalid query err: expected `Array`"),
-            ExpectObjErr => ValidationError::new("invalid query err: expected `Object`"),
-            ExpectStrErr => ValidationError::new("invalid query err: expected `String`"),
-        }
+impl From<JsonCommandError> for Error {
+    fn from(err: JsonCommandError) -> Self {
+        Error::InvalidJsonCommand(err.to_string())
+    }
+}
+
+#[derive(Error, Debug, PartialEq)]
+pub enum ManagerMailBoxError {
+    #[error("create_db> {0}")]
+    CreateDb(mailbox_processor::Error),
+    #[error("drop_db> {0}")]
+    DropDb(mailbox_processor::Error),
+    #[error("get_db> {0}")]
+    GetDb(mailbox_processor::Error),
+    #[error("get_cache> {0}")]
+    GetCache(mailbox_processor::Error),
+}
+
+impl From<ManagerMailBoxError> for Error {
+    fn from(err: ManagerMailBoxError) -> Self {
+        Self::ManagerMailBox(err)
     }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
-pub type ValidationResult<T> = std::result::Result<T, validator::ValidationError>;
-pub type QueryValidationResult<T> = std::result::Result<T, InvalidQueryError>;
+pub type JsonCommandResult<T> = std::result::Result<T, JsonCommandError>;
