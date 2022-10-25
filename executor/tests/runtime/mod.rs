@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use futures::FutureExt;
+use log::info;
 use mu::{
     gateway,
     mudb::service::{DatabaseID, DatabaseManager},
@@ -103,6 +104,8 @@ async fn create_runtime(
 #[tokio::test]
 #[serial]
 async fn test_simple_func() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
     let mut projects = HashMap::new();
     projects.insert("hello-wasm", Path::new("tests/runtime/funcs/hello-wasm"));
 

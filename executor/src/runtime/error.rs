@@ -9,6 +9,9 @@ pub enum Error {
     #[error("Can not find function with id {0:?}")]
     FunctionNotFound(FunctionID),
 
+    #[error("Function {0:?} wasm module is corrupted or invalid ")]
+    InvalidFunctionModule(FunctionID),
+
     #[error("Can not convert input message to {0}")]
     IncorrectInputMessage(&'static str),
 
