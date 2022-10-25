@@ -1,9 +1,11 @@
-pub mod deploy;
-pub mod scheduler;
+pub mod protobuf;
+pub mod protos;
 
-// We must use a BTreeMap to ensure key ordering stays consistent.
 use std::{collections::HashMap, fmt::Display};
 
+use ::protobuf::Message;
+use anyhow::Result;
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -24,6 +26,15 @@ pub struct Stack {
 }
 
 impl Stack {
+    pub fn serialize_to_proto(self) -> Result<Bytes> {
+        let stack: crate::protos::stack::Stack = self.into();
+        Ok(stack.write_to_bytes()?.into())
+    }
+
+    pub fn try_deserialize_proto(bytes: Bytes) -> Result<Stack> {
+        crate::protos::stack::Stack::parse_from_bytes(bytes.as_ref())?.try_into()
+    }
+
     pub fn databases(&self) -> impl Iterator<Item = &Database> {
         self.services.iter().filter_map(|s| match s {
             Service::Database(db) => Some(db),
@@ -67,7 +78,7 @@ pub struct Gateway {
 
 impl Gateway {
     // Strip leading slashes from urls, since that's the format rocket provides
-    fn clone_normalized(&self) -> Self {
+    pub fn clone_normalized(&self) -> Self {
         let mut ep = HashMap::new();
         for (url, endpoint) in &self.endpoints {
             if let Some(stripped) = url.strip_prefix('/') {

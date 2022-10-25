@@ -1,5 +1,5 @@
 use super::message::{gateway::GatewayResponse, Message};
-use crate::mu_stack::{FunctionRuntime, StackID};
+use mu_stack::{FunctionRuntime, StackID};
 
 use anyhow::Result;
 use bytes::Bytes;

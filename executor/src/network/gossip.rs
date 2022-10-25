@@ -16,6 +16,7 @@ use mailbox_processor::{
     plain::{MessageReceiver, PlainMailboxProcessor},
     ReplyChannel,
 };
+use mu_stack::StackID;
 use rand::{prelude::Distribution, rngs::ThreadRng};
 use serde::{Deserialize, Serialize};
 use stable_hash::{FieldAddress, StableHash};
@@ -26,8 +27,8 @@ use tokio_serde::{
 };
 
 use crate::{
-    infrastructure::config::ConfigDuration, mu_stack::StackID,
-    network::connection_manager::ConnectionID, util::id::IdExt,
+    infrastructure::config::ConfigDuration, network::connection_manager::ConnectionID,
+    util::id::IdExt,
 };
 
 pub use self::node_collection::KnownNodes;

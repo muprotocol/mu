@@ -154,7 +154,7 @@ async fn test_mudb_stateless_api() {
     // };
 
     let database_id = client::DatabaseID {
-        stack_id: mu::mu_stack::StackID(uuid::Uuid::new_v4()),
+        stack_id: mu_stack::StackID(uuid::Uuid::new_v4()),
         database_name: "test_mudb".to_owned(),
     };
 
