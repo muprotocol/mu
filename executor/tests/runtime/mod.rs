@@ -6,6 +6,7 @@ use mu::{
     runtime::{start, types::*, Runtime},
 };
 use mu_stack::{self, FunctionRuntime, StackID};
+use rand::Rng;
 use serial_test::serial;
 use std::{
     collections::HashMap,
@@ -14,7 +15,6 @@ use std::{
 };
 use tokio::fs;
 use utils::{clean_wasm_project, compile_wasm_project};
-use uuid::Uuid;
 
 use crate::runtime::utils::create_db_if_not_exist;
 
@@ -53,7 +53,7 @@ async fn read_wasm_projects(
 
     for (_, path) in projects {
         let id = FunctionID {
-            stack_id: StackID(Uuid::new_v4()),
+            stack_id: StackID::SolanaPublicKey(rand::thread_rng().gen()),
             function_name: "my_func".into(),
         };
         let source = fs::read(&path).await?.into();
