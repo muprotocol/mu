@@ -156,25 +156,6 @@ pub async fn start(
         with_context: Some(false),
     };
 
-    let existing_stacks = rpc_client
-        .get_program_accounts_with_config(&marketplace::id(), get_stacks_config.clone())
-        .await
-        .context("Failed to fetch existing stacks from Solana")?;
-
-    let existing_stacks = existing_stacks
-        .into_iter()
-        .map(read_solana_account)
-        .collect::<Result<Vec<_>, _>>()
-        .context("Failed to parse stacks retrieved from Solana")?
-        .into_iter()
-        .map(|s| (s.id(), s))
-        .collect::<HashMap<_, _>>();
-
-    info!(
-        "Received {} existing stacks from Solana",
-        existing_stacks.len()
-    );
-
     let solana_pub_sub = {
         let client_wrapper = Box::pin(SolanaPubSubClientWrapper {
             client: PubsubClient::new(&config.solana_cluster_pub_sub_url)
@@ -197,6 +178,25 @@ pub async fn start(
             unsub_callback: unsubscribe_fn,
         }
     };
+
+    let existing_stacks = rpc_client
+        .get_program_accounts_with_config(&marketplace::id(), get_stacks_config.clone())
+        .await
+        .context("Failed to fetch existing stacks from Solana")?;
+
+    let existing_stacks = existing_stacks
+        .into_iter()
+        .map(read_solana_account)
+        .collect::<Result<Vec<_>, _>>()
+        .context("Failed to parse stacks retrieved from Solana")?
+        .into_iter()
+        .map(|s| (s.id(), s))
+        .collect::<HashMap<_, _>>();
+
+    info!(
+        "Received {} existing stacks from Solana",
+        existing_stacks.len()
+    );
 
     let state = BlockchainMonitorState {
         known_stacks: existing_stacks,
@@ -324,8 +324,11 @@ fn on_new_stack_received(
         }
 
         Ok(stack) => {
-            state.known_stacks.insert(stack.id(), stack.clone());
-            notification_channel.send(BlockchainMonitorNotification::StacksAvailable(vec![stack]));
+            // TODO: implement stack updates
+            if let None = state.known_stacks.insert(stack.id(), stack.clone()) {
+                notification_channel
+                    .send(BlockchainMonitorNotification::StacksAvailable(vec![stack]));
+            }
         }
     }
 }

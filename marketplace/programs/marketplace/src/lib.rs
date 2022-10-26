@@ -76,6 +76,7 @@ pub mod marketplace {
             region: ctx.accounts.region.key(),
             seed: stack_seed,
             revision: 1,
+            bump: *ctx.bumps.get("stack").unwrap(),
         });
 
         Ok(())
@@ -200,7 +201,7 @@ pub struct Initialize<'info> {
 #[account]
 pub struct Provider {
     pub account_type: u8, // See MuAccountType
-    pub name: String,     // Max 20 Chars
+    pub name: String,
     pub owner: Pubkey,
     pub bump: u8,
 }
@@ -254,7 +255,7 @@ pub struct ProviderRegion {
     pub region_num: u32,
     pub rates: ServiceUnits,
     pub bump: u8,
-    pub name: String, // Max 20
+    pub name: String,
 }
 
 #[derive(Accounts)]
@@ -316,6 +317,7 @@ pub struct Stack {
     pub stack: Vec<u8>,
     pub seed: u64,
     pub revision: u32,
+    pub bump: u8,
 }
 
 #[derive(Accounts)]
@@ -326,7 +328,7 @@ pub struct CreateStack<'info> {
     #[account(
         init,
         payer = user,
-        space = 8 + 1 + 32 + 32 + 4 + stack_data.len() + 8 + 4,
+        space = 8 + 1 + 32 + 32 + 4 + stack_data.len() + 8 + 4 + 1,
         seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_le_bytes().as_ref()],
         bump
     )]
@@ -420,6 +422,7 @@ pub struct UpdateUsage<'info> {
     )]
     escrow_account: AccountInfo<'info>,
 
+    // TODO: add the developer's account as input, calculate and validate the stack's PDA
     #[account(has_one = region)]
     stack: Account<'info, Stack>,
 
