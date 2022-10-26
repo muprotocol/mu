@@ -15,7 +15,7 @@ use dyn_clonable::clonable;
 use log::*;
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
 use mu_stack::StackID;
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
 
@@ -67,27 +67,24 @@ struct RuntimeState {
     function_provider: Box<dyn FunctionProvider>,
     hashkey_dict: HashMap<FunctionID, wasmer_cache::Hash>,
     cache: FileSystemCache,
-    store: Store, // We only need this store for it's configuration
-    db_service: DatabaseManager,
+    database_service: Arc<DatabaseManager>,
 }
 
 impl RuntimeState {
     pub async fn new(
         function_provider: Box<dyn FunctionProvider>,
         cache_path: &Path,
-        db_service: DatabaseManager,
+        database_service: DatabaseManager,
     ) -> Result<Self> {
         let hashkey_dict = HashMap::new();
         let mut cache = FileSystemCache::new(cache_path).context("failed to create cache")?;
         cache.set_cache_extension(Some("wasmu"));
-        let store = create_store();
 
         Ok(Self {
             hashkey_dict,
             function_provider,
             cache,
-            store,
-            db_service,
+            database_service: Arc::new(database_service),
         })
     }
 
@@ -125,7 +122,9 @@ impl RuntimeState {
             };
 
             let mut hash_array = Vec::with_capacity(function_id.function_name.len() + 16); // Uuid is 16 bytes
-            hash_array.extend_from_slice(function_id.stack_id.get_bytes());
+            hash_array.extend_from_slice(&function_id.stack_id.0.to_bytes_le()); //This is bad, should
+                                                                                 //use a method on
+                                                                                 //StackID
             hash_array.extend_from_slice(function_id.function_name.as_bytes());
             let hash = wasmer_cache::Hash::generate(&hash_array);
             self.hashkey_dict.insert(function_id.clone(), hash);
@@ -146,10 +145,17 @@ impl RuntimeState {
         let definition = self
             .function_provider
             .get(&function_id)
-            .ok_or_else(|| Error::FunctionNotFound(function_id.clone()))?;
-        let instance = Instance::new(function_id.clone(), definition.envs.clone());
-        let module = self.load_module(&function_id)?;
-        Ok(instance.load_module(module))
+            .ok_or_else(|| Error::FunctionNotFound(function_id.clone()))?
+            .to_owned();
+
+        let (store, module) = self.load_module(&function_id)?;
+        Ok(Instance::new(
+            function_id,
+            definition.envs.clone(),
+            store,
+            module,
+            self.database_service.clone(),
+        ))
     }
 }
 
@@ -222,19 +228,15 @@ pub async fn start(
 async fn mailbox_step(
     _mb: CallbackMailboxProcessor<MailboxMessage>,
     msg: MailboxMessage,
-    mut runtime: RuntimeState,
+    mut state: RuntimeState,
 ) -> RuntimeState {
     //TODO: pass metering info to blockchain_manager service
     match msg {
         MailboxMessage::InvokeFunction(req) => {
-            if let Ok(instance) = runtime.instantiate_function(req.function_id).await {
-                let db_service = runtime.db_service.clone();
+            if let Ok(instance) = state.instantiate_function(req.function_id).await {
                 tokio::spawn(async move {
                     let resp = tokio::task::spawn_blocking(move || {
-                        let instance = instance
-                            .start(db_service)
-                            .context("can not run instance")
-                            .unwrap(); //TODO: Handle Errors
+                        let instance = instance.start().context("can not run instance").unwrap(); //TODO: Handle Errors
                         instance.request(req.message)
                     })
                     .await
@@ -268,14 +270,14 @@ async fn mailbox_step(
                     function_name,
                 };
 
-                runtime.function_provider.remove_function(&function_id);
-                runtime.hashkey_dict.remove(&function_id);
+                state.function_provider.remove_function(&function_id);
+                state.hashkey_dict.remove(&function_id);
             }
         }
 
         MailboxMessage::GetFunctionNames(stack_id, r) => {
-            r.reply(runtime.function_provider.get_function_names(&stack_id));
+            r.reply(state.function_provider.get_function_names(&stack_id));
         }
     }
-    runtime
+    state
 }

@@ -30,12 +30,6 @@ pub fn create_store() -> Store {
 
 pub trait InstanceState {}
 
-pub struct New {
-    store: Store,
-    envs: HashMap<String, String>,
-}
-impl InstanceState for New {}
-
 pub struct Loaded {
     store: Store,
     envs: HashMap<String, String>,
@@ -45,7 +39,6 @@ impl InstanceState for Loaded {}
 
 pub struct Running {
     handle: FunctionHandle,
-    db_service: DatabaseManager,
 }
 impl InstanceState for Running {}
 
@@ -53,43 +46,45 @@ impl InstanceState for Running {}
 pub struct Instance<S: InstanceState> {
     id: InstanceID,
     state: S,
+    database_service: Arc<DatabaseManager>,
 }
 
-impl Instance<New> {
-    pub fn new(function_id: FunctionID, envs: HashMap<String, String>) -> Self {
-        let state = New {
-            store: create_store(),
+impl Instance<Loaded> {
+    pub fn new(
+        function_id: FunctionID,
+        envs: HashMap<String, String>,
+        store: Store,
+        module: Module,
+        database_service: Arc<DatabaseManager>,
+    ) -> Self {
+        let state = Loaded {
+            store,
             envs,
+            module,
         };
 
         Instance {
             id: InstanceID::generate_random(function_id),
             state,
+            database_service,
         }
     }
 
-    pub fn load_module(self, module: Module) -> Instance<Loaded> {
-        let state = Loaded {
-            store: self.state.store,
-            envs: self.state.envs,
-            module,
-        };
-
-        Instance { id: self.id, state }
-    }
-}
-
-impl Instance<Loaded> {
-    pub fn start(self, db_service: DatabaseManager) -> Result<Instance<Running>> {
+    pub fn start(self) -> Result<Instance<Running>> {
         let handle = function::start(self.state.store, &self.state.module, self.state.envs)?;
-        let state = Running { handle, db_service };
-        Ok(Instance { id: self.id, state })
+        let state = Running { handle };
+        Ok(Instance {
+            id: self.id,
+            state,
+            database_service: self.database_service,
+        })
     }
 }
 
 impl Instance<Running> {
     pub fn is_finished(&self) -> bool {
-        self.state.handle.join_handle.is_finished()
+        // TODO self.state.handle.join_handle.is_finished()
+        false
     }
 
     fn write_to_stdin(&mut self, input: Message) -> Result<()> {
@@ -143,7 +138,7 @@ impl Instance<Running> {
                         let db_resp = match db_req.request {
                             DbRequestDetails::CreateTable(req) => {
                                 let res = tokio::runtime::Handle::current()
-                                    .block_on(self.state.db_service.create_table(
+                                    .block_on(self.database_service.create_table(
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                     ))
@@ -157,7 +152,7 @@ impl Instance<Running> {
 
                             DbRequestDetails::DropTable(req) => {
                                 let res = tokio::runtime::Handle::current()
-                                    .block_on(self.state.db_service.delete_table(
+                                    .block_on(self.database_service.delete_table(
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                     ))
@@ -171,7 +166,7 @@ impl Instance<Running> {
 
                             DbRequestDetails::Find(req) => {
                                 let res = tokio::runtime::Handle::current()
-                                    .block_on(self.state.db_service.find_item(
+                                    .block_on(self.database_service.find_item(
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                         req.key_filter,
@@ -187,7 +182,7 @@ impl Instance<Running> {
                             DbRequestDetails::Insert(req) => {
                                 let res = tokio::runtime::Handle::current()
                                     .block_on({
-                                        self.state.db_service.insert_one_item(
+                                        self.database_service.insert_one_item(
                                             database_id(&self.id.function_id, req.db_name),
                                             req.table_name,
                                             req.key,
@@ -203,7 +198,7 @@ impl Instance<Running> {
                             }
                             DbRequestDetails::Update(req) => {
                                 let res = tokio::runtime::Handle::current()
-                                    .block_on(self.state.db_service.update_item(
+                                    .block_on(self.database_service.update_item(
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                         req.key_filter,

@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use futures::FutureExt;
-use log::info;
 use mu::{
     gateway,
     mudb::service::{DatabaseID, DatabaseManager},
