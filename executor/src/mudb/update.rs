@@ -1,14 +1,12 @@
-//! Functions returns `std::string::String` or `serde_json::Value` base on less overhead.
-
-use super::error::{self, InvalidQueryError::*, QueryValidationResult, Result, ValidationResult};
+use super::error::{self, JsonCommandError::*, JsonCommandResult};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{
     json,
-    Value::{self, Null, Object},
+    Value::{self as JsonValue, Null, Object},
 };
 
-pub(crate) fn validate(update: &Value) -> QueryValidationResult<()> {
+pub(crate) fn validate(update: &JsonValue) -> JsonCommandResult<()> {
     // Update values should be object.
     match update {
         Object(map) => {
@@ -17,7 +15,7 @@ pub(crate) fn validate(update: &Value) -> QueryValidationResult<()> {
             }
             Ok(())
         }
-        _ => Err(ExpectObjErr),
+        _ => Err(ExpectObj),
     }
 }
 
@@ -25,11 +23,11 @@ pub(crate) fn validate(update: &Value) -> QueryValidationResult<()> {
 ///
 /// `$set`, `$unset`, `$inc`, `$mul`
 ///
-/// *Expected Value*
+/// *Expected JsonValue*
 ///
 /// `$set`, `$unset` expected `Object`
 /// `$inc`, `$mul` expected `Object(Map<_, Number>)`
-fn validate_items(key: &str, value: &Value) -> QueryValidationResult<()> {
+fn validate_items(key: &str, value: &JsonValue) -> JsonCommandResult<()> {
     match (key, value) {
         ("$set" | "$unset", Object(_)) => Ok(()),
 
@@ -37,22 +35,22 @@ fn validate_items(key: &str, value: &Value) -> QueryValidationResult<()> {
             if value.is_number() {
                 Ok(())
             } else {
-                Err(ExpectNumErr)
+                Err(ExpectNum)
             }
         }),
 
-        ("$set" | "$unset" | "$inc" | "$mul", _) => Err(ExpectObjErr),
+        ("$set" | "$unset" | "$inc" | "$mul", _) => Err(ExpectObj),
 
-        _ => Err(InvalidOprErr),
+        _ => Err(InvalidOpr),
     }
 }
 
 // Used inside other functions like: set, unset, ...
 fn set_inner(
-    f_new_value: impl Fn(&Value, Value) -> Value,
-    doc: &mut Value,
-    update: &Value,
-) -> Vec<(std::string::String, Value)> {
+    f_new_value: impl Fn(&JsonValue, JsonValue) -> JsonValue,
+    doc: &mut JsonValue,
+    update: &JsonValue,
+) -> Vec<(String, JsonValue)> {
     match update {
         Object(map) => map
             .iter()
@@ -107,7 +105,7 @@ fn set_inner(
 /// let res = set(&mut doc, &value);
 /// assert_eq!(res, vec![("shop.a_service.id".to_string(), json!(1234))]);
 /// ```
-fn set(doc: &mut Value, update: &Value) -> Vec<(std::string::String, Value)> {
+fn set(doc: &mut JsonValue, update: &JsonValue) -> Vec<(String, JsonValue)> {
     set_inner(|_, update_v| update_v, doc, update)
 }
 
@@ -127,7 +125,7 @@ fn set(doc: &mut Value, update: &Value) -> Vec<(std::string::String, Value)> {
 ///
 /// Panics if `update` wan not `Object`.
 ///
-fn unset(doc: &mut Value, update: &Value) -> Vec<(std::string::String, Value)> {
+fn unset(doc: &mut JsonValue, update: &JsonValue) -> Vec<(String, JsonValue)> {
     // TODO: It's not work like mongodb, cuz it's just set null not remove item.
     set_inner(|_, _| Null, doc, update)
 }
@@ -140,7 +138,7 @@ fn unset(doc: &mut Value, update: &Value) -> Vec<(std::string::String, Value)> {
 /// ```ignore
 /// json!({ "$inc": { "quantity": -2, "metrics.orders": 1 } })
 /// ```
-fn inc(doc: &mut Value, update: &Value) -> Vec<(std::string::String, Value)> {
+fn inc(doc: &mut JsonValue, update: &JsonValue) -> Vec<(String, JsonValue)> {
     // TODO: consider i/u/f_64 overflow!
     set_inner(
         |doc_v, update_v| {
@@ -167,7 +165,7 @@ fn inc(doc: &mut Value, update: &Value) -> Vec<(std::string::String, Value)> {
 /// ```ignore
 /// json!({ "$mul": { "quantity": -2, "metrics.orders": 3 } })
 /// ```
-fn mul(doc: &mut Value, update: &Value) -> Vec<(std::string::String, Value)> {
+fn mul(doc: &mut JsonValue, update: &JsonValue) -> Vec<(String, JsonValue)> {
     // TODO: consider i/u/f_64 overflow!
     set_inner(
         |doc_v, update_v| {
@@ -186,7 +184,7 @@ fn mul(doc: &mut Value, update: &Value) -> Vec<(std::string::String, Value)> {
     )
 }
 
-fn update(doc: &mut Value, update: &Value) -> Vec<Vec<(std::string::String, Value)>> {
+fn update(doc: &mut JsonValue, update: &JsonValue) -> Vec<Vec<(String, JsonValue)>> {
     match update {
         Object(map) => map
             .iter()
@@ -209,31 +207,37 @@ fn update(doc: &mut Value, update: &Value) -> Vec<Vec<(std::string::String, Valu
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct Update(pub Value);
+pub type ChangedSections = Vec<Vec<(String, JsonValue)>>;
 
-impl Update {
-    pub fn update(&self, doc: &mut Value) -> Vec<Vec<(std::string::String, Value)>> {
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Updater(JsonValue);
+
+impl Updater {
+    pub fn update(&self, doc: &mut JsonValue) -> ChangedSections {
         update(doc, &self.0)
-    }
-
-    pub fn validate(&self) -> ValidationResult<()> {
-        validate(&self.0).map_err(Into::into)
     }
 }
 
-impl TryFrom<&str> for Update {
+impl TryFrom<JsonValue> for Updater {
+    type Error = error::Error;
+    fn try_from(jv: JsonValue) -> Result<Self, Self::Error> {
+        validate(&jv)?;
+        Ok(Self(jv))
+    }
+}
+
+impl TryFrom<&str> for Updater {
     type Error = error::Error;
 
-    fn try_from(value: &str) -> Result<Self> {
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         serde_json::from_str(value).map(Self).map_err(Into::into)
     }
 }
 
-impl TryFrom<std::string::String> for Update {
+impl TryFrom<String> for Updater {
     type Error = error::Error;
 
-    fn try_from(value: std::string::String) -> Result<Self> {
+    fn try_from(value: String) -> Result<Self, Self::Error> {
         serde_json::from_str(&value).map(Self).map_err(Into::into)
     }
 }
@@ -243,7 +247,7 @@ mod test {
     use super::*;
     use serde_json::json;
 
-    fn init_doc() -> Value {
+    fn init_doc() -> JsonValue {
         json!({
             "code": 200,
             "code_2": 200,
@@ -344,45 +348,45 @@ mod test {
         // exe
 
         let update = json!(1000);
-        assert_eq!(validate(&update), Err(ExpectObjErr));
+        assert_eq!(validate(&update), Err(ExpectObj));
 
         // `$set`
 
         let update = json!({
             "$set": "code"
         });
-        assert_eq!(validate(&update), Err(ExpectObjErr));
+        assert_eq!(validate(&update), Err(ExpectObj));
 
         let update = json!({
             "$set": [1, 2, 3]
         });
-        assert_eq!(validate(&update), Err(ExpectObjErr));
+        assert_eq!(validate(&update), Err(ExpectObj));
 
         // `$unset`
 
         let update = json!({
             "$unset": [1, 2, 3]
         });
-        assert_eq!(validate(&update), Err(ExpectObjErr));
+        assert_eq!(validate(&update), Err(ExpectObj));
 
         // `$inc`
 
         let update = json!({
             "$inc": { "code": "hello" }
         });
-        assert_eq!(validate(&update), Err(ExpectNumErr));
+        assert_eq!(validate(&update), Err(ExpectNum));
 
         let update = json!({
             "$inc": 2
         });
-        assert_eq!(validate(&update), Err(ExpectObjErr));
+        assert_eq!(validate(&update), Err(ExpectObj));
 
         // `$mul`
 
         let update = json!({
             "$mul": { "code": "hello" }
         });
-        assert_eq!(validate(&update), Err(ExpectNumErr));
+        assert_eq!(validate(&update), Err(ExpectNum));
     }
 
     #[test]
