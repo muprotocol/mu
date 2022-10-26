@@ -1,17 +1,18 @@
 #![allow(dead_code)]
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
+use serde_json::Value;
 use std::{
+    cell::RefCell,
     collections::HashMap,
     io::{stdin, stdout, Write},
-    sync::{Arc, RwLock},
+    rc::Rc,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Message {
     id: Option<u32>,
     r#type: String,
-    message: JsonValue,
+    message: Value,
 }
 
 #[derive(Deserialize, Debug)]
@@ -80,30 +81,44 @@ struct FindRequest {
     db_name: String,
     table_name: String,
     key_filter: KeyFilter,
-    value_filter: String,
+    value_filter: Option<Filter>,
 }
 
-// TODO: considraton KeyFilter<T>
 #[derive(Debug, Serialize)]
 pub enum KeyFilter {
     Exact(String),
     Prefix(String),
 }
 
+type Filter = serde_json::Value;
 pub type Key = String;
-pub type Value = String;
-pub type Item = (Key, Value);
+pub type Item = (Key, String);
 
 #[derive(Debug, Deserialize)]
 pub enum DbResponse {
-    CreateTable(Result<TableDescription, String>),
-    Find(Result<Vec<Item>, String>),
-    Insert(Result<Key, String>),
+    CreateTable(Result<CreateTableOutput, String>),
+    Find(Result<FindItemOutput, String>),
+    Insert(Result<InsertOneItemOutput, String>),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTableOutput {
+    pub table_description: TableDescription,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct TableDescription {
     pub table_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InsertOneItemOutput {
+    pub key: Key,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FindItemOutput {
+    pub items: Vec<Item>,
 }
 
 fn send_message<T: Serialize>(msg: T, msg_type: &str, id: Option<u32>) {
@@ -140,18 +155,18 @@ fn read_stdin(log: impl Fn(String)) -> Message {
 
 #[derive(Clone)]
 struct Counter {
-    inner: Arc<RwLock<u32>>,
+    inner: Rc<RefCell<u32>>,
 }
 
 impl Counter {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(RwLock::new(0)),
+            inner: Rc::new(RefCell::new(0)),
         }
     }
 
-    pub fn get(&self) -> u32 {
-        let mut inner = self.inner.write().unwrap();
+    pub fn get_and_increment(&self) -> u32 {
+        let mut inner = self.inner.borrow_mut();
         *inner += 1;
         *inner
     }
@@ -163,7 +178,7 @@ fn main() {
     let counter_clone = counter.clone();
     let log = move |body| {
         let log = Log { body };
-        send_message(log, "Log", Some(counter_clone.get()));
+        send_message(log, "Log", Some(counter_clone.get_and_increment()));
     };
 
     let response = |body| {
@@ -177,7 +192,7 @@ fn main() {
     };
 
     let db_request = move |req| {
-        let id = counter.get();
+        let id = counter.get_and_increment();
         send_message(req, "DbRequest", Some(id));
         id
     };
@@ -190,21 +205,7 @@ fn main() {
     // Create table
     db_request(DbRequest::CreateTable(CreateTableRequest {
         db_name: "my_db".into(),
-        table_name: "test_table".into(),
-    }));
-
-    let db_resp_msg = read_stdin(&log);
-
-    let _: DbResponse = serde_json::from_value(db_resp_msg.message)
-        .map_err(|e| log(e.to_string()))
-        .unwrap();
-
-    // Insert data
-    db_request(DbRequest::Insert(InsertRequest {
-        db_name: "my_db".into(),
-        table_name: "test_table".into(),
-        key: "secret".into(),
-        value: "\"Mu Rocks!\"".into(),
+        table_name: "visitors".into(),
     }));
 
     let db_resp_msg = read_stdin(&log);
@@ -212,28 +213,48 @@ fn main() {
         .map_err(|e| log(e.to_string()))
         .unwrap();
 
-    // Find data
     db_request(DbRequest::Find(FindRequest {
         db_name: "my_db".into(),
-        table_name: "test_table".into(),
-        key_filter: KeyFilter::Exact("secret".into()),
-        value_filter: json!({}).to_string(),
+        table_name: "visitors".into(),
+        key_filter: KeyFilter::Exact("count".into()),
+        value_filter: None,
     }));
 
+    // Note: don't do this, doesn't support concurrent requests, will mess up the counter under load
     let db_resp_msg = read_stdin(&log);
-    let db_resp = serde_json::from_value::<DbResponse>(db_resp_msg.message)
+    let find_response: DbResponse = serde_json::from_value(db_resp_msg.message)
         .map_err(|e| log(e.to_string()))
         .unwrap();
 
-    if let DbResponse::Find(db_resp) = db_resp {
-        match db_resp {
-            Ok(r) => {
-                assert_eq!(r[0], ("secret".into(), "\"Mu Rocks!\"".into()))
-            }
-            Err(e) => log(format!("Database Error: {e}")),
+    let mut current = if let DbResponse::Find(Ok(out)) = find_response {
+        if out.items.is_empty() {
+            0u64
+        } else {
+            out.items[0].1.parse().unwrap_or_default()
         }
-    }
+    } else {
+        panic!("Unexpected DB output: {:?}", find_response);
+    };
 
-    let body = format!("Hello {}", request.data);
+    current += 1;
+
+    // Insert data
+    // Note, this doesn't work right now because inserts don't overwrite values
+    db_request(DbRequest::Insert(InsertRequest {
+        db_name: "my_db".into(),
+        table_name: "visitors".into(),
+        key: "count".into(),
+        value: current.to_string(),
+    }));
+
+    let db_resp_msg = read_stdin(&log);
+    let _: DbResponse = serde_json::from_value(db_resp_msg.message)
+        .map_err(|e| log(e.to_string()))
+        .unwrap();
+
+    let body = format!(
+        "Hello, {}! You are visitor number {}.",
+        request.data, current
+    );
     response(body);
 }

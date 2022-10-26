@@ -12,8 +12,9 @@ use num::BigInt;
 use serde::Deserialize;
 
 use crate::{
-    gateway::GatewayManager, infrastructure::config::ConfigDuration, network::gossip::NodeHash,
-    runtime::Runtime, util::TakeAndReplaceWithDefault,
+    gateway::GatewayManager, infrastructure::config::ConfigDuration,
+    mudb::service::DatabaseManager, network::gossip::NodeHash, runtime::Runtime,
+    util::TakeAndReplaceWithDefault,
 };
 
 use mu_stack::{Stack, StackID};
@@ -179,8 +180,10 @@ struct SchedulerState {
     notification_channel: NotificationChannel<SchedulerNotification>,
     runtime: Box<dyn Runtime>,
     gateway_manager: Box<dyn GatewayManager>,
+    database_manager: DatabaseManager,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn start(
     config: SchedulerConfig,
     my_hash: NodeHash,
@@ -189,6 +192,7 @@ pub fn start(
     notification_channel: NotificationChannel<SchedulerNotification>,
     runtime: Box<dyn Runtime>,
     gateway_manager: Box<dyn GatewayManager>,
+    database_manager: DatabaseManager,
 ) -> Box<dyn Scheduler> {
     let tick_interval = *config.tick_interval;
 
@@ -206,6 +210,7 @@ pub fn start(
             notification_channel,
             runtime,
             gateway_manager,
+            database_manager,
         },
         10000,
     );
@@ -450,6 +455,7 @@ async fn tick(state: &mut SchedulerState) {
                                 &state.notification_channel,
                                 state.runtime.as_ref(),
                                 state.gateway_manager.as_ref(),
+                                &state.database_manager,
                             )
                             .await
                             {
@@ -513,6 +519,7 @@ async fn tick(state: &mut SchedulerState) {
                                 &state.notification_channel,
                                 state.runtime.as_ref(),
                                 state.gateway_manager.as_ref(),
+                                &state.database_manager,
                             )
                             .await
                             {
@@ -563,8 +570,9 @@ async fn deploy_stack(
     notification_channel: &NotificationChannel<SchedulerNotification>,
     runtime: &dyn Runtime,
     gateway_manager: &dyn GatewayManager,
+    database_manager: &DatabaseManager,
 ) -> Result<()> {
-    match super::deploy::deploy(id, stack, runtime, gateway_manager).await {
+    match super::deploy::deploy(id, stack, runtime, gateway_manager, database_manager).await {
         Err(f) => {
             notification_channel.send(SchedulerNotification::FailedToDeployStack(id));
             Err(f.into())

@@ -29,6 +29,7 @@ use crate::{
         scheduler::{self, Scheduler, SchedulerNotification},
     },
 };
+use mudb::service::DatabaseManager;
 
 pub async fn run() -> Result<()> {
     // TODO handle failures in components
@@ -124,8 +125,14 @@ pub async fn run() -> Result<()> {
     .context("Failed to start gossip")?;
 
     let function_provider = runtime::providers::DefaultFunctionProvider::new();
-    let runtime = runtime::start(Box::new(function_provider), runtime_config)
-        .context("Failed to initiate runtime")?;
+    let database_manager = DatabaseManager::new().await?;
+    let runtime = runtime::start(
+        Box::new(function_provider),
+        runtime_config,
+        database_manager.clone(),
+    )
+    .await
+    .context("Failed to initiate runtime")?;
 
     // TODO: no notification channel for now, requests are sent straight to runtime
     let gateway_manager = gateway::start(gateway_manager_config, runtime.clone())
@@ -143,6 +150,7 @@ pub async fn run() -> Result<()> {
         scheduler_notification_channel,
         runtime.clone(),
         gateway_manager.clone(),
+        database_manager.clone(),
     );
 
     let (blockchain_monitor, mut blockchain_monitor_notification_receiver) =

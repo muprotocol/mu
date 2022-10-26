@@ -7,6 +7,22 @@ import * as spl from '@solana/spl-token';
 import path from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 
+export const canConnectToLocalValidator = async () => {
+	try {
+
+		let provider = anchor.AnchorProvider.local();
+		await provider.connection.getTransactionCount();
+		return true;
+	} catch (e) {
+		if (e.toString().includes('The "path" argument must be of type string or an instance of Buffer or URL.')) {
+			// This error won't be fixed by waiting, it's due to the ANCHOR_WALLET env var being absent
+			throw e;
+		}
+
+		return false;
+	}
+}
+
 export class ServiceUnits {
 	mudb_gb_month: number;
 	mufunction_cpu_mem: number;
