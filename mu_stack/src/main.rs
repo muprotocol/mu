@@ -70,7 +70,7 @@ fn main() -> anyhow::Result<()> {
     let command = Command::parse();
 
     match command {
-        Command::ProtoToYaml { in_file, out_file } => {
+        Command::YamlToProto { in_file, out_file } => {
             let yaml = read_file_or_stdin(&in_file)?;
             let stack: mu_stack::Stack = serde_yaml::from_str(yaml.as_ref())?;
             let proto = stack.serialize_to_proto()?;
@@ -78,7 +78,7 @@ fn main() -> anyhow::Result<()> {
             write_file_or_stdout(&out_file, base64)?;
         }
 
-        Command::YamlToProto { in_file, out_file } => {
+        Command::ProtoToYaml { in_file, out_file } => {
             let base64 = read_file_or_stdin(&in_file)?;
             let proto = base64::decode(base64.trim())?;
             let stack = mu_stack::Stack::try_deserialize_proto(bytes::Bytes::from(proto))?;

@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update
 RUN apt-get install -y build-essential curl libssl-dev libudev-dev pkg-config \
     zlib1g-dev clang cmake make git zsh language-pack-en sudo netcat \
-    libclang-common-12-dev llvm-12-dev \
+    libclang-common-12-dev llvm-12-dev tmux \
     wget apt-transport-https software-properties-common
 
 RUN wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
