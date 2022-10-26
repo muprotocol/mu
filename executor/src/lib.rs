@@ -235,6 +235,7 @@ fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
     node.port == me.port && (node.address == me.address || node.address.is_loopback())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn glue_modules(
     cancellation_token: CancellationToken,
     connection_manager: &dyn ConnectionManager,

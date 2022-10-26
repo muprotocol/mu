@@ -261,10 +261,11 @@ pub struct DatabaseID {
     pub db_name: String,
 }
 
+// TODO: Remove this code, this default makes no sense
 impl Default for DatabaseID {
     fn default() -> Self {
         Self {
-            stack_id: StackID(uuid::Uuid::nil()),
+            stack_id: StackID::SolanaPublicKey([0; 32]),
             db_name: "default.mudb".into(),
         }
     }
@@ -282,9 +283,7 @@ impl FromStr for DatabaseID {
         use super::Error::InvalidDbId;
         match s.split_once('_') {
             Some((stack_id, db_name)) => Ok(Self {
-                stack_id: StackID(
-                    uuid::Uuid::try_parse(stack_id).map_err(|e| InvalidDbId(e.to_string()))?,
-                ),
+                stack_id: stack_id.parse().map_err(|()| InvalidDbId("".into()))?,
                 db_name: db_name.to_string(),
             }),
             None => Err(InvalidDbId(format!("not found '_' in {s}"))),
