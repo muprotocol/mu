@@ -9,6 +9,16 @@ pub mod message;
 pub mod providers;
 pub mod types;
 
+use anyhow::{Context, Result};
+use async_trait::async_trait;
+use dyn_clonable::clonable;
+use log::*;
+use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
+use mu_stack::StackID;
+use std::{collections::HashMap, path::Path};
+use wasmer::{Module, Store};
+use wasmer_cache::{Cache, FileSystemCache};
+
 use self::{
     error::Error,
     instance::{create_store, Instance, Loaded},
@@ -18,18 +28,7 @@ use self::{
         RuntimeConfig,
     },
 };
-use crate::{
-    gateway, mu_stack::StackID, mudb::database_manager::DatabaseManager,
-    runtime::message::ToMessage,
-};
-use anyhow::{Context, Result};
-use async_trait::async_trait;
-use dyn_clonable::clonable;
-use log::*;
-use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
-use std::{collections::HashMap, path::Path};
-use wasmer::{Module, Store};
-use wasmer_cache::{Cache, FileSystemCache};
+use crate::{gateway, mudb::database_manager::DatabaseManager, runtime::message::ToMessage};
 
 #[async_trait]
 #[clonable]

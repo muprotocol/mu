@@ -2,10 +2,10 @@ use anyhow::{Context, Result};
 use futures::FutureExt;
 use mu::{
     gateway,
-    mu_stack::{self, FunctionRuntime, StackID},
     mudb::database_manager::{DatabaseID, DatabaseManager},
     runtime::{start, types::*, Runtime},
 };
+use mu_stack::{self, FunctionRuntime, StackID};
 use serial_test::serial;
 use std::{
     collections::HashMap,
