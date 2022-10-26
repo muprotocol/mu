@@ -91,11 +91,11 @@ impl RuntimeState {
     fn load_module(&mut self, function_id: &FunctionID) -> Result<(Store, Module)> {
         let store = create_store();
 
-        if self.hashkey_dict.contains_key(&function_id) {
+        if self.hashkey_dict.contains_key(function_id) {
             let key = self
                 .hashkey_dict
                 .get(function_id)
-                .ok_or_else(|| Error::Internal("cache key can not be found"))?
+                .ok_or(Error::Internal("cache key can not be found"))?
                 .to_owned();
             match unsafe { self.cache.load(&store, key) } {
                 Ok(module) => Ok((store, module)),
@@ -151,7 +151,7 @@ impl RuntimeState {
         let (store, module) = self.load_module(&function_id)?;
         Ok(Instance::new(
             function_id,
-            definition.envs.clone(),
+            definition.envs,
             store,
             module,
             self.database_service.clone(),

@@ -32,31 +32,41 @@ async fn clean_wasm_projects(projects: HashMap<&str, &Path>) -> Result<()> {
     Ok(())
 }
 
-async fn build_wasm_projects(projects: HashMap<&str, &Path>) -> Result<HashMap<String, PathBuf>> {
-    let mut results = HashMap::new();
-
-    for (name, path) in projects {
-        let wasm_file = compile_wasm_project(path)
-            .await
-            .context("compile wasm project")?
-            .join(format!("{name}.wasm"));
-        results.insert(name.into(), wasm_file);
-    }
-
-    Ok(results)
+struct Project {
+    pub name: String,
+    pub stack_id: StackID,
+    pub path: PathBuf,
 }
 
-async fn read_wasm_projects(
-    projects: HashMap<String, PathBuf>,
+impl Project {
+    pub fn wasm_module_path(&self) -> PathBuf {
+        self.path
+            .join("target/wasm32-wasi/release/")
+            .join(format!("{}.wasm", self.name))
+    }
+}
+
+async fn build_wasm_projects(projects: &[Project]) -> Result<()> {
+    for p in projects {
+        compile_wasm_project(&p.path)
+            .await
+            .context("compile wasm project")?
+    }
+
+    Ok(())
+}
+
+async fn read_wasm_functions(
+    projects: &[Project],
 ) -> Result<HashMap<FunctionID, FunctionDefinition>> {
     let mut results = HashMap::new();
 
-    for (_, path) in projects {
+    for project in projects {
         let id = FunctionID {
-            stack_id: StackID(Uuid::new_v4()),
+            stack_id: project.stack_id,
             function_name: "my_func".into(),
         };
-        let source = fs::read(&path).await?.into();
+        let source = fs::read(&project.wasm_module_path()).await?.into();
 
         results.insert(
             id.clone(),
@@ -68,47 +78,43 @@ async fn read_wasm_projects(
 }
 
 async fn create_map_function_provider(
-    projects: HashMap<&str, &Path>,
+    projects: &[Project],
 ) -> Result<(HashMap<FunctionID, FunctionDefinition>, MapFunctionProvider)> {
-    let projects = build_wasm_projects(projects).await?;
-    let projects = read_wasm_projects(projects).await?;
-    Ok((projects, MapFunctionProvider::new()))
+    build_wasm_projects(&projects).await?;
+    let functions = read_wasm_functions(&projects).await?;
+    Ok((functions, MapFunctionProvider::new()))
 }
 
 async fn create_runtime(
-    projects: HashMap<&str, &Path>,
-) -> (Box<dyn Runtime>, Vec<FunctionID>, DatabaseManager) {
+    projects: &[Project],
+) -> (Box<dyn Runtime>, Vec<FunctionDefinition>, DatabaseManager) {
     let config = RuntimeConfig {
         cache_path: PathBuf::from_str("runtime-cache").unwrap(),
     };
 
-    let (projects, provider) = create_map_function_provider(projects).await.unwrap();
+    let (functions, provider) = create_map_function_provider(projects).await.unwrap();
     let db_service = DatabaseManager::new().await.unwrap();
     let runtime = start(Box::new(provider), config, db_service.clone())
         .await
         .unwrap();
 
-    let functions: Vec<FunctionDefinition> = projects.into_values().collect();
-    let function_ids = functions
-        .clone()
-        .into_iter()
-        .map(|f| f.id.clone())
-        .collect();
+    let functions: Vec<FunctionDefinition> = functions.into_values().collect();
 
-    runtime.add_functions(functions).await.unwrap();
+    runtime.add_functions(functions.clone()).await.unwrap();
 
-    (runtime, function_ids, db_service)
+    (runtime, functions, db_service)
 }
 
 #[tokio::test]
 #[serial]
 async fn test_simple_func() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    let projects = vec![Project {
+        name: "hello-wasm".into(),
+        path: Path::new("tests/runtime/funcs/hello-wasm").into(),
+        stack_id: StackID(Uuid::new_v4()),
+    }];
 
-    let mut projects = HashMap::new();
-    projects.insert("hello-wasm", Path::new("tests/runtime/funcs/hello-wasm"));
-
-    let (runtime, function_ids, _) = create_runtime(projects.clone()).await;
+    let (runtime, functions, _) = create_runtime(&projects).await;
 
     let request = gateway::Request {
         method: mu_stack::HttpMethod::Get,
@@ -119,7 +125,7 @@ async fn test_simple_func() {
     };
 
     let (resp, _usage) = runtime
-        .invoke_function(function_ids[0].clone(), request)
+        .invoke_function(functions[0].id.clone(), request)
         .await
         .unwrap();
 
@@ -130,13 +136,16 @@ async fn test_simple_func() {
 #[tokio::test]
 #[serial]
 async fn can_query_mudb() {
-    let mut projects = HashMap::new();
-    projects.insert("hello-mudb", Path::new("tests/runtime/funcs/hello-mudb"));
+    let projects = vec![Project {
+        name: "hello-mudb".into(),
+        path: Path::new("tests/runtime/funcs/hello-mudb").into(),
+        stack_id: StackID(Uuid::new_v4()),
+    }];
 
-    let (runtime, function_ids, db_service) = create_runtime(projects.clone()).await;
+    let (runtime, functions, db_service) = create_runtime(&projects).await;
 
     let database_id = DatabaseID {
-        stack_id: function_ids[0].stack_id.clone(),
+        stack_id: functions[0].id.stack_id,
         db_name: "my_db".into(),
     };
 
@@ -153,7 +162,7 @@ async fn can_query_mudb() {
     };
 
     let (resp, _usage) = runtime
-        .invoke_function(function_ids[0].clone(), request)
+        .invoke_function(functions[0].id.clone(), request)
         .await
         .unwrap();
 
@@ -164,10 +173,13 @@ async fn can_query_mudb() {
 #[tokio::test]
 #[serial]
 async fn can_run_multiple_instance_of_the_same_function() {
-    let mut projects = HashMap::new();
-    projects.insert("hello-wasm", Path::new("tests/runtime/funcs/hello-wasm"));
+    let projects = vec![Project {
+        name: "hello-wasm".into(),
+        path: Path::new("tests/runtime/funcs/hello-wasm").into(),
+        stack_id: StackID(Uuid::new_v4()),
+    }];
 
-    let (runtime, function_ids, _) = create_runtime(projects.clone()).await;
+    let (runtime, functions, _) = create_runtime(&projects).await;
 
     let make_request = |name| gateway::Request {
         method: mu_stack::HttpMethod::Get,
@@ -178,29 +190,75 @@ async fn can_run_multiple_instance_of_the_same_function() {
     };
 
     let instance_1 = runtime
-        .invoke_function(function_ids[0].clone(), make_request("Mathew"))
+        .invoke_function(functions[0].id.clone(), make_request("Mathew"))
         .then(
             |r| async move { assert_eq!("Hello Mathew, welcome to MuRuntime", r.unwrap().0.body) },
         );
-    println!("First instance created");
 
     let instance_2 =
         runtime
-            .invoke_function(function_ids[0].clone(), make_request("Morphius"))
+            .invoke_function(functions[0].id.clone(), make_request("Morphius"))
             .then(|r| async move {
                 assert_eq!("Hello Morphius, welcome to MuRuntime", r.unwrap().0.body)
             });
-    println!("Second instance created");
 
     let instance_3 = runtime
-        .invoke_function(function_ids[0].clone(), make_request("Unity"))
+        .invoke_function(functions[0].id.clone(), make_request("Unity"))
         .then(
             |r| async move { assert_eq!("Hello Unity, welcome to MuRuntime", r.unwrap().0.body) },
         );
-    println!("Third instance created");
 
     tokio::join!(instance_1, instance_2, instance_3);
-    println!("All instance joined");
+
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+#[serial]
+async fn can_run_instances_of_different_functions() {
+    let projects = vec![
+        Project {
+            name: "hello-wasm".into(),
+            path: Path::new("tests/runtime/funcs/hello-wasm").into(),
+            stack_id: StackID(Uuid::new_v4()),
+        },
+        Project {
+            name: "hello-mudb".into(),
+            path: Path::new("tests/runtime/funcs/hello-mudb").into(),
+            stack_id: StackID(Uuid::new_v4()),
+        },
+    ];
+
+    let (runtime, functions, db_service) = create_runtime(&projects).await;
+
+    let make_request = |name| gateway::Request {
+        method: mu_stack::HttpMethod::Get,
+        path: "/get_name",
+        query: HashMap::new(),
+        headers: Vec::new(),
+        data: name,
+    };
+
+    let database_id = DatabaseID {
+        stack_id: projects[1].stack_id,
+        db_name: "my_db".into(),
+    };
+
+    create_db_if_not_exist(db_service, database_id)
+        .await
+        .unwrap();
+
+    let instance_1 = runtime
+        .invoke_function(functions[0].id.clone(), make_request("Mathew"))
+        .then(
+            |r| async move { assert_eq!("Hello Mathew, welcome to MuRuntime", r.unwrap().0.body) },
+        );
+
+    let instance_2 = runtime
+        .invoke_function(functions[1].id.clone(), make_request("Dream"))
+        .then(|r| async move { assert_eq!("Hello Dream", r.unwrap().0.body) });
+
+    tokio::join!(instance_1, instance_2);
 
     runtime.shutdown().await.unwrap();
 }

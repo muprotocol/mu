@@ -26,7 +26,7 @@ async fn install_wasm32_wasi_target() -> Result<()> {
     Ok(())
 }
 
-pub async fn compile_wasm_project(project_dir: &Path) -> Result<PathBuf> {
+pub async fn compile_wasm_project(project_dir: &Path) -> Result<()> {
     let project_dir = ensure_project_dir(project_dir)?;
     install_wasm32_wasi_target().await?;
 
@@ -39,7 +39,7 @@ pub async fn compile_wasm_project(project_dir: &Path) -> Result<PathBuf> {
         .wait()
         .await?;
 
-    Ok(project_dir.join("target/wasm32-wasi/release/"))
+    Ok(())
 }
 
 //TODO: maybe some `make clean` usage for this function
