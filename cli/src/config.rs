@@ -109,6 +109,7 @@ impl Config {
     }
 
     pub fn payer_kp(&self) -> Result<Keypair> {
+        // TODO This value should be calculated and cached
         read_keypair_file(&self.payer.to_string())
             .map_err(|_| anyhow!("Unable to read keypair file"))
     }

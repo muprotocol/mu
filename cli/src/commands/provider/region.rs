@@ -1,5 +1,10 @@
-use anchor_client::solana_sdk::pubkey::Pubkey;
-use anyhow::Result;
+use std::path::PathBuf;
+
+use anchor_client::{
+    solana_client::rpc_config::RpcSendTransactionConfig,
+    solana_sdk::{pubkey::Pubkey, signature::read_keypair_file, signer::Signer, system_program},
+};
+use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser};
 
 use crate::config::Config;
@@ -17,20 +22,26 @@ pub struct CreateArgs {
     #[arg(long, help = "Region name")]
     name: String,
 
-    #[arg(long, help = "Provider Pubkey")]
-    provider: Pubkey,
+    #[arg(long, help = "Provider keypair")]
+    provider_keypair: PathBuf,
+
+    #[arg(
+        long,
+        help = "Region number, must be unique across all regions for a provider"
+    )]
+    region_num: u32,
 
     #[arg(long, help = "MuDB price based on GB per month")]
-    mudb_gb_month_price: f32,
+    mudb_gb_month_price: u64,
 
     #[arg(long, help = "MuFunction price per (CPU+MEM)")] //TODO: what is the unit
-    mufunction_cpu_mem_price: f32,
+    mufunction_cpu_mem_price: u64,
 
     #[arg(long, help = "MuGateway price per million requests")]
-    mugateway_mreqs_price: f32,
+    mugateway_mreqs_price: u64,
 
     #[arg(long, help = "bandwidth price based on TB per month")]
-    bandwidth_price: f32,
+    bandwidth_price: u64,
 }
 
 pub fn execute(config: Config, subcmd: Command) -> Result<()> {
@@ -39,6 +50,56 @@ pub fn execute(config: Config, subcmd: Command) -> Result<()> {
     }
 }
 
-fn create(config: Config, _args: CreateArgs) -> Result<()> {
-    todo!()
+fn create(config: Config, args: CreateArgs) -> Result<()> {
+    let client = config.build_marketplace_client()?;
+
+    // TODO: I feel we can support all types of keypairs (not just files) if we're smart here.
+    // TODO: read solana cli sources to see how they handle the keypair URL.
+    let provider_keypair = read_keypair_file(args.provider_keypair)
+        .map_err(|e| anyhow!("Can't read keypair: {}", e.to_string()))?;
+
+    // TODO: validation
+
+    let (region_pda, _) = Pubkey::find_program_address(
+        &[
+            b"region",
+            &provider_keypair.pubkey().to_bytes(),
+            &args.region_num.to_le_bytes(),
+        ],
+        &client.program.id(),
+    );
+
+    let accounts = marketplace::accounts::CreateRegion {
+        provider: provider_keypair.pubkey(),
+        region: region_pda,
+        owner: config.payer_kp()?.pubkey(),
+        system_program: system_program::id(),
+    };
+
+    let rates = marketplace::ServiceUnits {
+        mudb_gb_month: args.mudb_gb_month_price,
+        mufunction_cpu_mem: args.mufunction_cpu_mem_price,
+        bandwidth: args.bandwidth_price,
+        gateway_mreqs: args.mugateway_mreqs_price,
+    };
+
+    client
+        .program
+        .request()
+        .accounts(accounts)
+        .args(marketplace::instruction::CreateRegion {
+            region_num: args.region_num,
+            name: args.name,
+            zones: 1,
+            rates,
+        })
+        .signer(&provider_keypair)
+        .send_with_spinner_and_config(RpcSendTransactionConfig {
+            // TODO: what's preflight and what's a preflight commitment?
+            skip_preflight: cfg!(debug_assertions),
+            ..Default::default()
+        })
+        .context("Failed to send region creation transaction")?;
+
+    Ok(())
 }

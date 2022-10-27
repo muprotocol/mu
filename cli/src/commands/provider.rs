@@ -68,10 +68,8 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
 
     // TODO: we need to double-check all error conditions and generate user-readable error messages.
     // there is no backend server to return cute messages, only the deep, dark bowels of the blockchain.
-    let provider_token_account = spl_associated_token_account::get_associated_token_address(
-        &provider_keypair.pubkey(),
-        &mu_state.mint,
-    );
+    let provider_token_account =
+        client.get_provider_token_account(provider_keypair.pubkey(), &mu_state);
 
     let accounts = marketplace::accounts::CreateProvider {
         state: state_pda,
