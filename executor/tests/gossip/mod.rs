@@ -13,8 +13,8 @@ async fn test_node_discovery() {
     let config = GossipConfig {
         max_peers: 4,
         peer_update_interval: ConfigDuration::new(Duration::from_millis(15)),
-        liveness_check_interval: ConfigDuration::new(Duration::from_millis(5)),
-        heartbeat_interval: ConfigDuration::new(Duration::from_millis(5)),
+        liveness_check_interval: ConfigDuration::new(Duration::from_millis(10)),
+        heartbeat_interval: ConfigDuration::new(Duration::from_millis(10)),
         assume_dead_after_missed_heartbeats: 10,
     };
 
@@ -85,7 +85,7 @@ async fn test_node_discovery() {
 
     let bridge_states = bridge(seeds, Duration::from_millis(500), Duration::from_millis(1)).await;
 
-    fn contains_port(v: &Vec<(u128, NodeAddress)>, port: u16) -> bool {
+    fn contains_port(v: &Vec<(NodeHash, NodeAddress)>, port: u16) -> bool {
         v.iter().filter(|(_, a)| a.port == port).count() > 0
     }
 

@@ -4,7 +4,7 @@ use super::{
     message::{database::*, gateway::*, log::Log, FromMessage, Message, ToMessage},
     types::{FunctionHandle, FunctionID, FunctionUsage, InstanceID},
 };
-use crate::mudb::{self, service as DbService};
+use crate::mudb::service::DatabaseManager;
 use anyhow::{bail, Result};
 use bytes::BufMut;
 use futures::Future;
@@ -45,6 +45,7 @@ impl InstanceState for Loaded {}
 
 pub struct Running {
     handle: FunctionHandle,
+    db_service: DatabaseManager,
 }
 impl InstanceState for Running {}
 
@@ -79,16 +80,17 @@ impl Instance<New> {
 }
 
 impl Instance<Loaded> {
-    pub fn start(self) -> Result<Instance<Running>> {
+    pub fn start(self, db_service: DatabaseManager) -> Result<Instance<Running>> {
         let handle = function::start(self.state.store, &self.state.module, self.state.envs)?;
-        let state = Running { handle };
+        let state = Running { handle, db_service };
         Ok(Instance { id: self.id, state })
     }
 }
 
 impl Instance<Running> {
     pub fn is_finished(&self) -> bool {
-        self.state.handle.join_handle.is_finished()
+        // TODO self.state.handle.join_handle.is_finished()
+        false
     }
 
     fn write_to_stdin(&mut self, input: Message) -> Result<()> {
@@ -142,7 +144,7 @@ impl Instance<Running> {
                         let db_resp = match db_req.request {
                             DbRequestDetails::CreateTable(req) => {
                                 let res = tokio::runtime::Handle::current()
-                                    .block_on(DbService::create_table(
+                                    .block_on(self.state.db_service.create_table(
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                     ))
@@ -156,7 +158,7 @@ impl Instance<Running> {
 
                             DbRequestDetails::DropTable(req) => {
                                 let res = tokio::runtime::Handle::current()
-                                    .block_on(DbService::delete_table(
+                                    .block_on(self.state.db_service.delete_table(
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                     ))
@@ -170,11 +172,11 @@ impl Instance<Running> {
 
                             DbRequestDetails::Find(req) => {
                                 let res = tokio::runtime::Handle::current()
-                                    .block_on(DbService::find_item(
+                                    .block_on(self.state.db_service.find_item(
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                         req.key_filter,
-                                        req.value_filter,
+                                        req.value_filter.try_into()?,
                                     ))
                                     .map_err(|e| e.to_string());
 
@@ -186,7 +188,7 @@ impl Instance<Running> {
                             DbRequestDetails::Insert(req) => {
                                 let res = tokio::runtime::Handle::current()
                                     .block_on({
-                                        DbService::insert_one_item(
+                                        self.state.db_service.insert_one_item(
                                             database_id(&self.id.function_id, req.db_name),
                                             req.table_name,
                                             req.key,
@@ -202,12 +204,12 @@ impl Instance<Running> {
                             }
                             DbRequestDetails::Update(req) => {
                                 let res = tokio::runtime::Handle::current()
-                                    .block_on(DbService::update_item(
+                                    .block_on(self.state.db_service.update_item(
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                         req.key_filter,
-                                        req.value_filter,
-                                        mudb::query::Update(req.update),
+                                        req.value_filter.try_into()?,
+                                        req.update.try_into()?,
                                     ))
                                     .map_err(|e| e.to_string());
 

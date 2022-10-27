@@ -81,7 +81,7 @@ fn main() -> anyhow::Result<()> {
         Command::ProtoToYaml { in_file, out_file } => {
             let base64 = read_file_or_stdin(&in_file)?;
             let proto = base64::decode(base64.trim())?;
-            let stack = mu_stack::Stack::try_deserialize_proto(bytes::Bytes::from(proto))?;
+            let stack = mu_stack::Stack::try_deserialize_proto(proto.as_ref())?;
             let yaml = serde_yaml::to_string(&stack)?;
             write_file_or_stdout(&out_file, yaml)?;
         }

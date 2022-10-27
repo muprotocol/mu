@@ -5,6 +5,10 @@ import { AnchorProvider } from '@project-serum/anchor';
 import { deployStack, getMu, getRegion, loadProviderFromStaticKeypair, readMintFromStaticKeypair, readOrCreateUserWallet } from './anchor-utils';
 
 util.asyncMain(async () => {
+    let stackSeed = parseInt(process.argv[2]);
+    if (stackSeed == NaN)
+        stackSeed = 1;
+
     let anchorProvider = AnchorProvider.local();
     let mint = readMintFromStaticKeypair();
 
@@ -18,7 +22,7 @@ util.asyncMain(async () => {
     console.log("Dploying stack");
 
     let protoBytes = stackUtil.yamlToProto(path.resolve(__dirname, "test-stack/stack.yaml"));
-    let stack = await deployStack(mu, userWallet.keypair, region, Buffer.from(protoBytes), 1);
+    let stack = await deployStack(mu, userWallet.keypair, region, Buffer.from(protoBytes), stackSeed);
 
     console.log("Stack key:", stack.pda);
 });

@@ -8,6 +8,22 @@ import path from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { json } from "stream/consumers";
 
+export const canConnectToLocalValidator = async () => {
+	try {
+
+		let provider = anchor.AnchorProvider.local();
+		await provider.connection.getTransactionCount();
+		return true;
+	} catch (e) {
+		if (e.toString().includes('The "path" argument must be of type string or an instance of Buffer or URL.')) {
+			// This error won't be fixed by waiting, it's due to the ANCHOR_WALLET env var being absent
+			throw e;
+		}
+
+		return false;
+	}
+}
+
 export class ServiceUnits {
 	mudb_gb_month: number;
 	mufunction_cpu_mem: number;
@@ -228,7 +244,7 @@ export const getRegion = (mu: MuProgram, provider: MuProviderInfo, regionNum: nu
 		[
 			anchor.utils.bytes.utf8.encode("region"),
 			provider.wallet.publicKey.toBytes(),
-			new Uint8Array([regionNum])
+			new anchor.BN(regionNum, 10, "le").toBuffer("le", 4)
 		],
 		mu.program.programId
 	)[0];
@@ -387,7 +403,6 @@ export const deployStack = async (
 
 	await
 		mu.program.methods.createStack(
-			stack.byteLength,
 			stack_seed,
 			stack,
 		).accounts({

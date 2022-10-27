@@ -2,12 +2,12 @@
  * recersive functions: eq, s_in, nin, validate/validate_map
  */
 
-use super::error::{self, InvalidQueryError::*, QueryValidationResult, Result, ValidationResult};
+use super::error::{self, JsonCommandError::*, JsonCommandResult};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value::{self, Array, Bool, Null, Number, Object, String};
+use serde_json::Value::{self as JsonValue, Array, Bool, Null, Number, Object, String};
 
-fn validate(filter: &Value) -> QueryValidationResult<()> {
+fn validate(filter: &JsonValue) -> JsonCommandResult<()> {
     // Operators just rise as Object.
     match filter {
         Object(map) => {
@@ -24,18 +24,18 @@ fn validate(filter: &Value) -> QueryValidationResult<()> {
 ///
 /// `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `lte`, `$in`, `$nin`
 ///
-/// *Expected Value*
+/// *Expected JsonValue*
 ///
 /// `$eq`, `$ne` support all Values
 /// `$gt`, `$gte`, `$lt`, `lte` should be just `Number`
 /// `$in`, `$nin` should be just `Array`
-fn validate_items(key: &str, value: &Value) -> QueryValidationResult<()> {
+fn validate_items(key: &str, value: &JsonValue) -> JsonCommandResult<()> {
     match (key, value) {
         ("$gt" | "$gte" | "$lt" | "$lte", Number(_)) | ("$in" | "$nin", Array(_)) => Ok(()),
 
-        ("$gt" | "$gte" | "$lt" | "$lte", _) => Err(ExpectNumErr),
+        ("$gt" | "$gte" | "$lt" | "$lte", _) => Err(ExpectNum),
 
-        ("$in" | "$nin", _) => Err(ExpectArrErr),
+        ("$in" | "$nin", _) => Err(ExpectArr),
 
         // "$eq", "$ne" or sth else...
         (_, v) => validate(v),
@@ -45,31 +45,13 @@ fn validate_items(key: &str, value: &Value) -> QueryValidationResult<()> {
 /// Matches values that filter is subset of it.
 /// It's start point of filtering
 ///
-/// # Example
-///
-/// ```ignore
-/// let value = json!({
-///     "code": 200,
-///     "success": true,
-///     "payload": {
-///         "features": [
-///             "serde",
-///             "json"
-///         ]
-///     }
-/// })
-/// let filter = json!({
-///     "code": { "$lte": 300 },
-///     "success": true,
-/// });
-/// assert_eq!(eq(&value, &filter), true);
-/// ```
+/// Note: empty filter will returns `true`
 ///
 /// # Panics
 ///
 /// Panics if one of the gt, gte, lt, lte, in, nin make panics.
 ///
-fn eq(value: &Value, filter: &Value) -> bool {
+fn eq(value: &JsonValue, filter: &JsonValue) -> bool {
     match (value, filter) {
         (Null, Null) => true,
 
@@ -107,7 +89,7 @@ fn eq(value: &Value, filter: &Value) -> bool {
 ///
 /// Panics if `filter` wan not `Number`.
 ///
-fn gt(value: &Value, filter: &Value) -> bool {
+fn gt(value: &JsonValue, filter: &JsonValue) -> bool {
     if let (Some(v), Some(f)) = (value.as_i64(), filter.as_i64()) {
         v > f
     } else if let (Some(v), Some(f)) = (value.as_u64(), filter.as_u64()) {
@@ -130,7 +112,7 @@ fn gt(value: &Value, filter: &Value) -> bool {
 ///
 /// Panics if `filter` wan not `Number`.
 ///
-fn gte(value: &Value, filter: &Value) -> bool {
+fn gte(value: &JsonValue, filter: &JsonValue) -> bool {
     match (value, filter) {
         (Number(_), Number(_)) => gt(value, filter) | (value == filter),
         (_, Number(_)) => false,
@@ -147,7 +129,7 @@ fn gte(value: &Value, filter: &Value) -> bool {
 ///
 /// Panics if `filter` wan not `Number`.
 ///
-fn lt(value: &Value, filter: &Value) -> bool {
+fn lt(value: &JsonValue, filter: &JsonValue) -> bool {
     if let (Some(v), Some(f)) = (value.as_i64(), filter.as_i64()) {
         v < f
     } else if let (Some(v), Some(f)) = (value.as_u64(), filter.as_u64()) {
@@ -170,7 +152,7 @@ fn lt(value: &Value, filter: &Value) -> bool {
 ///
 /// Panics if `filter` wan not `Number`.
 ///
-fn lte(value: &Value, filter: &Value) -> bool {
+fn lte(value: &JsonValue, filter: &JsonValue) -> bool {
     match (value, filter) {
         (Number(_), Number(_)) => lt(value, filter) | (value == filter),
         (_, Number(_)) => false,
@@ -182,7 +164,7 @@ fn lte(value: &Value, filter: &Value) -> bool {
 }
 
 /// Matches all values that are not equal to a specified value.
-fn ne(value: &Value, filter: &Value) -> bool {
+fn ne(value: &JsonValue, filter: &JsonValue) -> bool {
     !eq(value, filter)
 }
 
@@ -192,7 +174,7 @@ fn ne(value: &Value, filter: &Value) -> bool {
 ///
 /// Panics if `filter` wan not `Array`.
 ///
-fn s_in(value: &Value, filter: &Value) -> bool {
+fn s_in(value: &JsonValue, filter: &JsonValue) -> bool {
     match filter {
         Array(f_vec) => f_vec.iter().any(|f_vec_value| eq(value, f_vec_value)),
         _ => panic!(
@@ -208,7 +190,7 @@ fn s_in(value: &Value, filter: &Value) -> bool {
 ///
 /// Panics if `filter` wan not `Array`.
 ///
-fn nin(value: &Value, filter: &Value) -> bool {
+fn nin(value: &JsonValue, filter: &JsonValue) -> bool {
     match filter {
         Array(f_vec) => f_vec.iter().all(|f_vec_value| ne(value, f_vec_value)),
         _ => panic!(
@@ -218,32 +200,33 @@ fn nin(value: &Value, filter: &Value) -> bool {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct Filter(pub Value);
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ValueFilter(JsonValue);
 
-impl Filter {
-    pub fn eval(&self, doc: &Value) -> bool {
+impl ValueFilter {
+    pub fn eval(&self, doc: &JsonValue) -> bool {
         eq(doc, &self.0)
     }
 
-    pub fn validate(&self) -> ValidationResult<()> {
-        validate(&self.0).map_err(Into::into)
+    pub fn none() -> Self {
+        // equal to: Self(json!({}))
+        Self(Object(serde_json::Map::new()))
     }
 }
 
-impl TryFrom<&str> for Filter {
+impl TryFrom<JsonValue> for ValueFilter {
     type Error = error::Error;
-
-    fn try_from(value: &str) -> Result<Self> {
-        serde_json::from_str(value).map(Self).map_err(Into::into)
+    fn try_from(jv: JsonValue) -> Result<Self, Self::Error> {
+        validate(&jv)?;
+        Ok(Self(jv))
     }
 }
 
-impl TryFrom<std::string::String> for Filter {
+impl TryFrom<std::string::String> for ValueFilter {
     type Error = error::Error;
-
-    fn try_from(value: std::string::String) -> Result<Self> {
-        serde_json::from_str(&value).map(Self).map_err(Into::into)
+    fn try_from(s: std::string::String) -> Result<Self, Self::Error> {
+        let json_v: JsonValue = serde_json::from_str(&s)?;
+        Self::try_from(json_v)
     }
 }
 
@@ -252,7 +235,7 @@ mod test {
     use super::*;
     use serde_json::json;
 
-    fn init_doc() -> Value {
+    fn init_doc() -> JsonValue {
         json!({
             "code": 200,
             "success": true,
@@ -263,6 +246,12 @@ mod test {
                 ]
             }
         })
+    }
+
+    #[test]
+    fn none_r_empty_object() {
+        let none_filter = ValueFilter::none();
+        assert_eq!(none_filter, ValueFilter::try_from(json!({})).unwrap())
     }
 
     #[test]
@@ -290,6 +279,14 @@ mod test {
             }
         });
         assert_eq!(validate(&filter), Ok(()));
+
+        let filter = json!({});
+        assert_eq!(filter.to_string(), "{}".to_string());
+        assert_eq!(validate(&filter), Ok(()));
+
+        let filter = json!("");
+        assert_eq!(filter.to_string(), "\"\"".to_string());
+        assert_eq!(validate(&filter), Ok(()));
     }
 
     #[test]
@@ -297,26 +294,26 @@ mod test {
         let filter = json!({
             "$in": 5
         });
-        assert_eq!(validate(&filter), Err(ExpectArrErr));
+        assert_eq!(validate(&filter), Err(ExpectArr));
 
         let filter = json!({
             "payload": {
                 "features": { "$lte": [ "serde", "json" ] }
             }
         });
-        assert_eq!(validate(&filter), Err(ExpectNumErr));
+        assert_eq!(validate(&filter), Err(ExpectNum));
 
         let filter = json!({
             "$gt": "5"
         });
-        assert_eq!(validate(&filter), Err(ExpectNumErr));
+        assert_eq!(validate(&filter), Err(ExpectNum));
 
         let filter = json!({
             "payload": {
                 "features": { "$nin": 5 }
             }
         });
-        assert_eq!(validate(&filter), Err(ExpectArrErr));
+        assert_eq!(validate(&filter), Err(ExpectArr));
     }
 
     #[test]
@@ -345,9 +342,15 @@ mod test {
             }
         });
 
+        let filter4 = json!({});
+
         assert_eq!(eq(&doc, &filter1), true);
         assert_eq!(eq(&doc, &filter2), true);
         assert_eq!(eq(&doc, &filter3), true);
+        assert_eq!(eq(&doc, &filter4), true);
+
+        let none_object_doc = json!("none object");
+        assert_eq!(eq(&none_object_doc, &filter4), true);
     }
 
     #[test]

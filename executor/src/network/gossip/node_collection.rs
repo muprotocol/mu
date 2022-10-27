@@ -64,7 +64,7 @@ impl NodeCollection {
         self.nodes.iter()
     }
 
-    pub(super) fn get_peers_and_hashes(&self) -> impl Iterator<Item = (&u128, &Peer)> {
+    pub(super) fn get_peers_and_hashes(&self) -> impl Iterator<Item = (&NodeHash, &Peer)> {
         self.peers.iter().map(|hash| {
             let node = self
                 .nodes

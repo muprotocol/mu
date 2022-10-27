@@ -3,6 +3,9 @@ import path from "path";
 import { TmuxSession } from "./tmux";
 import util from "./util"
 import promptSync from "prompt-sync";
+import { canConnectToLocalValidator } from "./anchor-utils";
+import { env } from "process";
+import { homedir } from "os";
 
 util.asyncMain(async () => {
     if (existsSync("test-ledger")) {
@@ -20,12 +23,15 @@ util.asyncMain(async () => {
     let sessionName = `mu_marketplace_${Date.now()}`;
     console.log(`Starting tmux session ${sessionName}`);
     console.log("Starting local Solana validator");
+    // TODO: swap tmux out for running the processes as children directly
     let tmuxSession = new TmuxSession(sessionName, "solana-test-validator");
 
     console.log("Waiting for validator to start");
     util.waitUntilPortUsed(8899);
-    // Wait an additional 2 seconds for the node to become healthy
-    await util.sleep(10);
+    env.ANCHOR_WALLET = path.resolve(homedir(), ".config/solana/id.json");
+    while (!(await canConnectToLocalValidator())) {
+        await util.sleep(0.5);
+    }
 
     console.log("Starting local HTTP server to serve function code");
     tmuxSession.splitWindow(`npx ts-node ${path.resolve(__dirname, "start-local-http-server.ts")}`, 0, true);
