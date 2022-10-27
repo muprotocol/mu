@@ -1,7 +1,7 @@
 mod commands;
 pub mod config;
-mod marketplace;
+mod marketplace_client;
 mod path;
 
-pub use commands::entry;
-pub use commands::Opts;
+pub use commands::execute;
+pub use commands::Args;

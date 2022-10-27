@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use solana_cli_config::{Config as SolanaConfig, CONFIG_FILE};
 use std::{fs, io, path::Path, str::FromStr};
 
+use crate::marketplace_client::MarketplaceClient;
+
 #[derive(Default, Debug, Parser)]
 pub struct ConfigOverride {
     // TODO: why override the program ID? At best, we'd only want to do this during development,
@@ -20,13 +22,15 @@ pub struct ConfigOverride {
     /// Program ID override.
     #[clap(global = true, long = "program-id")]
     pub program_id: Option<Pubkey>,
+
     /// Cluster override.
     #[clap(global = true, long = "cluster")]
     pub cluster: Option<Cluster>,
+
     // TODO: a simple path won't be enough here. Any sane user would want to secure their stacks
     // with something more secure than a plain-text private key on their hard drive.
-    /// payer override.
-    #[clap(global = true, long = "payer")]
+    /// User keypair override. This wallet will pay for the execution of smart contracts.
+    #[clap(global = true, long = "keypair", short = 'k')]
     pub payer: Option<PayerWalletPath>,
 }
 
@@ -49,8 +53,41 @@ impl Default for Config {
 }
 
 impl Config {
+    pub fn build_marketplace_client(&self) -> Result<MarketplaceClient> {
+        MarketplaceClient::new(self)
+    }
+
     pub fn discover(cfg_override: &ConfigOverride) -> Result<Config> {
-        let mut cfg = Config::_discover()?.unwrap_or_default();
+        let mut cfg = {
+            let path = std::env::current_exe()?.with_file_name("mu-cli.yaml");
+
+            if path.try_exists()? {
+                let cfg = Self::from_path(&path)?;
+                anyhow::Ok(Some(cfg))
+            } else {
+                // Check in the current directory when running in debug mode, this
+                // helps discover the config from the project directory when running
+                // with `cargo run`
+                #[cfg(debug_assertions)]
+                {
+                    let mut path = std::env::current_dir()?;
+                    path.push("mu-cli.yaml");
+
+                    if path.try_exists()? {
+                        let cfg = Self::from_path(&path)?;
+                        anyhow::Ok(Some(cfg))
+                    } else {
+                        anyhow::Ok(None)
+                    }
+                }
+
+                #[cfg(not(debug_assertions))]
+                {
+                    anyhow::Ok(None)
+                }
+            }
+        }?
+        .unwrap_or_default();
 
         if let Some(program_id) = cfg_override.program_id {
             cfg.program_id = program_id;
@@ -63,19 +100,6 @@ impl Config {
         }
 
         Ok(cfg)
-    }
-
-    // TODO: naming
-    fn _discover() -> Result<Option<Config>> {
-        let mut path = std::env::current_dir()?;
-        path.push("mu-cli.yaml");
-
-        if path.try_exists()? {
-            let cfg = Self::from_path(&path)?;
-            Ok(Some(cfg))
-        } else {
-            Ok(None)
-        }
     }
 
     fn from_path(p: impl AsRef<Path>) -> Result<Self> {

@@ -4,7 +4,7 @@ use anchor_client::solana_sdk::pubkey::Pubkey;
 use anyhow::Result;
 use clap::{Args, Parser};
 
-use crate::config::ConfigOverride;
+use crate::config::Config;
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -24,12 +24,12 @@ pub struct CreateArgs {
     keypair: PathBuf,
 }
 
-pub fn parse(cfg_override: &ConfigOverride, subcmd: Command) -> Result<()> {
+pub fn execute(config: Config, subcmd: Command) -> Result<()> {
     match subcmd {
-        Command::Create(args) => create(cfg_override, args),
+        Command::Create(args) => create(config, args),
     }
 }
 
-fn create(_cfg_override: &ConfigOverride, _args: CreateArgs) -> Result<()> {
+fn create(config: Config, _args: CreateArgs) -> Result<()> {
     todo!()
 }

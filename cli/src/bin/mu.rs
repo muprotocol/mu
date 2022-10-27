@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 
-use mu_cli::Opts;
+use mu_cli::Args;
 
 fn main() -> Result<()> {
-    mu_cli::entry(Opts::parse())
+    mu_cli::execute(Args::parse())
 }

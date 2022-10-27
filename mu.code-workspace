@@ -19,5 +19,10 @@
 		{
 			"path": "mu_stack"
 		}
-	]
+	],
+	"settings": {
+		"cSpell.words": [
+			"keypair"
+		]
+	}
 }

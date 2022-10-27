@@ -1,7 +1,7 @@
 mod utils;
 
 use clap::Parser;
-use mu_cli::{entry, Opts};
+use mu_cli::{execute, Args};
 use utils::create_wallet_and_associated_token_account;
 
 #[test]
@@ -23,8 +23,8 @@ fn can_create_provider() {
         &provider_wallet_path,
     ];
 
-    let opts = Opts::try_parse_from(args).unwrap();
-    entry(opts).unwrap();
+    let opts = Args::try_parse_from(args).unwrap();
+    execute(opts).unwrap();
 
     //TODO: check if provider is created successfully.
 }
