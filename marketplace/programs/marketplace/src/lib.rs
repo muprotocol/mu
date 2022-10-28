@@ -3,12 +3,6 @@ use anchor_spl::token::{Mint, Token, TokenAccount, Transfer};
 
 declare_id!("2MZLka8nfoAf1LKCCbgCw5ZXfpMbKGDuLjQ88MNMyti2");
 
-#[error_code]
-pub enum Errors {
-    #[msg("Name can't be more than 20 chars")]
-    NameTooLong,
-}
-
 fn calc_usage(rates: &ServiceUnits, usage: &ServiceUnits) -> u64 {
     rates.bandwidth * usage.bandwidth
         + rates.gateway_mreqs * usage.gateway_mreqs
@@ -49,10 +43,6 @@ pub mod marketplace {
         };
         let transfer_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), transfer);
         anchor_spl::token::transfer(transfer_ctx, 100)?;
-
-        if name.len() > 20 {
-            return err!(Errors::NameTooLong);
-        }
 
         ctx.accounts.provider.set_inner(Provider {
             account_type: MuAccountType::Provider as u8,
