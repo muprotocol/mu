@@ -191,8 +191,8 @@ pub struct Initialize<'info> {
 #[account]
 pub struct Provider {
     pub account_type: u8, // See MuAccountType
-    pub name: String,
     pub owner: Pubkey,
+    pub name: String,
     pub bump: u8,
 }
 

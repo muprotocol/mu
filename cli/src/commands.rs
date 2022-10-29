@@ -3,6 +3,7 @@ use clap::Parser;
 
 use crate::config::{Config, ConfigOverride};
 
+pub mod list;
 pub mod provider;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -13,6 +14,11 @@ pub enum Command {
     Provider {
         #[command(subcommand)]
         sub_command: provider::Command,
+    },
+
+    List {
+        #[command(subcommand)]
+        sub_command: list::Command,
     },
 }
 
@@ -29,5 +35,6 @@ pub fn execute(args: Args) -> Result<()> {
     let config = Config::discover(&args.cfg_override)?;
     match args.command {
         Command::Provider { sub_command } => provider::execute(config, sub_command),
+        Command::List { sub_command } => list::execute(config, sub_command),
     }
 }
