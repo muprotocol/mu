@@ -17,14 +17,11 @@ pub enum Command {
 
 #[derive(Args, Debug)]
 pub struct CreateArgs {
-    #[arg(long, help = "Agent name")]
-    name: String,
-
     #[arg(long, help = "Provider keypair")]
     provider_keypair: PathBuf,
 
-    #[arg(long, help = "Agent keypair")] //TODO
-    keypair: PathBuf,
+    #[arg(long, help = "Agent keypair")]
+    signer_keypair: PathBuf,
 
     #[arg(long, help = "Region number")]
     region_num: u32,
@@ -49,23 +46,25 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
     let provider_token_account =
         client.get_provider_token_account(provider_keypair.pubkey(), &mu_state);
 
+    let provider_pda = client.get_provider_pda(provider_keypair.pubkey());
+
     // TODO: I feel we can support all types of keypairs (not just files) if we're smart here.
     // TODO: read solana cli sources to see how they handle the keypair URL.
-    let signer_keypair = read_keypair_file(args.keypair)
+    let signer_keypair = read_keypair_file(args.signer_keypair)
         .map_err(|e| anyhow!("Can't read keypair: {}", e.to_string()))?;
 
-    let region = client.get_region_pda(provider_keypair.pubkey(), args.region_num);
+    let region_pda = client.get_region_pda(&provider_keypair.pubkey(), args.region_num);
 
     let (signer_pda, _) = Pubkey::find_program_address(
-        &[b"authorized_signer", &region.to_bytes()],
+        &[b"authorized_signer", &region_pda.to_bytes()],
         &client.program.id(),
     );
 
     let accounts = marketplace::accounts::CreateAuthorizedUsageSigner {
-        provider: provider_keypair.pubkey(),
-        region,
+        provider: provider_pda,
+        region: region_pda,
         authorized_signer: signer_pda,
-        owner: config.payer_kp()?.pubkey(),
+        owner: provider_keypair.pubkey(),
         system_program: system_program::id(),
     };
 

@@ -49,9 +49,9 @@ export const readOrCreateKeypair = (name?: string): Keypair => {
 	if (existsSync(walletPath)) {
 		try {
 			let content: Uint8Array = readFileSync(walletPath);
-            let text = Buffer.from(content).toString();
-            let json = JSON.parse(text);
-            let bytes = Uint8Array.from(json);
+			let text = Buffer.from(content).toString();
+			let json = JSON.parse(text);
+			let bytes = Uint8Array.from(json);
 			let wallet = Keypair.fromSecretKey(bytes);
 			return wallet;
 		} catch (e) {
@@ -322,6 +322,11 @@ export const createAuthorizedUsageSigner = async (
 export interface UserWallet {
 	keypair: Keypair,
 	tokenAccount: PublicKey
+}
+
+export const readOrCreateWallet = async (mu: MuProgram, name?: string): Promise<UserWallet> => {
+	let [keypair, tokenAccount] = await createAndFundWallet(mu.anchorProvider, mu.mint, name);
+	return { keypair, tokenAccount };
 }
 
 export const readOrCreateUserWallet = async (mu: MuProgram, userIndex?: number): Promise<UserWallet> => {

@@ -55,16 +55,14 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
     let client = config.build_marketplace_client()?;
 
     // TODO: I feel we can support all types of keypairs (not just files) if we're smart here.
+    // TODO: shouldn't this be just the payer wallet?
     let provider_keypair = read_keypair_file(args.provider_keypair)
         .map_err(|e| anyhow!("Can't read keypair: {}", e.to_string()))?;
 
     let (state_pda, mu_state) = client.get_mu_state()?;
 
     let (deposit_pda, _) = Pubkey::find_program_address(&[b"deposit"], &client.program.id());
-    let (provider_pda, _) = Pubkey::find_program_address(
-        &[b"provider", &provider_keypair.pubkey().to_bytes()],
-        &client.program.id(),
-    );
+    let provider_pda = client.get_provider_pda(provider_keypair.pubkey());
 
     // TODO: we need to double-check all error conditions and generate user-readable error messages.
     // there is no backend server to return cute messages, only the deep, dark bowels of the blockchain.

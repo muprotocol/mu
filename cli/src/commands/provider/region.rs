@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anchor_client::{
     solana_client::rpc_config::RpcSendTransactionConfig,
-    solana_sdk::{pubkey::Pubkey, signature::read_keypair_file, signer::Signer, system_program},
+    solana_sdk::{signature::read_keypair_file, signer::Signer, system_program},
 };
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser};
@@ -58,21 +58,16 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
     let provider_keypair = read_keypair_file(args.provider_keypair)
         .map_err(|e| anyhow!("Can't read keypair: {}", e.to_string()))?;
 
+    let provider_pda = client.get_provider_pda(provider_keypair.pubkey());
+
     // TODO: validation
 
-    let (region_pda, _) = Pubkey::find_program_address(
-        &[
-            b"region",
-            &provider_keypair.pubkey().to_bytes(),
-            &args.region_num.to_le_bytes(),
-        ],
-        &client.program.id(),
-    );
+    let region_pda = client.get_region_pda(&provider_keypair.pubkey(), args.region_num);
 
     let accounts = marketplace::accounts::CreateRegion {
-        provider: provider_keypair.pubkey(),
+        provider: provider_pda,
         region: region_pda,
-        owner: config.payer_kp()?.pubkey(),
+        owner: provider_keypair.pubkey(),
         system_program: system_program::id(),
     };
 
