@@ -67,4 +67,17 @@ impl MarketplaceClient {
         );
         escrow_pda
     }
+
+    pub fn get_stack_pda(&self, user_wallet: Pubkey, region_pda: Pubkey, seed: u64) -> Pubkey {
+        let (stack_pda, _) = Pubkey::find_program_address(
+            &[
+                b"stack",
+                &user_wallet.to_bytes(),
+                &region_pda.to_bytes(),
+                &seed.to_le_bytes(),
+            ],
+            &self.program.id(),
+        );
+        stack_pda
+    }
 }

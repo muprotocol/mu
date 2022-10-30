@@ -87,13 +87,7 @@ pub fn execute_create(config: Config, cmd: CreateEscrowCommand) -> Result<()> {
         .context("Failed to send escrow account creation transaction")?;
 
     println!("Escrow account created, account key is: {}", escrow_pda);
-
-    execute_view(
-        config,
-        ViewEscrowCommand {
-            provider: cmd.provider,
-        },
-    )?;
+    println!("Note: to recharge, you can use `mu escrow recharge` or make direct token transfers to this account.");
 
     Ok(())
 }

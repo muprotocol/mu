@@ -395,6 +395,7 @@ export const deployStack = async (
 	region: MuRegionInfo,
 	stack: Buffer,
 	stackSeed: number,
+	name: string
 ): Promise<MuStackInfo> => {
 	const stack_seed = new anchor.BN(stackSeed);
 	const pda = publicKey.findProgramAddressSync(
@@ -410,6 +411,7 @@ export const deployStack = async (
 		mu.program.methods.createStack(
 			stack_seed,
 			stack,
+			name
 		).accounts({
 			user: userWallet.publicKey,
 			stack: pda,

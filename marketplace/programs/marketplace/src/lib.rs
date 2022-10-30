@@ -58,6 +58,7 @@ pub mod marketplace {
         ctx: Context<CreateStack>,
         stack_seed: u64,
         stack_data: Vec<u8>,
+        name: String,
     ) -> Result<()> {
         ctx.accounts.stack.set_inner(Stack {
             account_type: MuAccountType::Stack as u8,
@@ -67,6 +68,7 @@ pub mod marketplace {
             seed: stack_seed,
             revision: 1,
             bump: *ctx.bumps.get("stack").unwrap(),
+            name,
         });
 
         Ok(())
@@ -304,21 +306,22 @@ pub struct Stack {
     pub account_type: u8, // See MuAccountType
     pub user: Pubkey,
     pub region: Pubkey,
-    pub stack: Vec<u8>,
     pub seed: u64,
     pub revision: u32,
     pub bump: u8,
+    pub name: String,
+    pub stack: Vec<u8>,
 }
 
 #[derive(Accounts)]
-#[instruction(stack_seed: u64, stack_data: Vec<u8>)]
+#[instruction(stack_seed: u64, stack_data: Vec<u8>, name: String)]
 pub struct CreateStack<'info> {
     pub region: Account<'info, ProviderRegion>,
 
     #[account(
         init,
         payer = user,
-        space = 8 + 1 + 32 + 32 + 4 + stack_data.len() + 8 + 4 + 1,
+        space = 8 + 1 + 32 + 32 + 8 + 4 + 1 + 4 + name.len() + 4 + stack_data.len(),
         seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_le_bytes().as_ref()],
         bump
     )]
@@ -326,9 +329,7 @@ pub struct CreateStack<'info> {
 
     #[account(mut)]
     pub user: Signer<'info>,
-
     pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,
 }
 
 #[account]
