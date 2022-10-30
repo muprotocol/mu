@@ -120,9 +120,9 @@ const createAndFundWallet = async (provider: anchor.AnchorProvider, mint: Keypai
 		wallet.publicKey
 	);
 
-	if (tokenAccount.amount < 10000) {
+	if (tokenAccount.amount < 10000_000000) { // we have 6 decimal places in the mint
 		let mintToTx = new Transaction();
-		mintToTx.add(spl.createMintToInstruction(mint.publicKey, tokenAccount.address, provider.wallet.publicKey, 10000));
+		mintToTx.add(spl.createMintToInstruction(mint.publicKey, tokenAccount.address, provider.wallet.publicKey, 10000_000000));
 		await provider.sendAndConfirm(mintToTx);
 	}
 

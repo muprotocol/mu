@@ -3,6 +3,7 @@ use clap::Parser;
 
 use crate::config::{Config, ConfigOverride};
 
+pub mod escrow;
 pub mod list;
 pub mod provider;
 
@@ -20,6 +21,11 @@ pub enum Command {
         #[command(subcommand)]
         sub_command: list::Command,
     },
+
+    Escrow {
+        #[command(subcommand)]
+        sub_command: escrow::Command,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -36,5 +42,6 @@ pub fn execute(args: Args) -> Result<()> {
     match args.command {
         Command::Provider { sub_command } => provider::execute(config, sub_command),
         Command::List { sub_command } => list::execute(config, sub_command),
+        Command::Escrow { sub_command } => escrow::execute(config, sub_command),
     }
 }

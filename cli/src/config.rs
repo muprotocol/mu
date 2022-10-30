@@ -34,7 +34,7 @@ pub struct ConfigOverride {
     pub payer: Option<PayerWalletPath>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     // TODO: see TODOs in `ConfigOverride`
     pub program_id: Pubkey,

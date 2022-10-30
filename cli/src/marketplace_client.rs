@@ -21,8 +21,13 @@ impl MarketplaceClient {
         })
     }
 
-    pub fn get_mu_state(&self) -> Result<(Pubkey, MuState)> {
+    pub fn get_mu_state_pda(&self) -> Pubkey {
         let (state_pda, _) = Pubkey::find_program_address(&[b"state"], &self.program.id());
+        state_pda
+    }
+
+    pub fn get_mu_state(&self) -> Result<(Pubkey, MuState)> {
+        let state_pda = self.get_mu_state_pda();
         let mu_state: MuState = self.program.account(state_pda)?;
         Ok((state_pda, mu_state))
     }
@@ -53,5 +58,13 @@ impl MarketplaceClient {
             &self.program.id(),
         );
         region_pda
+    }
+
+    pub fn get_escrow_pda(&self, user_wallet: &Pubkey, provider_pda: &Pubkey) -> Pubkey {
+        let (escrow_pda, _) = Pubkey::find_program_address(
+            &[b"escrow", &user_wallet.to_bytes(), &provider_pda.to_bytes()],
+            &self.program.id(),
+        );
+        escrow_pda
     }
 }
