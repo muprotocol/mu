@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -81,7 +81,7 @@ struct FindRequest {
     db_name: String,
     table_name: String,
     key_filter: KeyFilter,
-    value_filter: Option<Filter>,
+    value_filter: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -96,30 +96,37 @@ pub type Item = (Key, String);
 
 #[derive(Debug, Deserialize)]
 pub enum DbResponse {
-    CreateTable(Result<CreateTableOutput, String>),
-    Find(Result<FindItemOutput, String>),
-    Insert(Result<InsertOneItemOutput, String>),
+    CreateTable(Result<TableDescription, String>),
+    Find(Result<Vec<Item>, String>),
+    Insert(Result<Key, String>),
 }
+// TODO: remove
+// #[derive(Debug, Deserialize)]
+// pub enum DbResponse {
+//     CreateTable(Result<CreateTableOutput, String>),
+//     Find(Result<FindItemOutput, String>),
+//     Insert(Result<InsertOneItemOutput, String>),
+// }
 
-#[derive(Debug, Deserialize)]
-pub struct CreateTableOutput {
-    pub table_description: TableDescription,
-}
+// #[derive(Debug, Deserialize)]
+// pub struct CreateTableOutput {
+//     pub table_description: TableDescription,
+// }
 
 #[derive(Debug, Deserialize)]
 pub struct TableDescription {
     pub table_name: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct InsertOneItemOutput {
-    pub key: Key,
-}
+// #[derive(Debug, Deserialize)]
+// pub struct InsertOneItemOutput {
+//     pub key: Key,
+// }
 
-#[derive(Debug, Deserialize)]
-pub struct FindItemOutput {
-    pub items: Vec<Item>,
-}
+// #[derive(Debug, Deserialize)]
+// pub struct FindItemOutput {
+//     pub items: Vec<Item>,
+// }
 
 fn send_message<T: Serialize>(msg: T, msg_type: &str, id: Option<u32>) {
     let msg = Message {
@@ -217,7 +224,7 @@ fn main() {
         db_name: "my_db".into(),
         table_name: "visitors".into(),
         key_filter: KeyFilter::Exact("count".into()),
-        value_filter: None,
+        value_filter: json!("").to_string(),
     }));
 
     // Note: don't do this, doesn't support concurrent requests, will mess up the counter under load
@@ -227,10 +234,10 @@ fn main() {
         .unwrap();
 
     let mut current = if let DbResponse::Find(Ok(out)) = find_response {
-        if out.items.is_empty() {
+        if out.is_empty() {
             0u64
         } else {
-            out.items[0].1.parse().unwrap_or_default()
+            out[0].1.parse().unwrap_or_default()
         }
     } else {
         panic!("Unexpected DB output: {:?}", find_response);
