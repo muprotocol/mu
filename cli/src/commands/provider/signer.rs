@@ -17,9 +17,6 @@ pub enum Command {
 
 #[derive(Args, Debug)]
 pub struct CreateArgs {
-    #[arg(long, help = "Provider keypair")]
-    provider_keypair: PathBuf,
-
     #[arg(long, help = "Agent keypair")]
     signer_keypair: PathBuf,
 
@@ -38,10 +35,7 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
 
     let (_, mu_state) = client.get_mu_state()?;
 
-    // TODO: I feel we can support all types of keypairs (not just files) if we're smart here.
-    // TODO: read solana cli sources to see how they handle the keypair URL.
-    let provider_keypair = read_keypair_file(args.provider_keypair)
-        .map_err(|e| anyhow!("Can't read keypair: {}", e.to_string()))?;
+    let provider_keypair = config.payer_kp()?;
 
     let provider_token_account =
         client.get_provider_token_account(provider_keypair.pubkey(), &mu_state);

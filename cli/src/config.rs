@@ -24,7 +24,7 @@ pub struct ConfigOverride {
     pub program_id: Option<Pubkey>,
 
     /// Cluster override.
-    #[clap(global = true, long = "cluster")]
+    #[clap(global = true, long = "cluster", short = 'u')]
     pub cluster: Option<Cluster>,
 
     // TODO: a simple path won't be enough here. Any sane user would want to secure their stacks
@@ -46,7 +46,17 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             program_id: marketplace::id(),
-            cluster: Cluster::default(),
+            cluster: {
+                #[cfg(debug_assertions)]
+                {
+                    Cluster::Localnet
+                }
+
+                #[cfg(not(debug_assertions))]
+                {
+                    Cluster::Mainnet
+                }
+            },
             payer: PayerWalletPath::default(),
         }
     }
@@ -108,6 +118,8 @@ impl Config {
             .parse::<Self>()
     }
 
+    // TODO: I feel we can support all types of keypairs (not just files) if we're smart here.
+    // TODO: read solana cli sources to see how they handle the keypair URL.
     pub fn payer_kp(&self) -> Result<Keypair> {
         // TODO This value should be calculated and cached
         read_keypair_file(&self.payer.to_string())

@@ -1,10 +1,8 @@
-use std::path::PathBuf;
-
 use anchor_client::{
     solana_client::rpc_config::RpcSendTransactionConfig,
-    solana_sdk::{signature::read_keypair_file, signer::Signer, system_program},
+    solana_sdk::{signer::Signer, system_program},
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use clap::{Args, Parser};
 
 use crate::config::Config;
@@ -21,9 +19,6 @@ pub enum Command {
 pub struct CreateArgs {
     #[arg(long, help = "Region name")]
     name: String,
-
-    #[arg(long, help = "Provider keypair")]
-    provider_keypair: PathBuf,
 
     #[arg(
         long,
@@ -53,10 +48,7 @@ pub fn execute(config: Config, subcmd: Command) -> Result<()> {
 fn create(config: Config, args: CreateArgs) -> Result<()> {
     let client = config.build_marketplace_client()?;
 
-    // TODO: I feel we can support all types of keypairs (not just files) if we're smart here.
-    // TODO: read solana cli sources to see how they handle the keypair URL.
-    let provider_keypair = read_keypair_file(args.provider_keypair)
-        .map_err(|e| anyhow!("Can't read keypair: {}", e.to_string()))?;
+    let provider_keypair = config.payer_kp()?;
 
     let provider_pda = client.get_provider_pda(provider_keypair.pubkey());
 

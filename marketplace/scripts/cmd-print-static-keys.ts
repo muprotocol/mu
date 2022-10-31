@@ -8,7 +8,10 @@ for (let name of fs.readdirSync(basePath)) {
     if (name == "README.md")
         continue;
 
-    let bytes: Uint8Array = fs.readFileSync(path.join(basePath, name));
+    let content: Uint8Array = fs.readFileSync(path.join(basePath, name));
+    let text = Buffer.from(content).toString();
+    let json = JSON.parse(text);
+    let bytes = Uint8Array.from(json);
     let keypair = anchor.web3.Keypair.fromSecretKey(bytes);
     console.log(`${name} (Public): ${keypair.publicKey.toBase58()}`);
     console.log(`${name} (Private): ${bs58.encode(keypair.secretKey)}`);

@@ -1,12 +1,8 @@
-use std::path::PathBuf;
-
 use anchor_client::{
     solana_client::rpc_config::RpcSendTransactionConfig,
-    solana_sdk::{
-        pubkey::Pubkey, signature::read_keypair_file, signer::Signer, system_program, sysvar,
-    },
+    solana_sdk::{pubkey::Pubkey, signer::Signer, system_program, sysvar},
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use clap::{Args, Parser};
 
 use crate::config::Config;
@@ -36,9 +32,6 @@ pub enum Command {
 pub struct CreateArgs {
     #[arg(short, long)]
     name: String,
-
-    #[arg(long, help = "Provider keypair file")]
-    provider_keypair: PathBuf,
 }
 
 // TODO: parse?! why not run or execute or sth?
@@ -54,10 +47,7 @@ pub fn execute(config: Config, sub_command: Command) -> Result<()> {
 fn create(config: Config, args: CreateArgs) -> Result<()> {
     let client = config.build_marketplace_client()?;
 
-    // TODO: I feel we can support all types of keypairs (not just files) if we're smart here.
-    // TODO: shouldn't this be just the payer wallet?
-    let provider_keypair = read_keypair_file(args.provider_keypair)
-        .map_err(|e| anyhow!("Can't read keypair: {}", e.to_string()))?;
+    let provider_keypair = config.payer_kp()?;
 
     let (state_pda, mu_state) = client.get_mu_state()?;
 
