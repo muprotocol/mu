@@ -27,21 +27,21 @@ impl KeypairWithPath {
         })
     }
 
-    pub fn new() -> Result<Self> {
-        Self::_new::<&str>(None)
-    }
+    // pub fn new() -> Result<Self> {
+    //     Self::_new::<&str>(None)
+    // }
 
-    pub fn load_or_create<S>(name: S) -> Result<Self>
-    where
-        S: AsRef<str>,
-    {
-        let path = Self::get_keypair_path(name.as_ref())?;
-        if path.try_exists()? {
-            Self::load(name)
-        } else {
-            Self::_new(Some(name))
-        }
-    }
+    // pub fn load_or_create<S>(name: S) -> Result<Self>
+    // where
+    //     S: AsRef<str>,
+    // {
+    //     let path = Self::get_keypair_path(name.as_ref())?;
+    //     if path.try_exists()? {
+    //         Self::load(name)
+    //     } else {
+    //         Self::_new(Some(name))
+    //     }
+    // }
 
     pub fn pubkey(&self) -> Pubkey {
         self.keypair.pubkey()

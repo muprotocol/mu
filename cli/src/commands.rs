@@ -32,6 +32,8 @@ pub enum Command {
         #[command(subcommand)]
         sub_command: stack::Command,
     },
+
+    PrintKey {},
 }
 
 #[derive(Debug, Parser)]
@@ -44,11 +46,16 @@ pub struct Args {
 }
 
 pub fn execute(args: Args) -> Result<()> {
-    let config = Config::discover(&args.cfg_override)?;
+    let config = Config::discover(args.cfg_override)?;
     match args.command {
         Command::Provider { sub_command } => provider::execute(config, sub_command),
         Command::List { sub_command } => list::execute(config, sub_command),
         Command::Escrow { sub_command } => escrow::execute(config, sub_command),
         Command::Stack { sub_command } => stack::execute(config, sub_command),
+        Command::PrintKey {} => {
+            let signer = config.get_signer()?;
+            println!("{}", signer.pubkey());
+            Ok(())
+        }
     }
 }
