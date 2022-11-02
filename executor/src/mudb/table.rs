@@ -325,7 +325,7 @@ mod test {
 
     #[test]
     #[serial]
-    fn update_r_ok_modified_items_w_happend() {
+    fn update_r_ok_modified_items_w_happened() {
         let (table_1, _) = init_table();
         let _ = seed_item(&table_1);
 
@@ -423,7 +423,7 @@ mod test {
 
     #[test]
     #[serial]
-    fn delete_r_ok_deleted_keys_w_happend() {
+    fn delete_r_ok_deleted_keys_w_happened() {
         let (table_1, _) = init_table();
         let _ = seed_item(&table_1);
 

@@ -1,5 +1,5 @@
-//! Statefull Service
-//! purpose is provide statefull api
+//! Stateful Service
+//! purpose is provide stateful api
 
 use super::{error::Result, manager::Manager, Config, Db, Error};
 
@@ -25,7 +25,7 @@ impl DatabaseManager {
     }
 
     /// clear all databases and make `./mudb` clean
-    /// usefull in tests
+    /// useful in tests
     pub async fn clean(&self) -> Result<()> {
         let list = self.manager().query_db_by_prefix("")?;
         for name in list {

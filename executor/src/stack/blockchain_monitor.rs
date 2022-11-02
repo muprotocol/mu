@@ -61,7 +61,7 @@ struct SolanaPubSubClientWrapper {
 struct SolanaPubSub<'a> {
     client_wrapper: Pin<Box<SolanaPubSubClientWrapper>>,
     stream: BoxStream<'a, Response<RpcKeyedAccount>>,
-    unsub_callback: SolanaUnsubscribeFn,
+    unsubscribe_callback: SolanaUnsubscribeFn,
 }
 
 struct BlockchainMonitorState<'a> {
@@ -175,7 +175,7 @@ pub async fn start(
         SolanaPubSub {
             client_wrapper,
             stream: subscription_stream,
-            unsub_callback: unsubscribe_fn,
+            unsubscribe_callback: unsubscribe_fn,
         }
     };
 
@@ -270,7 +270,7 @@ async fn mailbox_body(
         }
     }
 
-    (state.solana_pub_sub.unsub_callback)().await;
+    (state.solana_pub_sub.unsubscribe_callback)().await;
 
     if let Some(r) = stop_reply_channel {
         r.reply(());
@@ -280,9 +280,9 @@ async fn mailbox_body(
 async fn reconnect_solana_subscriber(
     state: BlockchainMonitorState<'_>,
 ) -> BlockchainMonitorState<'_> {
-    (state.solana_pub_sub.unsub_callback)().await;
+    (state.solana_pub_sub.unsubscribe_callback)().await;
 
-    let (stream, unsub) = loop {
+    let (stream, unsubscribe) = loop {
         let client_wrapper = unsafe {
             (state.solana_pub_sub.client_wrapper.deref() as *const SolanaPubSubClientWrapper)
                 .as_ref()
@@ -306,7 +306,7 @@ async fn reconnect_solana_subscriber(
     BlockchainMonitorState {
         solana_pub_sub: SolanaPubSub {
             stream,
-            unsub_callback: unsub,
+            unsubscribe_callback: unsubscribe,
             ..state.solana_pub_sub
         },
         ..state

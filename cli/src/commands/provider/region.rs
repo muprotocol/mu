@@ -38,8 +38,8 @@ pub struct CreateArgs {
     bandwidth_price: u64,
 }
 
-pub fn execute(config: Config, subcmd: Command) -> Result<()> {
-    match subcmd {
+pub fn execute(config: Config, sub_command: Command) -> Result<()> {
+    match sub_command {
         Command::Create(args) => create(config, args),
     }
 }

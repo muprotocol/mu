@@ -1,5 +1,5 @@
-/* TODO: manage stack storage for recersion
- * recersive functions: eq, s_in, nin, validate/validate_map
+/* TODO: manage stack storage for recursion
+ * recursive functions: eq, s_in, nin, validate/validate_map
  */
 
 use super::error::{self, JsonCommandError::*, JsonCommandResult};
@@ -255,7 +255,7 @@ mod test {
     }
 
     #[test]
-    fn validate_r_ok_w_happend() {
+    fn validate_r_ok_w_happened() {
         let filter = json!({
             "$in": ["h", "e", "l"]
         });
@@ -290,7 +290,7 @@ mod test {
     }
 
     #[test]
-    fn validate_r_err_query_filter_w_happend() {
+    fn validate_r_err_query_filter_w_happened() {
         let filter = json!({
             "$in": 5
         });
@@ -317,7 +317,7 @@ mod test {
     }
 
     #[test]
-    fn eq_r_true_w_happend_without_operation() {
+    fn eq_r_true_w_happened_without_operation() {
         let doc = init_doc();
 
         let filter1 = json!({
@@ -354,7 +354,7 @@ mod test {
     }
 
     #[test]
-    fn eq_r_true_w_happend_with_operation() {
+    fn eq_r_true_w_happened_with_operation() {
         let doc = init_doc();
 
         // code: 200
@@ -394,7 +394,7 @@ mod test {
     }
 
     #[test]
-    fn eq_r_false_w_happend_without_operation() {
+    fn eq_r_false_w_happened_without_operation() {
         let doc = init_doc();
 
         // not found filter
@@ -410,7 +410,7 @@ mod test {
     }
 
     #[test]
-    fn eq_r_false_w_happend_with_operation() {
+    fn eq_r_false_w_happened_with_operation() {
         let doc = init_doc();
 
         // gt
@@ -448,7 +448,7 @@ mod test {
     }
 
     #[test]
-    fn ne_r_check_w_happend_without_operation() {
+    fn ne_r_check_w_happened_without_operation() {
         let doc = init_doc();
 
         let filter1 = json!({
@@ -478,7 +478,7 @@ mod test {
     }
 
     #[test]
-    fn gt_r_true_w_happend() {
+    fn gt_r_true_w_happened() {
         let filter = json!(1);
         let value = json!(2);
 
@@ -487,7 +487,7 @@ mod test {
     }
 
     #[test]
-    fn gt_r_false_w_happend() {
+    fn gt_r_false_w_happened() {
         // less than
         let filter = json!(5);
         let value = json!(2);
@@ -511,7 +511,7 @@ mod test {
     }
 
     #[test]
-    fn gte_r_true_w_happend() {
+    fn gte_r_true_w_happened() {
         // greater than
         let filter = json!(1);
         let value = json!(2);
@@ -526,7 +526,7 @@ mod test {
     }
 
     #[test]
-    fn gte_r_false_w_happend() {
+    fn gte_r_false_w_happened() {
         // less than
         let filter = json!(5);
         let value = json!(2);
@@ -544,7 +544,7 @@ mod test {
     }
 
     #[test]
-    fn lt_r_true_w_happend() {
+    fn lt_r_true_w_happened() {
         let filter = json!(2);
         let value = json!(1);
 
@@ -553,7 +553,7 @@ mod test {
     }
 
     #[test]
-    fn lt_r_false_w_happend() {
+    fn lt_r_false_w_happened() {
         // greater than
         let value = json!(5);
         let filter = json!(2);
@@ -577,7 +577,7 @@ mod test {
     }
 
     #[test]
-    fn lte_r_true_w_happend() {
+    fn lte_r_true_w_happened() {
         // less than
         let filter = json!(2);
         let value = json!(1);
@@ -592,7 +592,7 @@ mod test {
     }
 
     #[test]
-    fn lte_r_false_w_happend() {
+    fn lte_r_false_w_happened() {
         // greater than
         let filter = json!(2);
         let value = json!(5);
@@ -610,7 +610,7 @@ mod test {
     }
 
     #[test]
-    fn in_r_true_w_happend() {
+    fn in_r_true_w_happened() {
         let value = json!(5);
         let filter = json!([1, 3, 5, 7]);
         let res = s_in(&value, &filter);
@@ -618,7 +618,7 @@ mod test {
     }
 
     #[test]
-    fn in_r_false_w_happend() {
+    fn in_r_false_w_happened() {
         let value = json!(10);
         let filter = json!([1, 3, 5, 7]);
         let res = s_in(&value, &filter);
@@ -626,7 +626,7 @@ mod test {
     }
 
     #[test]
-    fn nin_r_true_w_happend() {
+    fn nin_r_true_w_happened() {
         let value = json!(10);
         let filter = json!([1, 3, 5, 7]);
         let res = nin(&value, &filter);
@@ -634,7 +634,7 @@ mod test {
     }
 
     #[test]
-    fn nin_r_false_w_happend() {
+    fn nin_r_false_w_happened() {
         let value = json!(5);
         let filter = json!([1, 3, 5, 7]);
         let res = nin(&value, &filter);

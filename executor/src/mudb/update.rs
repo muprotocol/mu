@@ -109,12 +109,12 @@ fn set(doc: &mut JsonValue, update: &JsonValue) -> Vec<(String, JsonValue)> {
     set_inner(|_, update_v| update_v, doc, update)
 }
 
-/// Sets the value of a field `Null` in an object and returns unseted key/value.
+/// Sets the value of a field `Null` in an object and returns unset key/value.
 ///
 /// # Usage
 ///
 /// ```ignore
-/// json!({ "$unset": { "quantity": "", "instock": "" } })
+/// json!({ "$unset": { "quantity": "", "in_stock": "" } })
 ///
 /// ```
 ///
@@ -195,14 +195,14 @@ fn update(doc: &mut JsonValue, update: &JsonValue) -> Vec<Vec<(String, JsonValue
                 "$mul" => mul(doc, v),
                 _ => panic!(
                     "command error: that shouldn't happen, use\n\
-                    validate() beffor call exe(...) to catch error"
+                    validate() before call exe(...) to catch error"
                 ),
             })
             .filter(|x| !x.is_empty())
             .collect(),
         _ => panic!(
             "type error: that shouldn't happen, use\n\
-            validate() beffor call exe(...) to catch error"
+            validate() before call exe(...) to catch error"
         ),
     }
 }
@@ -269,7 +269,7 @@ mod test {
     }
 
     #[test]
-    fn validate_r_ok_w_happend() {
+    fn validate_r_ok_w_happened() {
         // `$set`
 
         let update = json!({
@@ -344,7 +344,7 @@ mod test {
     }
 
     #[test]
-    fn validate_r_err_w_happend() {
+    fn validate_r_err_w_happened() {
         // exe
 
         let update = json!(1000);
@@ -410,7 +410,7 @@ mod test {
         );
         assert_eq!(res, vec![("payload2.feature1".to_owned(), json!("chrono"))]);
 
-        // arrary inner
+        // array inner
 
         let value = json!({ "payload.features": [ 0 ] });
         let res = set(&mut doc, &value);

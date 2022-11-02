@@ -129,12 +129,12 @@ pub mod marketplace {
             authority: ctx.accounts.state.to_account_info(),
         };
         let bump = ctx.accounts.state.bump.to_le_bytes();
-        let pito = vec![b"state".as_ref(), bump.as_ref()];
-        let outpito = vec![pito.as_slice()];
+        let seeds = vec![b"state".as_ref(), bump.as_ref()];
+        let seeds_wrapper = vec![seeds.as_slice()];
         let transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             transfer,
-            &outpito.as_slice(),
+            &seeds_wrapper.as_slice(),
         );
         anchor_spl::token::transfer(transfer_ctx, usage_tokens)?;
 
