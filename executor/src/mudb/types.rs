@@ -273,7 +273,7 @@ impl Default for DatabaseID {
 
 impl ToString for DatabaseID {
     fn to_string(&self) -> String {
-        format!("{}_{}", self.stack_id, self.db_name.replace(' ', "-"))
+        format!("{}!{}", self.stack_id, self.db_name.replace(' ', "-"))
     }
 }
 
@@ -281,12 +281,14 @@ impl FromStr for DatabaseID {
     type Err = super::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         use super::Error::InvalidDbId;
-        match s.split_once('_') {
+        match s.split_once('!') {
             Some((stack_id, db_name)) => Ok(Self {
-                stack_id: stack_id.parse().map_err(|()| InvalidDbId("".into()))?,
+                stack_id: stack_id
+                    .parse()
+                    .map_err(|()| InvalidDbId(format!("stack_id parse error in {s}")))?,
                 db_name: db_name.to_string(),
             }),
-            None => Err(InvalidDbId(format!("not found '_' in {s}"))),
+            None => Err(InvalidDbId(format!("not found '!' in {s}"))),
         }
     }
 }
