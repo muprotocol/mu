@@ -325,7 +325,7 @@ fn on_new_stack_received(
 
         Ok(stack) => {
             // TODO: implement stack updates
-            if let None = state.known_stacks.insert(stack.id(), stack.clone()) {
+            if state.known_stacks.insert(stack.id(), stack.clone()).is_none() {
                 notification_channel
                     .send(BlockchainMonitorNotification::StacksAvailable(vec![stack]));
             }

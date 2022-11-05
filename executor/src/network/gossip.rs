@@ -680,27 +680,24 @@ fn receive_message(
 
         GossipProtocolMessage::Goodbye(node_address) => {
             let hash = node_address.get_hash();
-            match state.node_collection.remove(&hash) {
-                Some(node) => {
-                    let info = node.into_info();
 
-                    debug!(state, "Goodbye from node {}", info.address);
-
-                    state
-                        .notification_channel
-                        .send(GossipNotification::NodeDied(info.address, true));
-
-                    if let Err(f) = send_protocol_message(
-                        GossipProtocolMessage::Goodbye(node_address),
-                        state,
-                        vec![], // We already removed the peer, so no need to filter again
-                    ) {
-                        error!(state, "Failed to replicate heartbeat due to {f}");
-                    }
-                }
-
-                None => (), // Goodbyes are replicated, so we may get them many times
-            }
+             if let Some(node) = state.node_collection.remove(&hash) {
+                 let info = node.into_info();
+ 
+                 debug!(state, "Goodbye from node {}", info.address);
+ 
+                 state
+                     .notification_channel
+                     .send(GossipNotification::NodeDied(info.address, true));
+ 
+                 if let Err(f) = send_protocol_message(
+                     GossipProtocolMessage::Goodbye(node_address),
+                     state,
+                     vec![], // We already removed the peer, so no need to filter again
+                 ) {
+                     error!(state, "Failed to replicate heartbeat due to {f}");
+                 }
+             }
         }
     }
 
