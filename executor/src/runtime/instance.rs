@@ -7,9 +7,8 @@ use super::{
 use crate::mudb::service::DatabaseManager;
 use anyhow::{bail, Result};
 use bytes::BufMut;
-use log::trace;
-//use futures::Future;
 use core::future::Future;
+use log::trace;
 use std::{
     collections::HashMap,
     io::{BufRead, Write},
