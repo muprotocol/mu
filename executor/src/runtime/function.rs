@@ -37,6 +37,8 @@ pub fn start(
     let memory = instance.exports.get_memory("memory")?;
     wasi_env.data_mut(&mut store).set_memory(memory.clone());
 
+    let (is_finished_tx, is_finished_rx) = tokio::sync::oneshot::channel::<()>();
+
     // If this module exports an _initialize function, run that first.
     let join_handle = tokio::task::spawn_blocking(move || {
         //TODO: bubble up the error to outer task
@@ -53,18 +55,20 @@ pub fn start(
             .context("can not get _start function")
             .unwrap();
 
-        let result = start.call(&mut store, &[]);
+        if let Err(e) = start.call(&mut store, &[]) {
+            log::error!("error calling function: {e:?}");
+        }
 
-        match result {
-            Ok(_) => (),
-            Err(e) => log::error!("error: {e:?}"),
-        };
+        if let Err(e) = is_finished_tx.send(()) {
+            log::error!("error sending finish signal: {e:?}");
+        }
 
         get_remaining_points(&mut store, &instance)
     });
 
     Ok(FunctionHandle {
         join_handle,
+        is_finished: is_finished_rx,
         io: FunctionIO {
             stdin: BufWriter::new(stdin),
             stdout: BufReader::new(stdout),

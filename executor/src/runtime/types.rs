@@ -36,7 +36,7 @@ pub struct InvokeFunctionRequest {
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct InstanceID {
     pub function_id: FunctionID,
-    instance_id: Uuid,
+    pub instance_id: Uuid,
 }
 
 impl Display for InstanceID {
@@ -108,6 +108,7 @@ pub struct FunctionIO {
 #[derive(Debug)]
 pub struct FunctionHandle {
     pub join_handle: JoinHandle<MeteringPoints>,
+    pub is_finished: tokio::sync::oneshot::Receiver<()>,
     pub io: FunctionIO,
 }
 

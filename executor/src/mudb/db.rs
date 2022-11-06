@@ -47,7 +47,7 @@ impl Db {
             Err(Error::TableAlreadyExist(table_name.to_string()))
         } else {
             self.tdt
-                .insert_one(table_name.clone().into(), td.clone().into())
+                .insert_one(table_name.into(), td.clone().into())
                 .map(|_| (table, td))
         }
     }
