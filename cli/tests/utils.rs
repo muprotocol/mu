@@ -27,10 +27,12 @@ impl KeypairWithPath {
         })
     }
 
+    #[allow(dead_code)] // TODO
     pub fn new() -> Result<Self> {
         Self::_new::<&str>(None)
     }
 
+    #[allow(dead_code)] // TODO
     pub fn load_or_create<S>(name: S) -> Result<Self>
     where
         S: AsRef<str>,
