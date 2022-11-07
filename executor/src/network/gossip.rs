@@ -2,7 +2,7 @@ mod node_collection;
 
 use std::{
     collections::{HashMap, HashSet},
-    fmt::Display,
+    fmt::{Debug, Display},
     net::IpAddr,
     pin::Pin,
     time::{Duration, SystemTime},
@@ -50,7 +50,20 @@ macro_rules! error {
     ($state:expr, $($arg:tt)+) => (log::error!(target: &$state.log_target, $($arg)+))
 }
 
-pub type NodeHash = u128;
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NodeHash(pub [u8; 32]);
+
+impl Display for NodeHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", base64::encode(self.0))
+    }
+}
+
+impl Debug for NodeHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self, f)
+    }
+}
 
 /// A node in the network.
 /// Assumed to run all services (executor, gateway, DB, etc.) for now.
@@ -99,7 +112,7 @@ impl NodeAddress {
     }
 
     pub fn get_hash(&self) -> NodeHash {
-        stable_hash::fast_stable_hash(self)
+        NodeHash(stable_hash::crypto_stable_hash(self))
     }
 }
 
@@ -667,26 +680,23 @@ fn receive_message(
 
         GossipProtocolMessage::Goodbye(node_address) => {
             let hash = node_address.get_hash();
-            match state.node_collection.remove(&hash) {
-                Some(node) => {
-                    let info = node.into_info();
+            if let Some(node) = state.node_collection.remove(&hash) {
+                // Goodbyes are replicated, so we may get them many times
+                let info = node.into_info();
 
-                    debug!(state, "Goodbye from node {}", info.address);
+                debug!(state, "Goodbye from node {}", info.address);
 
-                    state
-                        .notification_channel
-                        .send(GossipNotification::NodeDied(info.address, true));
+                state
+                    .notification_channel
+                    .send(GossipNotification::NodeDied(info.address, true));
 
-                    if let Err(f) = send_protocol_message(
-                        GossipProtocolMessage::Goodbye(node_address),
-                        state,
-                        vec![], // We already removed the peer, so no need to filter again
-                    ) {
-                        error!(state, "Failed to replicate heartbeat due to {f}");
-                    }
+                if let Err(f) = send_protocol_message(
+                    GossipProtocolMessage::Goodbye(node_address),
+                    state,
+                    vec![], // We already removed the peer, so no need to filter again
+                ) {
+                    error!(state, "Failed to replicate goodbye due to {f}");
                 }
-
-                None => (), // Goodbyes are replicated, so we may get them many times
             }
         }
     }
@@ -908,7 +918,7 @@ fn promote_random_to_permanent_peer(state: &mut GossipState, rng: &mut ThreadRng
     Ok(())
 }
 
-fn disconnect(state: &mut GossipState, hash: u128) -> Option<Node> {
+fn disconnect(state: &mut GossipState, hash: NodeHash) -> Option<Node> {
     if let Some(node) = state.node_collection.remove(&hash) {
         if let Node::Peer(peer) = &node {
             state

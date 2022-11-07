@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
+base58 = "0.2"
 base64 = "0.13"
 bytes = "1.2"
 clap = { version = "4.0", features = ["derive"] }
@@ -12,7 +13,6 @@ log = "0.4"
 protobuf = "3.2"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
-uuid = { version = "1.1", features = ["serde"] }
 
 [build-dependencies]
 protobuf-codegen = "3.2"

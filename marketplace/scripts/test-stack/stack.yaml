@@ -1,0 +1,16 @@
+name: my_stack
+version: 0.1
+services:
+  - type: Database
+    name: my_db
+  - type: Function
+    name: my_function
+    binary: http://localhost:8080/test-function.wasm
+    runtime: wasi1.0
+    env: {}
+  - type: Gateway
+    name: my_gateway
+    endpoints:
+      /req:
+        - method: post
+          route_to: my_function

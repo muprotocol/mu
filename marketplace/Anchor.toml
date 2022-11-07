@@ -1,14 +1,16 @@
 [features]
 seeds = false
 [programs.localnet]
-marketplace = "9YNk2WSJ4rXsvJFM2teXJhJ2LZL3XDUPP2FAiNuGsFtx"
+marketplace = "2MZLka8nfoAf1LKCCbgCw5ZXfpMbKGDuLjQ88MNMyti2"
 
 [registry]
 url = "https://anchor.projectserum.com"
 
 [provider]
 cluster = "localnet"
-wallet = "/home/vscode/.config/solana/id.json"
+wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "npm run test"
+deploy-empty = "npx ts-node ./scripts/cmd-deploy-empty.ts"
+deploy-test-stack = "npx ts-node ./scripts/cmd-deploy-test-stack.ts"

@@ -122,9 +122,9 @@ impl RuntimeState {
             };
 
             let mut hash_array = Vec::with_capacity(function_id.function_name.len() + 16); // Uuid is 16 bytes
-            hash_array.extend_from_slice(&function_id.stack_id.0.to_bytes_le()); //This is bad, should
-                                                                                 //use a method on
-                                                                                 //StackID
+            hash_array.extend_from_slice(function_id.stack_id.get_bytes()); //This is bad, should
+                                                                            //use a method on
+                                                                            //StackID
             hash_array.extend_from_slice(function_id.function_name.as_bytes());
             let hash = wasmer_cache::Hash::generate(&hash_array);
             self.hashkey_dict.insert(function_id.clone(), hash);
