@@ -1,6 +1,6 @@
 use anchor_client::{
     solana_client::rpc_config::RpcSendTransactionConfig,
-    solana_sdk::{pubkey::Pubkey, signer::Signer, system_program, sysvar},
+    solana_sdk::{pubkey::Pubkey, system_program, sysvar},
 };
 use anyhow::{Context, Result};
 use clap::{Args, Parser};
@@ -47,7 +47,7 @@ pub fn execute(config: Config, sub_command: Command) -> Result<()> {
 fn create(config: Config, args: CreateArgs) -> Result<()> {
     let client = config.build_marketplace_client()?;
 
-    let provider_keypair = config.payer_kp()?;
+    let provider_keypair = config.get_signer()?;
 
     let (state_pda, mu_state) = client.get_mu_state()?;
 
@@ -75,7 +75,7 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
         .request()
         .accounts(accounts)
         .args(marketplace::instruction::CreateProvider { name: args.name })
-        .signer(&provider_keypair)
+        .signer(provider_keypair.as_ref())
         .send_with_spinner_and_config(RpcSendTransactionConfig {
             // TODO: what's preflight and what's a preflight commitment?
             skip_preflight: cfg!(debug_assertions),

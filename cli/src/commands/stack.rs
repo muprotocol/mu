@@ -5,7 +5,7 @@ use anchor_client::{
         rpc_config::RpcSendTransactionConfig,
         rpc_filter::{Memcmp, MemcmpEncodedBytes, MemcmpEncoding, RpcFilterType},
     },
-    solana_sdk::{pubkey::Pubkey, signer::Signer, system_program},
+    solana_sdk::{pubkey::Pubkey, system_program},
 };
 use anyhow::{Context, Result};
 use clap::{Args, Parser};
@@ -57,7 +57,7 @@ pub fn execute(config: Config, cmd: Command) -> Result<()> {
 
 pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
     let client = config.build_marketplace_client()?;
-    let user_wallet = config.payer_kp()?;
+    let user_wallet = config.get_signer()?;
 
     let mut filters = vec![
         RpcFilterType::Memcmp(Memcmp {
@@ -123,7 +123,7 @@ pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
         .context("Failed to serialize stack to binary format")?;
 
     let client = config.build_marketplace_client()?;
-    let user_wallet = config.payer_kp()?;
+    let user_wallet = config.get_signer()?;
 
     let stack_pda = client.get_stack_pda(user_wallet.pubkey(), cmd.region, cmd.seed);
 
@@ -143,7 +143,7 @@ pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
             stack_data: proto.to_vec(),
             name,
         })
-        .signer(&user_wallet)
+        .signer(user_wallet.as_ref())
         .send_with_spinner_and_config(RpcSendTransactionConfig {
             // TODO: what's preflight and what's a preflight commitment?
             skip_preflight: cfg!(debug_assertions),

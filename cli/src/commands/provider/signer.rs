@@ -35,7 +35,7 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
 
     let (_, mu_state) = client.get_mu_state()?;
 
-    let provider_keypair = config.payer_kp()?;
+    let provider_keypair = config.get_signer()?;
 
     let provider_token_account =
         client.get_provider_token_account(provider_keypair.pubkey(), &mu_state);
@@ -70,7 +70,7 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
             signer: signer_keypair.pubkey(),
             token_account: provider_token_account,
         })
-        .signer(&provider_keypair)
+        .signer(provider_keypair.as_ref())
         .send_with_spinner_and_config(RpcSendTransactionConfig {
             // TODO: what's preflight and what's a preflight commitment?
             skip_preflight: cfg!(debug_assertions),

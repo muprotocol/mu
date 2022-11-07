@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use anchor_client::{solana_sdk::pubkey::Pubkey, Program};
 use anyhow::Result;
 use marketplace::MuState;
@@ -14,9 +12,9 @@ pub struct MarketplaceClient {
 impl MarketplaceClient {
     /// Create new Solana client with provided config
     pub fn new(config: &Config) -> Result<Self> {
-        let payer = config.payer_kp()?;
+        let payer = config.get_signer()?;
         Ok(Self {
-            program: anchor_client::Client::new(config.cluster.clone(), Rc::new(payer))
+            program: anchor_client::Client::new(config.cluster.clone(), payer)
                 .program(config.program_id), // TODO: use program ID from marketplace package, handle dev v.s. prod there
         })
     }

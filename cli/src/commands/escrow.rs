@@ -5,9 +5,7 @@ use anchor_client::{
         rpc_config::RpcSendTransactionConfig,
         rpc_request::RpcError,
     },
-    solana_sdk::{
-        program_pack::Pack, pubkey::Pubkey, signer::Signer, system_program, sysvar::rent,
-    },
+    solana_sdk::{program_pack::Pack, pubkey::Pubkey, system_program, sysvar::rent},
 };
 use anyhow::{Context, Result};
 use clap::{Args, Parser};
@@ -56,7 +54,7 @@ pub fn execute(config: Config, cmd: Command) -> Result<()> {
 pub fn execute_create(config: Config, cmd: CreateEscrowCommand) -> Result<()> {
     let client = config.build_marketplace_client()?;
 
-    let user_wallet = config.payer_kp()?;
+    let user_wallet = config.get_signer()?;
 
     let (mu_state_pda, mu_state) = client.get_mu_state()?;
 
@@ -78,7 +76,7 @@ pub fn execute_create(config: Config, cmd: CreateEscrowCommand) -> Result<()> {
         .request()
         .accounts(accounts)
         .args(marketplace::instruction::CreateProviderEscrowAccount {})
-        .signer(&user_wallet)
+        .signer(user_wallet.as_ref())
         .send_with_spinner_and_config(RpcSendTransactionConfig {
             // TODO: what's preflight and what's a preflight commitment?
             skip_preflight: cfg!(debug_assertions),
@@ -102,7 +100,7 @@ pub fn execute_recharge(config: Config, cmd: RechargeEscrowCommand) -> Result<()
     let recharge_amount =
         (cmd.recharge_amount * 10u64.pow(mint.decimals as u32) as f64).floor() as u64;
 
-    let user_wallet = config.payer_kp()?;
+    let user_wallet = config.get_signer()?;
     let user_token_account = get_associated_token_address(&user_wallet.pubkey(), &mu_state.mint);
 
     let escrow_pda = client.get_escrow_pda(&user_wallet.pubkey(), &cmd.provider);
@@ -118,7 +116,7 @@ pub fn execute_recharge(config: Config, cmd: RechargeEscrowCommand) -> Result<()
             &[&user_wallet.pubkey()],
             recharge_amount,
         )?)
-        .signer(&user_wallet)
+        .signer(user_wallet.as_ref())
         .send_with_spinner_and_config(RpcSendTransactionConfig {
             // TODO: what's preflight and what's a preflight commitment?
             skip_preflight: cfg!(debug_assertions),
@@ -142,7 +140,7 @@ pub fn execute_recharge(config: Config, cmd: RechargeEscrowCommand) -> Result<()
 pub fn execute_view(config: Config, cmd: ViewEscrowCommand) -> Result<()> {
     let client = config.build_marketplace_client()?;
 
-    let user_wallet = config.payer_kp()?;
+    let user_wallet = config.get_signer()?;
 
     let escrow_pda = client.get_escrow_pda(&user_wallet.pubkey(), &cmd.provider);
 

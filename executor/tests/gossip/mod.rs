@@ -12,7 +12,7 @@ use tokio::{sync::mpsc::UnboundedReceiver, time::Instant};
 // work, since modifying the intervals makes the test fail or pass rather
 // deterministically. In any case, let's ignore this test for now.
 #[test(tokio::test)]
-#[ignore]
+#[ignore = "TODO"]
 async fn test_node_discovery() {
     #[cfg(test)]
     let config = GossipConfig {
