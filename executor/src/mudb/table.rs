@@ -1,4 +1,4 @@
-use super::{types::*, Error, Result, Updater, ValueFilter};
+use super::{types::*, Result, Updater, ValueFilter};
 
 #[derive(Debug, Clone)]
 pub struct Table {
@@ -12,9 +12,9 @@ impl Table {
 
     pub fn insert_one(&self, key: Key, value: Value) -> Result<Key> {
         self.inner
-            .compare_and_swap(key.clone(), None as Option<&[u8]>, Some(value))?
-            .map(|_| key.clone())
-            .map_err(|_| Error::KeyAlreadyExist(key))
+            .insert(key.clone(), value)
+            .map(|_| key)
+            .map_err(Into::into)
     }
 
     fn partial_find<T: Default>(
@@ -172,20 +172,6 @@ mod test {
         assert_eq!(res, Ok(Key::from("ex::1")));
     }
 
-    #[test]
-    #[serial]
-    fn insert_one_r_err_key_already_exist_w_happen() {
-        let (table_1, _) = init_table();
-
-        let key = Key::from("ex::1");
-        let value = Value::from(json!("VALUE1"));
-
-        table_1.insert_one(key.clone(), value.clone()).unwrap();
-        // again insert
-        // let res = table_1.insert_one(key.clone(), value.clone());
-        // assert_eq!(res, Err(Error::KeyAlreadyExist(key)));
-    }
-
     // find
 
     #[test]
@@ -319,6 +305,23 @@ mod test {
             .try_into()
             .expect("filter error"),
         );
+    }
+
+    // find + insert
+
+    #[test]
+    #[serial]
+    fn insert_one_r_ok_and_update_to_last_value_w_happen_mulipletime() {
+        let (table_1, _) = init_table();
+
+        let res = table_1.insert_one("ex::2".into(), json!("VALUE1").into());
+        assert_eq!(res, Ok(Key::from("ex::2")));
+
+        let res = table_1.insert_one("ex::2".into(), json!("VALUE2").into());
+        assert_eq!(res, Ok(Key::from("ex::2")));
+
+        let res = table_1.find(KeyFilter::Exact("ex::2".into()), ValueFilter::none());
+        assert_eq!(*res.unwrap()[0].1, json!("VALUE2"));
     }
 
     // update

@@ -139,7 +139,6 @@ async fn step(_: MailBox, msg: Message, mut state: State) -> State {
     match msg {
         Message::CreateDb(manager, conf, rcr) => {
             let join_res = ::tokio::task::spawn_blocking(move || create_db(manager, conf)).await;
-            dbg!(&join_res);
             flatten_result!(join_res, rcr, |_| ())
         }
         Message::DropDb(manager, name, rcr) => {
