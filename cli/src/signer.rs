@@ -199,7 +199,7 @@ fn parse_signer_source<S: AsRef<str>>(source: S) -> Result<SignerSource, SignerS
                     _ => {
                         #[cfg(target_family = "windows")]
                         // On Windows, an absolute path's drive letter will be parsed as the URI
-                        // scheme. Assume a filepath source in case of a single character shceme.
+                        // scheme. Assume a filepath source in case of a single character scheme.
                         if scheme.len() == 1 {
                             return Ok(SignerSource::new(SignerSourceKind::Filepath(source)));
                         }

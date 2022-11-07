@@ -19,7 +19,7 @@ util.asyncMain(async () => {
 
     let userWallet = await readOrCreateUserWallet(mu, 1);
 
-    console.log("Dploying stack");
+    console.log("Deploying stack");
 
     let protoBytes = stackUtil.yamlToProto(path.resolve(__dirname, "test-stack/stack.yaml"));
     let stack = await deployStack(mu, userWallet.keypair, region, Buffer.from(protoBytes), stackSeed, "test stack");

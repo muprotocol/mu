@@ -97,9 +97,9 @@ async fn can_run_multiple_instance_of_the_same_function() {
 
     let instance_2 =
         runtime
-            .invoke_function(projects[0].id.clone(), make_request("Morphius"))
+            .invoke_function(projects[0].id.clone(), make_request("Morpheus"))
             .then(|r| async move {
-                assert_eq!("Hello Morphius, welcome to MuRuntime", r.unwrap().0.body)
+                assert_eq!("Hello Morpheus, welcome to MuRuntime", r.unwrap().0.body)
             });
 
     let instance_3 = runtime

@@ -81,7 +81,7 @@ impl Manager {
     }
 
     // TODO: write test
-    /// read database config from database descriptiont table
+    /// read database config from database descriptions table
     pub fn get_db_conf(&self, name: &str) -> Result<Option<ConfigInner>> {
         Ok(self
             .ddt
@@ -277,11 +277,11 @@ mod test {
 
     #[tokio::test]
     #[serial]
-    async fn create_db_r_err_already_exist_w_redundent() {
+    async fn create_db_r_err_already_exist_w_redundant() {
         let manager = init().await;
         seed(&manager).await;
 
-        // redundent due to seed
+        // redundant due to seed
         let conf = ConfigInner {
             database_id: TEST_DB.into(),
             ..Default::default()
