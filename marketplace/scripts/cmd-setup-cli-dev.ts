@@ -1,8 +1,16 @@
+// Set up a validator for developing the CLI:
+// * Deploy the smart contract
+// * Create and fund a provider wallet
+// * Create and fund a developer wallet
+
 import { existsSync } from "fs";
 import path from "path";
-import promptSync from "prompt-sync";
 import { TmuxSession } from "./tmux";
 import util from "./util"
+import promptSync from "prompt-sync";
+import { canConnectToLocalValidator } from "./anchor-utils";
+import { env } from "process";
+import { homedir } from "os";
 
 util.asyncMain(async () => {
     if (existsSync("test-ledger")) {
@@ -20,21 +28,30 @@ util.asyncMain(async () => {
     let sessionName = `mu_marketplace_${Date.now()}`;
     console.log(`Starting tmux session ${sessionName}`);
     console.log("Starting local Solana validator");
-    let tmuxSession = new TmuxSession(sessionName, "solana-test-validator");
+    // TODO: swap tmux out for running the processes as children directly
+    let tmuxSession = new TmuxSession(
+        sessionName,
+        "RUST_LOG=warn solana-test-validator --log"
+    );
 
     console.log("Waiting for validator to start");
     util.waitUntilPortUsed(8899);
-    // Wait an additional 2 seconds for the node to become healthy
-    await util.sleep(2);
+    env.ANCHOR_WALLET = path.resolve(homedir(), ".config/solana/id.json");
+    while (!(await canConnectToLocalValidator())) {
+        await util.sleep(0.5);
+    }
 
     console.log("Deploying Mu smart contract");
     tmuxSession.splitWindow(
         `export BROWSER='' ANCHOR_WALLET='~/.config/solana/id.json' && ` +
-        `cd ${process.cwd()} && ` +
+        `cd '${process.cwd()}' && ` +
         `npx ts-node ${path.resolve(__dirname, "deploy-contract.ts")} && ` +
         `npx ts-node ${path.resolve(__dirname, "initialize-mu.ts")} && ` +
+        `npx ts-node ${path.resolve(__dirname, "fund-wallet.ts")} cli_provider && ` +
+        `npx ts-node ${path.resolve(__dirname, "fund-wallet.ts")} cli_dev && ` +
+        `npx ts-node ${path.resolve(__dirname, "create-wallet.ts")} cli_signer && ` +
         `echo Done && ` +
-        `sleep 5`,
+        `sleep 10`,
         0,
         true);
 

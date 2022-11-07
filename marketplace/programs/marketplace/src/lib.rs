@@ -3,12 +3,6 @@ use anchor_spl::token::{Mint, Token, TokenAccount, Transfer};
 
 declare_id!("2MZLka8nfoAf1LKCCbgCw5ZXfpMbKGDuLjQ88MNMyti2");
 
-#[error_code]
-pub enum Errors {
-    #[msg("Name can't be more than 20 chars")]
-    NameTooLong,
-}
-
 fn calc_usage(rates: &ServiceUnits, usage: &ServiceUnits) -> u64 {
     rates.bandwidth * usage.bandwidth
         + rates.gateway_mreqs * usage.gateway_mreqs
@@ -50,10 +44,6 @@ pub mod marketplace {
         let transfer_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), transfer);
         anchor_spl::token::transfer(transfer_ctx, 100)?;
 
-        if name.len() > 20 {
-            return err!(Errors::NameTooLong);
-        }
-
         ctx.accounts.provider.set_inner(Provider {
             account_type: MuAccountType::Provider as u8,
             name,
@@ -68,6 +58,7 @@ pub mod marketplace {
         ctx: Context<CreateStack>,
         stack_seed: u64,
         stack_data: Vec<u8>,
+        name: String,
     ) -> Result<()> {
         ctx.accounts.stack.set_inner(Stack {
             account_type: MuAccountType::Stack as u8,
@@ -77,6 +68,7 @@ pub mod marketplace {
             seed: stack_seed,
             revision: 1,
             bump: *ctx.bumps.get("stack").unwrap(),
+            name,
         });
 
         Ok(())
@@ -201,8 +193,8 @@ pub struct Initialize<'info> {
 #[account]
 pub struct Provider {
     pub account_type: u8, // See MuAccountType
-    pub name: String,
     pub owner: Pubkey,
+    pub name: String,
     pub bump: u8,
 }
 
@@ -314,21 +306,22 @@ pub struct Stack {
     pub account_type: u8, // See MuAccountType
     pub user: Pubkey,
     pub region: Pubkey,
-    pub stack: Vec<u8>,
     pub seed: u64,
     pub revision: u32,
     pub bump: u8,
+    pub name: String,
+    pub stack: Vec<u8>,
 }
 
 #[derive(Accounts)]
-#[instruction(stack_seed: u64, stack_data: Vec<u8>)]
+#[instruction(stack_seed: u64, stack_data: Vec<u8>, name: String)]
 pub struct CreateStack<'info> {
     pub region: Account<'info, ProviderRegion>,
 
     #[account(
         init,
         payer = user,
-        space = 8 + 1 + 32 + 32 + 4 + stack_data.len() + 8 + 4 + 1,
+        space = 8 + 1 + 32 + 32 + 8 + 4 + 1 + 4 + name.len() + 4 + stack_data.len(),
         seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_le_bytes().as_ref()],
         bump
     )]
@@ -336,9 +329,7 @@ pub struct CreateStack<'info> {
 
     #[account(mut)]
     pub user: Signer<'info>,
-
     pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,
 }
 
 #[account]

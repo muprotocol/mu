@@ -6,6 +6,7 @@ import { Keypair, LAMPORTS_PER_SOL, Transaction, SystemProgram, PublicKey } from
 import * as spl from '@solana/spl-token';
 import path from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
+import { json } from "stream/consumers";
 
 export const canConnectToLocalValidator = async () => {
 	try {
@@ -44,10 +45,13 @@ export const readOrCreateKeypair = (name?: string): Keypair => {
 		return Keypair.generate();
 	}
 
-	let walletPath = path.join(__dirname, "test-wallets", name);
+	let walletPath = path.join(__dirname, "test-wallets", name + ".json");
 	if (existsSync(walletPath)) {
 		try {
-			let bytes: Uint8Array = readFileSync(walletPath);
+			let content: Uint8Array = readFileSync(walletPath);
+			let text = Buffer.from(content).toString();
+			let json = JSON.parse(text);
+			let bytes = Uint8Array.from(json);
 			let wallet = Keypair.fromSecretKey(bytes);
 			return wallet;
 		} catch (e) {
@@ -57,7 +61,8 @@ export const readOrCreateKeypair = (name?: string): Keypair => {
 
 	let keypair = Keypair.generate(); // anchor.Wallet has no constructor
 	console.log(`Generated keypair ${name}, public key is:`, keypair.publicKey.toBase58());
-	writeFileSync(walletPath, keypair.secretKey);
+	let secretkey = Array.from(keypair.secretKey);
+	writeFileSync(walletPath, JSON.stringify(secretkey));
 	return keypair;
 }
 
@@ -115,9 +120,9 @@ const createAndFundWallet = async (provider: anchor.AnchorProvider, mint: Keypai
 		wallet.publicKey
 	);
 
-	if (tokenAccount.amount < 10000) {
+	if (tokenAccount.amount < 10000_000000) { // we have 6 decimal places in the mint
 		let mintToTx = new Transaction();
-		mintToTx.add(spl.createMintToInstruction(mint.publicKey, tokenAccount.address, provider.wallet.publicKey, 10000));
+		mintToTx.add(spl.createMintToInstruction(mint.publicKey, tokenAccount.address, provider.wallet.publicKey, 10000_000000));
 		await provider.sendAndConfirm(mintToTx);
 	}
 
@@ -319,6 +324,11 @@ export interface UserWallet {
 	tokenAccount: PublicKey
 }
 
+export const readOrCreateWallet = async (mu: MuProgram, name?: string): Promise<UserWallet> => {
+	let [keypair, tokenAccount] = await createAndFundWallet(mu.anchorProvider, mu.mint, name);
+	return { keypair, tokenAccount };
+}
+
 export const readOrCreateUserWallet = async (mu: MuProgram, userIndex?: number): Promise<UserWallet> => {
 	let [keypair, tokenAccount] = await createAndFundWallet(mu.anchorProvider, mu.mint, userIndex === undefined ? undefined : `user_${userIndex}`);
 	return { keypair, tokenAccount };
@@ -385,6 +395,7 @@ export const deployStack = async (
 	region: MuRegionInfo,
 	stack: Buffer,
 	stackSeed: number,
+	name: string
 ): Promise<MuStackInfo> => {
 	const stack_seed = new anchor.BN(stackSeed);
 	const pda = publicKey.findProgramAddressSync(
@@ -400,6 +411,7 @@ export const deployStack = async (
 		mu.program.methods.createStack(
 			stack_seed,
 			stack,
+			name
 		).accounts({
 			user: userWallet.publicKey,
 			stack: pda,
