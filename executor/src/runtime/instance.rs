@@ -7,7 +7,8 @@ use super::{
 use crate::mudb::service::DatabaseManager;
 use anyhow::{bail, Result};
 use bytes::BufMut;
-use futures::Future;
+use core::future::Future;
+use log::trace;
 use std::{
     collections::HashMap,
     io::{BufRead, Write},
@@ -88,9 +89,19 @@ impl Instance<Loaded> {
 }
 
 impl Instance<Running> {
-    pub fn is_finished(&self) -> bool {
-        // TODO self.state.handle.join_handle.is_finished()
-        false
+    pub fn is_finished(&mut self) -> bool {
+        let is_finished = self.state.handle.is_finished();
+        trace!(
+            "Instance {:?} status is {}",
+            self.id,
+            if is_finished {
+                "finished"
+            } else {
+                "still running "
+            }
+        );
+
+        is_finished
     }
 
     fn write_to_stdin(&mut self, input: Message) -> Result<()> {
@@ -113,14 +124,31 @@ impl Instance<Running> {
         }
     }
 
+    //TODO:
+    // The case when we are waiting for function's respond and function is exited is not covered.
+    // and there should be a timeout for the amount of time we are waiting for function response.
     pub fn request(
         mut self,
         request: Message,
     ) -> Result<impl Future<Output = Result<(GatewayResponse, FunctionUsage)>>> {
-        //TODO: check function state
+        trace!(
+            "Running function `{}` instance `{}`",
+            self.id.function_id,
+            self.id.instance_id
+        );
+
+        if self.is_finished() {
+            trace!(
+                "Instance {:?} is already exited before sending request",
+                self.id
+            );
+            return Err(Error::FunctionEarlyExit(self.id)).map_err(Into::into);
+        }
+
         self.write_to_stdin(request)?;
         loop {
             if self.is_finished() {
+                trace!("Instance {:?} exited early", self.id);
                 return Err(Error::FunctionEarlyExit(self.id)).map_err(Into::into);
             }
 
