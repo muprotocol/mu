@@ -155,12 +155,12 @@ pub(super) async fn deploy(
         .await
         .unwrap_or(());
 
-    let prefix = format!("{id}_");
-    for db_id in db_service.query_db_by_prefix(&prefix).unwrap_or_default() {
-        if !db_ids.contains(&db_id) {
-            db_service.drop_db(&db_id).await.unwrap_or(());
-        }
-    }
+    let _prefix = format!("{id}_");
+    // for db_id in db_service.query_db_by_prefix(&prefix).unwrap_or_default() {
+    //     if !db_ids.contains(&db_id) {
+    //         db_service.drop_db(&db_id).await.unwrap_or(());
+    //     }
+    // }
 
     let existing_function_names = runtime.get_function_names(id).await.unwrap_or_default();
     let mut functions_to_delete = vec![];

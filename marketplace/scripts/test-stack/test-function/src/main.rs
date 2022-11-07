@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -81,7 +81,7 @@ struct FindRequest {
     db_name: String,
     table_name: String,
     key_filter: KeyFilter,
-    value_filter: Option<Filter>,
+    value_filter: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -96,29 +96,14 @@ pub type Item = (Key, String);
 
 #[derive(Debug, Deserialize)]
 pub enum DbResponse {
-    CreateTable(Result<CreateTableOutput, String>),
-    Find(Result<FindItemOutput, String>),
-    Insert(Result<InsertOneItemOutput, String>),
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateTableOutput {
-    pub table_description: TableDescription,
+    CreateTable(Result<TableDescription, String>),
+    Find(Result<Vec<Item>, String>),
+    Insert(Result<Key, String>),
 }
 
 #[derive(Debug, Deserialize)]
 pub struct TableDescription {
     pub table_name: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct InsertOneItemOutput {
-    pub key: Key,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct FindItemOutput {
-    pub items: Vec<Item>,
 }
 
 fn send_message<T: Serialize>(msg: T, msg_type: &str, id: Option<u32>) {
@@ -217,7 +202,7 @@ fn main() {
         db_name: "my_db".into(),
         table_name: "visitors".into(),
         key_filter: KeyFilter::Exact("count".into()),
-        value_filter: None,
+        value_filter: json!({}).to_string(),
     }));
 
     // Note: don't do this, doesn't support concurrent requests, will mess up the counter under load
@@ -226,11 +211,11 @@ fn main() {
         .map_err(|e| log(e.to_string()))
         .unwrap();
 
-    let mut current = if let DbResponse::Find(Ok(out)) = find_response {
-        if out.items.is_empty() {
+    let mut current: u64 = if let DbResponse::Find(Ok(out)) = find_response {
+        if out.is_empty() {
             0u64
         } else {
-            out.items[0].1.parse().unwrap_or_default()
+            serde_json::from_str(&out[0].1).unwrap()
         }
     } else {
         panic!("Unexpected DB output: {:?}", find_response);
@@ -244,7 +229,7 @@ fn main() {
         db_name: "my_db".into(),
         table_name: "visitors".into(),
         key: "count".into(),
-        value: current.to_string(),
+        value: json!(current).to_string(),
     }));
 
     let db_resp_msg = read_stdin(&log);
@@ -253,7 +238,7 @@ fn main() {
         .unwrap();
 
     let body = format!(
-        "Hello, {}! You are visitor number {}.",
+        "Hello, {}! You are visitor number {}",
         request.data, current
     );
     response(body);
