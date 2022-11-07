@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::{debug, error, info, trace, warn};
 use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel};
+use num::BigInt;
 use serde::Deserialize;
 
 use crate::{
@@ -602,16 +603,20 @@ fn get_closest_node<'a>(
     my_hash: NodeHash,
     others: impl Iterator<Item = &'a NodeHash>,
 ) -> GetClosestNodeResult {
+    fn to_bigint(x: &[u8; 32]) -> BigInt {
+        BigInt::from_bytes_le(num::bigint::Sign::Plus, x)
+    }
+
     trace!("Determining closest node to {id}");
 
-    let id_u128 = u128::from_le_bytes(*id.0.as_bytes());
+    let id_int = to_bigint(id.get_bytes());
 
-    let mut min_distance = id_u128 ^ my_hash;
-    trace!("Distance to self: {min_distance}");
+    let mut min_distance = id_int.clone() ^ to_bigint(&my_hash.0);
+    trace!("Distance to self: {min_distance:?}");
     let mut result = GetClosestNodeResult::Me;
 
     for hash in others {
-        let distance = id_u128 ^ hash;
+        let distance = id_int.clone() ^ to_bigint(&hash.0);
         trace!("Distance to {hash}: {distance}");
         if distance < min_distance {
             min_distance = distance;

@@ -6,6 +6,7 @@ use mu::{
     runtime::{start, types::*, Runtime},
 };
 use mu_stack::{self, FunctionRuntime, StackID};
+use rand::Rng;
 use serial_test::serial;
 use std::{
     collections::HashMap,
@@ -14,7 +15,6 @@ use std::{
 };
 use tokio::fs;
 use utils::{clean_wasm_project, compile_wasm_project};
-use uuid::Uuid;
 
 use crate::runtime::utils::create_db_if_not_exist;
 
@@ -51,10 +51,10 @@ async fn read_wasm_projects(
 ) -> Result<HashMap<FunctionID, FunctionDefinition>> {
     let mut results = HashMap::new();
 
-    for (_, path) in projects {
+    for (func_name, path) in projects {
         let id = FunctionID {
-            stack_id: StackID(Uuid::new_v4()),
-            function_name: "my_func".into(),
+            stack_id: StackID::SolanaPublicKey(rand::thread_rng().gen()),
+            function_name: func_name,
         };
         let source = fs::read(&path).await?.into();
 
@@ -199,6 +199,35 @@ async fn can_run_multiple_instance_of_the_same_function() {
 
     tokio::join!(instance_1, instance_2, instance_3);
     println!("All instance joined");
+
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+#[serial]
+async fn test_functions_with_early_exit_are_handled() {
+    env_logger::init();
+
+    let mut projects = HashMap::new();
+    projects.insert("early-exit", Path::new("tests/runtime/funcs/early-exit"));
+
+    let (runtime, function_ids, _) = create_runtime(projects.clone()).await;
+
+    let request = gateway::Request {
+        method: mu_stack::HttpMethod::Get,
+        path: "/",
+        query: HashMap::new(),
+        headers: Vec::new(),
+        data: "Are You There?",
+    };
+
+    match runtime
+        .invoke_function(function_ids[0].clone(), request)
+        .await
+    {
+        Err(e) => assert!(e.to_string().contains("Function exited early")),
+        _ => panic!("Early exit function should fail to run"),
+    }
 
     runtime.shutdown().await.unwrap();
 }

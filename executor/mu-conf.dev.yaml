@@ -13,3 +13,10 @@ log:
       level: off
     - module: wasmer_compiler_cranelift::translator::func_translator
       level: off
+blockchain_monitor:
+  solana_cluster_rpc_url: http://127.0.0.1:8899/
+  solana_cluster_pub_sub_url: ws://127.0.0.1:8900/
+  solana_provider_public_key: 9pezZJ6JK3f7Sn1ycodPTBXAMDuAphCragQ3dGM6Nv2i
+  solana_region_number: 1
+  solana_usage_signer_private_key: 4GhpeXmHAsQW1K29Q3PBuKzq7fdQzAQS4Bsh5uP3oev1HvZg3tEgT8nZpYAVVikBdKtWGauYBXBDGCeseqyM9R4p
+  solana_min_escrow_balance: 50

@@ -13,6 +13,7 @@ util.asyncMain(async () => {
 
     console.log("Creating provider");
     let provider = await createProvider(mu, "IB", true);
+    console.log(`Provider pubkey: ${provider.pda.toBase58()}`);
 
     console.log("Creating region and usage signer");
     let serviceRates: ServiceUnits = {
@@ -22,5 +23,8 @@ util.asyncMain(async () => {
         gateway_mreqs: 100
     };
     let region = await createRegion(mu, provider, "MiddleEarth", 1, serviceRates, 1);
-    await createAuthorizedUsageSigner(mu, provider, region, "usage_signer");
+    console.log(`Region pubkey: ${region.pda.toBase58()}`);
+
+    let usageSigner = await createAuthorizedUsageSigner(mu, provider, region, "usage_signer");
+    console.log(`Usage signer pubkey: ${usageSigner.pda.toBase58()}`);
 });

@@ -83,7 +83,7 @@ impl<T: Send + 'static> PlainMailboxProcessor<T> {
     pub fn start<Body, Fut>(body: Body, buffer_size: usize) -> PlainMailboxProcessor<T>
     where
         Fut: Future<Output = ()> + Send + 'static,
-        Body: FnOnce(PlainMailboxProcessor<T>, MessageReceiver<T>) -> Fut + Send + Sync + 'static,
+        Body: FnOnce(PlainMailboxProcessor<T>, MessageReceiver<T>) -> Fut + Send + 'static,
     {
         let (tx, rx) = mpsc::channel(buffer_size);
 

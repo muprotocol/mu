@@ -233,7 +233,7 @@ async fn mailbox_step(
                 }
 
                 let mut hash_array = Vec::with_capacity(f.id.function_name.len() + 16); // Uuid is 16 bytes
-                hash_array.extend_from_slice(f.id.stack_id.0.as_bytes());
+                hash_array.extend_from_slice(f.id.stack_id.get_bytes());
                 hash_array.extend_from_slice(f.id.function_name.as_bytes());
                 let hash = wasmer_cache::Hash::generate(&hash_array);
                 runtime.hashkey_dict.insert(f.id.clone(), hash);

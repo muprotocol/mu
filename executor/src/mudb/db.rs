@@ -43,10 +43,13 @@ impl Db {
         // save schema
         // check and if table_schema was sets before,
         // return err `TableAlreadyExist`
-        self.tdt
-            .insert_one(table_name.clone().into(), td.clone().into())
-            .map_err(|_| Error::TableAlreadyExist(table_name.to_string()))
-            .map(|_| (table, td))
+        if self.is_table_exists(table_name.clone())? {
+            Err(Error::TableAlreadyExist(table_name.to_string()))
+        } else {
+            self.tdt
+                .insert_one(table_name.into(), td.clone().into())
+                .map(|_| (table, td))
+        }
     }
 
     pub fn get_table(&self, table_name: TableNameInput) -> Result<Table> {
