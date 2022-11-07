@@ -15,7 +15,7 @@ use dyn_clonable::clonable;
 use log::*;
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
 use mu_stack::StackID;
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
 
@@ -67,51 +67,76 @@ struct RuntimeState {
     function_provider: Box<dyn FunctionProvider>,
     hashkey_dict: HashMap<FunctionID, wasmer_cache::Hash>,
     cache: FileSystemCache,
-    store: Store, // We only need this store for it's configuration
-    db_service: DatabaseManager,
+    database_service: Arc<DatabaseManager>,
 }
 
 impl RuntimeState {
     pub async fn new(
         function_provider: Box<dyn FunctionProvider>,
         cache_path: &Path,
-        db_service: DatabaseManager,
+        database_service: DatabaseManager,
     ) -> Result<Self> {
         let hashkey_dict = HashMap::new();
         let mut cache = FileSystemCache::new(cache_path).context("failed to create cache")?;
         cache.set_cache_extension(Some("wasmu"));
-        let store = create_store();
 
         Ok(Self {
             hashkey_dict,
             function_provider,
             cache,
-            store,
-            db_service,
+            database_service: Arc::new(database_service),
         })
     }
 
-    fn load_module(&mut self, function_id: &FunctionID) -> Result<Module> {
-        let key = self
-            .hashkey_dict
-            .get(function_id)
-            .ok_or(Error::Internal("cache key can not be found"))?
-            .to_owned();
+    fn load_module(&mut self, function_id: &FunctionID) -> Result<(Store, Module)> {
+        let store = create_store();
 
-        match unsafe { self.cache.load(&self.store, key) } {
-            Ok(module) => Ok(module),
-            Err(e) => {
-                warn!("cached module is corrupted: {}", e);
+        if self.hashkey_dict.contains_key(function_id) {
+            let key = self
+                .hashkey_dict
+                .get(function_id)
+                .ok_or(Error::Internal("cache key can not be found"))?
+                .to_owned();
+            match unsafe { self.cache.load(&store, key) } {
+                Ok(module) => Ok((store, module)),
+                Err(e) => {
+                    warn!("cached module is corrupted: {}", e);
 
-                let definition = self
-                    .function_provider
-                    .get(function_id)
-                    .ok_or_else(|| Error::FunctionNotFound(function_id.clone()))?;
+                    let definition = self
+                        .function_provider
+                        .get(function_id)
+                        .ok_or_else(|| Error::FunctionNotFound(function_id.clone()))?;
 
-                let module = Module::new(&self.store, definition.source.clone())?; //TODO: This clone should be removed once we merged PR #39
+                    let module = Module::new(&store, definition.source.clone())?;
 
-                self.cache.store(key, &module)?;
-                Ok(module)
+                    self.cache.store(key, &module)?;
+                    Ok((store, module))
+                }
+            }
+        } else {
+            let function_definition = match self.function_provider.get(function_id) {
+                Some(d) => d,
+                None => {
+                    return Err(Error::FunctionNotFound(function_id.clone())).map_err(Into::into);
+                }
+            };
+
+            let mut hash_array = Vec::with_capacity(function_id.function_name.len() + 16); // Uuid is 16 bytes
+            hash_array.extend_from_slice(function_id.stack_id.get_bytes()); //This is bad, should
+                                                                            //use a method on
+                                                                            //StackID
+            hash_array.extend_from_slice(function_id.function_name.as_bytes());
+            let hash = wasmer_cache::Hash::generate(&hash_array);
+            self.hashkey_dict.insert(function_id.clone(), hash);
+
+            if let Ok(module) = Module::from_binary(&store, &function_definition.source) {
+                if let Err(e) = self.cache.store(hash, &module) {
+                    error!("failed to cache module: {e}, function id: {}", function_id);
+                }
+                Ok((store, module))
+            } else {
+                error!("can not build wasm module for function: {}", function_id);
+                Err(Error::InvalidFunctionModule(function_id.clone())).map_err(Into::into)
             }
         }
     }
@@ -120,10 +145,17 @@ impl RuntimeState {
         let definition = self
             .function_provider
             .get(&function_id)
-            .ok_or_else(|| Error::FunctionNotFound(function_id.clone()))?;
-        let instance = Instance::new(function_id.clone(), definition.envs.clone());
-        let module = self.load_module(&function_id)?;
-        Ok(instance.load_module(module))
+            .ok_or_else(|| Error::FunctionNotFound(function_id.clone()))?
+            .to_owned();
+
+        let (store, module) = self.load_module(&function_id)?;
+        Ok(Instance::new(
+            function_id,
+            definition.envs,
+            store,
+            module,
+            self.database_service.clone(),
+        ))
     }
 }
 
@@ -196,19 +228,15 @@ pub async fn start(
 async fn mailbox_step(
     _mb: CallbackMailboxProcessor<MailboxMessage>,
     msg: MailboxMessage,
-    mut runtime: RuntimeState,
+    mut state: RuntimeState,
 ) -> RuntimeState {
     //TODO: pass metering info to blockchain_manager service
     match msg {
         MailboxMessage::InvokeFunction(req) => {
-            if let Ok(instance) = runtime.instantiate_function(req.function_id).await {
-                let db_service = runtime.db_service.clone();
+            if let Ok(instance) = state.instantiate_function(req.function_id).await {
                 tokio::spawn(async move {
                     let resp = tokio::task::spawn_blocking(move || {
-                        let instance = instance
-                            .start(db_service)
-                            .context("can not run instance")
-                            .unwrap(); //TODO: Handle Errors
+                        let instance = instance.start().context("can not run instance").unwrap(); //TODO: Handle Errors
                         instance.request(req.message)
                     })
                     .await
@@ -219,6 +247,9 @@ async fn mailbox_step(
                         Err(a) => req.reply.reply(Err(a)),
                     };
                 });
+            } else {
+                req.reply
+                    .reply(Err(Error::Internal("Can not instantiate function")).map_err(Into::into))
             }
         }
 
@@ -228,24 +259,7 @@ async fn mailbox_step(
 
         MailboxMessage::AddFunctions(functions) => {
             for f in functions {
-                if runtime.hashkey_dict.contains_key(&f.id) {
-                    continue;
-                }
-
-                let mut hash_array = Vec::with_capacity(f.id.function_name.len() + 16); // Uuid is 16 bytes
-                hash_array.extend_from_slice(f.id.stack_id.get_bytes());
-                hash_array.extend_from_slice(f.id.function_name.as_bytes());
-                let hash = wasmer_cache::Hash::generate(&hash_array);
-                runtime.hashkey_dict.insert(f.id.clone(), hash);
-
-                if let Ok(module) = Module::from_binary(&runtime.store, &f.source) {
-                    if let Err(e) = runtime.cache.store(hash, &module) {
-                        error!("failed to cache module: {e}, function id: {}", f.id);
-                    }
-                    runtime.function_provider.add_function(f);
-                } else {
-                    error!("can not build wasm module for function: {}", f.id);
-                }
+                state.function_provider.add_function(f);
             }
         }
 
@@ -256,14 +270,14 @@ async fn mailbox_step(
                     function_name,
                 };
 
-                runtime.function_provider.remove_function(&function_id);
-                runtime.hashkey_dict.remove(&function_id);
+                state.function_provider.remove_function(&function_id);
+                state.hashkey_dict.remove(&function_id);
             }
         }
 
         MailboxMessage::GetFunctionNames(stack_id, r) => {
-            r.reply(runtime.function_provider.get_function_names(&stack_id));
+            r.reply(state.function_provider.get_function_names(&stack_id));
         }
     }
-    runtime
+    state
 }

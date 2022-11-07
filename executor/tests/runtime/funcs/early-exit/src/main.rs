@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{
-    collections::HashMap,
-    io::{stdin, stdout, Write},
-};
+use std::io::{stdin, stdout, Write};
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Message {
@@ -50,6 +47,6 @@ fn main() {
         send_message(log, "Log", Some(message_counter));
     };
 
-    let msg = read_stdin();
+    let _msg = read_stdin();
     log("Eary Exit!".into());
 }
