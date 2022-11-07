@@ -66,13 +66,13 @@ pub fn start(
         get_remaining_points(&mut store, &instance)
     });
 
-    Ok(FunctionHandle {
+    Ok(FunctionHandle::new(
         join_handle,
-        is_finished: is_finished_rx,
-        io: FunctionIO {
+        is_finished_rx,
+        FunctionIO {
             stdin: BufWriter::new(stdin),
             stdout: BufReader::new(stdout),
             stderr: BufReader::new(stderr),
         },
-    })
+    ))
 }

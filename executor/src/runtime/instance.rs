@@ -90,7 +90,7 @@ impl Instance<Loaded> {
 
 impl Instance<Running> {
     pub fn is_finished(&mut self) -> bool {
-        let is_finished = self.state.handle.is_finished.try_recv().is_ok();
+        let is_finished = self.state.handle.is_finished();
         trace!(
             "Instance {:?} status is {}",
             self.id,

@@ -11,7 +11,7 @@ use std::{
     io::{BufReader, BufWriter},
     path::PathBuf,
 };
-use tokio::task::JoinHandle;
+use tokio::{sync::oneshot::error::TryRecvError, task::JoinHandle};
 use uuid::Uuid;
 use wasmer_middlewares::metering::MeteringPoints;
 use wasmer_wasi::Pipe;
@@ -108,8 +108,42 @@ pub struct FunctionIO {
 #[derive(Debug)]
 pub struct FunctionHandle {
     pub join_handle: JoinHandle<MeteringPoints>,
-    pub is_finished: tokio::sync::oneshot::Receiver<()>,
+    is_finished_rx: tokio::sync::oneshot::Receiver<()>,
+    is_finished: bool,
     pub io: FunctionIO,
+}
+
+impl FunctionHandle {
+    pub fn new(
+        join_handle: JoinHandle<MeteringPoints>,
+        is_finished_rx: tokio::sync::oneshot::Receiver<()>,
+        io: FunctionIO,
+    ) -> Self {
+        Self {
+            join_handle,
+            is_finished_rx,
+            io,
+            is_finished: false,
+        }
+    }
+
+    pub fn is_finished(&mut self) -> bool {
+        if self.is_finished {
+            true
+        } else {
+            let is_finished = match self.is_finished_rx.try_recv() {
+                // if the second half was somehow dropped without sending a value, we can still
+                // assume the function is "finished" in the sense that it's no longer running.
+                Ok(()) | Err(TryRecvError::Closed) => true,
+                Err(TryRecvError::Empty) => false,
+            };
+
+            if is_finished {
+                self.is_finished = true;
+            }
+            is_finished
+        }
+    }
 }
 
 #[derive(Deserialize, Clone)]
