@@ -5,6 +5,7 @@ use mu_cli::{execute, Args};
 use utils::create_wallet_and_associated_token_account;
 
 #[test]
+#[ignore = "Need fully functional Solana environment to run this test, not available in CI"]
 fn can_create_provider() {
     let (provider_wallet, _) = create_wallet_and_associated_token_account().unwrap();
     let provider_wallet_path = provider_wallet.path.display().to_string();
