@@ -152,7 +152,7 @@ impl<T: Send + 'static> CallbackMailboxProcessor<T> {
         ignore_error(rx.await);
     }
 
-    /// Posts a message to the mailbox without waiting for the response. Note than
+    /// Posts a message to the mailbox without waiting for the response. Note that
     /// the mailbox may be stopped and the message may never be processed at all.
     pub fn post_and_forget(&self, msg: T) {
         let sender = self.sender.to_owned();

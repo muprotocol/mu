@@ -5,6 +5,7 @@ pub mod blockchain_monitor;
 mod config_types;
 pub mod deploy;
 pub mod scheduler;
+pub mod usage_aggregator;
 
 #[derive(Clone, Debug)]
 pub struct StackWithMetadata {
