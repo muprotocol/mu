@@ -4,7 +4,7 @@
 use super::types::{FunctionID, InstanceID};
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum Error {
     #[error("Can not find function with id {0:?}")]
     FunctionNotFound(FunctionID),
@@ -23,6 +23,9 @@ pub enum Error {
 
     #[error("Function exited early: {0}")]
     FunctionAborted(InstanceID),
+
+    #[error("Function maximum memory exceeded")]
+    MaximumMemoryExceeded,
 
     #[error("Internal error: {0}")]
     Internal(&'static str),

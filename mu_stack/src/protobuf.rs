@@ -69,12 +69,13 @@ impl From<super::Stack> for Stack {
                                 .env
                                 .into_iter()
                                 .map(|(name, value)| EnvVar {
-                                    name: name,
-                                    value: value,
+                                    name,
+                                    value,
                                     ..Default::default()
                                 })
                                 .collect(),
                             runtime: convert_function_runtime(f.runtime),
+                            memoryLimit: f.memory_limit,
                             ..Default::default()
                         })),
                         ..Default::default()
@@ -159,6 +160,7 @@ impl TryFrom<Stack> for super::Stack {
                             binary: f.binary,
                             env: f.env.into_iter().map(|env| (env.name, env.value)).collect(),
                             runtime: convert_function_runtime(f.runtime)?,
+                            memory_limit: f.memoryLimit,
                         }))
                     }
                 })

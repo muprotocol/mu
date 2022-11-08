@@ -1,6 +1,6 @@
 use futures::FutureExt;
 use mu::{gateway, mudb::service::DatabaseID, runtime::types::FunctionID};
-use mu_stack::{self, StackID};
+use mu_stack::{self, KiloByte, StackID};
 use serial_test::serial;
 use std::{collections::HashMap, path::Path};
 
@@ -9,7 +9,7 @@ use crate::runtime::utils::{create_db_if_not_exist, create_runtime, Project};
 mod providers;
 mod utils;
 
-pub fn create_project(name: &'static str) -> Project {
+pub fn create_project(name: &'static str, memory_limit: Option<KiloByte>) -> Project {
     Project {
         name: name.into(),
         path: Path::new(&format!("tests/runtime/funcs/{name}")).into(),
@@ -17,13 +17,14 @@ pub fn create_project(name: &'static str) -> Project {
             stack_id: StackID::SolanaPublicKey(rand::random()),
             function_name: name.into(),
         },
+        memory_limit: memory_limit.unwrap_or(100_000), // 100 Mb
     }
 }
 
 #[tokio::test]
 #[serial]
 async fn test_simple_func() {
-    let projects = vec![create_project("hello-wasm")];
+    let projects = vec![create_project("hello-wasm", None)];
     let (runtime, ..) = create_runtime(&projects).await;
 
     let request = gateway::Request {
@@ -46,7 +47,7 @@ async fn test_simple_func() {
 #[tokio::test]
 #[serial]
 async fn can_query_mudb() {
-    let projects = vec![create_project("hello-mudb")];
+    let projects = vec![create_project("hello-mudb", None)];
     let (runtime, db_service) = create_runtime(&projects).await;
 
     let database_id = DatabaseID {
@@ -78,7 +79,7 @@ async fn can_query_mudb() {
 #[tokio::test]
 #[serial]
 async fn can_run_multiple_instance_of_the_same_function() {
-    let projects = vec![create_project("hello-wasm")];
+    let projects = vec![create_project("hello-wasm", None)];
     let (runtime, _) = create_runtime(&projects).await;
 
     let make_request = |name| gateway::Request {
@@ -116,7 +117,10 @@ async fn can_run_multiple_instance_of_the_same_function() {
 #[tokio::test]
 #[serial]
 async fn can_run_instances_of_different_functions() {
-    let projects = vec![create_project("hello-wasm"), create_project("hello-mudb")];
+    let projects = vec![
+        create_project("hello-wasm", None),
+        create_project("hello-mudb", None),
+    ];
     let (runtime, db_service) = create_runtime(&projects).await;
 
     let make_request = |name| gateway::Request {
@@ -154,7 +158,7 @@ async fn can_run_instances_of_different_functions() {
 #[tokio::test]
 #[serial]
 async fn test_functions_with_early_exit_are_handled() {
-    let projects = vec![create_project("early-exit")];
+    let projects = vec![create_project("early-exit", None)];
     let (runtime, _) = create_runtime(&projects).await;
 
     let request = gateway::Request {
@@ -172,6 +176,37 @@ async fn test_functions_with_early_exit_are_handled() {
         Err(e) => assert!(e.to_string().contains("Function exited early")),
         _ => panic!("Early exit function should fail to run"),
     }
+
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+#[serial]
+async fn functions_with_limited_memory_wont_run() {
+    let projects = vec![create_project("hello-wasm", Some(5))];
+    let (runtime, ..) = create_runtime(&projects).await;
+
+    let request = gateway::Request {
+        method: mu_stack::HttpMethod::Get,
+        path: "/get_name",
+        query: HashMap::new(),
+        headers: Vec::new(),
+        data: "Chappy",
+    };
+
+    let result = runtime
+        .invoke_function(projects[0].id.clone(), request)
+        .await;
+
+    //TODO: add assert
+    assert_eq!(
+        result
+            .err()
+            .unwrap()
+            .downcast::<mu::runtime::error::Error>()
+            .unwrap(),
+        mu::runtime::error::Error::MaximumMemoryExceeded
+    );
 
     runtime.shutdown().await.unwrap();
 }

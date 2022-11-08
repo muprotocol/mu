@@ -10,7 +10,7 @@ use mu::{
         Runtime,
     },
 };
-use mu_stack::FunctionRuntime;
+use mu_stack::{FunctionRuntime, KiloByte};
 use std::{
     collections::HashMap,
     env,
@@ -88,6 +88,7 @@ pub struct Project {
     pub id: FunctionID,
     pub name: String,
     pub path: PathBuf,
+    pub memory_limit: KiloByte,
 }
 
 impl Project {
@@ -118,7 +119,13 @@ pub async fn read_wasm_functions(
 
         results.insert(
             project.id.clone(),
-            FunctionDefinition::new(project.id.clone(), source, FunctionRuntime::Wasi1_0, []),
+            FunctionDefinition::new(
+                project.id.clone(),
+                source,
+                FunctionRuntime::Wasi1_0,
+                [],
+                project.memory_limit,
+            ),
         );
     }
 
@@ -145,7 +152,7 @@ pub async fn create_runtime(projects: &[Project]) -> (Box<dyn Runtime>, Database
         .unwrap();
 
     runtime
-        .add_functions(functions.into_iter().map(|(_, d)| d).collect())
+        .add_functions(functions.clone().into_iter().map(|(_, d)| d).collect())
         .await
         .unwrap();
 

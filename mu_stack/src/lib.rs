@@ -67,6 +67,8 @@ impl FromStr for StackID {
     }
 }
 
+pub type KiloByte = u32;
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Stack {
     pub name: String,
@@ -168,6 +170,7 @@ pub struct Function {
     pub binary: String,
     pub runtime: FunctionRuntime,
     pub env: HashMap<String, String>,
+    pub memory_limit: KiloByte,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]

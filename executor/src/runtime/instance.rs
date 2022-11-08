@@ -1,32 +1,38 @@
-use super::{
-    error::Error,
-    function,
-    message::{database::*, gateway::*, log::Log, FromMessage, Message, ToMessage},
-    types::{FunctionHandle, FunctionID, FunctionUsage, InstanceID},
-};
-use crate::mudb::service::DatabaseManager;
-use anyhow::{bail, Result};
-use bytes::BufMut;
-use core::future::Future;
-use log::trace;
 use std::{
     collections::HashMap,
     io::{BufRead, Write},
     sync::Arc,
 };
+
+use super::{
+    error::Error,
+    function,
+    memory::create_memory,
+    message::{database::*, gateway::*, log::Log, FromMessage, Message, ToMessage},
+    types::{FunctionHandle, FunctionID, FunctionUsage, InstanceID},
+};
+use crate::mudb::service::DatabaseManager;
+
+use anyhow::{bail, Result};
+use bytes::BufMut;
+use core::future::Future;
+use log::trace;
+use mu_stack::KiloByte;
 use wasmer::{CompilerConfig, Module, Store};
 use wasmer_compiler_llvm::LLVM;
 use wasmer_middlewares::{metering::MeteringPoints, Metering};
 
 const MESSAGE_READ_BUF_CAP: usize = 8 * 1024;
 
-pub fn create_store() -> Store {
+pub fn create_store(memory_limit: KiloByte) -> Store {
     let mut compiler_config = LLVM::default();
 
     let metering = Arc::new(Metering::new(u64::MAX, |_| 1));
     compiler_config.push_middleware(metering);
 
-    Store::new(compiler_config)
+    let memory = create_memory(memory_limit);
+
+    Store::new_with_tunables(compiler_config, memory)
 }
 
 pub trait InstanceState {}

@@ -33,7 +33,22 @@ pub fn start(
         .finalize(&mut store)?;
 
     let import_object = wasi_env.import_object(&mut store, module)?;
-    let instance = Instance::new(&mut store, module, &import_object)?;
+
+    let instance = match Instance::new(&mut store, module, &import_object) {
+        Ok(i) => i,
+        Err(wasmer::InstantiationError::Link(wasmer::LinkError::Resource(e)))
+            if e.contains("memory is greater than the maximum allowed memory") =>
+        {
+            // TODO: This is not good!, if the error message changes, our code will break,
+            //       but for now, we do not have any other way to get the actual error case.
+            //       Maybe create a `MemoryError::generic(String)` and use a constant identifier in
+            //       it?
+
+            return Err(super::error::Error::MaximumMemoryExceeded.into());
+        }
+        Err(e) => return Err(e.into()),
+    };
+
     let memory = instance.exports.get_memory("memory")?;
     wasi_env.data_mut(&mut store).set_memory(memory.clone());
 

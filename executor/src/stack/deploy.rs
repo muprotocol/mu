@@ -92,6 +92,7 @@ pub(super) async fn deploy(
             source: function_source,
             runtime: func.runtime,
             envs: func.env.clone(),
+            memory_limit: func.memory_limit,
         });
         function_names.push(&func.name);
     }

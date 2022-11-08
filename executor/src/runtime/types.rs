@@ -1,5 +1,5 @@
 use super::message::{gateway::GatewayResponse, Message};
-use mu_stack::{FunctionRuntime, StackID};
+use mu_stack::{FunctionRuntime, KiloByte, StackID};
 
 use anyhow::Result;
 use bytes::Bytes;
@@ -76,6 +76,7 @@ pub struct FunctionDefinition {
 
     // TODO: key must not contain `=` and both must not contain `null` byte
     pub envs: HashMap<String, String>,
+    pub memory_limit: KiloByte,
 }
 
 impl FunctionDefinition {
@@ -87,6 +88,7 @@ impl FunctionDefinition {
             IntoIter = impl Iterator<Item = (String, String)>,
             Item = (String, String),
         >,
+        memory_limit: KiloByte,
     ) -> Self {
         let envs: HashMap<String, String> = envs.into_iter().collect();
         Self {
@@ -94,6 +96,7 @@ impl FunctionDefinition {
             source,
             runtime,
             envs,
+            memory_limit,
         }
     }
 }

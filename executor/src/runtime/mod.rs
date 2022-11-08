@@ -5,6 +5,7 @@
 pub mod error;
 pub mod function;
 pub mod instance;
+pub mod memory;
 pub mod message;
 pub mod providers;
 pub mod types;
@@ -14,7 +15,7 @@ use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::*;
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
-use mu_stack::StackID;
+use mu_stack::{KiloByte, StackID};
 use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
@@ -56,16 +57,19 @@ pub enum MailboxMessage {
     GetFunctionNames(StackID, ReplyChannel<Vec<String>>),
 }
 
-//TODO:
-// * use metrics and MemoryUsage so we can report usage of memory and CPU time.
 #[derive(Clone)]
 struct RuntimeImpl {
     mailbox: CallbackMailboxProcessor<MailboxMessage>,
 }
 
+struct CacheHashAndMemoryLimit {
+    hash: wasmer_cache::Hash,
+    memory_limit: KiloByte,
+}
+
 struct RuntimeState {
     function_provider: Box<dyn FunctionProvider>,
-    hashkey_dict: HashMap<FunctionID, wasmer_cache::Hash>,
+    hashkey_dict: HashMap<FunctionID, CacheHashAndMemoryLimit>,
     cache: FileSystemCache,
     database_service: Arc<DatabaseManager>,
 }
@@ -89,15 +93,16 @@ impl RuntimeState {
     }
 
     fn load_module(&mut self, function_id: &FunctionID) -> Result<(Store, Module)> {
-        let store = create_store();
-
         if self.hashkey_dict.contains_key(function_id) {
-            let key = self
+            let CacheHashAndMemoryLimit { hash, memory_limit } = self
                 .hashkey_dict
                 .get(function_id)
                 .ok_or(Error::Internal("cache key can not be found"))?
                 .to_owned();
-            match unsafe { self.cache.load(&store, key) } {
+
+            let store = create_store(*memory_limit);
+
+            match unsafe { self.cache.load(&store, *hash) } {
                 Ok(module) => Ok((store, module)),
                 Err(e) => {
                     warn!("cached module is corrupted: {}", e);
@@ -109,7 +114,8 @@ impl RuntimeState {
 
                     let module = Module::new(&store, definition.source.clone())?;
 
-                    self.cache.store(key, &module)?;
+                    self.cache.store(*hash, &module)?;
+
                     Ok((store, module))
                 }
             }
@@ -127,7 +133,16 @@ impl RuntimeState {
                                                                             //StackID
             hash_array.extend_from_slice(function_id.function_name.as_bytes());
             let hash = wasmer_cache::Hash::generate(&hash_array);
-            self.hashkey_dict.insert(function_id.clone(), hash);
+
+            self.hashkey_dict.insert(
+                function_id.clone(),
+                CacheHashAndMemoryLimit {
+                    hash,
+                    memory_limit: function_definition.memory_limit,
+                },
+            );
+
+            let store = create_store(function_definition.memory_limit);
 
             if let Ok(module) = Module::from_binary(&store, &function_definition.source) {
                 if let Err(e) = self.cache.store(hash, &module) {
@@ -148,7 +163,7 @@ impl RuntimeState {
             .ok_or_else(|| Error::FunctionNotFound(function_id.clone()))?
             .to_owned();
 
-        let (store, module) = self.load_module(&function_id)?;
+        let (store, module) = self.load_module(&function_id).unwrap();
         Ok(Instance::new(
             function_id,
             definition.envs,
@@ -236,15 +251,17 @@ async fn mailbox_step(
             if let Ok(instance) = state.instantiate_function(req.function_id).await {
                 tokio::spawn(async move {
                     let resp = tokio::task::spawn_blocking(move || {
-                        let instance = instance.start().context("can not run instance").unwrap(); //TODO: Handle Errors
-                        instance.request(req.message)
+                        instance
+                            .start()
+                            .context("can not run instance")
+                            .and_then(|i| i.request(req.message))
                     })
                     .await
                     .unwrap(); // TODO: Handle spawn_blocking errors
 
                     match resp {
                         Ok(a) => req.reply.reply(a.await),
-                        Err(a) => req.reply.reply(Err(a)),
+                        Err(e) => req.reply.reply(Err(e)),
                     };
                 });
             } else {
