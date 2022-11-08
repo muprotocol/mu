@@ -83,7 +83,7 @@ struct FindRequest {
     value_filter: String,
 }
 
-// TODO: considraton KeyFilter<T>
+// TODO: consider KeyFilter<T>
 #[derive(Debug, Serialize)]
 pub enum KeyFilter {
     Exact(String),

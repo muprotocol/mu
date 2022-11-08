@@ -59,7 +59,8 @@ describe("marketplace", () => {
 			userWallet,
 			region,
 			Buffer.from([0, 1, 2, 3, 4, 5, 6, 7, 8]),
-			100
+			100,
+			"my stack"
 		);
 	});
 

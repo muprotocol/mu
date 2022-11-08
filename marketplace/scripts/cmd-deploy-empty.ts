@@ -28,7 +28,15 @@ util.asyncMain(async () => {
     await util.sleep(2);
 
     console.log("Deploying Mu smart contract");
-    tmuxSession.splitWindow(`cd ${process.cwd()} && npx ts-node ${path.resolve(__dirname, "deploy-contract.ts")} && sleep 5`, 0, true);
+    tmuxSession.splitWindow(
+        `export BROWSER='' ANCHOR_WALLET='~/.config/solana/id.json' && ` +
+        `cd ${process.cwd()} && ` +
+        `npx ts-node ${path.resolve(__dirname, "deploy-contract.ts")} && ` +
+        `npx ts-node ${path.resolve(__dirname, "initialize-mu.ts")} && ` +
+        `echo Done && ` +
+        `sleep 5`,
+        0,
+        true);
 
     tmuxSession.attach();
 })

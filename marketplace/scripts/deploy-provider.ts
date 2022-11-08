@@ -1,15 +1,11 @@
 import { AnchorProvider } from "@project-serum/anchor";
-import { createAuthorizedUsageSigner, createMint, createProvider, createRegion, initializeMu, ServiceUnits } from "./anchor-utils";
+import { createAuthorizedUsageSigner, createProvider, createRegion, getMu, readMintFromStaticKeypair, ServiceUnits } from "./anchor-utils";
 import util from "./util"
 
 util.asyncMain(async () => {
     let anchorProvider = AnchorProvider.local();
-
-    console.log("Deploying mint");
-    let mint = await createMint(anchorProvider, true);
-
-    console.log("Initializing Mu smart contract");
-    let mu = await initializeMu(anchorProvider, mint);
+    let mint = readMintFromStaticKeypair();
+    let mu = getMu(anchorProvider, mint);
 
     console.log("Creating provider");
     let provider = await createProvider(mu, "IB", true);

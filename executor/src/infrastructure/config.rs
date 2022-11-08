@@ -111,7 +111,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
 
     let blockchain_monitor_config = config
         .get("blockchain_monitor")
-        .context("Invalid blockchain mnonitor config")?;
+        .context("Invalid blockchain monitor config")?;
 
     Ok(SystemConfig(
         connection_manager_config,
