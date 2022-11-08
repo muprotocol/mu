@@ -163,7 +163,7 @@ impl RuntimeState {
             .ok_or_else(|| Error::FunctionNotFound(function_id.clone()))?
             .to_owned();
 
-        let (store, module) = self.load_module(&function_id).unwrap();
+        let (store, module) = self.load_module(&function_id)?;
         Ok(Instance::new(
             function_id,
             definition.envs,
