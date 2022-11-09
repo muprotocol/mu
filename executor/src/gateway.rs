@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use tokio::{sync::RwLock, task::JoinHandle};
 
 use crate::runtime::{types::FunctionID, Runtime};
+use crate::stack::usage_aggregator::{Usage, UsageAggregator};
 
 #[async_trait]
 #[clonable]
@@ -100,6 +101,7 @@ struct DependencyAccessor {
     // dependency cycle and remove need for Arc<RwLock>
     gateway_manager: Arc<RwLock<Option<GatewayManagerImpl>>>,
     runtime: Box<dyn Runtime>,
+    usage_aggregator: Box<dyn UsageAggregator>,
 }
 
 impl<'a> DependencyAccessor {
@@ -112,6 +114,7 @@ impl<'a> DependencyAccessor {
 pub async fn start(
     config: GatewayManagerConfig,
     runtime: Box<dyn Runtime>,
+    usage_aggregator: Box<dyn UsageAggregator>,
 ) -> Result<Box<dyn GatewayManager>> {
     let config = rocket::Config::figment()
         .merge(("address", config.listen_address.to_string()))
@@ -122,6 +125,7 @@ pub async fn start(
     let accessor = DependencyAccessor {
         gateway_manager: Arc::new(RwLock::new(None)),
         runtime,
+        usage_aggregator,
     };
 
     let ignited = rocket::custom(config)
@@ -259,6 +263,24 @@ pub struct Request<'a> {
     pub data: &'a str,
 }
 
+impl<'a> Request<'a> {
+    fn calculate_size(&self) -> u64 {
+        let mut size = self.path.as_bytes().len() as u64;
+        size += self
+            .query
+            .iter()
+            .map(|x| x.0.as_bytes().len() as u64 + x.1.as_bytes().len() as u64)
+            .sum::<u64>();
+        size += self
+            .headers
+            .iter()
+            .map(|x| x.name.as_bytes().len() as u64 + x.value.as_bytes().len() as u64)
+            .sum::<u64>();
+        size += self.data.as_bytes().len() as u64;
+        size
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct OwnedHeader {
     pub name: String,
@@ -271,6 +293,19 @@ pub struct Response {
     pub content_type: String,
     pub headers: Vec<OwnedHeader>,
     pub body: String,
+}
+
+impl Response {
+    fn calculate_size(&self) -> u64 {
+        let mut size = self.content_type.as_bytes().len() as u64;
+        size += self
+            .headers
+            .iter()
+            .map(|x| x.name.as_bytes().len() as u64 + x.value.as_bytes().len() as u64)
+            .sum::<u64>();
+        size += self.body.as_bytes().len() as u64;
+        size
+    }
 }
 
 impl<'a> Response {
@@ -361,6 +396,8 @@ async fn handle_request<'a>(
         data: data.unwrap_or(""),
     };
 
+    let mut traffic = request.calculate_size();
+
     let function_name = dependency_accessor
         .get_gateway_manager()
         .await
@@ -382,7 +419,7 @@ async fn handle_request<'a>(
         Ok(Some(x)) => x,
     };
 
-    match dependency_accessor
+    let response = match dependency_accessor
         .runtime
         .invoke_function(
             FunctionID {
@@ -393,13 +430,29 @@ async fn handle_request<'a>(
         )
         .await
     {
-        Ok(x) => x.0,
+        Ok(x) => {
+            let response = x.0;
+            traffic += response.calculate_size();
+            response
+        }
         // TODO: Generate meaningful error messages (propagate user function failure?)
         Err(f) => {
             error!("Failed to run user function: {f:?}");
             Response::internal_error("User function failure")
         }
-    }
+    };
+
+    dependency_accessor.usage_aggregator.register_usage(
+        stack_id,
+        vec![
+            Usage::GatewayRequests { count: 1 },
+            Usage::GatewayTraffic {
+                size_bytes: traffic,
+            },
+        ],
+    );
+
+    response
 }
 
 #[get("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]

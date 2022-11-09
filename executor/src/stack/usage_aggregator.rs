@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 #[async_trait]
 #[clonable]
-pub trait UsageAggregator: Clone {
+pub trait UsageAggregator: Clone + Sync + Send {
     fn register_usage(&self, stack_id: StackID, usage: Vec<Usage>);
     async fn get_and_reset_usages(&self) -> Result<HashMap<StackID, HashMap<UsageCategory, u128>>>;
     async fn stop(&self);
@@ -136,7 +136,7 @@ struct State {
     usages: HashMap<StackID, HashMap<UsageCategory, u128>>,
 }
 
-pub async fn start() -> Box<dyn UsageAggregator> {
+pub fn start() -> Box<dyn UsageAggregator> {
     let state = State {
         usages: HashMap::new(),
     };
