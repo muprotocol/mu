@@ -21,7 +21,7 @@ impl<T: Tunables> LimitedMemory<T> {
     /// valid. However, this can produce invalid types, such that
     /// validate_memory must be called before creating the memory.
     fn adjust_memory(&self, requested: &MemoryType) -> MemoryType {
-        let mut adjusted = requested.clone();
+        let mut adjusted = *requested;
         if requested.maximum.is_none() {
             adjusted.maximum = Some(self.limit);
         }
@@ -117,14 +117,7 @@ impl<T: Tunables> Tunables for LimitedMemory<T> {
 }
 
 pub fn create_memory(max_size: MegaByte) -> LimitedMemory<BaseTunables> {
-    let max_size = max_size.0.saturating_mul(1000); // Convert to kb
-
-    // Each page is 64 kb so we limit the pages accordingly
-    let pages_count = if (max_size % 64) != 0 {
-        max_size / 64 + 1
-    } else {
-        max_size / 64
-    };
+    let pages_count = max_size.0.saturating_mul(16); // There is 16 pages of size 64Kb in a Mb
 
     let base = BaseTunables::for_target(&Target::default());
     LimitedMemory::new(base, Pages(pages_count))
