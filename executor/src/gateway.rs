@@ -455,14 +455,13 @@ async fn handle_request<'a>(
     response
 }
 
-#[get("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
+#[get("/<stack_id>/<gateway_name>/<path..>?<query..>")]
 async fn get<'a>(
     stack_id: StackIDParam,
     gateway_name: &'a str,
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
-    data: &'a str,
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
@@ -472,7 +471,7 @@ async fn get<'a>(
         path,
         query,
         headers,
-        Some(data),
+        None,
         dependency_accessor,
     )
     .await
@@ -547,14 +546,13 @@ async fn delete<'a>(
     .await
 }
 
-#[head("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
+#[head("/<stack_id>/<gateway_name>/<path..>?<query..>")]
 async fn head<'a>(
     stack_id: StackIDParam,
     gateway_name: &'a str,
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
-    data: &'a str,
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
@@ -564,7 +562,7 @@ async fn head<'a>(
         path,
         query,
         headers,
-        Some(data),
+        None,
         dependency_accessor,
     )
     .await
@@ -593,14 +591,13 @@ async fn patch<'a>(
     .await
 }
 
-#[options("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
+#[options("/<stack_id>/<gateway_name>/<path..>?<query..>")]
 async fn options<'a>(
     stack_id: StackIDParam,
     gateway_name: &'a str,
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
-    data: &'a str,
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
@@ -610,7 +607,7 @@ async fn options<'a>(
         path,
         query,
         headers,
-        Some(data),
+        None,
         dependency_accessor,
     )
     .await
