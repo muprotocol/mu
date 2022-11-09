@@ -124,6 +124,8 @@ pub async fn run() -> Result<()> {
     )
     .context("Failed to start gossip")?;
 
+    let usage_aggregator = stack::usage_aggregator::start();
+
     let function_provider = runtime::providers::DefaultFunctionProvider::new();
     let database_manager = DatabaseManager::new().await?;
     let runtime = runtime::start(
@@ -135,7 +137,7 @@ pub async fn run() -> Result<()> {
     .context("Failed to initiate runtime")?;
 
     // TODO: no notification channel for now, requests are sent straight to runtime
-    let gateway_manager = gateway::start(gateway_manager_config, runtime.clone())
+    let gateway_manager = gateway::start(gateway_manager_config, runtime.clone(), usage_aggregator)
         .await
         .context("Failed to start gateway manager")?;
 
@@ -251,7 +253,7 @@ async fn glue_modules(
         BlockchainMonitorNotification,
     >,
 ) {
-    let mut debug_timer = tokio::time::interval(std::time::Duration::from_secs(3));
+    let mut debug_timer = tokio::time::interval(Duration::from_secs(3));
 
     loop {
         select! {
