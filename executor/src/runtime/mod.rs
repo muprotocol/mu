@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::*;
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
-use mu_stack::{KiloByte, StackID};
+use mu_stack::{MegaByte, StackID};
 use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
@@ -64,7 +64,7 @@ struct RuntimeImpl {
 
 struct CacheHashAndMemoryLimit {
     hash: wasmer_cache::Hash,
-    memory_limit: KiloByte,
+    memory_limit: MegaByte,
 }
 
 struct RuntimeState {

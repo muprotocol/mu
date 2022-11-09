@@ -17,14 +17,14 @@ use anyhow::{bail, Result};
 use bytes::BufMut;
 use core::future::Future;
 use log::trace;
-use mu_stack::KiloByte;
+use mu_stack::MegaByte;
 use wasmer::{CompilerConfig, Module, Store};
 use wasmer_compiler_llvm::LLVM;
 use wasmer_middlewares::{metering::MeteringPoints, Metering};
 
 const MESSAGE_READ_BUF_CAP: usize = 8 * 1024;
 
-pub fn create_store(memory_limit: KiloByte) -> Store {
+pub fn create_store(memory_limit: MegaByte) -> Store {
     let mut compiler_config = LLVM::default();
 
     let metering = Arc::new(Metering::new(u64::MAX, |_| 1));

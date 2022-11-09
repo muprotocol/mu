@@ -1,6 +1,6 @@
 use futures::FutureExt;
 use mu::{gateway, mudb::service::DatabaseID, runtime::types::FunctionID};
-use mu_stack::{self, KiloByte, StackID};
+use mu_stack::{self, MegaByte, StackID};
 use serial_test::serial;
 use std::{collections::HashMap, path::Path};
 
@@ -9,7 +9,7 @@ use crate::runtime::utils::{create_db_if_not_exist, create_runtime, Project};
 mod providers;
 mod utils;
 
-pub fn create_project(name: &'static str, memory_limit: Option<KiloByte>) -> Project {
+pub fn create_project(name: &'static str, memory_limit: Option<MegaByte>) -> Project {
     Project {
         name: name.into(),
         path: Path::new(&format!("tests/runtime/funcs/{name}")).into(),
@@ -17,7 +17,7 @@ pub fn create_project(name: &'static str, memory_limit: Option<KiloByte>) -> Pro
             stack_id: StackID::SolanaPublicKey(rand::random()),
             function_name: name.into(),
         },
-        memory_limit: memory_limit.unwrap_or(100_000), // 100 Mb
+        memory_limit: memory_limit.unwrap_or(MegaByte(100)),
     }
 }
 
@@ -183,7 +183,7 @@ async fn test_functions_with_early_exit_are_handled() {
 #[tokio::test]
 #[serial]
 async fn functions_with_limited_memory_wont_run() {
-    let projects = vec![create_project("hello-wasm", Some(5))];
+    let projects = vec![create_project("memory-heavy", Some(MegaByte(1)))];
     let (runtime, ..) = create_runtime(&projects).await;
 
     let request = gateway::Request {
@@ -191,7 +191,7 @@ async fn functions_with_limited_memory_wont_run() {
         path: "/get_name",
         query: HashMap::new(),
         headers: Vec::new(),
-        data: "Chappy",
+        data: "",
     };
 
     let result = runtime
@@ -207,6 +207,28 @@ async fn functions_with_limited_memory_wont_run() {
             .unwrap(),
         mu::runtime::error::Error::MaximumMemoryExceeded
     );
+
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+#[serial]
+async fn functions_with_limited_memory_will_run_with_enough_memory() {
+    let projects = vec![create_project("memory-heavy", Some(MegaByte(120)))];
+    let (runtime, ..) = create_runtime(&projects).await;
+
+    let request = gateway::Request {
+        method: mu_stack::HttpMethod::Get,
+        path: "/get_name",
+        query: HashMap::new(),
+        headers: Vec::new(),
+        data: "Test",
+    };
+
+    runtime
+        .invoke_function(projects[0].id.clone(), request)
+        .then(|r| async move { assert_eq!("Hello Test, i ran!", r.unwrap().0.body) })
+        .await;
 
     runtime.shutdown().await.unwrap();
 }

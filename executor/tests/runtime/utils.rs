@@ -10,7 +10,7 @@ use mu::{
         Runtime,
     },
 };
-use mu_stack::{FunctionRuntime, KiloByte};
+use mu_stack::{FunctionRuntime, MegaByte};
 use std::{
     collections::HashMap,
     env,
@@ -88,7 +88,7 @@ pub struct Project {
     pub id: FunctionID,
     pub name: String,
     pub path: PathBuf,
-    pub memory_limit: KiloByte,
+    pub memory_limit: MegaByte,
 }
 
 impl Project {

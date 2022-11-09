@@ -1,4 +1,4 @@
-use crate::protos::stack::*;
+use crate::{protos::stack::*, MegaByte};
 use anyhow::{anyhow, Result};
 use protobuf::EnumOrUnknown;
 
@@ -75,7 +75,7 @@ impl From<super::Stack> for Stack {
                                 })
                                 .collect(),
                             runtime: convert_function_runtime(f.runtime),
-                            memoryLimit: f.memory_limit,
+                            memoryLimit: f.memory_limit.0,
                             ..Default::default()
                         })),
                         ..Default::default()
@@ -160,7 +160,7 @@ impl TryFrom<Stack> for super::Stack {
                             binary: f.binary,
                             env: f.env.into_iter().map(|env| (env.name, env.value)).collect(),
                             runtime: convert_function_runtime(f.runtime)?,
-                            memory_limit: f.memoryLimit,
+                            memory_limit: MegaByte(f.memoryLimit),
                         }))
                     }
                 })
