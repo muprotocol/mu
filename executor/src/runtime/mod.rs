@@ -266,7 +266,7 @@ async fn mailbox_step(
 
                 tokio::spawn(async move {
                     match instance.start() {
-                        Err(e) => req.reply.reply(Err(e.into())),
+                        Err(e) => req.reply.reply(Err(e)),
                         Ok(i) => {
                             let result = i.run_request(memory_limit, req.message).await.map(
                                 |(resp, usages)| {
