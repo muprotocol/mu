@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use async_trait::async_trait;
 use mu::{
     mudb::{
         self,
@@ -9,6 +10,7 @@ use mu::{
         types::{FunctionDefinition, FunctionID, RuntimeConfig},
         Runtime,
     },
+    stack::usage_aggregator::UsageAggregator,
 };
 use mu_stack::{FunctionRuntime, MegaByte};
 use std::{
@@ -147,9 +149,15 @@ pub async fn create_runtime(projects: &[Project]) -> (Box<dyn Runtime>, Database
 
     let (functions, provider) = create_map_function_provider(projects).await.unwrap();
     let db_service = DatabaseManager::new().await.unwrap();
-    let runtime = start(Box::new(provider), config, db_service.clone())
-        .await
-        .unwrap();
+    let usage_aggregator = MockUsageAggregator::new();
+    let runtime = start(
+        Box::new(provider),
+        config,
+        db_service.clone(),
+        usage_aggregator,
+    )
+    .await
+    .unwrap();
 
     runtime
         .add_functions(functions.clone().into_iter().map(|(_, d)| d).collect())
@@ -157,4 +165,33 @@ pub async fn create_runtime(projects: &[Project]) -> (Box<dyn Runtime>, Database
         .unwrap();
 
     (runtime, db_service)
+}
+
+//TODO: Need to implement methods and storage so we can test it.
+#[derive(Clone)]
+pub struct MockUsageAggregator;
+
+impl MockUsageAggregator {
+    pub fn new() -> Box<dyn UsageAggregator> {
+        Box::new(Self {})
+    }
+}
+
+#[async_trait]
+impl UsageAggregator for MockUsageAggregator {
+    fn register_usage(
+        &self,
+        _stack_id: mu_stack::StackID,
+        _usage: Vec<mu::stack::usage_aggregator::Usage>,
+    ) {
+    }
+
+    async fn get_and_reset_usages(
+        &self,
+    ) -> Result<HashMap<mu_stack::StackID, HashMap<mu::stack::usage_aggregator::UsageCategory, u128>>>
+    {
+        Ok(HashMap::new())
+    }
+
+    async fn stop(&self) {}
 }

@@ -9,13 +9,12 @@ use super::{
     function,
     memory::create_memory,
     message::{database::*, gateway::*, log::Log, FromMessage, Message, ToMessage},
-    types::{FunctionHandle, FunctionID, FunctionUsage, InstanceID},
+    types::{FunctionHandle, FunctionID, InstanceID},
 };
-use crate::mudb::service::DatabaseManager;
+use crate::{mudb::service::DatabaseManager, stack::usage_aggregator::Usage};
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use bytes::BufMut;
-use core::future::Future;
 use log::trace;
 use mu_stack::MegaByte;
 use wasmer::{CompilerConfig, Module, Store};
@@ -33,6 +32,28 @@ pub fn create_store(memory_limit: MegaByte) -> Store {
     let memory = create_memory(memory_limit);
 
     Store::new_with_tunables(compiler_config, memory)
+}
+
+fn create_usage(
+    db_read: u64,
+    db_write: u64,
+    instructions_count: u64,
+    memory: MegaByte,
+) -> Vec<Usage> {
+    vec![
+        Usage::DBRead {
+            weak_reads: db_read,
+            strong_reads: 0,
+        },
+        Usage::DBWrite {
+            weak_writes: db_write,
+            strong_writes: 0,
+        },
+        Usage::FunctionMBInstructions {
+            memory_megabytes: memory.0 as u64,
+            instructions: instructions_count,
+        },
+    ]
 }
 
 pub trait InstanceState {}
@@ -125,12 +146,28 @@ impl Instance<Running> {
     }
 
     //TODO:
-    // The case when we are waiting for function's respond and function is exited is not covered.
+    // - The case when we are waiting for function's respond and function is exited is not covered.
     // and there should be a timeout for the amount of time we are waiting for function response.
-    pub fn request(
-        mut self,
+    //
+    // - It is not good to pass memory_limit here, but will do for now to be able to make usages all
+    // here and encapsulate the usage making process.
+    pub async fn run_request(
+        self,
+        memory_limit: MegaByte,
         request: Message,
-    ) -> Result<impl Future<Output = Result<(GatewayResponse, FunctionUsage)>>> {
+    ) -> Result<(GatewayResponse, Vec<Usage>)> {
+        tokio::task::spawn_blocking(move || self._run_request(memory_limit, request))
+            .await
+            .map_err(|_| anyhow!("can not run function task to end"))?
+    }
+
+    fn _run_request(
+        mut self,
+        memory_limit: MegaByte,
+        request: Message,
+    ) -> Result<(GatewayResponse, Vec<Usage>)> {
+        //TODO: Refactor these to `week` and `strong` when we had database replication
+        let (mut database_read_count, mut database_write_count) = (0, 0);
         trace!(
             "Running function `{}` instance `{}`",
             self.id.function_id,
@@ -156,15 +193,25 @@ impl Instance<Running> {
                 Ok(message) => match message.r#type.as_str() {
                     GatewayResponse::TYPE => {
                         let resp = GatewayResponse::from_message(message)?;
-                        return Ok(async move {
-                            match self.state.handle.join_handle.await {
-                                Ok(MeteringPoints::Exhausted) => Ok((resp, u64::MAX)),
-                                Ok(MeteringPoints::Remaining(p)) => Ok((resp, u64::MAX - p)),
-                                Err(_) => {
-                                    Err(Error::FunctionAborted(self.id.clone())).map_err(Into::into)
-                                }
-                            }
-                        });
+
+                        let usages = tokio::runtime::Handle::current()
+                            .block_on(self.state.handle.join_handle)
+                            .map(|m| {
+                                let instructions_count = match m {
+                                    MeteringPoints::Exhausted => u64::MAX,
+                                    MeteringPoints::Remaining(p) => u64::MAX - p,
+                                };
+
+                                create_usage(
+                                    database_read_count,
+                                    database_write_count,
+                                    instructions_count,
+                                    memory_limit,
+                                )
+                            })
+                            .map_err(|_| anyhow!("can not run function task to end"))?;
+
+                        return Ok((resp, usages));
                     }
 
                     DbRequest::TYPE => {
@@ -177,6 +224,8 @@ impl Instance<Running> {
                                         req.table_name,
                                     ))
                                     .map_err(|e| e.to_string());
+
+                                database_write_count += 1;
 
                                 DbResponse {
                                     id: db_req.id,
@@ -191,6 +240,8 @@ impl Instance<Running> {
                                         req.table_name,
                                     ))
                                     .map_err(|e| e.to_string());
+
+                                database_write_count += 1;
 
                                 DbResponse {
                                     id: db_req.id,
@@ -207,6 +258,8 @@ impl Instance<Running> {
                                         req.value_filter.try_into()?,
                                     ))
                                     .map_err(|e| e.to_string());
+
+                                database_read_count += 1;
 
                                 DbResponse {
                                     id: db_req.id,
@@ -225,6 +278,8 @@ impl Instance<Running> {
                                     })
                                     .map_err(|e| e.to_string());
 
+                                database_write_count += 1;
+
                                 DbResponse {
                                     id: db_req.id,
                                     response: DbResponseDetails::Insert(res),
@@ -240,6 +295,8 @@ impl Instance<Running> {
                                         req.update.try_into()?,
                                     ))
                                     .map_err(|e| e.to_string());
+
+                                database_write_count += 1;
 
                                 DbResponse {
                                     id: db_req.id,

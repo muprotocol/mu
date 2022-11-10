@@ -25,11 +25,13 @@ use self::{
     instance::{create_store, Instance, Loaded},
     message::gateway::GatewayRequest,
     types::{
-        FunctionDefinition, FunctionID, FunctionProvider, FunctionUsage, InvokeFunctionRequest,
-        RuntimeConfig,
+        FunctionDefinition, FunctionID, FunctionProvider, InvokeFunctionRequest, RuntimeConfig,
     },
 };
-use crate::{gateway, mudb::service::DatabaseManager, runtime::message::ToMessage};
+use crate::{
+    gateway, mudb::service::DatabaseManager, runtime::message::ToMessage,
+    stack::usage_aggregator::UsageAggregator,
+};
 
 #[async_trait]
 #[clonable]
@@ -38,7 +40,7 @@ pub trait Runtime: Clone + Send + Sync {
         &self,
         function_id: FunctionID,
         message: gateway::Request<'a>,
-    ) -> Result<(gateway::Response, FunctionUsage)>;
+    ) -> Result<gateway::Response>;
 
     async fn shutdown(&self) -> Result<()>;
 
@@ -72,6 +74,7 @@ struct RuntimeState {
     hashkey_dict: HashMap<FunctionID, CacheHashAndMemoryLimit>,
     cache: FileSystemCache,
     database_service: Arc<DatabaseManager>,
+    usage_aggregator: Box<dyn UsageAggregator>,
 }
 
 impl RuntimeState {
@@ -79,6 +82,7 @@ impl RuntimeState {
         function_provider: Box<dyn FunctionProvider>,
         cache_path: &Path,
         database_service: DatabaseManager,
+        usage_aggregator: Box<dyn UsageAggregator>,
     ) -> Result<Self> {
         let hashkey_dict = HashMap::new();
         let mut cache = FileSystemCache::new(cache_path).context("failed to create cache")?;
@@ -89,6 +93,7 @@ impl RuntimeState {
             function_provider,
             cache,
             database_service: Arc::new(database_service),
+            usage_aggregator,
         })
     }
 
@@ -180,13 +185,12 @@ impl Runtime for RuntimeImpl {
         &self,
         function_id: FunctionID,
         message: gateway::Request<'a>,
-    ) -> Result<(gateway::Response, FunctionUsage)> {
+    ) -> Result<gateway::Response> {
         let message = GatewayRequest::new(message)
             .to_message()
             .context("Failed to serialize request message")?;
 
-        let result = self
-            .mailbox
+        self.mailbox
             .post_and_reply(|r| {
                 MailboxMessage::InvokeFunction(InvokeFunctionRequest {
                     function_id,
@@ -194,12 +198,8 @@ impl Runtime for RuntimeImpl {
                     reply: r,
                 })
             })
-            .await;
-
-        match result {
-            Ok(r) => r.map(|r| (r.0.response, r.1)),
-            Err(e) => Err(e).map_err(Into::into),
-        }
+            .await?
+            .map(|r| r.response)
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -234,8 +234,15 @@ pub async fn start(
     function_provider: Box<dyn FunctionProvider>,
     config: RuntimeConfig,
     db_service: DatabaseManager,
+    usage_aggregator: Box<dyn UsageAggregator>,
 ) -> Result<Box<dyn Runtime>> {
-    let state = RuntimeState::new(function_provider, &config.cache_path, db_service).await?;
+    let state = RuntimeState::new(
+        function_provider,
+        &config.cache_path,
+        db_service,
+        usage_aggregator,
+    )
+    .await?;
     let mailbox = CallbackMailboxProcessor::start(mailbox_step, state, 10000);
     Ok(Box::new(RuntimeImpl { mailbox }))
 }
@@ -248,21 +255,30 @@ async fn mailbox_step(
     //TODO: pass metering info to blockchain_manager service
     match msg {
         MailboxMessage::InvokeFunction(req) => {
-            if let Ok(instance) = state.instantiate_function(req.function_id).await {
-                tokio::spawn(async move {
-                    let resp = tokio::task::spawn_blocking(move || {
-                        instance
-                            .start()
-                            .context("can not run instance")
-                            .and_then(|i| i.request(req.message))
-                    })
-                    .await
-                    .unwrap(); // TODO: Handle spawn_blocking errors
+            if let Ok(instance) = state.instantiate_function(req.function_id.clone()).await {
+                let memory_limit = state
+                    .hashkey_dict
+                    .get(&req.function_id)
+                    .unwrap()
+                    .memory_limit;
 
-                    match resp {
-                        Ok(a) => req.reply.reply(a.await),
-                        Err(e) => req.reply.reply(Err(e)),
-                    };
+                let usage_aggregator = state.usage_aggregator.clone();
+
+                tokio::spawn(async move {
+                    match instance.start() {
+                        Err(e) => req.reply.reply(Err(e.into())),
+                        Ok(i) => {
+                            let result = i.run_request(memory_limit, req.message).await.map(
+                                |(resp, usages)| {
+                                    usage_aggregator
+                                        .register_usage(req.function_id.stack_id, usages);
+                                    resp
+                                },
+                            );
+
+                            req.reply.reply(result);
+                        }
+                    }
                 });
             } else {
                 req.reply

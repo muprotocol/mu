@@ -23,14 +23,12 @@ pub trait FunctionProvider: Send {
     fn get_function_names(&self, stack_id: &StackID) -> Vec<String>;
 }
 
-pub type FunctionUsage = u64; // # of executed instructions
-
 #[derive(Debug)]
 pub struct InvokeFunctionRequest {
     // TODO: not needed in public interface
     pub function_id: FunctionID,
     pub message: Message,
-    pub reply: ReplyChannel<Result<(GatewayResponse, FunctionUsage)>>,
+    pub reply: ReplyChannel<Result<GatewayResponse>>,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -153,3 +151,5 @@ impl FunctionHandle {
 pub struct RuntimeConfig {
     pub cache_path: PathBuf,
 }
+
+pub type InstructionsCount = u64;

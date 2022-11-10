@@ -35,7 +35,7 @@ async fn test_simple_func() {
         data: "Chappy",
     };
 
-    let (resp, _usage) = runtime
+    let resp = runtime
         .invoke_function(projects[0].id.clone(), request)
         .await
         .unwrap();
@@ -67,7 +67,7 @@ async fn can_query_mudb() {
         data: "Dream",
     };
 
-    let (resp, _usage) = runtime
+    let resp = runtime
         .invoke_function(projects[0].id.clone(), request)
         .await
         .unwrap();
@@ -92,22 +92,17 @@ async fn can_run_multiple_instance_of_the_same_function() {
 
     let instance_1 = runtime
         .invoke_function(projects[0].id.clone(), make_request("Mathew"))
-        .then(
-            |r| async move { assert_eq!("Hello Mathew, welcome to MuRuntime", r.unwrap().0.body) },
-        );
+        .then(|r| async move { assert_eq!("Hello Mathew, welcome to MuRuntime", r.unwrap().body) });
 
-    let instance_2 =
-        runtime
-            .invoke_function(projects[0].id.clone(), make_request("Morpheus"))
-            .then(|r| async move {
-                assert_eq!("Hello Morpheus, welcome to MuRuntime", r.unwrap().0.body)
-            });
+    let instance_2 = runtime
+        .invoke_function(projects[0].id.clone(), make_request("Morpheus"))
+        .then(
+            |r| async move { assert_eq!("Hello Morpheus, welcome to MuRuntime", r.unwrap().body) },
+        );
 
     let instance_3 = runtime
         .invoke_function(projects[0].id.clone(), make_request("Unity"))
-        .then(
-            |r| async move { assert_eq!("Hello Unity, welcome to MuRuntime", r.unwrap().0.body) },
-        );
+        .then(|r| async move { assert_eq!("Hello Unity, welcome to MuRuntime", r.unwrap().body) });
 
     tokio::join!(instance_1, instance_2, instance_3);
 
@@ -142,13 +137,11 @@ async fn can_run_instances_of_different_functions() {
 
     let instance_1 = runtime
         .invoke_function(projects[0].id.clone(), make_request("Mathew"))
-        .then(
-            |r| async move { assert_eq!("Hello Mathew, welcome to MuRuntime", r.unwrap().0.body) },
-        );
+        .then(|r| async move { assert_eq!("Hello Mathew, welcome to MuRuntime", r.unwrap().body) });
 
     let instance_2 = runtime
         .invoke_function(projects[1].id.clone(), make_request("Dream"))
-        .then(|r| async move { assert_eq!("Hello Dream", r.unwrap().0.body) });
+        .then(|r| async move { assert_eq!("Hello Dream", r.unwrap().body) });
 
     tokio::join!(instance_1, instance_2);
 
@@ -227,7 +220,7 @@ async fn functions_with_limited_memory_will_run_with_enough_memory() {
 
     runtime
         .invoke_function(projects[0].id.clone(), request)
-        .then(|r| async move { assert_eq!("Hello Test, i ran!", r.unwrap().0.body) })
+        .then(|r| async move { assert_eq!("Hello Test, i ran!", r.unwrap().body) })
         .await;
 
     runtime.shutdown().await.unwrap();
