@@ -137,9 +137,13 @@ pub async fn run() -> Result<()> {
     .context("Failed to initiate runtime")?;
 
     // TODO: no notification channel for now, requests are sent straight to runtime
-    let gateway_manager = gateway::start(gateway_manager_config, runtime.clone(), usage_aggregator)
-        .await
-        .context("Failed to start gateway manager")?;
+    let gateway_manager = gateway::start(
+        gateway_manager_config,
+        runtime.clone(),
+        usage_aggregator.clone(),
+    )
+    .await
+    .context("Failed to start gateway manager")?;
 
     // TODO: fetch stacks from blockchain before starting scheduler
     let (scheduler_notification_channel, mut scheduler_notification_receiver) =
@@ -156,7 +160,7 @@ pub async fn run() -> Result<()> {
     );
 
     let (blockchain_monitor, mut blockchain_monitor_notification_receiver) =
-        blockchain_monitor::start(blockchain_monitor_config)
+        blockchain_monitor::start(blockchain_monitor_config, usage_aggregator.clone())
             .await
             .context("Failed to start blockchain monitor")?;
 

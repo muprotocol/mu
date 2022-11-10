@@ -1689,6 +1689,7 @@ dependencies = [
  "solana-account-decoder",
  "solana-client",
  "solana-sdk",
+ "spl-token",
  "stable-hash",
  "test-log",
  "thiserror",
