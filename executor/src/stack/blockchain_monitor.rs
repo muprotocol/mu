@@ -1,26 +1,38 @@
+use std::rc::Rc;
+use std::time::Duration;
 use std::{collections::HashMap, marker::PhantomPinned, ops::Deref, pin::Pin};
 
+use crate::infrastructure::config::ConfigDuration;
+use crate::stack::config_types::Base58PrivateKey;
+use crate::stack::usage_aggregator::{UsageAggregator, UsageCategory};
 use anchor_client::anchor_lang::AccountDeserialize;
+use anchor_client::{Cluster, Program};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use futures::{future::BoxFuture, stream::BoxStream, StreamExt};
-use log::{info, warn};
+use log::{error, info, warn};
 use mailbox_processor::{
     plain::{MessageReceiver, PlainMailboxProcessor},
     NotificationChannel, ReplyChannel,
 };
+use marketplace::ServiceUsage;
 use mu_stack::StackID;
 use serde::Deserialize;
 use solana_account_decoder::UiAccountEncoding;
+use solana_client::rpc_config::RpcSendTransactionConfig;
 use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
     rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
     rpc_filter::{Memcmp, MemcmpEncodedBytes, MemcmpEncoding, RpcFilterType},
     rpc_response::{Response, RpcKeyedAccount},
 };
-use solana_sdk::{account::Account, commitment_config::CommitmentConfig, pubkey::Pubkey};
-use tokio::{select, sync::mpsc::UnboundedReceiver};
+use solana_sdk::signature::Keypair;
+use solana_sdk::signer::Signer;
+use solana_sdk::{
+    account::Account, commitment_config::CommitmentConfig, pubkey::Pubkey, system_program,
+};
+use tokio::{select, sync::mpsc::UnboundedReceiver, task::spawn_blocking};
 
 use super::{config_types::Base58PublicKey, StackMetadata, StackWithMetadata};
 
@@ -44,8 +56,9 @@ pub struct BlockchainMonitorConfig {
     solana_cluster_pub_sub_url: String,
     solana_provider_public_key: Base58PublicKey,
     solana_region_number: u32,
-    // solana_usage_signer_private_key: Base58PrivateKey,
+    solana_usage_signer_private_key: Base58PrivateKey,
     // solana_min_escrow_balance: u64,
+    solana_usage_report_interval: ConfigDuration,
 }
 
 type SolanaUnsubscribeFn = Box<dyn FnOnce() -> BoxFuture<'static, ()> + Send>;
@@ -69,12 +82,16 @@ struct BlockchainMonitorState<'a> {
 
     solana_pub_sub: SolanaPubSub<'a>,
     solana_get_stacks_config: RpcProgramAccountsConfig,
+    solana_region_pda: Pubkey,
+
+    usage_aggregator: Box<dyn UsageAggregator>,
 }
 
 #[derive(Debug)]
 enum BlockchainMonitorMessage {
     GetStack(StackID, ReplyChannel<Option<StackWithMetadata>>),
     GetMetadata(StackID, ReplyChannel<Option<StackMetadata>>),
+    Tick(ReplyChannel<()>),
     Stop(ReplyChannel<()>),
 }
 
@@ -109,6 +126,7 @@ impl BlockchainMonitor for BlockchainMonitorImpl {
 
 pub async fn start(
     config: BlockchainMonitorConfig,
+    usage_aggregator: Box<dyn UsageAggregator>,
 ) -> Result<(
     Box<dyn BlockchainMonitor>,
     UnboundedReceiver<BlockchainMonitorNotification>,
@@ -202,7 +220,11 @@ pub async fn start(
         known_stacks: existing_stacks,
         solana_get_stacks_config: get_stacks_config,
         solana_pub_sub,
+        usage_aggregator,
+        solana_region_pda: region_pda,
     };
+
+    let tick_interval = *config.solana_usage_report_interval;
 
     let mailbox = PlainMailboxProcessor::start(
         |_mailbox, message_receiver| {
@@ -211,12 +233,34 @@ pub async fn start(
         10000,
     );
 
+    let res = BlockchainMonitorImpl { mailbox };
+
+    let res_clone = res.clone();
+    tokio::spawn(async move { generate_tick(res_clone, tick_interval).await });
+
     // TODO: track deployed/undeployed stacks due to escrow balance
-    Ok((Box::new(BlockchainMonitorImpl { mailbox }), rx))
+    Ok((Box::new(res), rx))
+}
+
+async fn generate_tick(blockchain_monitor: BlockchainMonitorImpl, interval: Duration) {
+    let mut timer = tokio::time::interval(interval);
+    // Timers tick once immediately
+    timer.tick().await;
+
+    loop {
+        timer.tick().await;
+        if let Err(mailbox_processor::Error::MailboxStopped) = blockchain_monitor
+            .mailbox
+            .post_and_reply(BlockchainMonitorMessage::Tick)
+            .await
+        {
+            return;
+        }
+    }
 }
 
 async fn mailbox_body(
-    _config: BlockchainMonitorConfig,
+    config: BlockchainMonitorConfig,
     mut state: BlockchainMonitorState<'_>,
     mut message_receiver: MessageReceiver<BlockchainMonitorMessage>,
     notification_channel: NotificationChannel<BlockchainMonitorNotification>,
@@ -254,6 +298,14 @@ async fn mailbox_body(
                             state.known_stacks.get(&stack_id).map(Clone::clone)
                         );
                     }
+
+                    Some(BlockchainMonitorMessage::Tick(r)) => {
+                        r.reply(());
+
+                        if let Err(e) = report_usages(&mut state, &config).await {
+                            error!("Failed to report usages due to: {e}");
+                        }
+                    }
                 }
             }
 
@@ -270,6 +322,10 @@ async fn mailbox_body(
         }
     }
 
+    if let Err(e) = report_usages(&mut state, &config).await {
+        // TODO: this is a bad situation to be in, unless we persist usages to disk.
+        error!("Failed to report usages due to: {e}");
+    }
     (state.solana_pub_sub.unsubscribe_callback)().await;
 
     if let Some(r) = stop_reply_channel {
@@ -277,6 +333,163 @@ async fn mailbox_body(
     }
 }
 
+async fn report_usages<'a>(
+    state: &mut BlockchainMonitorState<'a>,
+    config: &BlockchainMonitorConfig,
+) -> Result<()> {
+    let usages = state.usage_aggregator.get_and_reset_usages().await?;
+    let region_pda = state.solana_region_pda;
+    let provider_pubkey = config.solana_provider_public_key.public_key;
+    let rpc_url = config.solana_cluster_rpc_url.clone();
+    let pub_sub_url = config.solana_cluster_pub_sub_url.clone();
+    let signer_private_key = Keypair::from_bytes(
+        config
+            .solana_usage_signer_private_key
+            .keypair
+            .to_bytes()
+            .as_slice(),
+    )
+    .unwrap();
+
+    spawn_blocking(move || {
+        let payer: Rc<dyn Signer> = Rc::new(signer_private_key);
+        let program =
+            anchor_client::Client::new(Cluster::Custom(rpc_url, pub_sub_url), payer.clone())
+                .program(marketplace::id());
+
+        let (auth_signer_pda, _) = Pubkey::find_program_address(
+            &[b"authorized_signer", region_pda.to_bytes().as_slice()],
+            &marketplace::id(),
+        );
+        let auth_signer = program
+            .account::<marketplace::AuthorizedUsageSigner>(auth_signer_pda)
+            .context("Failed to load authorized usage signer from Solana")?;
+
+        // TODO: currently, we must update usages per stack.
+        // let mut usages_by_user = HashMap::new();
+        //
+        // for (stack_id, stack_usage) in usages {
+        //     // TODO: this assumes we'll only use solana
+        //     let user_id = match state.known_stacks.get(&stack_id) {
+        //         None => {
+        //             warn!("Have usage reports for unknown stack ID {stack_id}");
+        //             continue;
+        //         }
+        //
+        //         Some(stack) => match &stack.metadata {
+        //             StackMetadata::Solana(s) => s.owner,
+        //         },
+        //     };
+        //
+        //     let user_usages = usages_by_user.entry(user_id).or_insert_with(HashMap::new);
+        //
+        //     for (category, amount) in stack_usage {
+        //         let total = user_usages.entry(category).or_insert(0u128);
+        //         *total += amount;
+        //     }
+        // }
+
+        for (stack_id, usages) in usages {
+            let solana_stack_id = match stack_id {
+                StackID::SolanaPublicKey(x) => Pubkey::new_from_array(x),
+            };
+            let mut usage = marketplace::ServiceUsage::default();
+            for (category, amount) in usages {
+                match category {
+                    UsageCategory::FunctionMBInstructions => {
+                        usage.function_mb_instructions = amount
+                    }
+                    UsageCategory::DBStorage => usage.db_bytes_seconds = amount,
+                    UsageCategory::DBReads => usage.db_reads = amount as u64,
+                    UsageCategory::DBWrites => usage.db_writes = amount as u64,
+                    UsageCategory::GatewayRequests => usage.gateway_requests = amount as u64,
+                    UsageCategory::GatewayTraffic => usage.gateway_traffic_bytes = amount as u64,
+                }
+            }
+
+            if let Err(e) = report_usage(
+                &program,
+                payer.clone(),
+                solana_stack_id,
+                auth_signer.token_account,
+                usage,
+                region_pda,
+                provider_pubkey,
+            ) {
+                // TODO: need some way to keep the usage around for later
+                error!("Failed to report usage for {stack_id} due to: {e}");
+            }
+        }
+
+        Ok(())
+    })
+    .await
+    .context("spawn_blocking failed")?
+}
+
+fn report_usage(
+    program: &Program,
+    payer: Rc<dyn Signer>,
+    stack_id: Pubkey,
+    token_account: Pubkey,
+    usage: ServiceUsage,
+    region_pda: Pubkey,
+    provider_pubkey: Pubkey,
+) -> Result<()> {
+    let program_id = marketplace::id();
+    let (state_pda, _) = Pubkey::find_program_address(&[b"state"], &program_id);
+
+    let stack = program
+        .account::<marketplace::Stack>(stack_id)
+        .context("Failed to fetch stack from Solana")?;
+
+    let (escrow_pda, escrow_bump) = Pubkey::find_program_address(
+        &[
+            b"escrow",
+            &stack.user.to_bytes(),
+            &provider_pubkey.to_bytes(),
+        ],
+        &program_id,
+    );
+
+    let seed = 0u64; // TODO: we can't reliably generate consecutive seeds, make this a random UUID/16-byte number?
+    let (usage_update_pda, _) =
+        Pubkey::find_program_address(&[b"update", &seed.to_le_bytes()], &program_id);
+
+    let accounts = marketplace::accounts::UpdateUsage {
+        authorized_signer: payer.pubkey(),
+        escrow_account: escrow_pda,
+        region: region_pda,
+        signer: payer.pubkey(),
+        stack: stack_id,
+        state: state_pda,
+        token_program: spl_token::id(),
+        system_program: system_program::id(),
+        token_account,
+        usage_update: usage_update_pda,
+    };
+
+    program
+        .request()
+        .accounts(accounts)
+        .args(marketplace::instruction::UpdateUsage {
+            _escrow_bump: escrow_bump,
+            _update_seed: seed,
+            usage,
+        })
+        .signer(payer.as_ref())
+        .send_with_spinner_and_config(RpcSendTransactionConfig {
+            // TODO: what's preflight and what's a preflight commitment?
+            skip_preflight: cfg!(debug_assertions),
+            ..Default::default()
+        })
+        .context("Failed to send usage update transaction")?;
+
+    Ok(())
+}
+
+// TODO: if the connection fails irrecoverably, this gets called repetitively and prevents
+// the application from quitting cleanly.
 async fn reconnect_solana_subscriber(
     state: BlockchainMonitorState<'_>,
 ) -> BlockchainMonitorState<'_> {
@@ -371,6 +584,7 @@ fn read_solana_rpc_keyed_account(stack: Response<RpcKeyedAccount>) -> Result<Sta
     read_solana_account((pubkey, account))
 }
 
+// TODO: ensure we have the right usage signer for this region
 async fn ensure_region_exists(region: &Pubkey, rpc_client: &RpcClient) -> Result<()> {
     let account = rpc_client.get_account(region).await.context(format!(
         "Failed to fetch region {region} from Solana, make sure the `solana_provider_public_key` and \

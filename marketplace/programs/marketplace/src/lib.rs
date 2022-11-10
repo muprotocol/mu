@@ -3,11 +3,16 @@ use anchor_spl::token::{Mint, Token, TokenAccount, Transfer};
 
 declare_id!("2MZLka8nfoAf1LKCCbgCw5ZXfpMbKGDuLjQ88MNMyti2");
 
-fn calc_usage(rates: &ServiceUnits, usage: &ServiceUnits) -> u64 {
-    rates.bandwidth * usage.bandwidth
-        + rates.gateway_mreqs * usage.gateway_mreqs
-        + rates.mudb_gb_month * usage.mudb_gb_month
-        + rates.mufunction_cpu_mem * usage.mufunction_cpu_mem
+fn calc_usage(rates: &ServiceRates, usage: &ServiceUsage) -> u64 {
+    (rates.billion_function_mb_instructions as u128 * usage.function_mb_instructions
+        / 1_000_000_000) as u64
+        + (rates.db_gigabyte_months as u128 * usage.db_bytes_seconds
+            / (1024 * 1024 * 1024 * 60 * 60 * 24 * 30)) as u64
+        + (rates.million_db_reads as u64 * usage.db_reads / 1_000_000)
+        + (rates.million_db_writes as u64 * usage.db_writes / 1_000_000)
+        + (rates.million_gateway_requests as u64 * usage.gateway_requests / 1_000_000)
+        + (rates.gigabytes_gateway_traffic as u64 * usage.gateway_traffic_bytes
+            / (1024 * 1024 * 1024))
 }
 
 pub enum MuAccountType {
@@ -79,7 +84,7 @@ pub mod marketplace {
         region_num: u32,
         name: String,
         zones: u8,
-        rates: ServiceUnits,
+        rates: ServiceRates,
     ) -> Result<()> {
         ctx.accounts.region.set_inner(ProviderRegion {
             account_type: MuAccountType::ProviderRegion as u8,
@@ -120,7 +125,7 @@ pub mod marketplace {
         ctx: Context<UpdateUsage>,
         _update_seed: u64,
         _escrow_bump: u8,
-        usage: ServiceUnits,
+        usage: ServiceUsage,
     ) -> Result<()> {
         let usage_tokens = calc_usage(&ctx.accounts.region.rates, &usage);
         let transfer = Transfer {
@@ -134,7 +139,7 @@ pub mod marketplace {
         let transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             transfer,
-            &seeds_wrapper.as_slice(),
+            seeds_wrapper.as_slice(),
         );
         anchor_spl::token::transfer(transfer_ctx, usage_tokens)?;
 
@@ -231,12 +236,29 @@ pub struct CreateProvider<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
+// This is essentially the same data as in ServiceUsage, but with
+// units that make more sense for pricing.
+// The prices are in token amount *without* floating point, so
+// a price of 100, when the $MU token has 4 decimal places, is
+// actually 0.01 $MU.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct ServiceUnits {
-    pub mudb_gb_month: u64,
-    pub mufunction_cpu_mem: u64,
-    pub bandwidth: u64,
-    pub gateway_mreqs: u64,
+pub struct ServiceRates {
+    pub billion_function_mb_instructions: u32,
+    pub db_gigabyte_months: u32,
+    pub million_db_reads: u32,
+    pub million_db_writes: u32,
+    pub million_gateway_requests: u32,
+    pub gigabytes_gateway_traffic: u32,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, Default)]
+pub struct ServiceUsage {
+    pub function_mb_instructions: u128, // TODO: should we round a few zeroes off the instruction count?
+    pub db_bytes_seconds: u128,
+    pub db_reads: u64,
+    pub db_writes: u64,
+    pub gateway_requests: u64,
+    pub gateway_traffic_bytes: u64,
 }
 
 #[account]
@@ -245,7 +267,7 @@ pub struct ProviderRegion {
     pub provider: Pubkey,
     pub zones: u8,
     pub region_num: u32,
-    pub rates: ServiceUnits,
+    pub rates: ServiceRates,
     pub bump: u8,
     pub name: String,
 }
@@ -371,7 +393,7 @@ pub struct UsageUpdate {
     pub account_type: u8, // See MuAccountType
     pub region: Pubkey,
     pub stack: Pubkey,
-    pub usage: ServiceUnits,
+    pub usage: ServiceUsage,
 }
 
 #[derive(Accounts)]
@@ -397,10 +419,11 @@ pub struct UpdateUsage<'info> {
     #[account(mut)]
     token_account: AccountInfo<'info>,
 
+    // TODO: fix seeds
     #[account(
         init,
         payer = signer,
-        space = 8 + 1 + 32 + 32 + (8 + 8 + 8 + 8),
+        space = 8 + 1 + 32 + 32 + (16 + 16 + 8 + 8 + 8 + 8),
         seeds = [b"update", update_seed.to_le_bytes().as_ref()],
         bump
     )]

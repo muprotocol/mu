@@ -20,3 +20,4 @@ blockchain_monitor:
   solana_region_number: 1
   solana_usage_signer_private_key: 4GhpeXmHAsQW1K29Q3PBuKzq7fdQzAQS4Bsh5uP3oev1HvZg3tEgT8nZpYAVVikBdKtWGauYBXBDGCeseqyM9R4p
   solana_min_escrow_balance: 50
+  solana_usage_report_interval: 1m

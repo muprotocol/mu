@@ -6,6 +6,8 @@
 // 2. Use concurrent data structures to store usages as they happen, directly. I don't
 //    like this option because it introduces some manner of lock one way or another.
 
+// TODO: store usage data in persistent storage somewhere (Mu DB itself?)
+
 use anyhow::Result;
 use async_trait::async_trait;
 use dyn_clonable::clonable;
