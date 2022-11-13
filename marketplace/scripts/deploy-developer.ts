@@ -1,5 +1,5 @@
 import { AnchorProvider } from "@project-serum/anchor";
-import { createAuthorizedUsageSigner, createEscrowAccount, createMint, createProvider, createRegion, readOrCreateUserWallet, getMu, initializeMu, loadProviderFromStaticKeypair, readMintFromStaticKeypair, ServiceUnits } from "./anchor-utils";
+import { createEscrowAccount, readOrCreateUserWallet, getMu, loadProviderFromStaticKeypair, readMintFromStaticKeypair } from "./anchor-utils";
 import util from "./util"
 
 util.asyncMain(async () => {

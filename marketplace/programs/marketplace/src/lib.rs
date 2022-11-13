@@ -47,7 +47,7 @@ pub mod marketplace {
             authority: ctx.accounts.owner.to_account_info(),
         };
         let transfer_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), transfer);
-        anchor_spl::token::transfer(transfer_ctx, 100)?;
+        anchor_spl::token::transfer(transfer_ctx, 100_000000)?; // TODO: make this configurable
 
         ctx.accounts.provider.set_inner(Provider {
             account_type: MuAccountType::Provider as u8,
@@ -101,6 +101,7 @@ pub mod marketplace {
 
     pub fn create_authorized_usage_signer(
         ctx: Context<CreateAuthorizedUsageSigner>,
+        // TODO: why aren't these in the Accounts struct?
         signer: Pubkey,
         token_account: Pubkey,
     ) -> Result<()> {

@@ -36,7 +36,6 @@ use tokio::{select, sync::mpsc::UnboundedReceiver, task::spawn_blocking};
 
 use super::{config_types::Base58PublicKey, StackMetadata, StackWithMetadata};
 
-//TODO: usage updates and escrow
 #[async_trait]
 #[clonable]
 pub trait BlockchainMonitor: Clone + Send + Sync {
