@@ -10,14 +10,15 @@ use mu::{
         types::{FunctionDefinition, FunctionID, RuntimeConfig},
         Runtime,
     },
-    stack::usage_aggregator::UsageAggregator,
+    stack::usage_aggregator::{UsageAggregator, UsageCategory},
 };
-use mu_stack::{FunctionRuntime, MegaByte};
+use mu_stack::{FunctionRuntime, MegaByte, StackID};
 use std::{
     collections::HashMap,
     env,
     path::{Path, PathBuf},
     str::FromStr,
+    sync::{Arc, Mutex},
 };
 use tokio::process::Command;
 
@@ -142,19 +143,21 @@ async fn create_map_function_provider(
     Ok((functions, MapFunctionProvider::new()))
 }
 
-pub async fn create_runtime(projects: &[Project]) -> (Box<dyn Runtime>, DatabaseManager) {
+pub async fn create_runtime(
+    projects: &[Project],
+) -> (Box<dyn Runtime>, DatabaseManager, Box<dyn UsageAggregator>) {
     let config = RuntimeConfig {
         cache_path: PathBuf::from_str("runtime-cache").unwrap(),
     };
 
     let (functions, provider) = create_map_function_provider(projects).await.unwrap();
     let db_service = DatabaseManager::new().await.unwrap();
-    let usage_aggregator = MockUsageAggregator::new();
+    let usage_aggregator = HashMapUsageAggregator::new();
     let runtime = start(
         Box::new(provider),
         config,
         db_service.clone(),
-        usage_aggregator,
+        usage_aggregator.clone(),
     )
     .await
     .unwrap();
@@ -164,33 +167,46 @@ pub async fn create_runtime(projects: &[Project]) -> (Box<dyn Runtime>, Database
         .await
         .unwrap();
 
-    (runtime, db_service)
+    (runtime, db_service, usage_aggregator)
 }
 
-//TODO: Need to implement methods and storage so we can test it.
 #[derive(Clone)]
-pub struct MockUsageAggregator;
+pub struct HashMapUsageAggregator {
+    inner: Arc<Mutex<HashMap<StackID, HashMap<UsageCategory, u128>>>>,
+}
 
-impl MockUsageAggregator {
+impl HashMapUsageAggregator {
     pub fn new() -> Box<dyn UsageAggregator> {
-        Box::new(Self {})
+        Box::new(Self {
+            inner: Arc::new(Mutex::new(HashMap::new())),
+        })
     }
 }
 
 #[async_trait]
-impl UsageAggregator for MockUsageAggregator {
+impl UsageAggregator for HashMapUsageAggregator {
     fn register_usage(
         &self,
-        _stack_id: mu_stack::StackID,
-        _usage: Vec<mu::stack::usage_aggregator::Usage>,
+        stack_id: mu_stack::StackID,
+        usage: Vec<mu::stack::usage_aggregator::Usage>,
     ) {
+        let mut map = self.inner.lock().unwrap();
+        let stack_usage_map = map.entry(stack_id).or_insert_with(HashMap::new);
+
+        for usage in usage {
+            let (category, amount) = usage.into_category();
+            let usage_amount = stack_usage_map.entry(category).or_insert(0);
+            *usage_amount += amount;
+        }
     }
 
     async fn get_and_reset_usages(
         &self,
     ) -> Result<HashMap<mu_stack::StackID, HashMap<mu::stack::usage_aggregator::UsageCategory, u128>>>
     {
-        Ok(HashMap::new())
+        let mut map = self.inner.lock().unwrap();
+        let usages = map.drain().collect();
+        Ok(usages)
     }
 
     async fn stop(&self) {}
