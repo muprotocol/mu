@@ -9,5 +9,5 @@ util.asyncMain(async () => {
     let mint = await createMint(anchorProvider, true);
 
     console.log("Initializing Mu smart contract");
-    let mu = await initializeMu(anchorProvider, mint);
+    await initializeMu(anchorProvider, mint);
 });
