@@ -477,11 +477,7 @@ fn report_usage(
             usage,
         })
         .signer(payer.as_ref())
-        .send_with_spinner_and_config(RpcSendTransactionConfig {
-            // TODO: what's preflight and what's a preflight commitment?
-            skip_preflight: cfg!(debug_assertions),
-            ..Default::default()
-        })
+        .send()
         .context("Failed to send usage update transaction")?;
 
     Ok(())

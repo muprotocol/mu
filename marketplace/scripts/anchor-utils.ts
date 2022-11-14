@@ -6,6 +6,10 @@ import {Keypair, LAMPORTS_PER_SOL, Transaction, SystemProgram, PublicKey} from '
 import * as spl from '@solana/spl-token';
 import path from "path";
 import {existsSync, readFileSync, writeFileSync} from "fs";
+import promptSync from "prompt-sync";
+import {sleep, waitUntilPortUsed} from "./util";
+import {env} from "process";
+import {homedir} from "os";
 
 export const canConnectToLocalValidator = async () => {
     try {
@@ -22,6 +26,41 @@ export const canConnectToLocalValidator = async () => {
         return false;
     }
 }
+
+export const promptForRemovalIfLedgerExists = () => {
+    if (existsSync("test-ledger")) {
+        let prompt = promptSync();
+        if (!process.argv.includes("-y") &&
+            prompt("This command will delete the Solana ledger in ./test-ledger, are you sure? [y/n] ") != "y")
+            return false;
+    }
+    return true;
+}
+
+export const getSolanaValidatorCommand = () => {
+    if (process.argv.includes('-v')) {
+        return "export RUST_LOG=solana_runtime::system_instruction_processor=trace," +
+            "solana_runtime::message_processor=trace,solana_bpf_loader=debug,solana_rbpf=trace && " +
+            "solana-test-validator --log -r";
+    } else {
+        return "export RUST_LOG=solana_runtime::system_instruction_processor=trace," +
+            "solana_runtime::message_processor=info,solana_bpf_loader=debug,solana_rbpf=trace && " +
+            "solana-test-validator --log -r"
+    }
+}
+
+export const waitForLocalValidatorToStart = async () => {
+    console.log("Waiting for validator to start");
+    await waitUntilPortUsed(8899);
+    env.ANCHOR_WALLET = getDefaultWalletPath();
+    while (!(await canConnectToLocalValidator())) {
+        await sleep(0.5);
+    }
+}
+
+export const getDefaultWalletPath = () =>
+   path.resolve(homedir(), ".config/solana/id.json");
+
 
 export interface ServiceRates {
     billionFunctionMbInstructions: number,

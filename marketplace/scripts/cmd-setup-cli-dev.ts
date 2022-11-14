@@ -3,47 +3,34 @@
 // * Create and fund a provider wallet
 // * Create and fund a developer wallet
 
-import { existsSync } from "fs";
 import path from "path";
-import { TmuxSession } from "./tmux";
 import util from "./util"
-import promptSync from "prompt-sync";
-import { canConnectToLocalValidator } from "./anchor-utils";
-import { env } from "process";
-import { homedir } from "os";
+import {
+    canConnectToLocalValidator, getDefaultWalletPath,
+    getSolanaValidatorCommand,
+    promptForRemovalIfLedgerExists,
+    waitForLocalValidatorToStart
+} from "./anchor-utils";
+import {env} from "process";
+import {homedir} from "os";
+import {ProcessMultiplexer} from "./process-multiplexer";
 
 util.asyncMain(async () => {
-    if (existsSync("test-ledger")) {
-        let prompt = promptSync();
-        if (!process.argv.includes("-y") &&
-            prompt("This command will delete the Solana ledger in ./test-ledger, are you sure? [y/n] ") != "y")
-            return;
-
-        util.run("rm -rf test-ledger");
+    if (!promptForRemovalIfLedgerExists()) {
+        return;
     }
 
     console.log("Building anchor project");
     util.run("anchor build");
 
-    let sessionName = `mu_marketplace_${Date.now()}`;
-    console.log(`Starting tmux session ${sessionName}`);
-    console.log("Starting local Solana validator");
-    // TODO: swap tmux out for running the processes as children directly
-    let tmuxSession = new TmuxSession(
-        sessionName,
-        "RUST_LOG=warn solana-test-validator --log"
-    );
+    let muxer = new ProcessMultiplexer();
+    muxer.spawnNew(getSolanaValidatorCommand(), "solana");
 
-    console.log("Waiting for validator to start");
-    util.waitUntilPortUsed(8899);
-    env.ANCHOR_WALLET = path.resolve(homedir(), ".config/solana/id.json");
-    while (!(await canConnectToLocalValidator())) {
-        await util.sleep(0.5);
-    }
+    await waitForLocalValidatorToStart();
 
     console.log("Deploying Mu smart contract");
-    tmuxSession.splitWindow(
-        `export BROWSER='' ANCHOR_WALLET='~/.config/solana/id.json' && ` +
+    muxer.spawnNew(
+        `export BROWSER='' ANCHOR_WALLET='${getDefaultWalletPath()}' && ` +
         `cd '${process.cwd()}' && ` +
         `npx ts-node ${path.resolve(__dirname, "deploy-contract.ts")} && ` +
         `npx ts-node ${path.resolve(__dirname, "initialize-mu.ts")} && ` +
@@ -52,8 +39,8 @@ util.asyncMain(async () => {
         `npx ts-node ${path.resolve(__dirname, "create-wallet.ts")} cli_signer && ` +
         `echo Done && ` +
         `sleep 10`,
-        0,
-        true);
+        "deploy"
+    );
 
-    tmuxSession.attach();
+    await muxer.waitForAllWithSigint();
 })
