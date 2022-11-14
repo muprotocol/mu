@@ -25,17 +25,23 @@ pub struct CreateArgs {
     )]
     region_num: u32,
 
-    #[arg(long, help = "MuDB price based on GB per month")]
-    mudb_gb_month_price: u64,
+    #[arg(long, help = "Million DB reads price")]
+    million_db_reads: u32,
 
-    #[arg(long, help = "MuFunction price per (CPU+MEM)")] //TODO: what is the unit
-    mufunction_cpu_mem_price: u64,
+    #[arg(long, help = "Million DB writes price")]
+    million_db_writes: u32,
 
-    #[arg(long, help = "MuGateway price per million requests")]
-    mugateway_mreqs_price: u64,
+    #[arg(long, help = "DB gigabyte price per month")]
+    db_gigabyte_months: u32,
 
-    #[arg(long, help = "bandwidth price based on TB per month")]
-    bandwidth_price: u64,
+    #[arg(long, help = "Billion function-mb-instructions price")]
+    billion_function_mb_instructions: u32,
+
+    #[arg(long, help = "Million gateway requests price")]
+    million_gateway_requests: u32,
+
+    #[arg(long, help = "Gigabyte gateway traffic price")]
+    gigabytes_gateway_traffic: u32,
 }
 
 pub fn execute(config: Config, sub_command: Command) -> Result<()> {
@@ -62,11 +68,13 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
         system_program: system_program::id(),
     };
 
-    let rates = marketplace::ServiceUnits {
-        mudb_gb_month: args.mudb_gb_month_price,
-        mufunction_cpu_mem: args.mufunction_cpu_mem_price,
-        bandwidth: args.bandwidth_price,
-        gateway_mreqs: args.mugateway_mreqs_price,
+    let rates = marketplace::ServiceRates {
+        billion_function_mb_instructions: args.billion_function_mb_instructions,
+        db_gigabyte_months: args.db_gigabyte_months,
+        million_db_reads: args.million_db_reads,
+        million_db_writes: args.million_db_writes,
+        million_gateway_requests: args.million_gateway_requests,
+        gigabytes_gateway_traffic: args.gigabytes_gateway_traffic,
     };
 
     client
