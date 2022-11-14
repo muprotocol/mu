@@ -20,7 +20,6 @@ use marketplace::ServiceUsage;
 use mu_stack::StackID;
 use serde::Deserialize;
 use solana_account_decoder::UiAccountEncoding;
-use solana_client::rpc_config::RpcSendTransactionConfig;
 use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
     rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
@@ -351,18 +350,23 @@ async fn report_usages<'a>(
     .unwrap();
 
     spawn_blocking(move || {
+        let program_id = marketplace::id();
+
         let payer: Rc<dyn Signer> = Rc::new(signer_private_key);
         let program =
             anchor_client::Client::new(Cluster::Custom(rpc_url, pub_sub_url), payer.clone())
-                .program(marketplace::id());
+                .program(program_id);
 
         let (auth_signer_pda, _) = Pubkey::find_program_address(
             &[b"authorized_signer", region_pda.to_bytes().as_slice()],
-            &marketplace::id(),
+            &program_id,
         );
         let auth_signer = program
             .account::<marketplace::AuthorizedUsageSigner>(auth_signer_pda)
             .context("Failed to load authorized usage signer from Solana")?;
+
+        let (provider_pda, _) =
+            Pubkey::find_program_address(&[b"provider", &provider_pubkey.to_bytes()], &program_id);
 
         // TODO: currently, we must update usages per stack.
         // let mut usages_by_user = HashMap::new();
@@ -412,8 +416,9 @@ async fn report_usages<'a>(
                 solana_stack_id,
                 auth_signer.token_account,
                 usage,
+                provider_pda,
                 region_pda,
-                provider_pubkey,
+                auth_signer_pda,
             ) {
                 // TODO: need some way to keep the usage around for later
                 error!("Failed to report usage for {stack_id} due to: {e}");
@@ -426,14 +431,16 @@ async fn report_usages<'a>(
     .context("spawn_blocking failed")?
 }
 
+#[allow(clippy::too_many_arguments)]
 fn report_usage(
     program: &Program,
     payer: Rc<dyn Signer>,
     stack_id: Pubkey,
     token_account: Pubkey,
     usage: ServiceUsage,
+    provider_pda: Pubkey,
     region_pda: Pubkey,
-    provider_pubkey: Pubkey,
+    auth_signer_pda: Pubkey,
 ) -> Result<()> {
     let program_id = marketplace::id();
     let (state_pda, _) = Pubkey::find_program_address(&[b"state"], &program_id);
@@ -443,11 +450,7 @@ fn report_usage(
         .context("Failed to fetch stack from Solana")?;
 
     let (escrow_pda, escrow_bump) = Pubkey::find_program_address(
-        &[
-            b"escrow",
-            &stack.user.to_bytes(),
-            &provider_pubkey.to_bytes(),
-        ],
+        &[b"escrow", &stack.user.to_bytes(), &provider_pda.to_bytes()],
         &program_id,
     );
 
@@ -456,7 +459,7 @@ fn report_usage(
         Pubkey::find_program_address(&[b"update", &seed.to_le_bytes()], &program_id);
 
     let accounts = marketplace::accounts::UpdateUsage {
-        authorized_signer: payer.pubkey(),
+        authorized_signer: auth_signer_pda,
         escrow_account: escrow_pda,
         region: region_pda,
         signer: payer.pubkey(),
