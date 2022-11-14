@@ -27,8 +27,7 @@ util.asyncMain(async () => {
         `cd ${process.cwd()} && ` +
         `npx ts-node ${path.resolve(__dirname, "deploy-contract.ts")} && ` +
         `npx ts-node ${path.resolve(__dirname, "initialize-mu.ts")} && ` +
-        `echo Done && ` +
-        `sleep 5`,
+        `echo Done`,
         "deploy"
     );
 

@@ -6,13 +6,11 @@
 import path from "path";
 import util from "./util"
 import {
-    canConnectToLocalValidator, getDefaultWalletPath,
+    getDefaultWalletPath,
     getSolanaValidatorCommand,
     promptForRemovalIfLedgerExists,
     waitForLocalValidatorToStart
 } from "./anchor-utils";
-import {env} from "process";
-import {homedir} from "os";
 import {ProcessMultiplexer} from "./process-multiplexer";
 
 util.asyncMain(async () => {
@@ -37,8 +35,7 @@ util.asyncMain(async () => {
         `npx ts-node ${path.resolve(__dirname, "fund-wallet.ts")} cli_provider && ` +
         `npx ts-node ${path.resolve(__dirname, "fund-wallet.ts")} cli_dev && ` +
         `npx ts-node ${path.resolve(__dirname, "create-wallet.ts")} cli_signer && ` +
-        `echo Done && ` +
-        `sleep 10`,
+        `echo Done`,
         "deploy"
     );
 
