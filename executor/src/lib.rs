@@ -257,26 +257,11 @@ async fn glue_modules(
         BlockchainMonitorNotification,
     >,
 ) {
-    let mut debug_timer = tokio::time::interval(Duration::from_secs(3));
-
     loop {
         select! {
             () = cancellation_token.cancelled() => {
                 info!("Received SIGINT, stopping");
                 break;
-            }
-
-            _ = debug_timer.tick() => {
-                let nodes = gossip.get_nodes().await;
-                match nodes {
-                    Ok(peers) => {
-                        warn!(
-                            "Discovered nodes: {:?}",
-                            peers.iter().map(|n| format!("{}:{}", n.1.address, n.1.port)).collect::<Vec<_>>()
-                        );
-                    },
-                    Err(f) => error!("Failed to get nodes: {}", f),
-                }
             }
 
             notification = connection_manager_notification_receiver.recv() => {
