@@ -1,10 +1,10 @@
 use crate::{
     mudb::service::{DatabaseID, Item, Key, KeyFilter, TableDescription},
-    runtime::types::FunctionID,
+    runtime::{error::Error, types::FunctionID},
 };
 
 use super::{FromMessage, Message, ToMessage};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 macro_rules! make_request {
@@ -56,13 +56,11 @@ pub struct DbRequest {
 impl FromMessage for DbRequest {
     const TYPE: &'static str = "DbRequest";
 
-    fn from_message(m: Message) -> Result<Self> {
+    fn from_message(m: Message) -> Result<Self, Error> {
         Ok(Self {
-            id: m
-                .id
-                .context("filed id in database request can not be null")?,
+            id: m.id.ok_or(Error::MessageIDIsNone)?,
             request: serde_json::from_value(m.message)
-                .context("database request deserialization failed")?,
+                .map_err(|e| Error::MessageDeserializationFailed(e))?,
         })
     }
 }
@@ -85,12 +83,12 @@ pub struct DbResponse {
 impl ToMessage for DbResponse {
     const TYPE: &'static str = "DbResponse";
 
-    fn to_message(&self) -> Result<Message> {
+    fn to_message(&self) -> Result<Message, Error> {
         Ok(Message {
             id: Some(self.id),
             r#type: Self::TYPE.to_owned(),
             message: serde_json::to_value(&self.response)
-                .context("database response serialization failed")?,
+                .map_err(|e| Error::MessageSerializationFailed(e))?,
         })
     }
 }

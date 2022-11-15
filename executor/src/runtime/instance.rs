@@ -11,13 +11,16 @@ use super::{
     message::{database::*, gateway::*, log::Log, FromMessage, Message, ToMessage},
     types::{FunctionHandle, FunctionID, InstanceID},
 };
-use crate::{mudb::service::DatabaseManager, stack::usage_aggregator::Usage};
+use crate::{
+    mudb::service::DatabaseManager, runtime::error::FunctionRuntimeError,
+    stack::usage_aggregator::Usage,
+};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use bytes::BufMut;
 use log::trace;
 use mu_stack::MegaByte;
-use wasmer::{CompilerConfig, Module, Store};
+use wasmer::{CompilerConfig, Module, RuntimeError, Store};
 use wasmer_compiler_llvm::LLVM;
 use wasmer_middlewares::{metering::MeteringPoints, Metering};
 
@@ -54,6 +57,13 @@ fn create_usage(
             instructions: instructions_count,
         },
     ]
+}
+
+fn metering_point_to_instructions_count(points: MeteringPoints) -> u64 {
+    match points {
+        MeteringPoints::Exhausted => u64::MAX,
+        MeteringPoints::Remaining(p) => u64::MAX - p,
+    }
 }
 
 pub trait InstanceState {}
@@ -98,7 +108,7 @@ impl Instance<Loaded> {
         }
     }
 
-    pub fn start(self) -> Result<Instance<Running>> {
+    pub fn start(self) -> Result<Instance<Running>, Error> {
         let handle = function::start(self.state.store, &self.state.module, self.state.envs)?;
         let state = Running { handle };
         Ok(Instance {
@@ -125,24 +135,45 @@ impl Instance<Running> {
         is_finished
     }
 
-    fn write_to_stdin(&mut self, input: Message) -> Result<()> {
+    fn write_to_stdin(&mut self, input: Message) -> Result<(), Error> {
         let mut bytes = input.as_bytes()?;
         bytes.put_u8(b'\n');
-        self.state.handle.io.stdin.write_all(&bytes)?;
-        self.state.handle.io.stdin.flush()?;
+
+        self.state
+            .handle
+            .io
+            .stdin
+            .write_all(&bytes)
+            .map_err(|e| Error::Internal(anyhow!("can not write message to IO: {e}")))?;
+
+        self.state
+            .handle
+            .io
+            .stdin
+            .flush()
+            .map_err(|e| Error::Internal(anyhow!("can not flush written message: {e}")))?;
+
         Ok(())
     }
 
-    fn read_from_stdout(&mut self) -> Result<Message> {
+    fn read_from_stdout(&mut self) -> Result<Message, Error> {
         let mut buf = String::with_capacity(MESSAGE_READ_BUF_CAP);
         loop {
-            let bytes_read = self.state.handle.io.stdout.read_line(&mut buf)?;
-            if bytes_read == 0 {
-                continue;
-            };
+            let bytes_read = self
+                .state
+                .handle
+                .io
+                .stdout
+                .read_line(&mut buf)
+                .map_err(|e| Error::Internal(anyhow!("can not read line from IO: {e}")))?;
 
-            return serde_json::from_slice(buf.as_bytes()).map_err(Into::into);
+            if bytes_read != 0 {
+                break;
+            };
         }
+
+        return serde_json::from_slice(buf.as_bytes())
+            .map_err(|e| Error::MessageDeserializationFailed(e));
     }
 
     //TODO:
@@ -155,17 +186,22 @@ impl Instance<Running> {
         self,
         memory_limit: MegaByte,
         request: Message,
-    ) -> Result<(GatewayResponse, Vec<Usage>)> {
+    ) -> Result<(GatewayResponse, Vec<Usage>), (Error, Vec<Usage>)> {
         tokio::task::spawn_blocking(move || self._run_request(memory_limit, request))
             .await
-            .map_err(|_| anyhow!("can not run function task to end"))?
+            .map_err(|_| {
+                (
+                    Error::Internal(anyhow!("can not run function task to end")),
+                    vec![],
+                )
+            })?
     }
 
     fn _run_request(
         mut self,
         memory_limit: MegaByte,
         request: Message,
-    ) -> Result<(GatewayResponse, Vec<Usage>)> {
+    ) -> Result<(GatewayResponse, Vec<Usage>), (Error, Vec<Usage>)> {
         //TODO: Refactor these to `week` and `strong` when we had database replication
         let (mut database_read_count, mut database_write_count) = (0, 0);
         trace!(
@@ -179,43 +215,71 @@ impl Instance<Running> {
                 "Instance {:?} is already exited before sending request",
                 self.id
             );
-            return Err(Error::FunctionEarlyExit(self.id)).map_err(Into::into);
+            return Err((
+                Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(
+                    RuntimeError::new("Function Early Exit"),
+                )),
+                vec![],
+            ));
         }
 
-        self.write_to_stdin(request)?;
+        self.write_to_stdin(request).map_err(|e| (e, vec![]))?;
+
         loop {
             if self.is_finished() {
                 trace!("Instance {:?} exited early", self.id);
-                return Err(Error::FunctionEarlyExit(self.id)).map_err(Into::into);
+                return Err((
+                    Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(
+                        RuntimeError::new("Function Early Exit"),
+                    )),
+                    vec![],
+                ));
             }
 
             match self.read_from_stdout() {
                 Ok(message) => match message.r#type.as_str() {
                     GatewayResponse::TYPE => {
-                        let resp = GatewayResponse::from_message(message)?;
+                        let resp =
+                            GatewayResponse::from_message(message).map_err(|e| (e, vec![]))?;
 
-                        let usages = tokio::runtime::Handle::current()
+                        let result = tokio::runtime::Handle::current()
                             .block_on(self.state.handle.join_handle)
-                            .map(|m| {
-                                let instructions_count = match m {
-                                    MeteringPoints::Exhausted => u64::MAX,
-                                    MeteringPoints::Remaining(p) => u64::MAX - p,
-                                };
-
-                                create_usage(
-                                    database_read_count,
-                                    database_write_count,
-                                    instructions_count,
-                                    memory_limit,
-                                )
+                            .map(move |m| {
+                                m.map(|points| {
+                                    (
+                                        resp,
+                                        create_usage(
+                                            database_read_count,
+                                            database_write_count,
+                                            metering_point_to_instructions_count(points),
+                                            memory_limit,
+                                        ),
+                                    )
+                                })
+                                .map_err(|(e, points)| {
+                                    (
+                                        e,
+                                        create_usage(
+                                            database_read_count,
+                                            database_write_count,
+                                            metering_point_to_instructions_count(points),
+                                            memory_limit,
+                                        ),
+                                    )
+                                })
                             })
-                            .map_err(|_| anyhow!("can not run function task to end"))?;
+                            .map_err(|_| {
+                                (
+                                    Error::Internal(anyhow!("Failed to run function task to end")),
+                                    vec![],
+                                )
+                            })?;
 
-                        return Ok((resp, usages));
+                        return result;
                     }
 
                     DbRequest::TYPE => {
-                        let db_req = DbRequest::from_message(message)?;
+                        let db_req = DbRequest::from_message(message).map_err(|e| (e, vec![]))?;
                         let db_resp = match db_req.request {
                             DbRequestDetails::CreateTable(req) => {
                                 let res = tokio::runtime::Handle::current()
@@ -255,7 +319,9 @@ impl Instance<Running> {
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                         req.key_filter,
-                                        req.value_filter.try_into()?,
+                                        req.value_filter.try_into().map_err(|_| {
+                                            (Error::DBError("failed to parse value filter"), vec![])
+                                        })?,
                                     ))
                                     .map_err(|e| e.to_string());
 
@@ -291,8 +357,12 @@ impl Instance<Running> {
                                         database_id(&self.id.function_id, req.db_name),
                                         req.table_name,
                                         req.key_filter,
-                                        req.value_filter.try_into()?,
-                                        req.update.try_into()?,
+                                        req.value_filter.try_into().map_err(|_| {
+                                            (Error::DBError("failed to parse value filter"), vec![])
+                                        })?,
+                                        req.update.try_into().map_err(|_| {
+                                            (Error::DBError("failed to parse updater"), vec![])
+                                        })?,
                                     ))
                                     .map_err(|e| e.to_string());
 
@@ -305,15 +375,15 @@ impl Instance<Running> {
                             }
                         };
 
-                        let msg = db_resp.to_message()?;
-                        self.write_to_stdin(msg)?;
+                        let msg = db_resp.to_message().map_err(|e| (e, vec![]))?;
+                        self.write_to_stdin(msg).map_err(|e| (e, vec![]))?;
                     }
 
                     Log::TYPE => {
-                        let log = Log::from_message(message)?;
+                        let log = Log::from_message(message).map_err(|e| (e, vec![]))?;
                         println!("Log: {log:#?}");
                     }
-                    t => bail!("invalid message type: {t}"),
+                    t => return Err((Error::InvalidMessageType(t.to_string()), vec![])),
                 },
                 Err(e) => println!("Error while parsing response: {e:?}"),
             };

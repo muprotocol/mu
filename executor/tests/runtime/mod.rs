@@ -165,11 +165,12 @@ async fn test_functions_with_early_exit_are_handled() {
         data: "Are You There?",
     };
 
+    use mu::runtime::error::*;
     match runtime
         .invoke_function(projects[0].id.clone(), request)
         .await
     {
-        Err(e) => assert!(e.to_string().contains("Function exited early")),
+        Err(Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(_))) => (),
         _ => panic!("Early exit function should fail to run"),
     }
 
@@ -194,14 +195,12 @@ async fn functions_with_limited_memory_wont_run() {
         .invoke_function(projects[0].id.clone(), request)
         .await;
 
-    assert_eq!(
-        result
-            .err()
-            .unwrap()
-            .downcast::<mu::runtime::error::Error>()
-            .unwrap(),
-        mu::runtime::error::Error::MaximumMemoryExceeded
-    );
+    use mu::runtime::error::*;
+
+    match result.err().unwrap() {
+        Error::FunctionRuntimeError(FunctionRuntimeError::MaximumMemoryExceeded) => (),
+        _ => panic!("Should panic!"),
+    }
 
     runtime.shutdown().await.unwrap();
 }

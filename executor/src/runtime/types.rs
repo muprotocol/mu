@@ -1,4 +1,7 @@
-use super::message::{gateway::GatewayResponse, Message};
+use super::{
+    error::Error,
+    message::{gateway::GatewayResponse, Message},
+};
 use mu_stack::{FunctionRuntime, MegaByte, StackID};
 
 use anyhow::Result;
@@ -28,7 +31,7 @@ pub struct InvokeFunctionRequest {
     // TODO: not needed in public interface
     pub function_id: FunctionID,
     pub message: Message,
-    pub reply: ReplyChannel<Result<GatewayResponse>>,
+    pub reply: ReplyChannel<Result<GatewayResponse, Error>>,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -108,7 +111,7 @@ pub struct FunctionIO {
 
 #[derive(Debug)]
 pub struct FunctionHandle {
-    pub join_handle: JoinHandle<MeteringPoints>,
+    pub join_handle: JoinHandle<Result<MeteringPoints, (super::error::Error, MeteringPoints)>>,
     is_finished_rx: tokio::sync::oneshot::Receiver<()>,
     is_finished: bool,
     pub io: FunctionIO,
@@ -116,7 +119,7 @@ pub struct FunctionHandle {
 
 impl FunctionHandle {
     pub fn new(
-        join_handle: JoinHandle<MeteringPoints>,
+        join_handle: JoinHandle<Result<MeteringPoints, (super::error::Error, MeteringPoints)>>,
         is_finished_rx: tokio::sync::oneshot::Receiver<()>,
         io: FunctionIO,
     ) -> Self {

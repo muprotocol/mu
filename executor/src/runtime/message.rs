@@ -4,10 +4,11 @@
 pub mod database;
 pub mod gateway;
 pub mod log;
-pub mod signal;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+
+use super::error::Error;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
@@ -17,19 +18,19 @@ pub struct Message {
 }
 
 impl Message {
-    pub fn as_bytes(self) -> Result<Vec<u8>> {
-        serde_json::to_vec(&self).map_err(Into::into)
+    pub fn as_bytes(self) -> Result<Vec<u8>, Error> {
+        serde_json::to_vec(&self).map_err(|e| Error::MessageSerializationFailed(e))
     }
 }
 
 pub trait ToMessage {
     const TYPE: &'static str;
 
-    fn to_message(&self) -> Result<Message>;
+    fn to_message(&self) -> Result<Message, Error>;
 }
 
 pub trait FromMessage: Sized {
     const TYPE: &'static str;
 
-    fn from_message(m: Message) -> Result<Self>;
+    fn from_message(m: Message) -> Result<Self, Error>;
 }

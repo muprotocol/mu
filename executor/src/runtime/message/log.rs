@@ -1,5 +1,7 @@
+use crate::runtime::error::Error;
+
 use super::{FromMessage, Message};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::Deserialize;
 
 #[derive(Debug)]
@@ -16,9 +18,10 @@ pub struct LogDetails {
 impl FromMessage for Log {
     const TYPE: &'static str = "Log";
 
-    fn from_message(m: Message) -> Result<Self> {
+    fn from_message(m: Message) -> Result<Self, Error> {
         Ok(Self {
-            log: serde_json::from_value(m.message).context("log deserialization failed")?,
+            log: serde_json::from_value(m.message)
+                .map_err(|e| Error::MessageDeserializationFailed(e))?,
             //TODO: timestamp: chrono::Utc::now(),
         })
     }

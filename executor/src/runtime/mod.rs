@@ -10,7 +10,7 @@ pub mod message;
 pub mod providers;
 pub mod types;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::*;
@@ -29,7 +29,9 @@ use self::{
     },
 };
 use crate::{
-    gateway, mudb::service::DatabaseManager, runtime::message::ToMessage,
+    gateway,
+    mudb::service::DatabaseManager,
+    runtime::{error::FunctionLoadingError, message::ToMessage},
     stack::usage_aggregator::UsageAggregator,
 };
 
@@ -40,13 +42,13 @@ pub trait Runtime: Clone + Send + Sync {
         &self,
         function_id: FunctionID,
         message: gateway::Request<'a>,
-    ) -> Result<gateway::Response>;
+    ) -> Result<gateway::Response, Error>;
 
-    async fn shutdown(&self) -> Result<()>;
+    async fn shutdown(&self) -> Result<(), Error>;
 
-    async fn add_functions(&self, functions: Vec<FunctionDefinition>) -> Result<()>;
-    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<()>;
-    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>>;
+    async fn add_functions(&self, functions: Vec<FunctionDefinition>) -> Result<(), Error>;
+    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<(), Error>;
+    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>, Error>;
 }
 
 #[derive(Debug)]
@@ -102,7 +104,7 @@ impl RuntimeState {
             let CacheHashAndMemoryLimit { hash, memory_limit } = self
                 .hashkey_dict
                 .get(function_id)
-                .ok_or(Error::Internal("cache key can not be found"))?
+                .ok_or(Error::Internal(anyhow!("cache key can not be found")))?
                 .to_owned();
 
             let store = create_store(*memory_limit);
@@ -112,10 +114,11 @@ impl RuntimeState {
                 Err(e) => {
                     warn!("cached module is corrupted: {}", e);
 
-                    let definition = self
-                        .function_provider
-                        .get(function_id)
-                        .ok_or_else(|| Error::FunctionNotFound(function_id.clone()))?;
+                    let definition = self.function_provider.get(function_id).ok_or_else(|| {
+                        Error::FunctionLoadingError(FunctionLoadingError::FunctionNotFound(
+                            function_id.clone(),
+                        ))
+                    })?;
 
                     let module = Module::new(&store, definition.source.clone())?;
 
@@ -128,7 +131,10 @@ impl RuntimeState {
             let function_definition = match self.function_provider.get(function_id) {
                 Some(d) => d,
                 None => {
-                    return Err(Error::FunctionNotFound(function_id.clone())).map_err(Into::into);
+                    return Err(Error::FunctionLoadingError(
+                        FunctionLoadingError::FunctionNotFound(function_id.clone()),
+                    )
+                    .into());
                 }
             };
 
@@ -156,7 +162,12 @@ impl RuntimeState {
                 Ok((store, module))
             } else {
                 error!("can not build wasm module for function: {}", function_id);
-                Err(Error::InvalidFunctionModule(function_id.clone())).map_err(Into::into)
+                Err(
+                    Error::FunctionLoadingError(FunctionLoadingError::InvalidFunctionModule(
+                        function_id.clone(),
+                    ))
+                    .into(),
+                )
             }
         }
     }
@@ -165,7 +176,11 @@ impl RuntimeState {
         let definition = self
             .function_provider
             .get(&function_id)
-            .ok_or_else(|| Error::FunctionNotFound(function_id.clone()))?
+            .ok_or_else(|| {
+                Error::FunctionLoadingError(FunctionLoadingError::FunctionNotFound(
+                    function_id.clone(),
+                ))
+            })?
             .to_owned();
 
         let (store, module) = self.load_module(&function_id)?;
@@ -185,10 +200,8 @@ impl Runtime for RuntimeImpl {
         &self,
         function_id: FunctionID,
         message: gateway::Request<'a>,
-    ) -> Result<gateway::Response> {
-        let message = GatewayRequest::new(message)
-            .to_message()
-            .context("Failed to serialize request message")?;
+    ) -> Result<gateway::Response, Error> {
+        let message = GatewayRequest::new(message).to_message()?;
 
         self.mailbox
             .post_and_reply(|r| {
@@ -198,35 +211,39 @@ impl Runtime for RuntimeImpl {
                     reply: r,
                 })
             })
-            .await?
+            .await
+            .map_err(|e| Error::Internal(e.into()))?
             .map(|r| r.response)
     }
 
-    async fn shutdown(&self) -> Result<()> {
-        self.mailbox.post(MailboxMessage::Shutdown).await?;
+    async fn shutdown(&self) -> Result<(), Error> {
+        self.mailbox
+            .post(MailboxMessage::Shutdown)
+            .await
+            .map_err(|e| Error::Internal(e.into()))?;
         self.mailbox.clone().stop().await;
         Ok(())
     }
 
-    async fn add_functions(&self, functions: Vec<FunctionDefinition>) -> Result<()> {
+    async fn add_functions(&self, functions: Vec<FunctionDefinition>) -> Result<(), Error> {
         self.mailbox
             .post(MailboxMessage::AddFunctions(functions))
             .await
-            .map_err(Into::into)
+            .map_err(|e| Error::Internal(e.into()))
     }
 
-    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<()> {
+    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<(), Error> {
         self.mailbox
             .post(MailboxMessage::RemoveFunctions(stack_id, names))
             .await
-            .map_err(Into::into)
+            .map_err(|e| Error::Internal(e.into()))
     }
 
-    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>> {
+    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>, Error> {
         self.mailbox
             .post_and_reply(|r| MailboxMessage::GetFunctionNames(stack_id, r))
             .await
-            .map_err(Into::into)
+            .map_err(|e| Error::Internal(e.into()))
     }
 }
 
@@ -252,7 +269,6 @@ async fn mailbox_step(
     msg: MailboxMessage,
     mut state: RuntimeState,
 ) -> RuntimeState {
-    //TODO: pass metering info to blockchain_manager service
     match msg {
         MailboxMessage::InvokeFunction(req) => {
             if let Ok(instance) = state.instantiate_function(req.function_id.clone()).await {
@@ -268,21 +284,29 @@ async fn mailbox_step(
                     match instance.start() {
                         Err(e) => req.reply.reply(Err(e)),
                         Ok(i) => {
-                            let result = i.run_request(memory_limit, req.message).await.map(
-                                |(resp, usages)| {
+                            let result = i
+                                .run_request(memory_limit, req.message)
+                                .await
+                                .map(|(resp, usages)| {
                                     usage_aggregator
                                         .register_usage(req.function_id.stack_id, usages);
                                     resp
-                                },
-                            );
+                                })
+                                .map_err(|(error, usages)| {
+                                    usage_aggregator
+                                        .register_usage(req.function_id.stack_id, usages);
+                                    error
+                                });
 
                             req.reply.reply(result);
                         }
                     }
                 });
             } else {
-                req.reply
-                    .reply(Err(Error::Internal("Can not instantiate function")).map_err(Into::into))
+                req.reply.reply(
+                    Err(Error::Internal(anyhow!("Can not instantiate function")))
+                        .map_err(Into::into),
+                )
             }
         }
 
