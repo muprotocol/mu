@@ -60,7 +60,7 @@ impl FromMessage for DbRequest {
         Ok(Self {
             id: m.id.ok_or(Error::MessageIDIsNone)?,
             request: serde_json::from_value(m.message)
-                .map_err(|e| Error::MessageDeserializationFailed(e))?,
+                .map_err(Error::MessageDeserializationFailed)?,
         })
     }
 }
@@ -88,7 +88,7 @@ impl ToMessage for DbResponse {
             id: Some(self.id),
             r#type: Self::TYPE.to_owned(),
             message: serde_json::to_value(&self.response)
-                .map_err(|e| Error::MessageSerializationFailed(e))?,
+                .map_err(Error::MessageSerializationFailed)?,
         })
     }
 }

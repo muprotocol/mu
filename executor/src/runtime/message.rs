@@ -19,7 +19,7 @@ pub struct Message {
 
 impl Message {
     pub fn as_bytes(self) -> Result<Vec<u8>, Error> {
-        serde_json::to_vec(&self).map_err(|e| Error::MessageSerializationFailed(e))
+        serde_json::to_vec(&self).map_err(Error::MessageSerializationFailed)
     }
 }
 

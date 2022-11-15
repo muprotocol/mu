@@ -104,7 +104,7 @@ impl RuntimeState {
             let CacheHashAndMemoryLimit { hash, memory_limit } = self
                 .hashkey_dict
                 .get(function_id)
-                .ok_or(Error::Internal(anyhow!("cache key can not be found")))?
+                .ok_or_else(|| Error::Internal(anyhow!("cache key can not be found")))?
                 .to_owned();
 
             let store = create_store(*memory_limit);

@@ -173,7 +173,7 @@ impl Instance<Running> {
         }
 
         return serde_json::from_slice(buf.as_bytes())
-            .map_err(|e| Error::MessageDeserializationFailed(e));
+            .map_err(Error::MessageDeserializationFailed);
     }
 
     //TODO:

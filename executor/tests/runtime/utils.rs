@@ -138,8 +138,8 @@ pub async fn read_wasm_functions(
 async fn create_map_function_provider(
     projects: &[Project],
 ) -> Result<(HashMap<FunctionID, FunctionDefinition>, MapFunctionProvider)> {
-    build_wasm_projects(&projects).await?;
-    let functions = read_wasm_functions(&projects).await?;
+    build_wasm_projects(projects).await?;
+    let functions = read_wasm_functions(projects).await?;
     Ok((functions, MapFunctionProvider::new()))
 }
 

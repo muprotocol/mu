@@ -21,7 +21,7 @@ impl<'a> ToMessage for GatewayRequest<'a> {
             r#type: Self::TYPE.to_owned(),
             // TODO: not good, why force user to only send JSON to functions?
             message: serde_json::to_value(&self.request)
-                .map_err(|e| Error::MessageSerializationFailed(e))?,
+                .map_err(Error::MessageSerializationFailed)?,
         })
     }
 }
@@ -43,7 +43,7 @@ impl FromMessage for GatewayResponse {
     fn from_message(m: Message) -> Result<Self, Error> {
         Ok(Self {
             response: serde_json::from_value(m.message)
-                .map_err(|e| Error::MessageDeserializationFailed(e))?,
+                .map_err(Error::MessageDeserializationFailed)?,
         })
     }
 }
