@@ -20,8 +20,7 @@ impl FromMessage for Log {
 
     fn from_message(m: Message) -> Result<Self, Error> {
         Ok(Self {
-            log: serde_json::from_value(m.message)
-                .map_err(Error::MessageDeserializationFailed)?,
+            log: serde_json::from_value(m.message).map_err(Error::MessageDeserializationFailed)?,
             //TODO: timestamp: chrono::Utc::now(),
         })
     }
