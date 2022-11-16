@@ -132,6 +132,7 @@ pub async fn run() -> Result<()> {
         Box::new(function_provider),
         runtime_config,
         database_manager.clone(),
+        usage_aggregator.clone(),
     )
     .await
     .context("Failed to initiate runtime")?;

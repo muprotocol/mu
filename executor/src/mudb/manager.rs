@@ -241,7 +241,7 @@ mod test {
             .unwrap();
 
         for (name, _) in list {
-            manager.drop_db(&name.to_string()).await.unwrap();
+            manager.drop_db(&name).await.unwrap();
         }
     }
 

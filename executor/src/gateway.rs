@@ -430,10 +430,9 @@ async fn handle_request<'a>(
         )
         .await
     {
-        Ok(x) => {
-            let response = x.0;
-            traffic += response.calculate_size();
-            response
+        Ok(r) => {
+            traffic += r.calculate_size();
+            r
         }
         // TODO: Generate meaningful error messages (propagate user function failure?)
         Err(f) => {

@@ -92,13 +92,14 @@ pub(super) async fn deploy(
             source: function_source,
             runtime: func.runtime,
             envs: func.env.clone(),
+            memory_limit: func.memory_limit,
         });
         function_names.push(&func.name);
     }
     runtime
         .add_functions(function_defs)
         .await
-        .map_err(StackDeploymentError::FailedToDeployFunctions)?;
+        .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
 
     // Step 2: Databases
     let db_ids = stack
