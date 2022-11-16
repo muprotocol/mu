@@ -24,6 +24,7 @@ pub trait UsageAggregator: Clone + Sync + Send {
     async fn stop(&self);
 }
 
+#[derive(Clone)]
 pub enum Usage {
     FunctionMBInstructions {
         memory_megabytes: u64,
@@ -54,7 +55,7 @@ impl Usage {
     // calculating usage numbers.
     // Also, we count each strong read/write as two weak reads/writes.
     // We *may* want to make this more configurable.
-    fn into_category(self) -> (UsageCategory, u128) {
+    pub fn into_category(self) -> (UsageCategory, u128) {
         match self {
             Usage::FunctionMBInstructions {
                 instructions,
@@ -95,7 +96,7 @@ impl Usage {
 // This is different from `Usage` above in that it doesn't contain any data in the cases.
 // This is useful for storing usages in a hashset, keyed by category. Also, this is perfect
 // for reporting directly to the blockchain.
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, Debug)]
 pub enum UsageCategory {
     FunctionMBInstructions,
     DBStorage,

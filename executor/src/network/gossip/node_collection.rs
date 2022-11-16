@@ -297,8 +297,8 @@ impl Peer {
 
     pub fn set_connection_id(&mut self, connection_id: ConnectionID) {
         match self {
-            Peer::Temporary(t) => (*t).2 = connection_id,
-            Peer::Permanent(p) => (*p).2 = connection_id,
+            Peer::Temporary(t) => t.2 = connection_id,
+            Peer::Permanent(p) => p.2 = connection_id,
         }
     }
 }

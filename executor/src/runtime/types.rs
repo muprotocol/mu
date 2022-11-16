@@ -1,5 +1,8 @@
-use super::message::{gateway::GatewayResponse, Message};
-use mu_stack::{FunctionRuntime, StackID};
+use super::{
+    error::Error,
+    message::{gateway::GatewayResponse, Message},
+};
+use mu_stack::{FunctionRuntime, MegaByte, StackID};
 
 use anyhow::Result;
 use bytes::Bytes;
@@ -23,14 +26,12 @@ pub trait FunctionProvider: Send {
     fn get_function_names(&self, stack_id: &StackID) -> Vec<String>;
 }
 
-pub type FunctionUsage = u64; // # of executed instructions
-
 #[derive(Debug)]
 pub struct InvokeFunctionRequest {
     // TODO: not needed in public interface
     pub function_id: FunctionID,
     pub message: Message,
-    pub reply: ReplyChannel<Result<(GatewayResponse, FunctionUsage)>>,
+    pub reply: ReplyChannel<Result<GatewayResponse, Error>>,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -76,6 +77,7 @@ pub struct FunctionDefinition {
 
     // TODO: key must not contain `=` and both must not contain `null` byte
     pub envs: HashMap<String, String>,
+    pub memory_limit: MegaByte,
 }
 
 impl FunctionDefinition {
@@ -87,6 +89,7 @@ impl FunctionDefinition {
             IntoIter = impl Iterator<Item = (String, String)>,
             Item = (String, String),
         >,
+        memory_limit: MegaByte,
     ) -> Self {
         let envs: HashMap<String, String> = envs.into_iter().collect();
         Self {
@@ -94,6 +97,7 @@ impl FunctionDefinition {
             source,
             runtime,
             envs,
+            memory_limit,
         }
     }
 }
@@ -107,7 +111,7 @@ pub struct FunctionIO {
 
 #[derive(Debug)]
 pub struct FunctionHandle {
-    pub join_handle: JoinHandle<MeteringPoints>,
+    pub join_handle: JoinHandle<Result<MeteringPoints, (super::error::Error, MeteringPoints)>>,
     is_finished_rx: tokio::sync::oneshot::Receiver<()>,
     is_finished: bool,
     pub io: FunctionIO,
@@ -115,7 +119,7 @@ pub struct FunctionHandle {
 
 impl FunctionHandle {
     pub fn new(
-        join_handle: JoinHandle<MeteringPoints>,
+        join_handle: JoinHandle<Result<MeteringPoints, (super::error::Error, MeteringPoints)>>,
         is_finished_rx: tokio::sync::oneshot::Receiver<()>,
         io: FunctionIO,
     ) -> Self {
@@ -150,3 +154,5 @@ impl FunctionHandle {
 pub struct RuntimeConfig {
     pub cache_path: PathBuf,
 }
+
+pub type InstructionsCount = u64;
