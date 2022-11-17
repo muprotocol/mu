@@ -29,6 +29,7 @@ matrix:
   apsell:
     lang: en
     d: en_US
+    camel-case: true
   dictionary:
     wordlists:
     - .wordlist.txt
@@ -42,6 +43,7 @@ matrix:
   apsell:
     lang: en
     d: en_US
+    camel-case: true
   dictionary:
     wordlists:
     - .wordlist.txt
