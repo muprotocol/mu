@@ -49,6 +49,7 @@ pub async fn run() -> Result<()> {
         runtime_config,
         scheduler_config,
         blockchain_monitor_config,
+        db_manager_config,
     ) = config::initialize_config()?;
 
     let my_node = NodeAddress {
@@ -127,7 +128,8 @@ pub async fn run() -> Result<()> {
     let usage_aggregator = stack::usage_aggregator::start();
 
     let function_provider = runtime::providers::DefaultFunctionProvider::new();
-    let database_manager = DatabaseManager::new().await?;
+    let database_manager =
+        DatabaseManager::new(usage_aggregator.clone(), db_manager_config).await?;
     let runtime = runtime::start(
         Box::new(function_provider),
         runtime_config,
@@ -218,6 +220,13 @@ pub async fn run() -> Result<()> {
             .stop()
             .await
             .context("Failed to stop connection manager")?;
+
+        runtime.stop().await.context("Failed to stop runtime")?;
+
+        database_manager
+            .stop()
+            .await
+            .context("Failed to stop runtime")?;
 
         Result::<()>::Ok(())
     });

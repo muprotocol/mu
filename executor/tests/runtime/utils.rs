@@ -1,26 +1,28 @@
 use anyhow::{bail, Context, Result};
-use async_trait::async_trait;
 use mu::{
     mudb::{
         self,
         service::{DatabaseID, DatabaseManager},
+        DBManagerConfig,
     },
     runtime::{
         start,
         types::{FunctionDefinition, FunctionID, RuntimeConfig},
         Runtime,
     },
-    stack::usage_aggregator::{UsageAggregator, UsageCategory},
+    stack::usage_aggregator::UsageAggregator,
 };
-use mu_stack::{FunctionRuntime, MegaByte, StackID};
+use mu_stack::{FunctionRuntime, MegaByte};
 use std::{
     collections::HashMap,
     env,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::{Arc, Mutex},
+    time::Duration,
 };
 use tokio::process::Command;
+
+use crate::common::HashMapUsageAggregator;
 
 use super::providers::MapFunctionProvider;
 
@@ -151,8 +153,14 @@ pub async fn create_runtime(
     };
 
     let (functions, provider) = create_map_function_provider(projects).await.unwrap();
-    let db_service = DatabaseManager::new().await.unwrap();
     let usage_aggregator = HashMapUsageAggregator::new();
+    let db_manager_config = DBManagerConfig {
+        usage_report_duration: Duration::from_secs(10),
+    };
+
+    let db_service = DatabaseManager::new(usage_aggregator.clone(), db_manager_config)
+        .await
+        .unwrap();
     let runtime = start(
         Box::new(provider),
         config,
@@ -168,46 +176,4 @@ pub async fn create_runtime(
         .unwrap();
 
     (runtime, db_service, usage_aggregator)
-}
-
-#[derive(Clone)]
-pub struct HashMapUsageAggregator {
-    inner: Arc<Mutex<HashMap<StackID, HashMap<UsageCategory, u128>>>>,
-}
-
-impl HashMapUsageAggregator {
-    pub fn new() -> Box<dyn UsageAggregator> {
-        Box::new(Self {
-            inner: Arc::new(Mutex::new(HashMap::new())),
-        })
-    }
-}
-
-#[async_trait]
-impl UsageAggregator for HashMapUsageAggregator {
-    fn register_usage(
-        &self,
-        stack_id: mu_stack::StackID,
-        usage: Vec<mu::stack::usage_aggregator::Usage>,
-    ) {
-        let mut map = self.inner.lock().unwrap();
-        let stack_usage_map = map.entry(stack_id).or_insert_with(HashMap::new);
-
-        for usage in usage {
-            let (category, amount) = usage.into_category();
-            let usage_amount = stack_usage_map.entry(category).or_insert(0);
-            *usage_amount += amount;
-        }
-    }
-
-    async fn get_and_reset_usages(
-        &self,
-    ) -> Result<HashMap<mu_stack::StackID, HashMap<mu::stack::usage_aggregator::UsageCategory, u128>>>
-    {
-        let mut map = self.inner.lock().unwrap();
-        let usages = map.drain().collect();
-        Ok(usages)
-    }
-
-    async fn stop(&self) {}
 }

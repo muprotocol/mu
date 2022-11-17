@@ -36,6 +36,8 @@ pub enum Error {
     InvalidDbId(String),
     #[error("mudb_error> manager_mailbox> {0}")]
     ManagerMailBox(ManagerMailBoxError),
+    #[error("Can not stop manager")]
+    FailedToStopManager,
 }
 
 impl Eq for Error {}
@@ -105,6 +107,8 @@ pub enum ManagerMailBoxError {
     GetDb(mailbox_processor::Error),
     #[error("get_cache> {0}")]
     GetCache(mailbox_processor::Error),
+    #[error("Failed to stop manager")]
+    Stop(mailbox_processor::Error),
 }
 
 impl From<ManagerMailBoxError> for Error {

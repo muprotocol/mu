@@ -44,7 +44,7 @@ async fn test_simple_func() {
         .unwrap();
 
     assert_eq!("Hello Chappy, welcome to MuRuntime", resp.body);
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -76,7 +76,7 @@ async fn can_query_mudb() {
         .unwrap();
 
     assert_eq!("Hello Dream", resp.body);
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -109,7 +109,7 @@ async fn can_run_multiple_instance_of_the_same_function() {
 
     tokio::join!(instance_1, instance_2, instance_3);
 
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -148,7 +148,7 @@ async fn can_run_instances_of_different_functions() {
 
     tokio::join!(instance_1, instance_2);
 
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -174,7 +174,7 @@ async fn test_functions_with_early_exit_are_handled() {
         _ => panic!("Early exit function should fail to run"),
     }
 
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -202,7 +202,7 @@ async fn functions_with_limited_memory_wont_run() {
         _ => panic!("Should panic!"),
     }
 
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -224,7 +224,7 @@ async fn functions_with_limited_memory_will_run_with_enough_memory() {
         .then(|r| async move { assert_eq!("Hello Test, i ran!", r.unwrap().body) })
         .await;
 
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -266,7 +266,7 @@ async fn function_usage_is_reported_correctly_1() {
             > &0
     );
 
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -311,5 +311,5 @@ async fn function_usage_is_reported_correctly_2() {
             > &0
     );
 
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }

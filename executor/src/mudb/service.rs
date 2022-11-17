@@ -1,7 +1,9 @@
 //! Stateful Service
 //! purpose is provide stateful api
 
-use super::{error::Result, manager::Manager, Config, Db, Error};
+use crate::stack::usage_aggregator::UsageAggregator;
+
+use super::{error::Result, manager::Manager, Config, DBManagerConfig, Db, Error};
 
 pub use super::{
     types::{DatabaseID, KeyFilter, TableDescription},
@@ -16,8 +18,11 @@ pub type Item = (Key, Value);
 pub struct DatabaseManager(Manager);
 
 impl DatabaseManager {
-    pub async fn new() -> Result<Self> {
-        Ok(Self(Manager::new().await?))
+    pub async fn new(
+        usage_aggregator: Box<dyn UsageAggregator>,
+        config: DBManagerConfig,
+    ) -> Result<Self> {
+        Ok(Self(Manager::new(usage_aggregator, config).await?))
     }
 
     fn manager(&self) -> &Manager {
@@ -236,5 +241,9 @@ impl DatabaseManager {
             Ok(db.get_table(table_name.try_into()?)?.is_empty())
         })
         .await
+    }
+
+    pub async fn stop(self) -> Result<()> {
+        self.0.stop().await
     }
 }
