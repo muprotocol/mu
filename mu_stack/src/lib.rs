@@ -70,6 +70,9 @@ impl FromStr for StackID {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct MegaByte(pub u32);
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct KiloByte(pub u32);
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Stack {
     pub name: String,
