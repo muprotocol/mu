@@ -72,6 +72,6 @@ The runtime implements a special endpoint
 
 ## The Mu Toolkit 
 
-The Mu toolkit is a series of tools designed to simplify the development, testing and deployment of Mu applications. The Mu toolkit is intended to be used by developers targetting the Mu platform.
+The Mu toolkit is a series of tools designed to simplify the development, testing and deployment of Mu applications. The Mu toolkit is intended to be used by developers targeting the Mu platform.
 
 The Mu toolkit includes the `mu` command, that contains a series of subcommands, useful for developers.
