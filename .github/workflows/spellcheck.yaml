@@ -11,4 +11,4 @@ jobs:
         uses: rojopolis/spellcheck-github-actions@0.23.0
         with:
           config_path: .spellcheck.yaml
-          task_name: Markdown
+          task_name: Markdown,Rust,TypeScript
