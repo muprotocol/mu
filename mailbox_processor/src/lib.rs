@@ -2,7 +2,7 @@ use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
 
 pub mod callback;
-pub mod plain;
+pub mod plainc;
 
 #[derive(Debug, PartialEq, Error)]
 pub enum Error {
