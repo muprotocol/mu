@@ -23,3 +23,41 @@ matrix:
       - 'blockquote'
   sources:
   - '**/*.md'
+- name: Rust
+  expect_match: false
+  apsell:
+    mode: en
+  dictionary:
+    wordlists:
+    - .wordlist.txt
+    output: wordlist.dic
+    encoding: utf-8
+  pipeline:
+  - pyspelling.filters.markdown:
+      markdown_extensions:
+      - markdown.extensions.extra:
+  - pyspelling.filters.html:
+      comments: false
+      attributes:
+      - alt
+  sources:
+  - '**/*.rs'
+- name: TypeScript
+  expect_match: false
+  apsell:
+    mode: en
+  dictionary:
+    wordlists:
+    - .wordlist.txt
+    output: wordlist.dic
+    encoding: utf-8
+  pipeline:
+  - pyspelling.filters.markdown:
+      markdown_extensions:
+      - markdown.extensions.extra:
+  - pyspelling.filters.html:
+      comments: false
+      attributes:
+      - alt
+  sources:
+  - '**/*.ts'
