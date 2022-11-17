@@ -2,7 +2,8 @@ matrix:
 - name: Markdown
   expect_match: false
   apsell:
-    mode: en
+    lang: en
+    d: en_US
   dictionary:
     wordlists:
     - .wordlist.txt
@@ -26,38 +27,26 @@ matrix:
 - name: Rust
   expect_match: false
   apsell:
-    mode: en
+    lang: en
+    d: en_US
   dictionary:
     wordlists:
     - .wordlist.txt
     output: wordlist.dic
     encoding: utf-8
-  pipeline:
-  - pyspelling.filters.markdown:
-      markdown_extensions:
-      - markdown.extensions.extra:
-  - pyspelling.filters.html:
-      comments: false
-      attributes:
-      - alt
+  pipeline: null
   sources:
   - '**/*.rs'
 - name: TypeScript
   expect_match: false
   apsell:
-    mode: en
+    lang: en
+    d: en_US
   dictionary:
     wordlists:
     - .wordlist.txt
     output: wordlist.dic
     encoding: utf-8
-  pipeline:
-  - pyspelling.filters.markdown:
-      markdown_extensions:
-      - markdown.extensions.extra:
-  - pyspelling.filters.html:
-      comments: false
-      attributes:
-      - alt
+  pipeline: null
   sources:
   - '**/*.ts'
