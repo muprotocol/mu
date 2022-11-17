@@ -49,3 +49,4 @@ uriparse
 wasi
 wasmer
 wasmu
+wordlist
