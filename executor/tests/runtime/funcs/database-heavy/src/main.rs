@@ -201,38 +201,18 @@ fn main() {
         .unwrap();
 
     // Insert data
-    db_request(DbRequest::Insert(InsertRequest {
-        db_name: "my_db".into(),
-        table_name: "test_table".into(),
-        key: "secret".into(),
-        value: "\"Mu Rocks!\"".into(),
-    }));
+    for i in 0..10_000 {
+        db_request(DbRequest::Insert(InsertRequest {
+            db_name: "my_db".into(),
+            table_name: "test_table".into(),
+            key: i.to_string(),
+            value: format!("\"Mu Rocks {i}!\""),
+        }));
 
-    let db_resp_msg = read_stdin(&log);
-    let _: DbResponse = serde_json::from_value(db_resp_msg.message)
-        .map_err(|e| log(e.to_string()))
-        .unwrap();
-
-    // Find data
-    db_request(DbRequest::Find(FindRequest {
-        db_name: "my_db".into(),
-        table_name: "test_table".into(),
-        key_filter: KeyFilter::Exact("secret".into()),
-        value_filter: json!({}).to_string(),
-    }));
-
-    let db_resp_msg = read_stdin(&log);
-    let db_resp = serde_json::from_value::<DbResponse>(db_resp_msg.message)
-        .map_err(|e| log(e.to_string()))
-        .unwrap();
-
-    if let DbResponse::Find(db_resp) = db_resp {
-        match db_resp {
-            Ok(r) => {
-                assert_eq!(r[0], ("secret".into(), "\"Mu Rocks!\"".into()))
-            }
-            Err(e) => log(format!("Database Error: {e}")),
-        }
+        let db_resp_msg = read_stdin(&log);
+        let _: DbResponse = serde_json::from_value(db_resp_msg.message)
+            .map_err(|e| log(e.to_string()))
+            .unwrap();
     }
 
     let body = format!("Hello {}", request.data);

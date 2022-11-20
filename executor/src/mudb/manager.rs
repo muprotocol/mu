@@ -79,6 +79,8 @@ impl Manager {
             databases: HashMap::new(),
             usage_aggregator,
             stop_notification: stop_notification_tx,
+            sample_period: config.usage_report_duration, //TODO: enforce config to only
+                                                         //take seconds
         };
 
         // TODO: consider buffer_size 100
@@ -181,6 +183,7 @@ struct ManagerState {
     databases: HashMap<String, Db>,
     usage_aggregator: Box<dyn UsageAggregator>,
     stop_notification: tokio::sync::broadcast::Sender<()>,
+    sample_period: Duration,
 }
 
 type MailBox = CallbackMailboxProcessor<Message>;
@@ -220,7 +223,7 @@ async fn step(_: MailBox, msg: Message, mut state: ManagerState) -> ManagerState
                     Ok(s) => {
                         let usage = vec![Usage::DBStorage {
                             size_bytes: s,
-                            seconds: 0, //TODO: Need to report seconds from last report till now
+                            seconds: state.sample_period.as_secs(),
                         }];
                         state.usage_aggregator.register_usage(id.stack_id, usage);
                     }
