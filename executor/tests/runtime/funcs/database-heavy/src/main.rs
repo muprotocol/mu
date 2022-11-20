@@ -1,11 +1,10 @@
 #![allow(dead_code)]
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
+use serde_json::Value as JsonValue;
 use std::{
     collections::HashMap,
     io::{stdin, stdout, Write},
     sync::{Arc, RwLock},
-    time::Duration,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
