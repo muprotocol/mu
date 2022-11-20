@@ -4,7 +4,7 @@
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
 use serde::Deserialize;
 use std::{collections::HashMap, fmt, str::FromStr, time::Duration};
-use tokio::select;
+use tokio::{select, time::Instant};
 
 use crate::stack::usage_aggregator::{Usage, UsageAggregator};
 
@@ -56,10 +56,13 @@ impl Manager {
         usage_aggregator: Box<dyn UsageAggregator>,
         config: DBManagerConfig,
     ) -> Result<Self> {
-        tokio::task::spawn_blocking(|| Self::_new(usage_aggregator, config)).await?
+        tokio::task::spawn_blocking(|| Self::inner_new(usage_aggregator, config)).await?
     }
 
-    fn _new(usage_aggregator: Box<dyn UsageAggregator>, config: DBManagerConfig) -> Result<Self> {
+    fn inner_new(
+        usage_aggregator: Box<dyn UsageAggregator>,
+        config: DBManagerConfig,
+    ) -> Result<Self> {
         let conf = ConfigInner {
             database_id: MANAGER_DB.into(),
             ..Default::default()
@@ -79,8 +82,7 @@ impl Manager {
             databases: HashMap::new(),
             usage_aggregator,
             stop_notification: stop_notification_tx,
-            sample_period: config.usage_report_duration, //TODO: enforce config to only
-                                                         //take seconds
+            last_usage_report_time: Instant::now(),
         };
 
         // TODO: consider buffer_size 100
@@ -93,7 +95,10 @@ impl Manager {
             loop {
                 select! {
                     _ = interval.tick() => {
-                        mailbox.post_and_forget(Message::ReportUsage)
+                        if let Err(e) = mailbox.post(Message::ReportUsage).await {
+                            log::error!("database usage reporter mailbox error: {}", e);
+                            break;
+                        }
                     }
                     _ = stop_notification_rx.recv() => {break}
                 }
@@ -183,7 +188,7 @@ struct ManagerState {
     databases: HashMap<String, Db>,
     usage_aggregator: Box<dyn UsageAggregator>,
     stop_notification: tokio::sync::broadcast::Sender<()>,
-    sample_period: Duration,
+    last_usage_report_time: Instant,
 }
 
 type MailBox = CallbackMailboxProcessor<Message>;
@@ -215,17 +220,23 @@ async fn step(_: MailBox, msg: Message, mut state: ManagerState) -> ManagerState
         }
         Message::GetCache(reply) => reply.reply(state.databases.clone()),
         Message::ReportUsage => {
+            let seconds = state.last_usage_report_time.elapsed().as_secs();
             for (id, db) in &state.databases {
-                let id = DatabaseID::from_str(id).unwrap(); //TODO: use strong `DatabaseID` type
-                                                            //in hashmap to avoid unnecessary
-                                                            //conversion
+                //TODO: This is not good i know, we need strong type here in hash map key
+                let stack_id = if let Ok(db) = DatabaseID::from_str(id) {
+                    db.stack_id
+                } else {
+                    log::error!("database id is wrong, and can not report usage: {}", id);
+                    continue;
+                };
+
                 match db.size_on_disk() {
                     Ok(s) => {
                         let usage = vec![Usage::DBStorage {
                             size_bytes: s,
-                            seconds: state.sample_period.as_secs(),
+                            seconds,
                         }];
-                        state.usage_aggregator.register_usage(id.stack_id, usage);
+                        state.usage_aggregator.register_usage(stack_id, usage);
                     }
                     Err(e) => {
                         log::error!("can not get database size and report it: {}", e);

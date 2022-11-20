@@ -49,7 +49,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("blockchain_monitor.solana_region_number", "1"),
         ("blockchain_monitor.solana_usage_signer_private_key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
         ("blockchain_monitor.solana_min_escrow_balance", "50"),
-        ("db_manager.usage_report_duration", "1s"),
+        ("db_manager.usage_report_duration", "15m"),
     ];
 
     let default_arrays = vec!["log.filters", "gossip.seeds"];

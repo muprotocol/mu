@@ -35,3 +35,6 @@ blockchain_monitor:
   solana_usage_signer_private_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
   solana_min_escrow_balance: 50
   solana_usage_report_interval: 1d
+db_manager:
+  # Note, this value should not be under 1s
+  usage_report_duration: 15m
