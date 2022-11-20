@@ -272,7 +272,7 @@ async fn function_usage_is_reported_correctly_1() {
 #[tokio::test]
 #[serial]
 async fn function_usage_is_reported_correctly_2() {
-    let projects = vec![create_project("hello-mudb", None)];
+    let projects = vec![create_project("database-heavy", None)];
     let (runtime, db_service, usage_aggregator) = create_runtime(&projects).await;
 
     let request = gateway::Request {
@@ -300,15 +300,17 @@ async fn function_usage_is_reported_correctly_2() {
     let usages = usage_aggregator.get_and_reset_usages().await.unwrap();
     let function_usage = usages.get(&projects[0].id.stack_id).unwrap();
 
-    assert!(function_usage.get(&UsageCategory::DBWrites).unwrap() > &0);
+    assert!(function_usage.get(&UsageCategory::DBWrites).unwrap() == &10_001);
 
-    assert!(function_usage.get(&UsageCategory::DBReads).unwrap() > &0);
+    assert!(function_usage.get(&UsageCategory::DBReads).unwrap() == &0);
+
+    assert!(function_usage.get(&UsageCategory::DBStorage).unwrap() > &100);
 
     assert!(
         function_usage
             .get(&UsageCategory::FunctionMBInstructions)
             .unwrap()
-            > &0
+            > &100
     );
 
     runtime.stop().await.unwrap();
