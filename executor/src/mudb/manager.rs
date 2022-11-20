@@ -221,6 +221,9 @@ async fn step(_: MailBox, msg: Message, mut state: ManagerState) -> ManagerState
         Message::GetCache(reply) => reply.reply(state.databases.clone()),
         Message::ReportUsage => {
             let seconds = state.last_usage_report_time.elapsed().as_secs();
+            state.last_usage_report_time = Instant::now(); //TODO: store this instant per db so for
+                                                           //case of like 1 million databases, we
+                                                           //charge each db for it's own time
             for (id, db) in &state.databases {
                 //TODO: This is not good i know, we need strong type here in hash map key
                 let stack_id = if let Ok(db) = DatabaseID::from_str(id) {
