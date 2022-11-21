@@ -156,7 +156,7 @@ pub(super) async fn deploy(
         .await
         .unwrap_or(());
 
-    let prefix = format!("{id}_");
+    let prefix = format!("{id}!");
     for db_id in db_service.query_db_by_prefix(&prefix).unwrap_or_default() {
         if !db_ids.contains(&db_id) {
             db_service.drop_db(&db_id).await.unwrap_or(());
