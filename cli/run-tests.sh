@@ -47,11 +47,11 @@ main() {
     #
     # Run Test.
     #
-    cargo test
+    # cargo test
 }
 
 cleanup() {
-    kill -9 $validator_pid || true
+    # kill -9 $validator_pid || true
     kill -9 $$ || true
     wait || true
 }
