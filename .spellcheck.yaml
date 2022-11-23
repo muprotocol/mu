@@ -4,6 +4,8 @@ matrix:
     apsell:
       lang: en
       d: en_US
+      camel-case: true
+      ignore-case: true
     dictionary:
       wordlists:
       - .wordlist.txt
@@ -28,7 +30,8 @@ matrix:
     apsell:
       lang: en
       d: en_US
-      "camel-case": true
+      camel-case: true
+      ignore-case: true
     dictionary:
       wordlists:
       - .wordlist.txt
@@ -43,6 +46,7 @@ matrix:
       lang: en
       d: en_US
       camel-case: true
+      ignore-case: true
     dictionary:
       wordlists:
       - .wordlist.txt
