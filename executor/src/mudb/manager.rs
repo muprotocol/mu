@@ -1,10 +1,11 @@
 //! Manager
 //! purpose is caching database
 
+use chrono::{NaiveDateTime, Utc};
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
 use serde::Deserialize;
 use std::{collections::HashMap, fmt, str::FromStr, time::Duration};
-use tokio::{select, time::Instant};
+use tokio::select;
 
 use crate::stack::usage_aggregator::{Usage, UsageAggregator};
 
@@ -82,7 +83,7 @@ impl Manager {
             databases: HashMap::new(),
             usage_aggregator,
             stop_notification: stop_notification_tx,
-            last_usage_report_time: Instant::now(),
+            last_usage_report_timestamp: Utc::now().naive_utc(),
         };
 
         // TODO: consider buffer_size 100
@@ -188,7 +189,7 @@ struct ManagerState {
     databases: HashMap<String, Db>,
     usage_aggregator: Box<dyn UsageAggregator>,
     stop_notification: tokio::sync::broadcast::Sender<()>,
-    last_usage_report_time: Instant,
+    last_usage_report_timestamp: NaiveDateTime,
 }
 
 type MailBox = CallbackMailboxProcessor<Message>;
@@ -220,10 +221,12 @@ async fn step(_: MailBox, msg: Message, mut state: ManagerState) -> ManagerState
         }
         Message::GetCache(reply) => reply.reply(state.databases.clone()),
         Message::ReportUsage => {
-            let seconds = state.last_usage_report_time.elapsed().as_secs();
-            state.last_usage_report_time = Instant::now(); //TODO: store this instant per db so for
-                                                           //case of like 1 million databases, we
-                                                           //charge each db for it's own time
+            //TODO: Either use ordered-hashmap or use per db timestamps to avoid charging some
+            //databases more than others
+            let now = Utc::now().naive_utc();
+            let duration = state.last_usage_report_timestamp - now;
+            state.last_usage_report_timestamp = now;
+
             for (id, db) in &state.databases {
                 //TODO: This is not good i know, we need strong type here in hash map key
                 let stack_id = if let Ok(db) = DatabaseID::from_str(id) {
@@ -237,7 +240,8 @@ async fn step(_: MailBox, msg: Message, mut state: ManagerState) -> ManagerState
                     Ok(s) => {
                         let usage = vec![Usage::DBStorage {
                             size_bytes: s,
-                            seconds,
+                            seconds: duration.num_seconds() as u64, // We have negative duration in
+                                                                    // Chrono!
                         }];
                         state.usage_aggregator.register_usage(stack_id, usage);
                     }
