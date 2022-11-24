@@ -19,6 +19,7 @@ jobs:
             mailbox_proceessor/target/
             marketplace/target/
             mu_stack/target/
+            executer/tests/runtime/funcs/*/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Install rust stable
         uses: actions-rs/toolchain@v1
