@@ -221,8 +221,6 @@ async fn step(_: MailBox, msg: Message, mut state: ManagerState) -> ManagerState
         }
         Message::GetCache(reply) => reply.reply(state.databases.clone()),
         Message::ReportUsage => {
-            //TODO: Either use ordered-hashmap or use per db timestamps to avoid charging some
-            //databases more than others
             let now = Utc::now().naive_utc();
             let duration = state.last_usage_report_timestamp - now;
             state.last_usage_report_timestamp = now;
