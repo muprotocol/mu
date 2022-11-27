@@ -402,5 +402,9 @@ async fn process_blockchain_monitor_notification(
                     .unwrap();
             }
         }
+        Some(BlockchainMonitorNotification::StacksRemoved(stacks)) => {
+            debug!("Stacks removed: {stacks:?}");
+            // TODO
+        }
     }
 }
