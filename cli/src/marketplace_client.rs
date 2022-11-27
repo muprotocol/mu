@@ -1,18 +1,16 @@
 use std::rc::Rc;
 
 use anchor_client::{
-    solana_sdk::{
-        instruction::InstructionError, pubkey::Pubkey, signer::Signer, system_program, sysvar,
-    },
+    solana_sdk::{pubkey::Pubkey, signer::Signer, system_program, sysvar},
     Program,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 use marketplace::MuState;
 
-use crate::{
-    config::Config,
-    error::{CliError, MarketplaceResultExt},
-};
+use crate::config::Config;
+
+const PROVIDER_INITIALIZATION_FEE: f64 = 0.0001; //TODO: This needs to be read from
+                                                 //blockchain
 
 /// Marketplace Client for communicating with Mu smart contracts
 pub struct MarketplaceClient {
@@ -115,43 +113,60 @@ impl MarketplaceClient {
             rent: sysvar::rent::id(),
         };
 
-        if utils::token_account_is_initialized(self.program.rpc(), &provider_token_account)? {
-            self.program
-                .request()
-                .accounts(accounts)
-                .args(marketplace::instruction::CreateProvider {
-                    name: provider_name,
-                })
-                .signer(provider_keypair.as_ref())
-                .send()
-                .parse_error(|e| match e {
-                    CliError::InstructionError(i, e) => match (i, e) {
-                        (0, InstructionError::Custom(0xbc4)) => {
-                            anyhow!("Provider token account not initialized")
-                        }
-                        (0, InstructionError::Custom(0x1)) => {
-                            anyhow!("Provider token account does not have sufficient balance")
-                        }
-                        (_, e) => e.into(),
-                    },
-                    CliError::UnexpectedError(e) => e,
-                    CliError::UnhandledError(e) => e.into(),
-                })?;
-        } else {
-            println!("Token account is not initialized yet.");
+        if !utils::account_exists(self.program.rpc(), &provider_token_account)? {
+            bail!("Token account is not initialized yet.");
         }
 
+        let provider_token_account_balance =
+            utils::get_token_account_balance(self.program.rpc(), &provider_token_account)?;
+
+        if provider_token_account_balance < PROVIDER_INITIALIZATION_FEE {
+            bail!(
+                "Token account does not have sufficient balance: needed {}, was {}.",
+                PROVIDER_INITIALIZATION_FEE,
+                provider_token_account_balance
+            );
+        }
+
+        self.program
+            .request()
+            .accounts(accounts)
+            .args(marketplace::instruction::CreateProvider {
+                name: provider_name,
+            })
+            .signer(provider_keypair.as_ref())
+            .send()?;
         Ok(())
     }
 }
 
 mod utils {
-    use anchor_client::{solana_client::rpc_client::RpcClient, solana_sdk::pubkey::Pubkey};
+    use anchor_client::{
+        solana_client::{
+            client_error::ClientErrorKind, rpc_client::RpcClient, rpc_request::RpcError,
+        },
+        solana_sdk::pubkey::Pubkey,
+    };
     use anyhow::Result;
 
-    pub fn token_account_is_initialized(rpc: RpcClient, pubkey: &Pubkey) -> Result<bool> {
-        rpc.get_token_account(pubkey)
-            .map_err(Into::into)
-            .map(|i| i.is_some())
+    pub fn account_exists(rpc: RpcClient, pubkey: &Pubkey) -> Result<bool> {
+        match rpc.get_account(pubkey) {
+            Ok(_) => Ok(true),
+            Err(client_error) => match client_error.kind {
+                ClientErrorKind::RpcError(RpcError::ForUser(s))
+                    if s.contains("AccountNotFound") =>
+                {
+                    Ok(false)
+                }
+                _ => Err(client_error.into()),
+            },
+        }
+    }
+
+    pub fn get_token_account_balance(rpc: RpcClient, pubkey: &Pubkey) -> Result<f64> {
+        let info = rpc.get_token_account_balance(pubkey)?;
+        let amount: f64 = info.amount.parse()?;
+
+        Ok(amount / 10u32.pow(info.decimals.into()) as f64)
     }
 }

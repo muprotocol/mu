@@ -9,10 +9,10 @@ use crate::config::Config;
 
 #[derive(Debug, Parser)]
 pub enum Command {
-    /// Manage Regions
+    /// List Providers
     Provider(ListProviderCommand),
 
-    /// Manage authorized signers
+    /// List Regions
     Region(ListRegionCommand),
 }
 
