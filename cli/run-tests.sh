@@ -22,6 +22,9 @@ main() {
     # Build programs.
     #
     local mu_pid="2MZLka8nfoAf1LKCCbgCw5ZXfpMbKGDuLjQ88MNMyti2"
+    cd ../marketplace
+    anchor build
+    cd ../cli/
 
     #
     # Bootup validator.
