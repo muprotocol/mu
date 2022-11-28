@@ -222,7 +222,7 @@ async fn step(_: MailBox, msg: Message, mut state: ManagerState) -> ManagerState
         Message::GetCache(reply) => reply.reply(state.databases.clone()),
         Message::ReportUsage => {
             let now = Utc::now().naive_utc();
-            let duration = state.last_usage_report_timestamp - now;
+            let duration_seconds = (now - state.last_usage_report_timestamp).num_seconds();
             state.last_usage_report_timestamp = now;
 
             for (id, db) in &state.databases {
@@ -238,13 +238,17 @@ async fn step(_: MailBox, msg: Message, mut state: ManagerState) -> ManagerState
                     Ok(s) => {
                         let usage = vec![Usage::DBStorage {
                             size_bytes: s,
-                            seconds: duration.num_seconds() as u64, // We have negative duration in
-                                                                    // Chrono!
+                            seconds: if duration_seconds < 0 {
+                                // Durations here should never be negative but we double check
+                                0
+                            } else {
+                                duration_seconds.unsigned_abs()
+                            },
                         }];
                         state.usage_aggregator.register_usage(stack_id, usage);
                     }
                     Err(e) => {
-                        log::error!("can not get database size and report it: {}", e);
+                        log::error!("can not get database size and report it: {e}");
                     }
                 }
             }

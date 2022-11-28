@@ -300,6 +300,8 @@ async fn function_usage_is_reported_correctly_2() {
     let usages = usage_aggregator.get_and_reset_usages().await.unwrap();
     let function_usage = usages.get(&projects[0].id.stack_id).unwrap();
 
+    println!("{:#?}", function_usage);
+
     assert!(function_usage.get(&UsageCategory::DBWrites).unwrap() == &10_001);
 
     assert!(function_usage.get(&UsageCategory::DBReads).unwrap() == &0);
