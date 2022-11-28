@@ -30,7 +30,6 @@ pub struct CreateArgs {
     name: String,
 }
 
-// TODO: parse?! why not run or execute or sth?
 pub fn execute(config: Config, sub_command: Command) -> Result<()> {
     match sub_command {
         Command::Create(args) => create(config, args),
