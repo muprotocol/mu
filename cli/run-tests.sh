@@ -29,7 +29,7 @@ main() {
     #
     # Bootup validator.
     #
-	export RUST_LOG=solana_runtime::system_instruction_processor=trace,solana_runtime::message_processor=debug,solana_bpf_loader=debug,solana_rbpf=debug
+    export RUST_LOG=solana_runtime::system_instruction_processor=trace,solana_runtime::message_processor=debug,solana_bpf_loader=debug,solana_rbpf=debug
     solana-test-validator -r \
 				--log \
 				-l target/test-ledger \
@@ -41,11 +41,10 @@ main() {
     #
     # Initialize mu
     #
-	echo $HOME
-	export BROWSER='' ANCHOR_WALLET=$(echo "${HOME}/.config/solana/id.json")
+    export BROWSER='' ANCHOR_WALLET=$(echo "${HOME}/.config/solana/id.json")
     cd ../marketplace
-	anchor run initialize-mu
-	cd ../cli
+    anchor run initialize-mu
+    cd ../cli
 
     #
     # Run Test.

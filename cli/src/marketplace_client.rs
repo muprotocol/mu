@@ -9,8 +9,8 @@ use marketplace::MuState;
 
 use crate::config::Config;
 
-const PROVIDER_INITIALIZATION_FEE: f64 = 0.0001; //TODO: This needs to be read from
-                                                 //blockchain
+const PROVIDER_INITIALIZATION_FEE: f64 = 100.0; //TODO: This needs to be read from
+                                                //blockchain
 
 /// Marketplace Client for communicating with Mu smart contracts
 pub struct MarketplaceClient {
@@ -97,8 +97,6 @@ impl MarketplaceClient {
         let (deposit_pda, _) = Pubkey::find_program_address(&[b"deposit"], &self.program.id());
         let provider_pda = self.get_provider_pda(provider_keypair.pubkey());
 
-        // TODO: we need to double-check all error conditions and generate user-readable error messages.
-        // there is no backend server to return cute messages, only the deep, dark bowels of the blockchain.
         let provider_token_account =
             self.get_provider_token_account(provider_keypair.pubkey(), &mu_state);
 
@@ -112,6 +110,14 @@ impl MarketplaceClient {
             token_program: spl_token::id(),
             rent: sysvar::rent::id(),
         };
+
+        if utils::provider_exists(
+            self.program.rpc(),
+            &self.program.id(),
+            &provider_token_account,
+        )? {
+            bail!("There is already a provider registered with this keypair");
+        }
 
         if !utils::account_exists(self.program.rpc(), &provider_token_account)? {
             bail!("Token account is not initialized yet.");
@@ -168,5 +174,18 @@ mod utils {
         let amount: f64 = info.amount.parse()?;
 
         Ok(amount / 10u32.pow(info.decimals.into()) as f64)
+    }
+
+    pub fn provider_exists(
+        rpc: RpcClient,
+        program_id: &Pubkey,
+        provider_pubkey: &Pubkey,
+    ) -> Result<bool> {
+        let (provider_pda, _) =
+            Pubkey::find_program_address(&[b"provider", &provider_pubkey.to_bytes()], &program_id);
+
+        println!("Key: {}", provider_pda);
+
+        account_exists(rpc, &provider_pda)
     }
 }
