@@ -111,12 +111,12 @@ impl MarketplaceClient {
             rent: sysvar::rent::id(),
         };
 
-        if utils::provider_exists(
-            self.program.rpc(),
-            &self.program.id(),
-            &provider_token_account,
-        )? {
+        if utils::provider_with_keypair_exists(self, &provider_keypair.pubkey())? {
             bail!("There is already a provider registered with this keypair");
+        }
+
+        if utils::provider_name_exists(self, &provider_name)? {
+            bail!("There is already a provider registered with this name");
         }
 
         if !utils::account_exists(self.program.rpc(), &provider_token_account)? {
@@ -149,11 +149,16 @@ impl MarketplaceClient {
 mod utils {
     use anchor_client::{
         solana_client::{
-            client_error::ClientErrorKind, rpc_client::RpcClient, rpc_request::RpcError,
+            client_error::ClientErrorKind,
+            rpc_client::RpcClient,
+            rpc_filter::{Memcmp, MemcmpEncodedBytes, MemcmpEncoding, RpcFilterType},
+            rpc_request::RpcError,
         },
         solana_sdk::pubkey::Pubkey,
     };
-    use anyhow::Result;
+    use anyhow::{anyhow, Result};
+
+    use super::MarketplaceClient;
 
     pub fn account_exists(rpc: RpcClient, pubkey: &Pubkey) -> Result<bool> {
         match rpc.get_account(pubkey) {
@@ -176,16 +181,44 @@ mod utils {
         Ok(amount / 10u32.pow(info.decimals.into()) as f64)
     }
 
-    pub fn provider_exists(
-        rpc: RpcClient,
-        program_id: &Pubkey,
-        provider_pubkey: &Pubkey,
+    pub fn provider_name_exists(client: &MarketplaceClient, name: &str) -> Result<bool> {
+        let name_len: u64 = name
+            .len()
+            .try_into()
+            .map_err(|e| anyhow!("provider name too long: {e}"))?;
+
+        let filters = vec![
+            RpcFilterType::Memcmp(Memcmp {
+                offset: 8,
+                bytes: MemcmpEncodedBytes::Bytes(vec![marketplace::MuAccountType::Provider as u8]),
+                encoding: Some(MemcmpEncoding::Binary),
+            }),
+            RpcFilterType::Memcmp(Memcmp {
+                offset: 8 + 1 + 32 + 4, // 4 more bytes for the prefix length
+                bytes: MemcmpEncodedBytes::Bytes(name.as_bytes().to_vec()),
+                encoding: Some(MemcmpEncoding::Binary),
+            }),
+            RpcFilterType::DataSize(
+                // Account type and etc
+                8 + 1 + 32
+                // name: String Size + String length
+                + 4 + name_len
+                // End of account data
+                + 1,
+            ),
+        ];
+
+        let accounts = client.program.accounts::<marketplace::Provider>(filters)?;
+
+        Ok(accounts.len() >= 1)
+    }
+
+    pub fn provider_with_keypair_exists(
+        client: &MarketplaceClient,
+        pubkey: &Pubkey,
     ) -> Result<bool> {
-        let (provider_pda, _) =
-            Pubkey::find_program_address(&[b"provider", &provider_pubkey.to_bytes()], &program_id);
-
-        println!("Key: {}", provider_pda);
-
-        account_exists(rpc, &provider_pda)
+        let (pda, _) =
+            Pubkey::find_program_address(&[b"provider", &pubkey.to_bytes()], &client.program.id());
+        account_exists(client.program.rpc(), &pda)
     }
 }
