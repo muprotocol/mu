@@ -45,6 +45,7 @@ rocket = "0.5.0-rc.2"
 reqwest = "0.11"
 sled = "0.34"
 assert_matches = "1.5"
+itertools = "0.10"
 validator = { version = "0.16", features = ["derive"] }
 mu_stack = { path = "../mu_stack" }
 marketplace = { path = "../marketplace/programs/marketplace" }

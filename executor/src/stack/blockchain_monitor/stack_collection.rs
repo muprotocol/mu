@@ -1,27 +1,39 @@
-use crate::stack::{StackOwner, StackWithMetadata};
-use mu_stack::StackID;
-use std::collections::{hash_map, HashMap, HashSet};
+// We don't use all of this yet, but I expect it will come in handy later.
+// #![allow(dead_code)]
 
-pub enum StackState {
-    Active(StackWithMetadata),
-    Inactive(StackWithMetadata),
+use std::collections::{hash_map, HashMap, HashSet};
+use std::default::Default;
+
+use mu_stack::StackID;
+
+use crate::stack::{StackOwner, StackWithMetadata};
+
+#[derive(Clone, Copy)]
+pub enum OwnerState {
+    Active,
+    Inactive,
 }
 
-impl StackState {
-    fn stack(&self) -> &StackWithMetadata {
-        match self {
-            Self::Active(s) => s,
-            Self::Inactive(s) => s,
+struct OwnerData {
+    state: OwnerState,
+    stacks: HashSet<StackID>,
+}
+
+impl OwnerData {
+    fn new(state: OwnerState) -> Self {
+        Self {
+            state,
+            stacks: HashSet::new(),
         }
     }
 }
 
 #[derive(Default)]
 pub(super) struct StackCollection {
-    stacks: HashMap<StackID, StackState>,
-    stacks_by_user: HashMap<StackOwner, HashSet<StackID>>,
-    active_stacks: HashSet<StackID>,
-    inactive_stacks: HashSet<StackID>,
+    stacks: HashMap<StackID, StackWithMetadata>,
+    owners: HashMap<StackOwner, OwnerData>,
+    active_owners: HashSet<StackOwner>,
+    inactive_owners: HashSet<StackOwner>,
 }
 
 impl StackCollection {
@@ -29,57 +41,51 @@ impl StackCollection {
         Self::default()
     }
 
-    pub fn from_known(known_stacks: impl Iterator<Item = StackState>) -> Self {
+    pub fn from_known(
+        known_stacks: HashMap<StackOwner, (OwnerState, Vec<StackWithMetadata>)>,
+    ) -> Self {
         let mut result = Self::default();
-        for stack in known_stacks {
-            result.insert(stack);
+        for (owner, (state, stacks)) in known_stacks {
+            let mut owner_data = OwnerData::new(state);
+            for stack in stacks {
+                let id = stack.id();
+                if let Some(_) = result.stacks.insert(id, stack) {
+                    panic!("Duplicate stack ID {id}");
+                }
+                owner_data.stacks.insert(id);
+            }
+
+            result.owners.insert(owner.clone(), owner_data);
+
+            let index = result.get_owner_index(state);
+            index.insert(owner);
         }
         result
     }
 
-    pub fn insert_active(&mut self, stack: StackWithMetadata) -> bool {
-        self.insert(StackState::Active(stack))
-    }
-
-    pub fn insert_inactive(&mut self, stack: StackWithMetadata) -> bool {
-        self.insert(StackState::Inactive(stack))
-    }
-
-    pub fn insert(&mut self, stack_state: StackState) -> bool {
-        let stack = stack_state.stack();
-        let stack_id = stack.id();
-        let owner = stack.owner();
-
-        if self.stacks.contains_key(&stack_id) {
-            return false;
+    fn get_owner_index(&mut self, state: OwnerState) -> &mut HashSet<StackOwner> {
+        match state {
+            OwnerState::Active => &mut self.active_owners,
+            OwnerState::Inactive => &mut self.inactive_owners,
         }
-
-        match stack_state {
-            StackState::Active(_) => &mut self.active_stacks,
-            StackState::Inactive(_) => &mut self.inactive_stacks,
-        }
-        .insert(stack_id);
-
-        self.stacks.insert(stack_id, stack_state);
-
-        self.stacks_by_user
-            .entry(owner)
-            .or_insert_with(HashSet::new)
-            .insert(stack_id);
-
-        true
     }
 
-    pub fn remove(&mut self, stack_id: &StackID) {
-        if let Some(stack) = self.stacks.remove(stack_id) {
-            self.active_stacks.remove(stack_id);
-            self.inactive_stacks.remove(stack_id);
-            let owner = stack.stack().owner();
-            if let Some(set) = self.stacks_by_user.get_mut(&owner) {
-                set.remove(stack_id);
-                if set.is_empty() {
-                    self.stacks_by_user.remove(&owner);
-                }
+    pub fn make_inactive(&mut self, owner: &StackOwner) {
+        if let Some(owner_data) = self.owners.get_mut(owner) {
+            if let OwnerState::Active = owner_data.state {
+                owner_data.state = OwnerState::Inactive;
+                self.active_owners.remove(owner);
+                self.inactive_owners.insert(owner.clone());
+            }
+        }
+    }
+
+    pub fn make_active(&mut self, owner: &StackOwner) {
+        if let Some(owner_data) = self.owners.get_mut(owner) {
+            if let OwnerState::Inactive = owner_data.state {
+                owner_data.state = OwnerState::Active;
+                self.inactive_owners.remove(owner);
+                self.active_owners.insert(owner.clone());
             }
         }
     }
@@ -89,161 +95,146 @@ impl StackCollection {
     }
 
     pub fn owners(&self) -> impl Iterator<Item = &StackOwner> + Clone {
-        self.stacks_by_user.keys()
+        self.owners.keys()
     }
 
-    pub fn all(&self) -> impl Iterator<Item = &StackState> {
+    pub fn all(&self) -> impl Iterator<Item = &StackWithMetadata> {
         self.stacks.values()
     }
 
     pub fn all_active(&self) -> impl Iterator<Item = &StackWithMetadata> {
-        self.active_stacks
-            .iter()
-            .map(|id| match self.stacks.get(id) {
-                Some(StackState::Active(stack)) => stack,
-                Some(StackState::Inactive(_)) => panic!(
-                    "Internal indexing error: expected stack {id} to be active, but it's inactive"
-                ),
-                None => panic!(
-                    "Internal indexing error: expected stack {id} to be active, but it is unknown"
-                ),
-            })
+        self.all_by_owners(self.active_owners.iter())
     }
 
     pub fn all_inactive(&self) -> impl Iterator<Item = &StackWithMetadata> {
-        self.inactive_stacks
-            .iter()
-            .map(|id| match self.stacks.get(id) {
-                Some(StackState::Inactive(stack)) => stack,
-                Some(StackState::Active(_)) => panic!(
-                    "Internal indexing error: expected stack {id} to be inactive, but it's active"
-                ),
-                None => panic!(
-                    "Internal indexing error: expected stack {id} to be active, but it is unknown"
-                ),
-            })
+        self.all_by_owners(self.inactive_owners.iter())
+    }
+
+    fn all_by_owners<'a>(
+        &'a self,
+        owners: impl IntoIterator<Item = &'a StackOwner>,
+    ) -> impl Iterator<Item = &'a StackWithMetadata> {
+        owners.into_iter().flat_map(|owner| {
+            self.owners
+                .get(owner)
+                .expect("Owner indexes are out of sync; expected to know owner")
+                .stacks
+                .iter()
+                .map(|id| {
+                    self.stacks
+                        .get(id)
+                        .expect("Stack index is out of sync, expected to know stack")
+                })
+        })
     }
 
     pub fn entry(&mut self, stack_id: StackID) -> Entry {
-        let indices = Indices {
-            stacks_by_user: &mut self.stacks_by_user,
-            active_stacks: &mut self.active_stacks,
-            inactive_stacks: &mut self.inactive_stacks,
-        };
-
         match self.stacks.entry(stack_id) {
-            hash_map::Entry::Vacant(v) => Entry::Vacant(VacantEntry(indices, v)),
-            hash_map::Entry::Occupied(occ) => match occ.get() {
-                StackState::Active(_) => Entry::Active(ActiveEntry(indices, occ)),
-                StackState::Inactive(_) => Entry::Inactive(InactiveEntry(indices, occ)),
-            },
-        }
-    }
-}
-
-struct Indices<'a> {
-    stacks_by_user: &'a mut HashMap<StackOwner, HashSet<StackID>>,
-    active_stacks: &'a mut HashSet<StackID>,
-    inactive_stacks: &'a mut HashSet<StackID>,
-}
-
-impl<'a> Indices<'a> {
-    fn insert(&mut self, stack_id: StackID, owner: StackOwner, active: bool) {
-        if active {
-            &mut self.active_stacks
-        } else {
-            &mut self.inactive_stacks
-        }
-        .insert(stack_id);
-
-        self.stacks_by_user
-            .entry(owner)
-            .or_insert_with(HashSet::new)
-            .insert(stack_id);
-    }
-
-    fn remove(&mut self, stack_id: StackID, owner: StackOwner) {
-        self.active_stacks.remove(&stack_id);
-        self.inactive_stacks.remove(&stack_id);
-        if let Some(set) = self.stacks_by_user.get_mut(&owner) {
-            set.remove(&stack_id);
-            if set.is_empty() {
-                self.stacks_by_user.remove(&owner);
+            hash_map::Entry::Vacant(_) => Entry::Vacant,
+            hash_map::Entry::Occupied(occ) => {
+                match self.owners.get(&occ.get().owner()).unwrap().state {
+                    OwnerState::Active => Entry::Active(ActiveEntry(occ)),
+                    OwnerState::Inactive => Entry::Inactive(InactiveEntry(occ)),
+                }
             }
+        }
+    }
+
+    pub fn owner_entry(&mut self, owner: StackOwner) -> OwnerEntry {
+        match self.owners.get(&owner) {
+            Some(_) => OwnerEntry::Occupied(OccupiedOwnerEntry(self, owner)),
+            None => OwnerEntry::Vacant(VacantOwnerEntry(self, owner)),
         }
     }
 }
 
 pub(super) enum Entry<'a> {
-    Vacant(VacantEntry<'a>),
+    Vacant,
     Active(ActiveEntry<'a>),
     Inactive(InactiveEntry<'a>),
 }
 
-pub(super) struct VacantEntry<'a>(Indices<'a>, hash_map::VacantEntry<'a, StackID, StackState>);
+pub(super) struct ActiveEntry<'a>(hash_map::OccupiedEntry<'a, StackID, StackWithMetadata>);
 
-pub(super) struct ActiveEntry<'a>(
-    Indices<'a>,
-    hash_map::OccupiedEntry<'a, StackID, StackState>,
-);
-
-pub(super) struct InactiveEntry<'a>(
-    Indices<'a>,
-    hash_map::OccupiedEntry<'a, StackID, StackState>,
-);
-
-impl<'a> VacantEntry<'a> {
-    pub fn insert_active(mut self, stack: StackWithMetadata) {
-        self.0.insert(stack.id(), stack.owner(), true);
-        self.1.insert(StackState::Active(stack));
-    }
-
-    pub fn insert_inactive(mut self, stack: StackWithMetadata) {
-        self.0.insert(stack.id(), stack.owner(), false);
-        self.1.insert(StackState::Inactive(stack));
-    }
-}
+pub(super) struct InactiveEntry<'a>(hash_map::OccupiedEntry<'a, StackID, StackWithMetadata>);
 
 impl<'a> ActiveEntry<'a> {
-    pub fn make_inactive(mut self) {
-        let stack = self.1.get_mut();
-        let id = stack.stack().id();
-
-        // Still waiting for that hash_map::Entry::replace_with API
-        *stack = StackState::Inactive(stack.stack().clone());
-        self.0.active_stacks.remove(&id);
-        self.0.inactive_stacks.insert(id);
-    }
-
     pub fn get(&self) -> &StackWithMetadata {
-        self.1.get().stack()
-    }
-
-    pub fn remove(mut self) {
-        let stack = self.1.remove();
-        let stack = stack.stack();
-        self.0.remove(stack.id(), stack.owner());
+        self.0.get()
     }
 }
 
 impl<'a> InactiveEntry<'a> {
-    pub fn make_active(mut self) {
-        let stack = self.1.get_mut();
-        let id = stack.stack().id();
-
-        // Still waiting for that hash_map::Entry::replace_with API
-        *stack = StackState::Active(stack.stack().clone());
-        self.0.inactive_stacks.remove(&id);
-        self.0.active_stacks.insert(id);
-    }
-
     pub fn get(&self) -> &StackWithMetadata {
-        self.1.get().stack()
+        self.0.get()
+    }
+}
+
+pub(super) enum OwnerEntry<'a> {
+    Vacant(VacantOwnerEntry<'a>),
+    Occupied(OccupiedOwnerEntry<'a>),
+}
+
+pub(super) struct VacantOwnerEntry<'a>(&'a mut StackCollection, StackOwner);
+
+pub(super) struct OccupiedOwnerEntry<'a>(&'a mut StackCollection, StackOwner);
+
+impl<'a> VacantOwnerEntry<'a> {
+    pub(super) fn insert_first(
+        self,
+        state: OwnerState,
+        stack: StackWithMetadata,
+    ) -> OccupiedOwnerEntry<'a> {
+        self.0.owners.insert(self.1.clone(), OwnerData::new(state));
+        self.0.get_owner_index(state).insert(self.1.clone());
+        let mut result = OccupiedOwnerEntry(self.0, self.1);
+        result.add_stack(stack);
+        result
+    }
+}
+
+impl<'a> OccupiedOwnerEntry<'a> {
+    pub(super) fn add_stack(&mut self, stack: StackWithMetadata) -> bool {
+        let stack_id = stack.id();
+
+        if stack.owner() != self.1 {
+            panic!(
+                "Stack {stack_id} belongs to {:?} not {:?}",
+                stack.owner(),
+                self.1
+            );
+        }
+
+        if self.0.stacks.contains_key(&stack_id) {
+            return false;
+        }
+
+        let owner_data = self.0.owners.get_mut(&self.1).unwrap();
+        self.0.stacks.insert(stack_id, stack);
+        owner_data.stacks.insert(stack_id);
+
+        true
     }
 
-    pub fn remove(mut self) {
-        let stack = self.1.remove();
-        let stack = stack.stack();
-        self.0.remove(stack.id(), stack.owner());
+    // We remove any and all info about owners once all their stacks are removed.
+    // This seems like a logical thing to do, since they probably won't be coming
+    // back, and we don't want to waste precious RAM tracking them.
+    pub(super) fn remove_stack(self, stack_id: StackID) -> (bool, OwnerEntry<'a>) {
+        let owner_data = self.0.owners.get_mut(&self.1).unwrap();
+        if !owner_data.stacks.remove(&stack_id) {
+            return (false, OwnerEntry::Occupied(self));
+        }
+
+        self.0.stacks.remove(&stack_id);
+
+        if owner_data.stacks.is_empty() {
+            self.0.owners.remove(&self.1);
+            (true, OwnerEntry::Vacant(VacantOwnerEntry(self.0, self.1)))
+        } else {
+            (
+                false,
+                OwnerEntry::Occupied(OccupiedOwnerEntry(self.0, self.1)),
+            )
+        }
     }
 }
