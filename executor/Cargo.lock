@@ -1669,6 +1669,7 @@ dependencies = [
  "dyn-clone",
  "env_logger",
  "futures",
+ "itertools",
  "log",
  "mailbox_processor",
  "marketplace",
