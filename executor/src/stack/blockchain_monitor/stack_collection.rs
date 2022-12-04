@@ -1,5 +1,5 @@
 // We don't use all of this yet, but I expect it will come in handy later.
-// #![allow(dead_code)]
+#![allow(dead_code)]
 
 use std::collections::{hash_map, HashMap, HashSet};
 use std::default::Default;
@@ -8,7 +8,7 @@ use mu_stack::StackID;
 
 use crate::stack::{StackOwner, StackWithMetadata};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub enum OwnerState {
     Active,
     Inactive,
@@ -236,5 +236,18 @@ impl<'a> OccupiedOwnerEntry<'a> {
                 OwnerEntry::Occupied(OccupiedOwnerEntry(self.0, self.1)),
             )
         }
+    }
+
+    pub(super) fn owner_state(&self) -> OwnerState {
+        self.0.owners.get(&self.1).unwrap().state
+    }
+
+    pub(super) fn stacks(&self) -> impl Iterator<Item = &StackWithMetadata> {
+        self.0.owners.get(&self.1).unwrap().stacks.iter().map(|id| {
+            self.0
+                .stacks
+                .get(id)
+                .expect("owners.stacks is out of sync with stacks")
+        })
     }
 }

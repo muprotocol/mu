@@ -434,7 +434,12 @@ async fn mailbox_body(
 
             stack = state.solana.pub_sub.stack_subscription.stream.next() => {
                 if let Some(stack) = stack {
-                    if let Err(f) = on_new_stack_received(&mut state, &config, stack, &notification_channel).await {
+                    if let Err(f) = on_new_stack_received(
+                        &mut state,
+                        &config,
+                        stack,
+                        &notification_channel
+                    ).await {
                         // TODO: retry
                         warn!("Failed to process new stack: {f}");
                     }
@@ -459,7 +464,13 @@ async fn mailbox_body(
                         state = reconnect_solana_subscriber(state).await;
                     },
                     Ok(Some((owner_pubkey, escrow_balance))) =>
-                        on_escrow_updated(&mut state, &config, owner_pubkey, escrow_balance),
+                        on_solana_escrow_updated(
+                            &mut state,
+                            &config,
+                            &notification_channel,
+                            owner_pubkey,
+                            escrow_balance
+                        ),
                 }
             }
         }
@@ -516,13 +527,47 @@ async fn next_escrow_update(
     }
 }
 
-fn on_escrow_updated(
+fn on_solana_escrow_updated(
     state: &mut State,
     config: &BlockchainMonitorConfig,
+    notification_channel: &NotificationChannel<BlockchainMonitorNotification>,
     owner_pubkey: Pubkey,
     escrow_balance: f64,
 ) {
-    // TODO
+    let new_state = if escrow_balance >= config.solana_min_escrow_balance {
+        OwnerState::Active
+    } else {
+        OwnerState::Inactive
+    };
+
+    let owner = StackOwner::Solana(owner_pubkey);
+    let owner_entry = state.stacks.owner_entry(owner.clone());
+    match owner_entry {
+        OwnerEntry::Vacant(_) => {
+            warn!("Received escrow update for unknown developer {owner_pubkey}");
+        }
+
+        OwnerEntry::Occupied(occ) => {
+            let old_state = occ.owner_state();
+            if old_state != new_state {
+                let stacks = occ.stacks().cloned().collect::<Vec<_>>();
+
+                match new_state {
+                    OwnerState::Active => {
+                        state.stacks.make_active(&owner);
+                        notification_channel
+                            .send(BlockchainMonitorNotification::StacksAvailable(stacks));
+                    }
+
+                    OwnerState::Inactive => {
+                        state.stacks.make_inactive(&owner);
+                        notification_channel
+                            .send(BlockchainMonitorNotification::StacksRemoved(stacks));
+                    }
+                }
+            }
+        }
+    }
 }
 
 async fn report_usages<'a>(state: &mut State<'a>, config: &BlockchainMonitorConfig) -> Result<()> {
@@ -838,7 +883,6 @@ fn read_solana_account((pubkey, account): (Pubkey, Account)) -> Result<StackWith
         mu_stack::Stack::try_deserialize_proto(stack_data.stack.into_boxed_slice().as_ref())
             .context("Failed to deserialize stack definition")?;
 
-    // TODO: state
     Ok(StackWithMetadata {
         stack: stack_definition,
         revision: stack_data.revision,

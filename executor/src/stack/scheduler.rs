@@ -28,8 +28,8 @@ pub trait Scheduler: Clone + Send + Sync {
     async fn node_undeployed_stacks(&self, node: NodeHash, stack_ids: Vec<StackID>) -> Result<()>;
 
     // TODO: implement stack updates
-    async fn stack_available(&self, id: StackID, stack: Stack) -> Result<()>;
-    async fn stack_removed(&self, id: StackID) -> Result<()>;
+    async fn stacks_available(&self, stacks: Vec<(StackID, Stack)>) -> Result<()>;
+    async fn stacks_removed(&self, ids: Vec<StackID>) -> Result<()>;
 
     /// We start scheduling stacks after a delay, to make sure we have
     /// an up-to-date view of the cluster.
@@ -529,8 +529,7 @@ async fn tick(state: &mut SchedulerState) {
 
                                 Ok(()) => {
                                     let stack = stack.take_and_replace_default();
-                                    let deployed_to_others =
-                                        deployed_to.take_and_replace_default();
+                                    let deployed_to_others = deployed_to.take_and_replace_default();
                                     occ.insert(StackDeployment::DeployedToSelf {
                                         stack,
                                         deployed_to_others,

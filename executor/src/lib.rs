@@ -395,16 +395,17 @@ async fn process_blockchain_monitor_notification(
         None => (), // TODO
         Some(BlockchainMonitorNotification::StacksAvailable(stacks)) => {
             debug!("Stacks available: {stacks:?}");
-            for stack in stacks {
-                scheduler
-                    .stack_available(stack.id(), stack.stack)
-                    .await
-                    .unwrap();
-            }
+            scheduler
+                .stacks_available(stacks.into_iter().map(|s| (s.id(), s.stack)).collect())
+                .await
+                .unwrap();
         }
         Some(BlockchainMonitorNotification::StacksRemoved(stacks)) => {
             debug!("Stacks removed: {stacks:?}");
-            // TODO
+            scheduler
+                .stacks_removed(stacks.into_iter().map(|s| s.id()).collect())
+                .await
+                .unwrap();
         }
     }
 }
