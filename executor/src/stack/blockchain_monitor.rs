@@ -690,9 +690,17 @@ fn report_usage(
         &program_id,
     );
 
-    let seed = 0u64; // TODO: we can't reliably generate consecutive seeds, make this a random UUID/16-byte number?
-    let (usage_update_pda, _) =
-        Pubkey::find_program_address(&[b"update", &seed.to_le_bytes()], &program_id);
+    // TODO: implement a strictly increasing seed generator
+    let seed: u128 = rand::random();
+    let (usage_update_pda, _) = Pubkey::find_program_address(
+        &[
+            b"update",
+            &stack_id.to_bytes(),
+            &region_pda.to_bytes(),
+            &seed.to_le_bytes(),
+        ],
+        &program_id,
+    );
 
     let accounts = marketplace::accounts::UpdateUsage {
         authorized_signer: auth_signer_pda,
@@ -712,7 +720,7 @@ fn report_usage(
         .accounts(accounts)
         .args(marketplace::instruction::UpdateUsage {
             _escrow_bump: escrow_bump,
-            _update_seed: seed,
+            update_seed: seed,
             usage,
         })
         .signer(payer.as_ref())

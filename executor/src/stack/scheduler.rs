@@ -56,8 +56,8 @@ enum SchedulerMessage {
     NodeDeployedStacks(NodeHash, Vec<StackID>),
     NodeUndeployedStacks(NodeHash, Vec<StackID>),
 
-    StackAvailable(StackID, Stack),
-    StackRemoved(StackID),
+    StacksAvailable(Vec<(StackID, Stack)>),
+    StacksRemoved(Vec<StackID>),
 
     ReadyToScheduleStacks,
 
@@ -105,16 +105,16 @@ impl Scheduler for SchedulerImpl {
             .map_err(Into::into)
     }
 
-    async fn stack_available(&self, id: StackID, stack: Stack) -> Result<()> {
+    async fn stacks_available(&self, stacks: Vec<(StackID, Stack)>) -> Result<()> {
         self.mailbox
-            .post(SchedulerMessage::StackAvailable(id, stack))
+            .post(SchedulerMessage::StacksAvailable(stacks))
             .await
             .map_err(Into::into)
     }
 
-    async fn stack_removed(&self, id: StackID) -> Result<()> {
+    async fn stacks_removed(&self, ids: Vec<StackID>) -> Result<()> {
         self.mailbox
-            .post(SchedulerMessage::StackRemoved(id))
+            .post(SchedulerMessage::StacksRemoved(ids))
             .await
             .map_err(Into::into)
     }
@@ -377,50 +377,59 @@ async fn step(
             }
         }
 
-        SchedulerMessage::StackAvailable(id, stack) => {
-            state.reevaluate_on_next_tick.insert(id);
-            match state.stacks.entry(id) {
-                Entry::Vacant(vac) => {
-                    vac.insert(StackDeployment::Undeployed { stack });
-                }
-
-                Entry::Occupied(mut occ) => match occ.get_mut() {
-                    StackDeployment::Unknown { deployed_to } => {
-                        if deployed_to.is_empty() {
-                            warn!("Stack {id} was in Unknown state with empty deployed_to");
-                            occ.insert(StackDeployment::Undeployed { stack });
-                        } else {
-                            let deployed_to = deployed_to.take_and_replace_default();
-                            occ.insert(StackDeployment::DeployedToOthers { stack, deployed_to });
-                        }
+        SchedulerMessage::StacksAvailable(stacks) => {
+            for (id, stack) in stacks {
+                state.reevaluate_on_next_tick.insert(id);
+                match state.stacks.entry(id) {
+                    Entry::Vacant(vac) => {
+                        vac.insert(StackDeployment::Undeployed { stack });
                     }
 
-                    _ => warn!("Received known stack with ID {id}"),
-                },
+                    Entry::Occupied(mut occ) => match occ.get_mut() {
+                        StackDeployment::Unknown { deployed_to } => {
+                            if deployed_to.is_empty() {
+                                warn!("Stack {id} was in Unknown state with empty deployed_to");
+                                occ.insert(StackDeployment::Undeployed { stack });
+                            } else {
+                                let deployed_to = deployed_to.take_and_replace_default();
+                                occ.insert(StackDeployment::DeployedToOthers {
+                                    stack,
+                                    deployed_to,
+                                });
+                            }
+                        }
+
+                        _ => warn!("Received known stack with ID {id}"),
+                    },
+                }
             }
         }
 
-        SchedulerMessage::StackRemoved(id) => match state.stacks.entry(id) {
-            Entry::Vacant(_) => warn!("Unknown stack {id} was removed"),
+        SchedulerMessage::StacksRemoved(ids) => {
+            for id in ids {
+                match state.stacks.entry(id) {
+                    Entry::Vacant(_) => warn!("Unknown stack {id} was removed"),
 
-            Entry::Occupied(mut occ) => match occ.get_mut() {
-                StackDeployment::Unknown { .. } => {
-                    warn!("Unknown stack {id} was removed");
-                    occ.remove();
-                }
+                    Entry::Occupied(mut occ) => match occ.get_mut() {
+                        StackDeployment::Unknown { .. } => {
+                            warn!("Unknown stack {id} was removed");
+                            occ.remove();
+                        }
 
-                StackDeployment::DeployedToSelf { .. } => {
-                    undeploy_stack(id, &state.notification_channel).await;
-                    occ.remove();
-                }
+                        StackDeployment::DeployedToSelf { .. } => {
+                            undeploy_stack(id, &state.notification_channel).await;
+                            occ.remove();
+                        }
 
-                StackDeployment::DeployedToOthers { .. }
-                | StackDeployment::HasDeploymentCandidate { .. }
-                | StackDeployment::Undeployed { .. } => {
-                    occ.remove();
+                        StackDeployment::DeployedToOthers { .. }
+                        | StackDeployment::HasDeploymentCandidate { .. }
+                        | StackDeployment::Undeployed { .. } => {
+                            occ.remove();
+                        }
+                    },
                 }
-            },
-        },
+            }
+        }
 
         SchedulerMessage::Tick => {
             tick(&mut state).await;

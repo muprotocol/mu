@@ -59,7 +59,7 @@ export const waitForLocalValidatorToStart = async () => {
 }
 
 export const getDefaultWalletPath = () =>
-   path.resolve(homedir(), ".config/solana/id.json");
+    path.resolve(homedir(), ".config/solana/id.json");
 
 
 export interface ServiceRates {
@@ -469,8 +469,8 @@ export const updateStackUsage = async (
     authSigner: MuAuthorizedSignerInfo,
     provider: MuProviderInfo,
     escrow: MuEscrowAccountInfo,
-    updateSeed: number,
-    usage: ServiceUsage,
+    updateSeed: number, // This is actually a 128-bit number, but a float64 is enough for testing purposes
+    usage: ServiceUsage
 ): Promise<MuStackUsageUpdateInfo> => {
     // Providers won't have access to the escrow account in the same way we
     // do here, so they'll have to calculate it from the `user` field of the
@@ -478,7 +478,9 @@ export const updateStackUsage = async (
     const [pda, bump] = publicKey.findProgramAddressSync(
         [
             anchor.utils.bytes.utf8.encode("update"),
-            new anchor.BN(updateSeed).toBuffer("le", 8)
+            stack.pda.toBytes(),
+            region.pda.toBytes(),
+            new anchor.BN(updateSeed).toBuffer("le", 16)
         ],
         mu.program.programId
     );

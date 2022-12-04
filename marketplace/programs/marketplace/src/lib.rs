@@ -124,7 +124,7 @@ pub mod marketplace {
 
     pub fn update_usage(
         ctx: Context<UpdateUsage>,
-        _update_seed: u64,
+        update_seed: u128,
         _escrow_bump: u8,
         usage: ServiceUsage,
     ) -> Result<()> {
@@ -148,6 +148,7 @@ pub mod marketplace {
             account_type: MuAccountType::UsageUpdate as u8,
             region: ctx.accounts.region.key(),
             stack: ctx.accounts.stack.key(),
+            seed: update_seed,
             usage,
         });
 
@@ -394,11 +395,12 @@ pub struct UsageUpdate {
     pub account_type: u8, // See MuAccountType
     pub region: Pubkey,
     pub stack: Pubkey,
+    pub seed: u128,
     pub usage: ServiceUsage,
 }
 
 #[derive(Accounts)]
-#[instruction(update_seed: u64, escrow_bump: u8)]
+#[instruction(update_seed: u128, escrow_bump: u8)]
 pub struct UpdateUsage<'info> {
     #[account(
         seeds = [b"state"],
@@ -420,12 +422,16 @@ pub struct UpdateUsage<'info> {
     #[account(mut)]
     token_account: AccountInfo<'info>,
 
-    // TODO: fix seeds
     #[account(
         init,
         payer = signer,
-        space = 8 + 1 + 32 + 32 + (16 + 16 + 8 + 8 + 8 + 8),
-        seeds = [b"update", update_seed.to_le_bytes().as_ref()],
+        space = 8 + 1 + 32 + 32 + 16 + (16 + 16 + 8 + 8 + 8 + 8),
+        seeds = [
+            b"update",
+            stack.key().as_ref(),
+            region.key().as_ref(),
+            update_seed.to_le_bytes().as_ref()
+        ],
         bump
     )]
     usage_update: Account<'info, UsageUpdate>,
