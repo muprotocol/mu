@@ -50,12 +50,12 @@ describe("marketplace", () => {
 
     it("Creates a region", async () => {
         const rates: ServiceRates = {
-            billionFunctionMbInstructions: 1, // TODO too cheap to be priced correctly, even with 6 decimal places
-            dbGigabyteMonths: 1000,
-            gigabytesGatewayTraffic: 100,
-            millionDbReads: 500,
-            millionDbWrites: 2000,
-            millionGatewayRequests: 50
+            billionFunctionMbInstructions: new BN(1), // TODO too cheap to be priced correctly, even with 6 decimal places
+            dbGigabyteMonths: new BN(1000),
+            gigabytesGatewayTraffic: new BN(100),
+            millionDbReads: new BN(500),
+            millionDbWrites: new BN(2000),
+            millionGatewayRequests: new BN(50)
         };
 
         region = await createRegion(mu, provider, "Region", 1, rates, 3);

@@ -1,10 +1,11 @@
 //! Manager
 //! purpose is caching database
 
+use crate::infrastructure::config::ConfigDuration;
 use chrono::{NaiveDateTime, Utc};
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
 use serde::Deserialize;
-use std::{collections::HashMap, fmt, str::FromStr, time::Duration};
+use std::{collections::HashMap, fmt, str::FromStr};
 use tokio::select;
 
 use crate::stack::usage_aggregator::{Usage, UsageAggregator};
@@ -34,7 +35,7 @@ macro_rules! flatten_result {
 
 #[derive(Deserialize, Clone)]
 pub struct DBManagerConfig {
-    pub usage_report_duration: Duration,
+    pub usage_report_duration: ConfigDuration,
 }
 
 // TODO: find a better name
@@ -91,7 +92,7 @@ impl Manager {
 
         let mailbox = mb.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(config.usage_report_duration);
+            let mut interval = tokio::time::interval(*config.usage_report_duration);
 
             loop {
                 select! {
@@ -318,7 +319,7 @@ mod test {
     async fn init() -> Result<Manager> {
         let usage_aggregator = crate::stack::usage_aggregator::start();
         let config = DBManagerConfig {
-            usage_report_duration: Duration::from_secs(10),
+            usage_report_duration: ConfigDuration::new(Duration::from_secs(10)),
         };
 
         Manager::new(usage_aggregator, config).await

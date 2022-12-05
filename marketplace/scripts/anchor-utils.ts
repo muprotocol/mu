@@ -63,12 +63,12 @@ export const getDefaultWalletPath = () =>
 
 
 export interface ServiceRates {
-    billionFunctionMbInstructions: number,
-    dbGigabyteMonths: number,
-    millionDbReads: number,
-    millionDbWrites: number,
-    millionGatewayRequests: number,
-    gigabytesGatewayTraffic: number,
+    billionFunctionMbInstructions: BN,
+    dbGigabyteMonths: BN,
+    millionDbReads: BN,
+    millionDbWrites: BN,
+    millionGatewayRequests: BN,
+    gigabytesGatewayTraffic: BN,
 }
 
 export interface ServiceUsage {
