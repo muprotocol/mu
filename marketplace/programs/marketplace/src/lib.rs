@@ -245,12 +245,12 @@ pub struct CreateProvider<'info> {
 // actually 0.01 $MU.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct ServiceRates {
-    pub billion_function_mb_instructions: u32,
-    pub db_gigabyte_months: u32,
-    pub million_db_reads: u32,
-    pub million_db_writes: u32,
-    pub million_gateway_requests: u32,
-    pub gigabytes_gateway_traffic: u32,
+    pub billion_function_mb_instructions: u64,
+    pub db_gigabyte_months: u64,
+    pub million_db_reads: u64,
+    pub million_db_writes: u64,
+    pub million_gateway_requests: u64,
+    pub gigabytes_gateway_traffic: u64,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, Default)]
@@ -282,7 +282,7 @@ pub struct CreateRegion<'info> {
 
     #[account(
         init,
-        space = 8 + 1 + 32 + 4 + name.as_bytes().len() + 1 + 4 + (8 + 8 + 8 + 8) + 1,
+        space = 8 + 1 + 32 + 1 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 1 + 4 + name.as_bytes().len(),
         payer = owner,
         seeds = [b"region", owner.key().as_ref(), region_num.to_le_bytes().as_ref()],
         bump

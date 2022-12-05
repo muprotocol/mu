@@ -23,4 +23,4 @@ blockchain_monitor:
   solana_usage_report_interval: 5s
 db_manager:
   # Note, this value should not be under 1s
-  usage_report_duration: 30s,
+  usage_report_duration: 30s

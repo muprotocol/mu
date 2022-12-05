@@ -6,7 +6,7 @@ import {
     promptForRemovalIfLedgerExists,
     waitForLocalValidatorToStart
 } from "./anchor-utils";
-import {ProcessMultiplexer} from "./process-multiplexer";
+import { ProcessMultiplexer } from "./process-multiplexer";
 
 util.asyncMain(async () => {
     if (!promptForRemovalIfLedgerExists()) {
