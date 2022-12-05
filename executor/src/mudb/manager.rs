@@ -1,16 +1,41 @@
 //! Manager
 //! purpose is caching database
 
+use chrono::{NaiveDateTime, Utc};
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
-use std::{collections::HashMap, fmt};
+use serde::Deserialize;
+use std::{collections::HashMap, fmt, str::FromStr, time::Duration};
+use tokio::select;
+
+use crate::stack::usage_aggregator::{Usage, UsageAggregator};
 
 use super::{
     config::ConfigInner,
     error::ManagerMailBoxError,
     table::Table,
-    types::{KeyFilter, DB_DESCRIPTION_TABLE, MANAGER_DB},
+    types::{DatabaseID, KeyFilter, DB_DESCRIPTION_TABLE, MANAGER_DB},
     Db, Error, Result, ValueFilter,
 };
+
+macro_rules! flatten_result {
+    ($join_res:expr, $rcr:expr, $f:expr) => {
+        match $join_res {
+            Ok(res) => match res {
+                Ok(x) => {
+                    $f(&x);
+                    $rcr.reply(Ok(x))
+                }
+                Err(e) => $rcr.reply(Err(e)),
+            },
+            Err(join_e) => $rcr.reply(Err(join_e.into())),
+        }
+    };
+}
+
+#[derive(Deserialize, Clone)]
+pub struct DBManagerConfig {
+    pub usage_report_duration: Duration,
+}
 
 // TODO: find a better name
 #[derive(Clone)]
@@ -28,11 +53,17 @@ impl fmt::Debug for Manager {
 }
 
 impl Manager {
-    pub async fn new() -> Result<Self> {
-        ::tokio::task::spawn_blocking(Self::sync_new).await?
+    pub async fn new(
+        usage_aggregator: Box<dyn UsageAggregator>,
+        config: DBManagerConfig,
+    ) -> Result<Self> {
+        tokio::task::spawn_blocking(|| Self::inner_new(usage_aggregator, config)).await?
     }
 
-    fn sync_new() -> Result<Self> {
+    fn inner_new(
+        usage_aggregator: Box<dyn UsageAggregator>,
+        config: DBManagerConfig,
+    ) -> Result<Self> {
         let conf = ConfigInner {
             database_id: MANAGER_DB.into(),
             ..Default::default()
@@ -45,8 +76,36 @@ impl Manager {
             Err(Error::TableAlreadyExist(table)) => db.get_table(table.try_into().unwrap()),
             Err(e) => Err(e),
         }?;
+
+        let (stop_notification_tx, mut stop_notification_rx) = tokio::sync::broadcast::channel(1);
+
+        let state = ManagerState {
+            databases: HashMap::new(),
+            usage_aggregator,
+            stop_notification: stop_notification_tx,
+            last_usage_report_timestamp: Utc::now().naive_utc(),
+        };
+
         // TODO: consider buffer_size 100
-        let mb = CallbackMailboxProcessor::start(step, HashMap::new(), 100);
+        let mb = CallbackMailboxProcessor::start(step, state, 100);
+
+        let mailbox = mb.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(config.usage_report_duration);
+
+            loop {
+                select! {
+                    _ = interval.tick() => {
+                        if let Err(e) = mailbox.post(Message::ReportUsage).await {
+                            log::error!("database usage reporter mailbox error: {}", e);
+                            break;
+                        }
+                    }
+                    _ = stop_notification_rx.recv() => {break}
+                }
+            }
+        });
+
         Ok(Self { ddt, mb })
     }
 
@@ -99,12 +158,19 @@ impl Manager {
             .collect())
     }
 
-    pub async fn get_cache(&self) -> Result<State> {
+    pub async fn get_cache(&self) -> Result<HashMap<String, Db>> {
         self.mb
             .post_and_reply(Message::GetCache)
             .await
             .map_err(ManagerMailBoxError::GetCache)
             .map_err(Into::into)
+    }
+
+    pub async fn stop(self) -> Result<()> {
+        self.mb
+            .post_and_reply(Message::Stop)
+            .await
+            .map_err(ManagerMailBoxError::Stop)?
     }
 }
 
@@ -114,49 +180,86 @@ enum Message {
     CreateDb(Manager, ConfigInner, Rcr<()>),
     DropDb(Manager, String, Rcr<()>),
     GetDb(Manager, String, Rcr<Db>),
-    GetCache(ReplyChannel<State>),
+    GetCache(ReplyChannel<HashMap<String, Db>>),
+    ReportUsage,
+    Stop(ReplyChannel<Result<()>>),
 }
 
-type State = HashMap<String, Db>;
+struct ManagerState {
+    databases: HashMap<String, Db>,
+    usage_aggregator: Box<dyn UsageAggregator>,
+    stop_notification: tokio::sync::broadcast::Sender<()>,
+    last_usage_report_timestamp: NaiveDateTime,
+}
+
 type MailBox = CallbackMailboxProcessor<Message>;
 
-async fn step(_: MailBox, msg: Message, mut state: State) -> State {
-    macro_rules! flatten_result {
-        ($join_res:expr, $rcr:expr, $f:expr) => {
-            match $join_res {
-                Ok(res) => match res {
-                    Ok(x) => {
-                        $f(&x);
-                        $rcr.reply(Ok(x))
-                    }
-                    Err(e) => $rcr.reply(Err(e)),
-                },
-                Err(join_e) => $rcr.reply(Err(join_e.into())),
-            }
-        };
-    }
-
+async fn step(_: MailBox, msg: Message, mut state: ManagerState) -> ManagerState {
     match msg {
-        Message::CreateDb(manager, conf, rcr) => {
+        Message::CreateDb(manager, conf, reply) => {
             let join_res = ::tokio::task::spawn_blocking(move || create_db(manager, conf)).await;
-            flatten_result!(join_res, rcr, |_| ())
+            flatten_result!(join_res, reply, |_| ())
         }
-        Message::DropDb(manager, name, rcr) => {
-            state.remove(&name);
+        Message::DropDb(manager, name, reply) => {
+            state.databases.remove(&name);
             let name_clone = name.clone();
             let join_res =
                 ::tokio::task::spawn_blocking(move || drop_db(manager, &name_clone)).await;
-            flatten_result!(join_res, rcr, |_| ())
+            flatten_result!(join_res, reply, |_| ())
         }
-        Message::GetDb(manager, name, rcr) => match state.get(&name).map(Clone::clone) {
-            Some(db) => rcr.reply(Ok(db)),
-            _ => {
-                let join_res = ::tokio::task::spawn_blocking(move || open_db(manager, &name)).await;
-                flatten_result!(join_res, rcr, |x: &Db| state
-                    .insert(x.id.clone(), x.clone()))
+        Message::GetDb(manager, name, reply) => {
+            match state.databases.get(&name).map(Clone::clone) {
+                Some(db) => reply.reply(Ok(db)),
+                _ => {
+                    let join_res =
+                        ::tokio::task::spawn_blocking(move || open_db(manager, &name)).await;
+                    flatten_result!(join_res, reply, |x: &Db| state
+                        .databases
+                        .insert(x.id.clone(), x.clone()))
+                }
             }
-        },
-        Message::GetCache(rcr) => rcr.reply(state.clone()),
+        }
+        Message::GetCache(reply) => reply.reply(state.databases.clone()),
+        Message::ReportUsage => {
+            let now = Utc::now().naive_utc();
+            let duration_seconds = (now - state.last_usage_report_timestamp).num_seconds();
+            state.last_usage_report_timestamp = now;
+
+            for (id, db) in &state.databases {
+                //TODO: This is not good i know, we need strong type here in hash map key
+                let stack_id = if let Ok(db) = DatabaseID::from_str(id) {
+                    db.stack_id
+                } else {
+                    log::error!("database id is wrong, and can not report usage: {}", id);
+                    continue;
+                };
+
+                match db.size_on_disk() {
+                    Ok(s) => {
+                        let usage = vec![Usage::DBStorage {
+                            size_bytes: s,
+                            seconds: if duration_seconds < 0 {
+                                // Durations here should never be negative but we double check
+                                0
+                            } else {
+                                duration_seconds.unsigned_abs()
+                            },
+                        }];
+                        state.usage_aggregator.register_usage(stack_id, usage);
+                    }
+                    Err(e) => {
+                        log::error!("can not get database size and report it: {e}");
+                    }
+                }
+            }
+        }
+        Message::Stop(reply) => reply.reply(
+            state
+                .stop_notification
+                .send(())
+                .map(|_| ())
+                .map_err(|_| Error::FailedToStopManager),
+        ),
     };
     state
 }
@@ -212,8 +315,13 @@ mod test {
 
     const TEST_DB: &str = "manager_test_db";
 
-    async fn init() -> Manager {
-        Manager::new().await.unwrap()
+    async fn init() -> Result<Manager> {
+        let usage_aggregator = crate::stack::usage_aggregator::start();
+        let config = DBManagerConfig {
+            usage_report_duration: Duration::from_secs(10),
+        };
+
+        Manager::new(usage_aggregator, config).await
     }
 
     async fn seed(manager: &Manager) {
@@ -248,17 +356,17 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn just_one_new_manager() {
-        let m1 = Manager::new().await;
+        let m1 = init().await;
         assert_matches!(m1, Ok(Manager { .. }));
 
-        let m2 = Manager::new().await;
+        let m2 = init().await;
         assert_matches!(m2.err(), Some(Error::Sled(_)));
     }
 
     #[tokio::test]
     #[serial]
     async fn create_db_r_ok_and_check_file_system() {
-        let manager = init().await;
+        let manager = init().await.unwrap();
         let db_id = "create_test_db";
         let conf = ConfigInner {
             database_id: db_id.into(),
@@ -278,7 +386,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn create_db_r_err_already_exist_w_redundant() {
-        let manager = init().await;
+        let manager = init().await.unwrap();
         seed(&manager).await;
 
         // redundant due to seed
@@ -296,7 +404,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn drop_db_r_ok_and_check_file_system() {
-        let manager = init().await;
+        let manager = init().await.unwrap();
         seed(&manager).await;
 
         let res = manager.drop_db(TEST_DB).await;
@@ -314,7 +422,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn drop_db_r_err_dose_not_exist() {
-        let manager = init().await;
+        let manager = init().await.unwrap();
 
         let res = manager.drop_db(TEST_DB).await;
         assert_eq!(res, Err(Error::DbDoseNotExist(TEST_DB.into())))
@@ -323,7 +431,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn exist_db_r_true() {
-        let manager = init().await;
+        let manager = init().await.unwrap();
         seed(&manager).await;
 
         let res = manager.is_db_exists(TEST_DB);
@@ -335,7 +443,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn exist_db_r_false() {
-        let manager = init().await;
+        let manager = init().await.unwrap();
 
         let res = manager.is_db_exists(TEST_DB);
         assert_eq!(res, Ok(false));
@@ -344,7 +452,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn get_db_r_ok_db() {
-        let manager = init().await;
+        let manager = init().await.unwrap();
         seed(&manager).await;
 
         {
@@ -359,7 +467,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn get_db_r_err_dose_not_exist() {
-        let manager = init().await;
+        let manager = init().await.unwrap();
 
         let res = manager.get_db(TEST_DB).await;
         assert_eq!(res.err(), Some(Error::DbDoseNotExist(TEST_DB.into())));
@@ -368,7 +476,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn get_cache_r_some() {
-        let manager = init().await;
+        let manager = init().await.unwrap();
         seed(&manager).await;
 
         let _ = manager.get_db(TEST_DB).await.unwrap();
@@ -386,7 +494,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn get_cache_r_none() {
-        let manager = init().await;
+        let manager = init().await.unwrap();
 
         assert!(manager
             .get_cache()
@@ -399,7 +507,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn query_db_by_prefix_r_ok_lists() {
-        let manager = init().await;
+        let manager = init().await.unwrap();
 
         seed_with(
             &manager,

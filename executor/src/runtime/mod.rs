@@ -44,7 +44,7 @@ pub trait Runtime: Clone + Send + Sync {
         message: gateway::Request<'a>,
     ) -> Result<gateway::Response, Error>;
 
-    async fn shutdown(&self) -> Result<(), Error>;
+    async fn stop(&self) -> Result<(), Error>;
 
     async fn add_functions(&self, functions: Vec<FunctionDefinition>) -> Result<(), Error>;
     async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<(), Error>;
@@ -216,7 +216,7 @@ impl Runtime for RuntimeImpl {
             .map(|r| r.response)
     }
 
-    async fn shutdown(&self) -> Result<(), Error> {
+    async fn stop(&self) -> Result<(), Error> {
         self.mailbox
             .post(MailboxMessage::Shutdown)
             .await

@@ -44,7 +44,7 @@ async fn test_simple_func() {
         .unwrap();
 
     assert_eq!("Hello Chappy, welcome to MuRuntime", resp.body);
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -76,7 +76,7 @@ async fn can_query_mudb() {
         .unwrap();
 
     assert_eq!("Hello Dream", resp.body);
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -109,7 +109,7 @@ async fn can_run_multiple_instance_of_the_same_function() {
 
     tokio::join!(instance_1, instance_2, instance_3);
 
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -148,7 +148,7 @@ async fn can_run_instances_of_different_functions() {
 
     tokio::join!(instance_1, instance_2);
 
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -174,7 +174,7 @@ async fn test_functions_with_early_exit_are_handled() {
         _ => panic!("Early exit function should fail to run"),
     }
 
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -202,7 +202,7 @@ async fn functions_with_limited_memory_wont_run() {
         _ => panic!("Should panic!"),
     }
 
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -224,7 +224,7 @@ async fn functions_with_limited_memory_will_run_with_enough_memory() {
         .then(|r| async move { assert_eq!("Hello Test, i ran!", r.unwrap().body) })
         .await;
 
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -266,13 +266,13 @@ async fn function_usage_is_reported_correctly_1() {
             > &0
     );
 
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]
 #[serial]
 async fn function_usage_is_reported_correctly_2() {
-    let projects = vec![create_project("hello-mudb", None)];
+    let projects = vec![create_project("database-heavy", None)];
     let (runtime, db_service, usage_aggregator) = create_runtime(&projects).await;
 
     let request = gateway::Request {
@@ -300,16 +300,20 @@ async fn function_usage_is_reported_correctly_2() {
     let usages = usage_aggregator.get_and_reset_usages().await.unwrap();
     let function_usage = usages.get(&projects[0].id.stack_id).unwrap();
 
-    assert!(function_usage.get(&UsageCategory::DBWrites).unwrap() > &0);
+    println!("{:#?}", function_usage);
 
-    assert!(function_usage.get(&UsageCategory::DBReads).unwrap() > &0);
+    assert!(function_usage.get(&UsageCategory::DBWrites).unwrap() == &10_001);
+
+    assert!(function_usage.get(&UsageCategory::DBReads).unwrap() == &0);
+
+    assert!(function_usage.get(&UsageCategory::DBStorage).unwrap() > &100);
 
     assert!(
         function_usage
             .get(&UsageCategory::FunctionMBInstructions)
             .unwrap()
-            > &0
+            > &100
     );
 
-    runtime.shutdown().await.unwrap();
+    runtime.stop().await.unwrap();
 }

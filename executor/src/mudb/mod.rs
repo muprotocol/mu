@@ -12,6 +12,7 @@ pub mod service;
 
 // re-exports
 pub use self::config::Config;
+pub use self::manager::DBManagerConfig;
 pub use error::{Error, Result};
 
 // TODO: remove and make private
