@@ -49,7 +49,7 @@ impl StackCollection {
             let mut owner_data = OwnerData::new(state);
             for stack in stacks {
                 let id = stack.id();
-                if let Some(_) = result.stacks.insert(id, stack) {
+                if result.stacks.insert(id, stack).is_some() {
                     panic!("Duplicate stack ID {id}");
                 }
                 owner_data.stacks.insert(id);

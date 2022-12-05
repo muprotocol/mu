@@ -1,7 +1,7 @@
 mod stack_collection;
 
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use std::{collections::HashMap, marker::PhantomPinned, ops::Deref, pin::Pin};
 
 use anchor_client::anchor_lang::AccountDeserialize;
@@ -690,8 +690,7 @@ fn report_usage(
         &program_id,
     );
 
-    // TODO: implement a strictly increasing seed generator
-    let seed: u128 = rand::random();
+    let seed: u128 = generate_seed();
     let (usage_update_pda, _) = Pubkey::find_program_address(
         &[
             b"update",
@@ -728,6 +727,19 @@ fn report_usage(
         .context("Failed to send usage update transaction")?;
 
     Ok(())
+}
+
+fn generate_seed() -> u128 {
+    // Note: the cast to u64 will overflow in around 584 millennia. Someone will have fixed it
+    // by then.
+    // We use a timestamp for the upper 64 bits to be able to sort usage updates based on their
+    // seeds. May (or may not) come in handy later.
+    let micros = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_micros() as u64;
+    let rand: u64 = rand::random();
+    (micros as u128) << 64 & (rand as u128)
 }
 
 // TODO: if the connection fails irrecoverably (such as by stopping the local validator),
