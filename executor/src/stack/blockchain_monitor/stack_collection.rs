@@ -8,7 +8,7 @@ use mu_stack::StackID;
 
 use crate::stack::{StackOwner, StackWithMetadata};
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum OwnerState {
     Active,
     Inactive,
