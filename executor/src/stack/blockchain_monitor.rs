@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use dyn_clonable::clonable;
 use futures::{future::BoxFuture, stream::BoxStream, StreamExt};
 use itertools::Itertools;
-use log::{error, info, warn};
+use log::{debug, error, info, trace, warn};
 use mailbox_processor::{
     plain::{MessageReceiver, PlainMailboxProcessor},
     NotificationChannel, ReplyChannel,
@@ -151,6 +151,8 @@ pub async fn start(
     Box<dyn BlockchainMonitor>,
     UnboundedReceiver<BlockchainMonitorNotification>,
 )> {
+    info!("Starting blockchain monitor");
+
     let (notification_channel, rx) = NotificationChannel::new();
 
     let (region_pda, _) = Pubkey::find_program_address(
@@ -166,15 +168,24 @@ pub async fn start(
         &marketplace::id(),
     );
 
+    debug!(
+        "Solana cluster URLs: {}, {}",
+        config.solana_cluster_rpc_url, config.solana_cluster_pub_sub_url
+    );
+
     let rpc_client = RpcClient::new_with_commitment(
         config.solana_cluster_rpc_url.clone(),
         CommitmentConfig::finalized(),
     );
 
-    let solana_token_decimals = get_token_decimals(&rpc_client).await?;
-
+    debug!("Verifying provider public key and region number");
     ensure_region_exists(&region_pda, &rpc_client).await?;
 
+    debug!("Retrieving $MU token properties");
+    let solana_token_decimals = get_token_decimals(&rpc_client).await?;
+    debug!("$MU has {solana_token_decimals} decimal places");
+
+    debug!("Setting up stack subscription");
     let get_stacks_config = RpcProgramAccountsConfig {
         filters: Some(vec![
             RpcFilterType::Memcmp(Memcmp {
@@ -223,6 +234,7 @@ pub async fn start(
         }
     };
 
+    debug!("Retrieving existing stacks");
     let existing_stacks = rpc_client
         .get_program_accounts_with_config(&marketplace::id(), get_stacks_config)
         .await
@@ -247,10 +259,12 @@ pub async fn start(
         &marketplace::id(),
     );
 
+    debug!("Fetching developer escrow balances");
     let owner_states =
         get_owner_states(&rpc_client, &solana_provider_pda, &config, existing_stacks).await?;
     let stacks = StackCollection::from_known(owner_states);
 
+    debug!("Setting up escrow subscriptions");
     solana_pub_sub.escrow_subscriptions = setup_solana_escrow_subscriptions(
         unsafe {
             (solana_pub_sub.client_wrapper.deref() as *const SolanaPubSubClientWrapper).as_ref()
@@ -289,6 +303,7 @@ pub async fn start(
     let res_clone = res.clone();
     tokio::spawn(async move { generate_tick(res_clone, tick_interval).await });
 
+    debug!("Initialization complete");
     Ok((Box::new(res), rx))
 }
 
@@ -304,12 +319,14 @@ async fn get_owner_states(
 
     for (owner, stacks) in &by_owner {
         let escrow_balance = fetch_owner_escrow_balance(rpc_client, &owner, provider_pda).await?;
+
         let state = if escrow_balance >= config.solana_min_escrow_balance {
             OwnerState::Active
         } else {
             OwnerState::Inactive
         };
 
+        trace!("Developer {owner:?} has escrow balance {escrow_balance} and state {state:?}");
         res.insert(owner, (state, stacks.collect()));
     }
 
@@ -382,7 +399,7 @@ async fn mailbox_body(
     mut message_receiver: MessageReceiver<BlockchainMonitorMessage>,
     notification_channel: NotificationChannel<BlockchainMonitorNotification>,
 ) {
-    if !state.stacks.is_empty() {
+    if state.stacks.all_active().next().is_some() {
         notification_channel.send(BlockchainMonitorNotification::StacksAvailable(
             state.stacks.all_active().cloned().collect(),
         ));
@@ -400,6 +417,7 @@ async fn mailbox_body(
                     }
 
                     Some(BlockchainMonitorMessage::Stop(r)) => {
+                        debug!("Stopping");
                         stop_reply_channel = Some(r);
                         break 'main_loop;
                     }
@@ -425,6 +443,7 @@ async fn mailbox_body(
                     Some(BlockchainMonitorMessage::Tick(r)) => {
                         r.reply(());
 
+                        debug!("Reporting usages");
                         if let Err(e) = report_usages(&mut state, &config).await {
                             error!("Failed to report usages due to: {e}");
                         }
@@ -434,6 +453,7 @@ async fn mailbox_body(
 
             stack = state.solana.pub_sub.stack_subscription.stream.next() => {
                 if let Some(stack) = stack {
+                    debug!("Received new stack");
                     if let Err(f) = on_new_stack_received(
                         &mut state,
                         &config,
@@ -476,6 +496,7 @@ async fn mailbox_body(
         }
     }
 
+    debug!("Will report usages one last time before stopping");
     if let Err(e) = report_usages(&mut state, &config).await {
         // TODO: this is a bad situation to be in, unless we persist usages to disk.
         error!("Failed to report usages due to: {e}");
@@ -506,6 +527,8 @@ async fn next_escrow_update(
     let account = sub.1.stream.next().await;
 
     if let Some(account) = account {
+        trace!("Received escrow update for {}", sub.0);
+
         let account: Account = account
             .value
             .decode()
@@ -515,10 +538,14 @@ async fn next_escrow_update(
             .context("Failed to parse token account from escrow update")?;
 
         if let TokenAccountType::Account(account) = account {
-            Ok(Some((
-                *sub.0,
-                account.token_amount.ui_amount.ok_or_else(|| anyhow!(""))?,
-            )))
+            let amount = account.token_amount.ui_amount.ok_or_else(|| {
+                anyhow!(
+                    "Failed to get UI amount from token account, this is likely \
+                        due to too many decimal places in $MU"
+                )
+            })?;
+            trace!("New escrow amount for {} is {amount}", sub.0);
+            Ok(Some((*sub.0, amount)))
         } else {
             bail!("Expected escrow update to be a token account");
         }
@@ -540,6 +567,8 @@ fn on_solana_escrow_updated(
         OwnerState::Inactive
     };
 
+    trace!("Developer {owner_pubkey} should be in state {new_state:?} due to escrow update");
+
     let owner = StackOwner::Solana(owner_pubkey);
     let owner_entry = state.stacks.owner_entry(owner.clone());
     match owner_entry {
@@ -554,17 +583,27 @@ fn on_solana_escrow_updated(
 
                 match new_state {
                     OwnerState::Active => {
+                        trace!(
+                            "Transitioning {owner_pubkey} to active state, \
+                            stacks will be deployed for this owner"
+                        );
                         state.stacks.make_active(&owner);
                         notification_channel
                             .send(BlockchainMonitorNotification::StacksAvailable(stacks));
                     }
 
                     OwnerState::Inactive => {
+                        trace!(
+                            "Transitioning {owner_pubkey} to inactive state, \
+                            stacks will be undeployed for this owner"
+                        );
                         state.stacks.make_inactive(&owner);
                         notification_channel
                             .send(BlockchainMonitorNotification::StacksRemoved(stacks));
                     }
                 }
+            } else {
+                trace!("Already in desired state");
             }
         }
     }
@@ -584,6 +623,8 @@ async fn report_usages<'a>(state: &mut State<'a>, config: &BlockchainMonitorConf
             .as_slice(),
     )
     .unwrap();
+
+    debug!("Will report {} usages", usages.len());
 
     spawn_blocking(move || {
         let program_id = marketplace::id();
@@ -646,6 +687,8 @@ async fn report_usages<'a>(state: &mut State<'a>, config: &BlockchainMonitorConf
                 }
             }
 
+            trace!("Stack {stack_id} has total usage {usage:?}");
+
             if let Err(e) = report_usage(
                 &program,
                 payer.clone(),
@@ -657,7 +700,7 @@ async fn report_usages<'a>(state: &mut State<'a>, config: &BlockchainMonitorConf
                 auth_signer_pda,
             ) {
                 // TODO: need some way to keep the usage around for later
-                error!("Failed to report usage for {stack_id} due to: {e}");
+                error!("Failed to report usage for {stack_id} due to: {e:?}");
             }
         }
 
@@ -691,6 +734,7 @@ fn report_usage(
     );
 
     let seed: u128 = generate_seed();
+    trace!("Report seed for stack {stack_id} is {seed}");
     let (usage_update_pda, _) = Pubkey::find_program_address(
         &[
             b"update",
@@ -739,12 +783,14 @@ fn generate_seed() -> u128 {
         .unwrap()
         .as_micros() as u64;
     let rand: u64 = rand::random();
-    (micros as u128) << 64 & (rand as u128)
+    (micros as u128) << 64 | (rand as u128)
 }
 
 // TODO: if the connection fails irrecoverably (such as by stopping the local validator),
 // this gets called repetitively and prevents the application from quitting cleanly.
 async fn reconnect_solana_subscriber(state: State<'_>) -> State<'_> {
+    debug!("Reconnecting solana subscriptions");
+
     (state.solana.pub_sub.stack_subscription.unsubscribe_callback)().await;
 
     let client_wrapper = unsafe {
@@ -827,6 +873,8 @@ async fn setup_solana_escrow_subscriptions<'a>(
     let mut escrow_subscriptions = HashMap::<Pubkey, SolanaSubscription<'a, UiAccount>>::new();
 
     for owner_id in owners {
+        trace!("Setting up escrow subscription for {owner_id}");
+
         let (escrow_pda, _) = Pubkey::find_program_address(
             &[b"escrow", &owner_id.to_bytes(), &provider_pda.to_bytes()],
             &marketplace::id(),
@@ -865,12 +913,21 @@ async fn on_new_stack_received(
     let stack = read_solana_rpc_keyed_account(stack)
         .context("Received stack from blockchain but failed to deserialize")?;
 
+    debug!("Received new stack with ID {:?}", stack.id());
+
     // TODO: implement stack updates
     let owner_entry = state.stacks.owner_entry(stack.owner());
 
     let is_new_stack = match owner_entry {
-        OwnerEntry::Occupied(mut occ) => occ.add_stack(stack.clone()),
+        OwnerEntry::Occupied(mut occ) => {
+            trace!(
+                "Already know this stack's owner, which is in state {:?}",
+                occ.owner_state()
+            );
+            occ.add_stack(stack.clone())
+        }
         OwnerEntry::Vacant(vac) => {
+            trace!("This stack is from a new owner, fetching escrow balance");
             let escrow_balance = fetch_owner_escrow_balance(
                 &state.solana.rpc_client,
                 &stack.owner(),
@@ -882,6 +939,8 @@ async fn on_new_stack_received(
             } else {
                 OwnerState::Inactive
             };
+
+            trace!("New owner has escrow balance {escrow_balance}, adding with state {state:?}");
 
             vac.insert_first(state, stack.clone());
             true
@@ -929,6 +988,8 @@ fn read_solana_rpc_keyed_account(stack: Response<RpcKeyedAccount>) -> Result<Sta
 
 // TODO: ensure we have the right usage signer for this region
 async fn ensure_region_exists(region: &Pubkey, rpc_client: &RpcClient) -> Result<()> {
+    debug!("Fetching region data from Solana");
+
     let account = rpc_client.get_account(region).await.context(format!(
         "Failed to fetch region {region} from Solana, make sure the `solana_provider_public_key` and \
             `solana_region_num` config values are correct, the region is already created, the URL in \

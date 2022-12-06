@@ -3,7 +3,9 @@ log:
   filters:
     - module: mu
       level: debug
-    - module: mu::mu_stack::scheduler
+    - module: mu::stack::scheduler
+      level: debug
+    - module: mu::stack::blockchain_monitor
       level: trace
     - module: mu::network::connection_manager
       level: info

@@ -47,7 +47,7 @@ fn create_usage(
     let memory_megabytes = memory
         .get_adjusted_unit(byte_unit::ByteUnit::MB)
         .get_value();
-    let memory_megabytes = (memory_megabytes - memory_megabytes.fract()) as u64;
+    let memory_megabytes = memory_megabytes.floor() as u64;
 
     vec![
         Usage::DBRead {
