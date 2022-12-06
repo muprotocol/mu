@@ -313,13 +313,14 @@ mod test {
     use super::*;
     use assert_matches::assert_matches;
     use serial_test::serial;
+    use std::time::Duration;
 
     const TEST_DB: &str = "manager_test_db";
 
     async fn init() -> Result<Manager> {
         let usage_aggregator = crate::stack::usage_aggregator::start();
         let config = DBManagerConfig {
-            usage_report_duration: ConfigDuration::new(Duration::from_secs(10)),
+            usage_report_duration: Duration::from_secs(10).into(),
         };
 
         Manager::new(usage_aggregator, config).await

@@ -12,7 +12,7 @@ use mu::{
     },
     stack::usage_aggregator::UsageAggregator,
 };
-use mu_stack::{FunctionRuntime, MegaByte};
+use mu_stack::FunctionRuntime;
 use std::{
     collections::HashMap,
     env,
@@ -93,7 +93,7 @@ pub struct Project {
     pub id: FunctionID,
     pub name: String,
     pub path: PathBuf,
-    pub memory_limit: MegaByte,
+    pub memory_limit: byte_unit::Byte,
 }
 
 impl Project {
@@ -155,7 +155,7 @@ pub async fn create_runtime(
     let (functions, provider) = create_map_function_provider(projects).await.unwrap();
     let usage_aggregator = HashMapUsageAggregator::new();
     let db_manager_config = DBManagerConfig {
-        usage_report_duration: Duration::from_secs(1),
+        usage_report_duration: Duration::from_secs(1).into(),
     };
 
     let db_service = DatabaseManager::new(usage_aggregator.clone(), db_manager_config)

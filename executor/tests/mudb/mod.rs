@@ -54,7 +54,7 @@ async fn find_and_update_again(
 async fn test_mudb_service() {
     let usage_aggregator = HashMapUsageAggregator::new();
     let db_manager_config = DBManagerConfig {
-        usage_report_duration: Duration::from_secs(10),
+        usage_report_duration: Duration::from_secs(10).into(),
     };
 
     let db_service = DatabaseManager::new(usage_aggregator.clone(), db_manager_config)

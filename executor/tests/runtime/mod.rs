@@ -3,7 +3,7 @@ use mu::{
     gateway, mudb::service::DatabaseID, runtime::types::FunctionID,
     stack::usage_aggregator::UsageCategory,
 };
-use mu_stack::{self, MegaByte, StackID};
+use mu_stack::{self, StackID};
 use serial_test::serial;
 use std::{collections::HashMap, path::Path};
 
@@ -12,7 +12,10 @@ use crate::runtime::utils::{create_db_if_not_exist, create_runtime, Project};
 mod providers;
 mod utils;
 
-pub fn create_project(name: &'static str, memory_limit: Option<MegaByte>) -> Project {
+pub fn create_project(name: &'static str, memory_limit: Option<byte_unit::Byte>) -> Project {
+    let memory_limit =
+        memory_limit.unwrap_or(byte_unit::Byte::from_unit(100.0, byte_unit::ByteUnit::MB).unwrap());
+
     Project {
         name: name.into(),
         path: Path::new(&format!("tests/runtime/funcs/{name}")).into(),
@@ -20,7 +23,7 @@ pub fn create_project(name: &'static str, memory_limit: Option<MegaByte>) -> Pro
             stack_id: StackID::SolanaPublicKey(rand::random()),
             function_name: name.into(),
         },
-        memory_limit: memory_limit.unwrap_or(MegaByte(100)),
+        memory_limit,
     }
 }
 
@@ -180,7 +183,10 @@ async fn test_functions_with_early_exit_are_handled() {
 #[tokio::test]
 #[serial]
 async fn functions_with_limited_memory_wont_run() {
-    let projects = vec![create_project("memory-heavy", Some(MegaByte(1)))];
+    let projects = vec![create_project(
+        "memory-heavy",
+        Some(byte_unit::Byte::from_unit(1.0, byte_unit::ByteUnit::MB).unwrap()),
+    )];
     let (runtime, ..) = create_runtime(&projects).await;
 
     let request = gateway::Request {
@@ -208,7 +214,10 @@ async fn functions_with_limited_memory_wont_run() {
 #[tokio::test]
 #[serial]
 async fn functions_with_limited_memory_will_run_with_enough_memory() {
-    let projects = vec![create_project("memory-heavy", Some(MegaByte(120)))];
+    let projects = vec![create_project(
+        "memory-heavy",
+        Some(byte_unit::Byte::from_unit(120.0, byte_unit::ByteUnit::MB).unwrap()),
+    )];
     let (runtime, ..) = create_runtime(&projects).await;
 
     let request = gateway::Request {

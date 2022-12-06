@@ -7,7 +7,7 @@ services:
     name: my_function
     binary: http://localhost:8080/test-function.wasm
     runtime: wasi1.0
-    memory_limit: 256
+    memory_limit: 256mb
     env: {}
   - type: Gateway
     name: my_gateway
