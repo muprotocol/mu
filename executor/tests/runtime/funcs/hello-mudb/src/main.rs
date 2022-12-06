@@ -5,7 +5,6 @@ use std::{
     collections::HashMap,
     io::{stdin, stdout, Write},
     sync::{Arc, RwLock},
-    time::Duration,
 };
 
 #[derive(Debug, Deserialize, Serialize)]

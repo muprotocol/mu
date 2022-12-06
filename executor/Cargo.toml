@@ -57,6 +57,7 @@ solana-client = "1.10"
 solana-sdk = "1.10"
 spl-token = "3.3"
 chrono = "0.4"
+byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
 
 [dev-dependencies]
 serial_test = "0.8"

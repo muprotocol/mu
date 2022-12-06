@@ -5,7 +5,7 @@ use std::{
 };
 
 use super::{
-    error::Error,
+    error::{Error, FunctionLoadingError},
     function,
     memory::create_memory,
     message::{database::*, gateway::*, log::Log, FromMessage, Message, ToMessage},
@@ -19,30 +19,36 @@ use crate::{
 use anyhow::{anyhow, Result};
 use bytes::BufMut;
 use log::trace;
-use mu_stack::MegaByte;
 use wasmer::{CompilerConfig, Module, RuntimeError, Store};
 use wasmer_compiler_llvm::LLVM;
 use wasmer_middlewares::{metering::MeteringPoints, Metering};
 
 const MESSAGE_READ_BUF_CAP: usize = 8 * 1024;
 
-pub fn create_store(memory_limit: MegaByte) -> Store {
+pub fn create_store(memory_limit: byte_unit::Byte) -> Result<Store, Error> {
     let mut compiler_config = LLVM::default();
 
     let metering = Arc::new(Metering::new(u64::MAX, |_| 1));
     compiler_config.push_middleware(metering);
 
-    let memory = create_memory(memory_limit);
+    let memory = create_memory(memory_limit).map_err(|_| {
+        Error::FunctionLoadingError(FunctionLoadingError::RequestedMemorySizeToobig)
+    })?;
 
-    Store::new_with_tunables(compiler_config, memory)
+    Ok(Store::new_with_tunables(compiler_config, memory))
 }
 
 fn create_usage(
     db_read: u64,
     db_write: u64,
     instructions_count: u64,
-    memory: MegaByte,
+    memory: byte_unit::Byte,
 ) -> Vec<Usage> {
+    let memory_megabytes = memory
+        .get_adjusted_unit(byte_unit::ByteUnit::MB)
+        .get_value();
+    let memory_megabytes = (memory_megabytes - memory_megabytes.fract()) as u64;
+
     vec![
         Usage::DBRead {
             weak_reads: db_read,
@@ -53,7 +59,7 @@ fn create_usage(
             strong_writes: 0,
         },
         Usage::FunctionMBInstructions {
-            memory_megabytes: memory.0 as u64,
+            memory_megabytes,
             instructions: instructions_count,
         },
     ]
@@ -183,7 +189,7 @@ impl Instance<Running> {
     // here and encapsulate the usage making process.
     pub async fn run_request(
         self,
-        memory_limit: MegaByte,
+        memory_limit: byte_unit::Byte,
         request: Message,
     ) -> Result<(GatewayResponse, Vec<Usage>), (Error, Vec<Usage>)> {
         tokio::task::spawn_blocking(move || self._run_request(memory_limit, request))
@@ -198,7 +204,7 @@ impl Instance<Running> {
 
     fn _run_request(
         mut self,
-        memory_limit: MegaByte,
+        memory_limit: byte_unit::Byte,
         request: Message,
     ) -> Result<(GatewayResponse, Vec<Usage>), (Error, Vec<Usage>)> {
         //TODO: Refactor these to `week` and `strong` when we had database replication

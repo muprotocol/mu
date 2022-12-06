@@ -67,9 +67,6 @@ impl FromStr for StackID {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub struct MegaByte(pub u32);
-
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Stack {
     pub name: String,
@@ -171,7 +168,7 @@ pub struct Function {
     pub binary: String,
     pub runtime: FunctionRuntime,
     pub env: HashMap<String, String>,
-    pub memory_limit: MegaByte,
+    pub memory_limit: byte_unit::Byte,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]

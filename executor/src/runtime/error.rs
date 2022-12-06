@@ -72,4 +72,7 @@ pub enum FunctionLoadingError {
 
     #[error("Failed to get memory: {0}")]
     FaieldToGetMemory(ExportError),
+
+    #[error("Function requested memory size is too big")]
+    RequestedMemorySizeToobig,
 }

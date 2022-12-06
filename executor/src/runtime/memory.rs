@@ -1,6 +1,5 @@
 use std::ptr::NonNull;
 
-use mu_stack::MegaByte;
 use wasmer::{
     vm::{self, MemoryError, MemoryStyle, TableStyle, VMMemoryDefinition, VMTableDefinition},
     BaseTunables, MemoryType, Pages, TableType, Target, Tunables,
@@ -116,9 +115,16 @@ impl<T: Tunables> Tunables for LimitedMemory<T> {
     }
 }
 
-pub fn create_memory(max_size: MegaByte) -> LimitedMemory<BaseTunables> {
-    let pages_count = max_size.0.saturating_mul(16); // There is 16 pages of size 64Kb in a Mb
+pub fn create_memory(
+    max_size: byte_unit::Byte,
+) -> Result<LimitedMemory<BaseTunables>, MemoryError> {
+    // Each page is 64 kb
+    let pages_count = max_size.get_bytes() / byte_unit::n_kib_bytes(64);
+
+    let pages_count: u32 = pages_count
+        .try_into()
+        .map_err(|e| MemoryError::Generic(format!("Requested Memory size is out of bound: {e}")))?;
 
     let base = BaseTunables::for_target(&Target::default());
-    LimitedMemory::new(base, Pages(pages_count))
+    Ok(LimitedMemory::new(base, Pages(pages_count)))
 }

@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::*;
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
-use mu_stack::{MegaByte, StackID};
+use mu_stack::StackID;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
@@ -68,7 +68,7 @@ struct RuntimeImpl {
 
 struct CacheHashAndMemoryLimit {
     hash: wasmer_cache::Hash,
-    memory_limit: MegaByte,
+    memory_limit: byte_unit::Byte,
 }
 
 struct RuntimeState {
@@ -107,7 +107,7 @@ impl RuntimeState {
                 .ok_or_else(|| Error::Internal(anyhow!("cache key can not be found")))?
                 .to_owned();
 
-            let store = create_store(*memory_limit);
+            let store = create_store(*memory_limit)?;
 
             match unsafe { self.cache.load(&store, *hash) } {
                 Ok(module) => Ok((store, module)),
@@ -153,7 +153,7 @@ impl RuntimeState {
                 },
             );
 
-            let store = create_store(function_definition.memory_limit);
+            let store = create_store(function_definition.memory_limit)?;
 
             if let Ok(module) = Module::from_binary(&store, &function_definition.source) {
                 if let Err(e) = self.cache.store(hash, &module) {
