@@ -1,5 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
+use std::borrow::Borrow;
 use std::{borrow::Cow, collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc};
 
 use anyhow::Result;
@@ -248,7 +249,7 @@ impl<'a> FromRequest<'a> for RequestHeaders<'a> {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Header<'a> {
     pub name: Cow<'a, str>,
     pub value: Cow<'a, str>,
@@ -257,10 +258,10 @@ pub struct Header<'a> {
 #[derive(Debug, Serialize)]
 pub struct Request<'a> {
     pub method: HttpMethod,
-    pub path: &'a str,
-    pub query: HashMap<&'a str, &'a str>,
+    pub path: Cow<'a, str>,
+    pub query: HashMap<Cow<'a, str>, Cow<'a, str>>,
     pub headers: Vec<Header<'a>>,
-    pub data: &'a str,
+    pub data: Cow<'a, str>,
 }
 
 impl<'a> Request<'a> {
@@ -282,16 +283,10 @@ impl<'a> Request<'a> {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct OwnedHeader {
-    pub name: String,
-    pub value: String,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct Response {
     pub status: u16,
     pub content_type: String,
-    pub headers: Vec<OwnedHeader>,
+    pub headers: Vec<Header<'static>>,
     pub body: String,
 }
 
@@ -379,6 +374,11 @@ async fn handle_request<'a>(
         None => return Response::bad_request("Invalid UTF-8 in request path"),
     };
 
+    let query = query
+        .into_iter()
+        .map(|(k, v)| (Cow::Borrowed(k), Cow::Borrowed(v)))
+        .collect::<HashMap<_, _>>();
+
     let headers = headers
         .0
         .iter()
@@ -390,10 +390,10 @@ async fn handle_request<'a>(
 
     let request = Request {
         method,
-        path,
+        path: Cow::Borrowed(path),
         query,
         headers,
-        data: data.unwrap_or(""),
+        data: Cow::Borrowed(data.unwrap_or("")),
     };
 
     let mut traffic = request.calculate_size();
@@ -407,7 +407,7 @@ async fn handle_request<'a>(
                 stack_id,
                 gateway_name.into(),
                 request.method,
-                request.path.into(),
+                (*request.path).to_owned(),
                 r,
             )
         })

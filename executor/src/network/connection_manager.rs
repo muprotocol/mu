@@ -184,7 +184,7 @@ pub fn start(
     Ok(Box::new(ConnectionManagerImpl { mailbox }))
 }
 
-type RequestID = u32;
+pub type RequestID = u32;
 
 struct ReqRepChannel {
     read: FramedRead<RecvStream, LengthDelimitedCodec>,
