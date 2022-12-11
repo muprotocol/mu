@@ -1,6 +1,10 @@
-use mu::mudb::{service::*, Config, Result};
+use std::time::Duration;
+
+use mu::mudb::{service::*, Config, DBManagerConfig, Result};
 use serde_json::json;
 use serial_test::serial;
+
+use crate::common::HashMapUsageAggregator;
 
 async fn find_and_update_again(
     db_service: &DatabaseManager,
@@ -48,7 +52,14 @@ async fn find_and_update_again(
 #[tokio::test]
 #[serial]
 async fn test_mudb_service() {
-    let db_service = DatabaseManager::new().await.unwrap();
+    let usage_aggregator = HashMapUsageAggregator::new();
+    let db_manager_config = DBManagerConfig {
+        usage_report_duration: Duration::from_secs(10).into(),
+    };
+
+    let db_service = DatabaseManager::new(usage_aggregator.clone(), db_manager_config)
+        .await
+        .unwrap();
 
     // init db
 

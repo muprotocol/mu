@@ -5,7 +5,7 @@ use serde::{
     Deserialize, Deserializer,
 };
 
-// Wrapper type to support deserialization with serde
+// Wrapper type to support human-readable duration deserialization with serde
 #[derive(Debug, Clone)]
 pub struct ConfigDuration(Duration);
 
@@ -20,6 +20,12 @@ impl Deref for ConfigDuration {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl From<Duration> for ConfigDuration {
+    fn from(d: Duration) -> Self {
+        Self(d)
     }
 }
 

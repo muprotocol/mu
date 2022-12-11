@@ -67,8 +67,6 @@ impl<T> NotificationChannel<T> {
     pub fn send(&self, notification: T) {
         // Notifications aren't guaranteed to arrive, and we don't need to handle
         // closed receivers.
-        match self.sender.send(notification) {
-            _ => (),
-        };
+        let _ = self.sender.send(notification);
     }
 }

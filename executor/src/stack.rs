@@ -5,25 +5,23 @@ pub mod blockchain_monitor;
 mod config_types;
 pub mod deploy;
 pub mod scheduler;
+pub mod usage_aggregator;
 
 #[derive(Clone, Debug)]
 pub struct StackWithMetadata {
     pub stack: Stack,
     pub revision: u32,
     pub metadata: StackMetadata,
-    pub state: StackState, // TODO: don't report out of balance stacks at all?
 }
 
 impl StackWithMetadata {
     pub fn id(&self) -> StackID {
         self.metadata.id()
     }
-}
 
-#[derive(Clone, Debug)]
-pub enum StackState {
-    Normal,
-    OwnerOutOfBalance,
+    pub fn owner(&self) -> StackOwner {
+        self.metadata.owner()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -31,10 +29,21 @@ pub enum StackMetadata {
     Solana(SolanaStackMetadata),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum StackOwner {
+    Solana(Pubkey),
+}
+
 impl StackMetadata {
     pub fn id(&self) -> StackID {
         match self {
             Self::Solana(solana) => StackID::SolanaPublicKey(solana.account_id.to_bytes()),
+        }
+    }
+
+    pub fn owner(&self) -> StackOwner {
+        match self {
+            Self::Solana(solana) => StackOwner::Solana(solana.owner),
         }
     }
 }

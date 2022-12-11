@@ -54,6 +54,7 @@ message Function {
     string binary = 2;
     FunctionRuntime runtime = 3;
     repeated EnvVar env = 4;
+    uint64 memoryLimit = 5;
 }
 
 message EnvVar {

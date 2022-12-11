@@ -49,6 +49,7 @@ pub async fn run() -> Result<()> {
         runtime_config,
         scheduler_config,
         blockchain_monitor_config,
+        db_manager_config,
     ) = config::initialize_config()?;
 
     let my_node = NodeAddress {
@@ -124,20 +125,28 @@ pub async fn run() -> Result<()> {
     )
     .context("Failed to start gossip")?;
 
+    let usage_aggregator = stack::usage_aggregator::start();
+
     let function_provider = runtime::providers::DefaultFunctionProvider::new();
-    let database_manager = DatabaseManager::new().await?;
+    let database_manager =
+        DatabaseManager::new(usage_aggregator.clone(), db_manager_config).await?;
     let runtime = runtime::start(
         Box::new(function_provider),
         runtime_config,
         database_manager.clone(),
+        usage_aggregator.clone(),
     )
     .await
     .context("Failed to initiate runtime")?;
 
     // TODO: no notification channel for now, requests are sent straight to runtime
-    let gateway_manager = gateway::start(gateway_manager_config, runtime.clone())
-        .await
-        .context("Failed to start gateway manager")?;
+    let gateway_manager = gateway::start(
+        gateway_manager_config,
+        runtime.clone(),
+        usage_aggregator.clone(),
+    )
+    .await
+    .context("Failed to start gateway manager")?;
 
     // TODO: fetch stacks from blockchain before starting scheduler
     let (scheduler_notification_channel, mut scheduler_notification_receiver) =
@@ -154,7 +163,7 @@ pub async fn run() -> Result<()> {
     );
 
     let (blockchain_monitor, mut blockchain_monitor_notification_receiver) =
-        blockchain_monitor::start(blockchain_monitor_config)
+        blockchain_monitor::start(blockchain_monitor_config, usage_aggregator.clone())
             .await
             .context("Failed to start blockchain monitor")?;
 
@@ -212,6 +221,13 @@ pub async fn run() -> Result<()> {
             .await
             .context("Failed to stop connection manager")?;
 
+        runtime.stop().await.context("Failed to stop runtime")?;
+
+        database_manager
+            .stop()
+            .await
+            .context("Failed to stop runtime")?;
+
         Result::<()>::Ok(())
     });
 
@@ -251,26 +267,11 @@ async fn glue_modules(
         BlockchainMonitorNotification,
     >,
 ) {
-    let mut debug_timer = tokio::time::interval(std::time::Duration::from_secs(3));
-
     loop {
         select! {
             () = cancellation_token.cancelled() => {
                 info!("Received SIGINT, stopping");
                 break;
-            }
-
-            _ = debug_timer.tick() => {
-                let nodes = gossip.get_nodes().await;
-                match nodes {
-                    Ok(peers) => {
-                        warn!(
-                            "Discovered nodes: {:?}",
-                            peers.iter().map(|n| format!("{}:{}", n.1.address, n.1.port)).collect::<Vec<_>>()
-                        );
-                    },
-                    Err(f) => error!("Failed to get nodes: {}", f),
-                }
             }
 
             notification = connection_manager_notification_receiver.recv() => {
@@ -403,12 +404,17 @@ async fn process_blockchain_monitor_notification(
         None => (), // TODO
         Some(BlockchainMonitorNotification::StacksAvailable(stacks)) => {
             debug!("Stacks available: {stacks:?}");
-            for stack in stacks {
-                scheduler
-                    .stack_available(stack.id(), stack.stack)
-                    .await
-                    .unwrap();
-            }
+            scheduler
+                .stacks_available(stacks.into_iter().map(|s| (s.id(), s.stack)).collect())
+                .await
+                .unwrap();
+        }
+        Some(BlockchainMonitorNotification::StacksRemoved(stacks)) => {
+            debug!("Stacks removed: {stacks:?}");
+            scheduler
+                .stacks_removed(stacks.into_iter().map(|s| s.id()).collect())
+                .await
+                .unwrap();
         }
     }
 }

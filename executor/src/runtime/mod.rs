@@ -5,11 +5,12 @@
 pub mod error;
 pub mod function;
 pub mod instance;
+pub mod memory;
 pub mod message;
 pub mod providers;
 pub mod types;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::*;
@@ -24,11 +25,15 @@ use self::{
     instance::{create_store, Instance, Loaded},
     message::gateway::GatewayRequest,
     types::{
-        FunctionDefinition, FunctionID, FunctionProvider, FunctionUsage, InvokeFunctionRequest,
-        RuntimeConfig,
+        FunctionDefinition, FunctionID, FunctionProvider, InvokeFunctionRequest, RuntimeConfig,
     },
 };
-use crate::{gateway, mudb::service::DatabaseManager, runtime::message::ToMessage};
+use crate::{
+    gateway,
+    mudb::service::DatabaseManager,
+    runtime::{error::FunctionLoadingError, message::ToMessage},
+    stack::usage_aggregator::UsageAggregator,
+};
 
 #[async_trait]
 #[clonable]
@@ -37,13 +42,13 @@ pub trait Runtime: Clone + Send + Sync {
         &self,
         function_id: FunctionID,
         message: gateway::Request<'a>,
-    ) -> Result<(gateway::Response, FunctionUsage)>;
+    ) -> Result<gateway::Response, Error>;
 
-    async fn shutdown(&self) -> Result<()>;
+    async fn stop(&self) -> Result<(), Error>;
 
-    async fn add_functions(&self, functions: Vec<FunctionDefinition>) -> Result<()>;
-    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<()>;
-    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>>;
+    async fn add_functions(&self, functions: Vec<FunctionDefinition>) -> Result<(), Error>;
+    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<(), Error>;
+    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>, Error>;
 }
 
 #[derive(Debug)]
@@ -56,18 +61,22 @@ pub enum MailboxMessage {
     GetFunctionNames(StackID, ReplyChannel<Vec<String>>),
 }
 
-//TODO:
-// * use metrics and MemoryUsage so we can report usage of memory and CPU time.
 #[derive(Clone)]
 struct RuntimeImpl {
     mailbox: CallbackMailboxProcessor<MailboxMessage>,
 }
 
+struct CacheHashAndMemoryLimit {
+    hash: wasmer_cache::Hash,
+    memory_limit: byte_unit::Byte,
+}
+
 struct RuntimeState {
     function_provider: Box<dyn FunctionProvider>,
-    hashkey_dict: HashMap<FunctionID, wasmer_cache::Hash>,
+    hashkey_dict: HashMap<FunctionID, CacheHashAndMemoryLimit>,
     cache: FileSystemCache,
     database_service: Arc<DatabaseManager>,
+    usage_aggregator: Box<dyn UsageAggregator>,
 }
 
 impl RuntimeState {
@@ -75,6 +84,7 @@ impl RuntimeState {
         function_provider: Box<dyn FunctionProvider>,
         cache_path: &Path,
         database_service: DatabaseManager,
+        usage_aggregator: Box<dyn UsageAggregator>,
     ) -> Result<Self> {
         let hashkey_dict = HashMap::new();
         let mut cache = FileSystemCache::new(cache_path).context("failed to create cache")?;
@@ -85,31 +95,35 @@ impl RuntimeState {
             function_provider,
             cache,
             database_service: Arc::new(database_service),
+            usage_aggregator,
         })
     }
 
     fn load_module(&mut self, function_id: &FunctionID) -> Result<(Store, Module)> {
-        let store = create_store();
-
         if self.hashkey_dict.contains_key(function_id) {
-            let key = self
+            let CacheHashAndMemoryLimit { hash, memory_limit } = self
                 .hashkey_dict
                 .get(function_id)
-                .ok_or(Error::Internal("cache key can not be found"))?
+                .ok_or_else(|| Error::Internal(anyhow!("cache key can not be found")))?
                 .to_owned();
-            match unsafe { self.cache.load(&store, key) } {
+
+            let store = create_store(*memory_limit)?;
+
+            match unsafe { self.cache.load(&store, *hash) } {
                 Ok(module) => Ok((store, module)),
                 Err(e) => {
                     warn!("cached module is corrupted: {}", e);
 
-                    let definition = self
-                        .function_provider
-                        .get(function_id)
-                        .ok_or_else(|| Error::FunctionNotFound(function_id.clone()))?;
+                    let definition = self.function_provider.get(function_id).ok_or_else(|| {
+                        Error::FunctionLoadingError(FunctionLoadingError::FunctionNotFound(
+                            function_id.clone(),
+                        ))
+                    })?;
 
                     let module = Module::new(&store, definition.source.clone())?;
 
-                    self.cache.store(key, &module)?;
+                    self.cache.store(*hash, &module)?;
+
                     Ok((store, module))
                 }
             }
@@ -117,7 +131,10 @@ impl RuntimeState {
             let function_definition = match self.function_provider.get(function_id) {
                 Some(d) => d,
                 None => {
-                    return Err(Error::FunctionNotFound(function_id.clone())).map_err(Into::into);
+                    return Err(Error::FunctionLoadingError(
+                        FunctionLoadingError::FunctionNotFound(function_id.clone()),
+                    )
+                    .into());
                 }
             };
 
@@ -127,7 +144,16 @@ impl RuntimeState {
                                                                             //StackID
             hash_array.extend_from_slice(function_id.function_name.as_bytes());
             let hash = wasmer_cache::Hash::generate(&hash_array);
-            self.hashkey_dict.insert(function_id.clone(), hash);
+
+            self.hashkey_dict.insert(
+                function_id.clone(),
+                CacheHashAndMemoryLimit {
+                    hash,
+                    memory_limit: function_definition.memory_limit,
+                },
+            );
+
+            let store = create_store(function_definition.memory_limit)?;
 
             if let Ok(module) = Module::from_binary(&store, &function_definition.source) {
                 if let Err(e) = self.cache.store(hash, &module) {
@@ -136,7 +162,12 @@ impl RuntimeState {
                 Ok((store, module))
             } else {
                 error!("can not build wasm module for function: {}", function_id);
-                Err(Error::InvalidFunctionModule(function_id.clone())).map_err(Into::into)
+                Err(
+                    Error::FunctionLoadingError(FunctionLoadingError::InvalidFunctionModule(
+                        function_id.clone(),
+                    ))
+                    .into(),
+                )
             }
         }
     }
@@ -145,7 +176,11 @@ impl RuntimeState {
         let definition = self
             .function_provider
             .get(&function_id)
-            .ok_or_else(|| Error::FunctionNotFound(function_id.clone()))?
+            .ok_or_else(|| {
+                Error::FunctionLoadingError(FunctionLoadingError::FunctionNotFound(
+                    function_id.clone(),
+                ))
+            })?
             .to_owned();
 
         let (store, module) = self.load_module(&function_id)?;
@@ -165,13 +200,10 @@ impl Runtime for RuntimeImpl {
         &self,
         function_id: FunctionID,
         message: gateway::Request<'a>,
-    ) -> Result<(gateway::Response, FunctionUsage)> {
-        let message = GatewayRequest::new(message)
-            .to_message()
-            .context("Failed to serialize request message")?;
+    ) -> Result<gateway::Response, Error> {
+        let message = GatewayRequest::new(message).to_message()?;
 
-        let result = self
-            .mailbox
+        self.mailbox
             .post_and_reply(|r| {
                 MailboxMessage::InvokeFunction(InvokeFunctionRequest {
                     function_id,
@@ -179,39 +211,39 @@ impl Runtime for RuntimeImpl {
                     reply: r,
                 })
             })
-            .await;
-
-        match result {
-            Ok(r) => r.map(|r| (r.0.response, r.1)),
-            Err(e) => Err(e).map_err(Into::into),
-        }
+            .await
+            .map_err(|e| Error::Internal(e.into()))?
+            .map(|r| r.response)
     }
 
-    async fn shutdown(&self) -> Result<()> {
-        self.mailbox.post(MailboxMessage::Shutdown).await?;
+    async fn stop(&self) -> Result<(), Error> {
+        self.mailbox
+            .post(MailboxMessage::Shutdown)
+            .await
+            .map_err(|e| Error::Internal(e.into()))?;
         self.mailbox.clone().stop().await;
         Ok(())
     }
 
-    async fn add_functions(&self, functions: Vec<FunctionDefinition>) -> Result<()> {
+    async fn add_functions(&self, functions: Vec<FunctionDefinition>) -> Result<(), Error> {
         self.mailbox
             .post(MailboxMessage::AddFunctions(functions))
             .await
-            .map_err(Into::into)
+            .map_err(|e| Error::Internal(e.into()))
     }
 
-    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<()> {
+    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<(), Error> {
         self.mailbox
             .post(MailboxMessage::RemoveFunctions(stack_id, names))
             .await
-            .map_err(Into::into)
+            .map_err(|e| Error::Internal(e.into()))
     }
 
-    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>> {
+    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>, Error> {
         self.mailbox
             .post_and_reply(|r| MailboxMessage::GetFunctionNames(stack_id, r))
             .await
-            .map_err(Into::into)
+            .map_err(|e| Error::Internal(e.into()))
     }
 }
 
@@ -219,8 +251,15 @@ pub async fn start(
     function_provider: Box<dyn FunctionProvider>,
     config: RuntimeConfig,
     db_service: DatabaseManager,
+    usage_aggregator: Box<dyn UsageAggregator>,
 ) -> Result<Box<dyn Runtime>> {
-    let state = RuntimeState::new(function_provider, &config.cache_path, db_service).await?;
+    let state = RuntimeState::new(
+        function_provider,
+        &config.cache_path,
+        db_service,
+        usage_aggregator,
+    )
+    .await?;
     let mailbox = CallbackMailboxProcessor::start(mailbox_step, state, 10000);
     Ok(Box::new(RuntimeImpl { mailbox }))
 }
@@ -230,26 +269,44 @@ async fn mailbox_step(
     msg: MailboxMessage,
     mut state: RuntimeState,
 ) -> RuntimeState {
-    //TODO: pass metering info to blockchain_manager service
     match msg {
         MailboxMessage::InvokeFunction(req) => {
-            if let Ok(instance) = state.instantiate_function(req.function_id).await {
-                tokio::spawn(async move {
-                    let resp = tokio::task::spawn_blocking(move || {
-                        let instance = instance.start().context("can not run instance").unwrap(); //TODO: Handle Errors
-                        instance.request(req.message)
-                    })
-                    .await
-                    .unwrap(); // TODO: Handle spawn_blocking errors
+            if let Ok(instance) = state.instantiate_function(req.function_id.clone()).await {
+                let memory_limit = state
+                    .hashkey_dict
+                    .get(&req.function_id)
+                    .unwrap()
+                    .memory_limit;
 
-                    match resp {
-                        Ok(a) => req.reply.reply(a.await),
-                        Err(a) => req.reply.reply(Err(a)),
-                    };
+                let usage_aggregator = state.usage_aggregator.clone();
+
+                tokio::spawn(async move {
+                    match instance.start() {
+                        Err(e) => req.reply.reply(Err(e)),
+                        Ok(i) => {
+                            let result = i
+                                .run_request(memory_limit, req.message)
+                                .await
+                                .map(|(resp, usages)| {
+                                    usage_aggregator
+                                        .register_usage(req.function_id.stack_id, usages);
+                                    resp
+                                })
+                                .map_err(|(error, usages)| {
+                                    usage_aggregator
+                                        .register_usage(req.function_id.stack_id, usages);
+                                    error
+                                });
+
+                            req.reply.reply(result);
+                        }
+                    }
                 });
             } else {
-                req.reply
-                    .reply(Err(Error::Internal("Can not instantiate function")).map_err(Into::into))
+                req.reply.reply(
+                    Err(Error::Internal(anyhow!("Can not instantiate function")))
+                        .map_err(Into::into),
+                )
             }
         }
 
