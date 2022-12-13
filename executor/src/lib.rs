@@ -12,8 +12,11 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
+use async_trait::async_trait;
 use log::*;
 use mailbox_processor::NotificationChannel;
+use network::rpc_handler::{self, RpcHandler, RpcRequestHandler};
+use runtime::{types::FunctionID, Runtime};
 use stack::blockchain_monitor::{BlockchainMonitor, BlockchainMonitorNotification};
 use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
@@ -139,6 +142,13 @@ pub async fn run() -> Result<()> {
     .await
     .context("Failed to initiate runtime")?;
 
+    let rpc_handler = rpc_handler::new(
+        connection_manager.clone(),
+        RpcRequestHandlerImpl {
+            runtime: runtime.clone(),
+        },
+    );
+
     // TODO: no notification channel for now, requests are sent straight to runtime
     let gateway_manager = gateway::start(
         gateway_manager_config,
@@ -180,6 +190,7 @@ pub async fn run() -> Result<()> {
             &mut scheduler_notification_receiver,
             blockchain_monitor.as_ref(),
             &mut blockchain_monitor_notification_receiver,
+            rpc_handler.as_ref(),
         )
         .await;
 
@@ -251,6 +262,32 @@ fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
     node.port == me.port && (node.address == me.address || node.address.is_loopback())
 }
 
+#[derive(Clone)]
+struct RpcRequestHandlerImpl {
+    runtime: Box<dyn Runtime>,
+}
+
+#[async_trait]
+impl RpcRequestHandler for RpcRequestHandlerImpl {
+    async fn handle_request(&self, request: rpc_handler::RpcRequest) {
+        let rpc_handler::RpcRequest::ExecuteFunctionRequest(request, send_response) = request;
+
+        let helper = async move {
+            let function_id: FunctionID = todo!();
+
+            let result = self
+                .runtime
+                .invoke_function(function_id, request)
+                .await
+                .context("Failed to invoke function")?;
+
+            Ok(result)
+        };
+
+        send_response(helper.await).await;
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn glue_modules(
     cancellation_token: CancellationToken,
@@ -266,6 +303,7 @@ async fn glue_modules(
     blockchain_monitor_notification_receiver: &mut mpsc::UnboundedReceiver<
         BlockchainMonitorNotification,
     >,
+    rpc_handler: &dyn RpcHandler,
 ) {
     loop {
         select! {
@@ -275,7 +313,7 @@ async fn glue_modules(
             }
 
             notification = connection_manager_notification_receiver.recv() => {
-                process_connection_manager_notification(notification, connection_manager, gossip).await;
+                process_connection_manager_notification(notification, gossip, rpc_handler).await;
             }
 
             notification = gossip_notification_receiver.recv() => {
@@ -295,16 +333,16 @@ async fn glue_modules(
 
 async fn process_connection_manager_notification(
     notification: Option<ConnectionManagerNotification>,
-    connection_manager: &dyn ConnectionManager,
     gossip: &dyn Gossip,
+    rpc_handler: &dyn RpcHandler,
 ) {
     match notification {
         None => (), // TODO
         Some(ConnectionManagerNotification::NewConnectionAvailable(id)) => {
-            info!("New connection available: {}", id)
+            debug!("New connection available: {}", id)
         }
         Some(ConnectionManagerNotification::ConnectionClosed(id)) => {
-            info!("Connection closed: {}", id)
+            debug!("Connection closed: {}", id)
         }
         Some(ConnectionManagerNotification::DatagramReceived(id, bytes)) => {
             debug!(
@@ -321,9 +359,7 @@ async fn process_connection_manager_notification(
                 id,
                 String::from_utf8_lossy(&bytes)
             );
-            if let Err(f) = connection_manager.send_reply(id, req_id, bytes).await {
-                error!("Failed to send reply: {}", f);
-            }
+            rpc_handler.request_received(id, req_id, bytes);
         }
     }
 }

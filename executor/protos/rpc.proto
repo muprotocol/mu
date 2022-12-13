@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package mu_executor.rpc;
+
+enum HttpMethod {
+    GET = 0;
+    HEAD = 1;
+    POST = 2;
+    PUT = 3;
+    PATCH = 4;
+    DELETE = 5;
+    OPTIONS = 6;
+}
+
+message QueryParam {
+    string key = 1;
+    string value = 2;
+}
+
+message Header {
+    string name = 1;
+    string value = 2;
+}
+
+message Request {
+    HttpMethod method = 1;
+    string path = 2;
+    repeated QueryParam query_params = 3;
+    repeated Header headers = 4;
+    bytes body = 5;
+}
+
+message Response {
+    int32 status = 1;
+    string content_type = 2;
+    repeated Header headers = 3;
+    bytes body = 4;
+}
+
+message RpcRequest {
+    oneof request {
+        Request execute_function = 1;
+    }
+}
+
+message ExecuteFunctionResponse {
+    oneof result {
+        Response ok = 1;
+        string error = 2;
+    }
+}

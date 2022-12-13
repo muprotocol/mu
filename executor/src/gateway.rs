@@ -1,6 +1,5 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::borrow::Borrow;
 use std::{borrow::Cow, collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc};
 
 use anyhow::Result;
@@ -261,7 +260,7 @@ pub struct Request<'a> {
     pub path: Cow<'a, str>,
     pub query: HashMap<Cow<'a, str>, Cow<'a, str>>,
     pub headers: Vec<Header<'a>>,
-    pub data: Cow<'a, str>,
+    pub data: Cow<'a, [u8]>,
 }
 
 impl<'a> Request<'a> {
@@ -277,7 +276,7 @@ impl<'a> Request<'a> {
             .iter()
             .map(|x| x.name.as_bytes().len() as u64 + x.value.as_bytes().len() as u64)
             .sum::<u64>();
-        size += self.data.as_bytes().len() as u64;
+        size += self.data.len() as u64;
         size
     }
 }
@@ -287,7 +286,7 @@ pub struct Response {
     pub status: u16,
     pub content_type: String,
     pub headers: Vec<Header<'static>>,
-    pub body: String,
+    pub body: Vec<u8>,
 }
 
 impl Response {
@@ -298,7 +297,7 @@ impl Response {
             .iter()
             .map(|x| x.name.as_bytes().len() as u64 + x.value.as_bytes().len() as u64)
             .sum::<u64>();
-        size += self.body.as_bytes().len() as u64;
+        size += self.body.len() as u64;
         size
     }
 }
@@ -341,17 +340,14 @@ impl<'r, 'o: 'r> rocket::response::Responder<'r, 'o> for Response {
 
         for header in self.headers {
             builder.header(rocket::http::Header::new(
-                header.name.to_owned(),
-                header.value.to_owned(),
+                header.name.into_owned(),
+                header.value.into_owned(),
             ));
         }
 
         builder.header(rocket::http::Header::new("Content-Type", self.content_type));
 
-        builder.sized_body(
-            self.body.as_bytes().len(),
-            std::io::Cursor::new(self.body.into_bytes()),
-        );
+        builder.sized_body(self.body.len(), std::io::Cursor::new(self.body));
 
         builder.ok()
     }
@@ -364,7 +360,7 @@ async fn handle_request<'a>(
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
-    data: Option<&'a str>,
+    data: Option<&'a [u8]>,
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     let stack_id = stack_id.0;
@@ -393,7 +389,7 @@ async fn handle_request<'a>(
         path: Cow::Borrowed(path),
         query,
         headers,
-        data: Cow::Borrowed(data.unwrap_or("")),
+        data: data.map(Cow::Borrowed).unwrap_or(Cow::Owned(vec![])),
     };
 
     let mut traffic = request.calculate_size();
@@ -483,7 +479,7 @@ async fn post<'a>(
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
-    data: &'a str,
+    data: &'a [u8],
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
@@ -506,7 +502,7 @@ async fn put<'a>(
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
-    data: &'a str,
+    data: &'a [u8],
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
@@ -529,7 +525,7 @@ async fn delete<'a>(
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
-    data: &'a str,
+    data: &'a [u8],
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(
@@ -574,7 +570,7 @@ async fn patch<'a>(
     path: PathBuf,
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
-    data: &'a str,
+    data: &'a [u8],
     dependency_accessor: &State<DependencyAccessor>,
 ) -> Response {
     handle_request(

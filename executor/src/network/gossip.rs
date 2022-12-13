@@ -142,6 +142,11 @@ enum GossipProtocolMessage {
     Goodbye(NodeAddress),
 }
 
+pub enum NodeConnection {
+    Established(ConnectionID),
+    NotEstablished(NodeAddress),
+}
+
 #[async_trait]
 #[clonable]
 pub trait Gossip: Clone + Sync + Send {
@@ -157,6 +162,8 @@ pub trait Gossip: Clone + Sync + Send {
 
     async fn stack_deployed_locally(&self, stack_id: StackID) -> Result<()>;
     async fn stack_undeployed_locally(&self, stack_id: StackID) -> Result<()>;
+
+    // async fn get_connection(&self, hash: NodeHash) -> Result<NodeConnection>;
 
     #[cfg(debug_assertions)]
     async fn log_statistics(&self);

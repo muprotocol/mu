@@ -39,16 +39,6 @@ pub struct ConnectionManagerConfig {
     pub max_request_response_size: usize,
 }
 
-impl Default for ConnectionManagerConfig {
-    fn default() -> Self {
-        Self {
-            listen_address: "0.0.0.0".parse().unwrap(),
-            listen_port: 12012,
-            max_request_response_size: 8 * 1024,
-        }
-    }
-}
-
 #[async_trait]
 #[clonable]
 pub trait ConnectionManager: Clone + Sync + Send {

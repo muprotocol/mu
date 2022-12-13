@@ -19,6 +19,13 @@ use crate::{
 
 use mu_stack::{Stack, StackID};
 
+pub enum StackDeploymentStatus {
+    DeployedToSelf { deployed_to_others: Vec<NodeHash> },
+    DeployedToOthers { deployed_to: Vec<NodeHash> },
+    NotDeployed,
+    Unknown,
+}
+
 #[async_trait]
 #[clonable]
 pub trait Scheduler: Clone + Send + Sync {
@@ -34,6 +41,9 @@ pub trait Scheduler: Clone + Send + Sync {
     /// We start scheduling stacks after a delay, to make sure we have
     /// an up-to-date view of the cluster.
     async fn ready_to_schedule_stacks(&self) -> Result<()>;
+
+    // async fn get_deployment_status(&self, stack_id: StackID) -> StackDeploymentStatus;
+
     // This function currently doesn't fail, but we keep the return type
     // a `Result<()>` so we can later implement custom stopping logic.
     async fn stop(&self) -> Result<()>;
