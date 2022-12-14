@@ -1,11 +1,48 @@
 use std::borrow::Cow;
 
 use anyhow::{anyhow, bail, Result};
-use protobuf::EnumOrUnknown;
+use mu_stack::StackID;
+use protobuf::{EnumOrUnknown, MessageField};
 
-use crate::gateway;
+use crate::{gateway, runtime};
 
 include!(concat!(env!("OUT_DIR"), "/protos/mod.rs"));
+
+impl From<runtime::types::FunctionID> for rpc::FunctionID {
+    fn from(id: runtime::types::FunctionID) -> Self {
+        let StackID::SolanaPublicKey(pk) = id.stack_id;
+        Self {
+            stack_id: MessageField(Some(Box::new(rpc::StackID {
+                id: Some(rpc::stack_id::Id::Solana(pk.into())),
+                ..Default::default()
+            }))),
+            function_name: id.function_name,
+            ..Default::default()
+        }
+    }
+}
+
+impl TryFrom<rpc::FunctionID> for runtime::types::FunctionID {
+    type Error = anyhow::Error;
+
+    fn try_from(id: rpc::FunctionID) -> Result<Self, Self::Error> {
+        let stack_id = id.stack_id.0.ok_or_else(|| anyhow!("Empty stack ID"))?;
+        let stack_id = match stack_id.id {
+            Some(rpc::stack_id::Id::Solana(bytes)) => StackID::SolanaPublicKey(
+                bytes
+                    .try_into()
+                    .map_err(|_| anyhow!("Incorrect stack ID length"))?,
+            ),
+
+            None => bail!("Empty stack ID"),
+        };
+
+        Ok(Self {
+            stack_id,
+            function_name: id.function_name,
+        })
+    }
+}
 
 fn header_to_proto(h: gateway::Header<'_>) -> rpc::Header {
     rpc::Header {

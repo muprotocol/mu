@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use log::*;
 use mailbox_processor::NotificationChannel;
 use network::rpc_handler::{self, RpcHandler, RpcRequestHandler};
-use runtime::{types::FunctionID, Runtime};
+use runtime::Runtime;
 use stack::blockchain_monitor::{BlockchainMonitor, BlockchainMonitorNotification};
 use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
@@ -270,11 +270,10 @@ struct RpcRequestHandlerImpl {
 #[async_trait]
 impl RpcRequestHandler for RpcRequestHandlerImpl {
     async fn handle_request(&self, request: rpc_handler::RpcRequest) {
-        let rpc_handler::RpcRequest::ExecuteFunctionRequest(request, send_response) = request;
+        let rpc_handler::RpcRequest::ExecuteFunctionRequest(function_id, request, send_response) =
+            request;
 
         let helper = async move {
-            let function_id: FunctionID = todo!();
-
             let result = self
                 .runtime
                 .invoke_function(function_id, request)

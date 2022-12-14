@@ -8,15 +8,15 @@ use bytes::Bytes;
 use dyn_clonable::clonable;
 use futures::Future;
 use log::warn;
-use protobuf::Message;
+use protobuf::{Message, MessageField};
 
 use crate::gateway;
 use crate::network::connection_manager::{ConnectionID, ConnectionManager, RequestID};
+use crate::runtime::types::FunctionID;
 
 // TODO: bad design, we receive the request from glue code, but access the
 // connection manager directly to send requests and replies. Should use one
 // approach across entire code.
-#[async_trait]
 #[clonable]
 pub trait RpcHandler: Send + Sync + Clone {
     fn request_received(
@@ -26,11 +26,15 @@ pub trait RpcHandler: Send + Sync + Clone {
         request_data: Bytes,
     );
 
-    async fn send_execute_function<'a>(
+    // To the best of my knowledge, the future from an async method has the same
+    // lifetime as the self parameter, which we don't want here, so we return
+    // a separately constructed future.
+    fn send_execute_function<'a>(
         &self,
         connection_id: ConnectionID,
+        function_id: FunctionID,
         request: gateway::Request<'a>,
-    ) -> Result<gateway::Response>;
+    ) -> Pin<Box<dyn Future<Output = Result<gateway::Response>> + Send + 'a>>;
 }
 
 #[async_trait]
@@ -42,6 +46,7 @@ pub trait RpcRequestHandler: Clone {
 #[allow(clippy::type_complexity)]
 pub enum RpcRequest {
     ExecuteFunctionRequest(
+        FunctionID,
         gateway::Request<'static>,
         Box<
             dyn FnOnce(
@@ -70,7 +75,6 @@ pub fn new(
 }
 
 // TODO: implement validation when deserializing messages from network
-#[async_trait]
 impl<RequestHandler: RpcRequestHandler + Clone + Send + Sync + 'static> RpcHandler
     for RpcHandlerImpl<RequestHandler>
 {
@@ -87,11 +91,21 @@ impl<RequestHandler: RpcRequestHandler + Clone + Send + Sync + 'static> RpcHandl
             match rpc_request.request {
                 None => bail!("Received empty request"),
                 Some(protos::rpc::rpc_request::Request::ExecuteFunction(request)) => {
-                    let request = gateway::Request::<'static>::try_from(request)
+                    let Some(function_id) = request.function_id.0 else {
+                        bail!("Empty function ID in execute function request");
+                    };
+                    let function_id = FunctionID::try_from(*function_id)
+                        .context("Failed to read function ID from execute function request")?;
+
+                    let Some(request) = request.request.0 else {
+                        bail!("Empty request in execute function request");
+                    };
+                    let request = gateway::Request::<'static>::try_from(*request)
                         .context("Execute function request contains invalid data")?;
 
                     let connection_manager = self.connection_manager.clone();
                     let rpc_request = RpcRequest::ExecuteFunctionRequest(
+                        function_id,
                         request,
                         Box::new(move |response| {
                             Box::pin(send_execute_function_reply(
@@ -118,37 +132,46 @@ impl<RequestHandler: RpcRequestHandler + Clone + Send + Sync + 'static> RpcHandl
         }
     }
 
-    async fn send_execute_function<'a>(
+    fn send_execute_function<'a>(
         &self,
         connection_id: ConnectionID,
+        function_id: FunctionID,
         request: gateway::Request<'a>,
-    ) -> Result<gateway::Response> {
-        let request = protos::rpc::Request::from(request);
-        let request = protos::rpc::RpcRequest {
-            request: Some(protos::rpc::rpc_request::Request::ExecuteFunction(request)),
-            ..Default::default()
-        };
-        let request = request
-            .write_to_bytes()
-            .context("Failed to serialize execute function request")?;
-        let reply = self
-            .connection_manager
-            .send_req_rep(connection_id, request.into())
-            .await
-            .context("Failed to send execute function request")?;
-        let response = protos::rpc::ExecuteFunctionResponse::parse_from_bytes(&reply)
-            .context("Failed to deserialize execute function response")?;
-        match response.result {
-            None => bail!("Received empty response to execute function request"),
-            Some(protos::rpc::execute_function_response::Result::Error(f)) => {
-                bail!("Received error response to execute function request: {f}")
+    ) -> Pin<Box<dyn Future<Output = Result<gateway::Response>> + Send + 'a>> {
+        let connection_manager = self.connection_manager.clone();
+        Box::pin(async move {
+            let function_id = protos::rpc::FunctionID::from(function_id);
+            let request = protos::rpc::Request::from(request);
+            let request = protos::rpc::ExecuteFunctionRequest {
+                request: MessageField(Some(Box::new(request))),
+                function_id: MessageField(Some(Box::new(function_id))),
+                ..Default::default()
+            };
+            let request = protos::rpc::RpcRequest {
+                request: Some(protos::rpc::rpc_request::Request::ExecuteFunction(request)),
+                ..Default::default()
+            };
+            let request = request
+                .write_to_bytes()
+                .context("Failed to serialize execute function request")?;
+            let reply = connection_manager
+                .send_req_rep(connection_id, request.into())
+                .await
+                .context("Failed to send execute function request")?;
+            let response = protos::rpc::ExecuteFunctionResponse::parse_from_bytes(&reply)
+                .context("Failed to deserialize execute function response")?;
+            match response.result {
+                None => bail!("Received empty response to execute function request"),
+                Some(protos::rpc::execute_function_response::Result::Error(f)) => {
+                    bail!("Received error response to execute function request: {f}")
+                }
+                Some(protos::rpc::execute_function_response::Result::Ok(response)) => {
+                    let response = gateway::Response::try_from(response)
+                        .context("Failed to read execute function response")?;
+                    Ok(response)
+                }
             }
-            Some(protos::rpc::execute_function_response::Result::Ok(response)) => {
-                let response = gateway::Response::try_from(response)
-                    .context("Failed to read execute function response")?;
-                Ok(response)
-            }
-        }
+        })
     }
 }
 
