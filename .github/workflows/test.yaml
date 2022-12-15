@@ -24,8 +24,6 @@ jobs:
             marketplace/target/
             mu_stack/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Update repositories package
-        run: sudo apt-get update
       - name: Install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
