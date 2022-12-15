@@ -1,3 +1,6 @@
+// We have to use anchor's error type, we have no control over it
+#![allow(clippy::result_large_err)]
+
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount, Transfer};
 
