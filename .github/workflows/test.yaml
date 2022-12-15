@@ -4,6 +4,8 @@ on:
 jobs:
   lint_and_test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix: { dir: ['executor', 'cli', mailbox_processor', 'marketplace', 'mu_stack'] }
     steps:
       - uses: actions/checkout@v2
       - uses: actions/cache@v3
@@ -29,12 +31,12 @@ jobs:
           target: wasm32-wasi
       - name: Check style
         run: cargo fmt -- --check
-        working-directory: executor, cli
+        working-directory: ${{ matrix.dir }}
       - name: Run Lints
         run: cargo clippy -- -D warnings
-        working-directory: executor, cli
+        working-directory: ${{ matrix.dir }}
       - name: Run tests
         run: cargo test --verbose
-        working-directory: executor, cli
+        working-directory: ${{ matrix.dir }}
         env:
           RUST_BACKTRACE: 1
