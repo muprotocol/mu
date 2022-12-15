@@ -210,7 +210,7 @@ mod utils {
 
         let accounts = client.program.accounts::<marketplace::Provider>(filters)?;
 
-        Ok(accounts.len() >= 1)
+        Ok(!accounts.is_empty())
     }
 
     pub fn provider_with_keypair_exists(
