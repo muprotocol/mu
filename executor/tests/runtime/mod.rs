@@ -13,8 +13,8 @@ mod providers;
 mod utils;
 
 pub fn create_project(name: &'static str, memory_limit: Option<byte_unit::Byte>) -> Project {
-    let memory_limit =
-        memory_limit.unwrap_or(byte_unit::Byte::from_unit(100.0, byte_unit::ByteUnit::MB).unwrap());
+    let memory_limit = memory_limit
+        .unwrap_or_else(|| byte_unit::Byte::from_unit(100.0, byte_unit::ByteUnit::MB).unwrap());
 
     Project {
         name: name.into(),
