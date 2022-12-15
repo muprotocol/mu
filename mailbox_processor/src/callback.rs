@@ -32,8 +32,8 @@ enum ControlMessage<T> {
 /// step function then gets the updated state from the previous invocation.
 ///
 /// ```
-/// use tokio_mailbox_processor::*;
-/// use tokio_mailbox_processor::callback::*;
+/// use mailbox_processor::*;
+/// use mailbox_processor::callback::*;
 ///
 /// enum Message {
 ///     Set(i32),

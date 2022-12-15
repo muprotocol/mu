@@ -26,8 +26,8 @@ impl<T: Send + 'static> MessageReceiver<T> {
 /// may fill the internal mspc channel's buffer.
 ///
 /// ```
-/// use tokio_mailbox_processor::*;
-/// use tokio_mailbox_processor::plain::*;
+/// use mailbox_processor::*;
+/// use mailbox_processor::plain::*;
 ///
 /// enum Message {
 ///     Set(i32, ReplyChannel<()>),
