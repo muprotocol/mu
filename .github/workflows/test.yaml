@@ -27,7 +27,7 @@ jobs:
       - name: Install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: build-essential curl libssl-dev libudev-dev pkg-config zlib1g-dev clang cmake make git zsh language-pack-en sudo netcat libclang-common-12-dev llvm-12-dev tmux wget apt-transport-https software-properties-common
+          packages: build-essential curl libssl-dev libudev-dev pkg-config zlib1g-dev clang cmake make language-pack-en libclang-common-12-dev llvm-12-dev
           version: 1.0
       - name: Install rust stable
         uses: actions-rs/toolchain@v1
