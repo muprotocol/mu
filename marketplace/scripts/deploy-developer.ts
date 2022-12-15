@@ -1,5 +1,5 @@
 import { AnchorProvider } from "@project-serum/anchor";
-import { createAuthorizedUsageSigner, createEscrowAccount, createMint, createProvider, createRegion, readOrCreateUserWallet, getMu, initializeMu, loadProviderFromStaticKeypair, readMintFromStaticKeypair, ServiceUnits } from "./anchor-utils";
+import { createEscrowAccount, readOrCreateUserWallet, getMu, loadProviderFromStaticKeypair, readMintFromStaticKeypair, mintToAccount } from "./anchor-utils";
 import util from "./util"
 
 util.asyncMain(async () => {
@@ -11,5 +11,7 @@ util.asyncMain(async () => {
 
     console.log("Creating developer and deploying escrow account");
     let userWallet = await readOrCreateUserWallet(mu, 1);
-    await createEscrowAccount(mu, userWallet.keypair, provider);
+    let escrowAccount = await createEscrowAccount(mu, userWallet.keypair, provider);
+    console.log(`Escrow PDA: ${escrowAccount.pda}`);
+    await mintToAccount(anchorProvider, escrowAccount.pda, mint, 50_000010);
 });

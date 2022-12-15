@@ -1,10 +1,10 @@
 //TODO
 #![allow(dead_code)]
 
-use crate::gateway;
+use crate::{gateway, runtime::error::Error};
 
 use super::{FromMessage, Message, ToMessage};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::Deserialize;
 
 #[derive(Debug)]
@@ -15,13 +15,13 @@ pub struct GatewayRequest<'a> {
 impl<'a> ToMessage for GatewayRequest<'a> {
     const TYPE: &'static str = "GatewayRequest";
 
-    fn to_message(&self) -> Result<Message> {
+    fn to_message(&self) -> Result<Message, Error> {
         Ok(Message {
             id: None,
             r#type: Self::TYPE.to_owned(),
             // TODO: not good, why force user to only send JSON to functions?
             message: serde_json::to_value(&self.request)
-                .context("gateway request serialization failed")?,
+                .map_err(Error::MessageSerializationFailed)?,
         })
     }
 }
@@ -40,10 +40,10 @@ pub struct GatewayResponse {
 impl FromMessage for GatewayResponse {
     const TYPE: &'static str = "GatewayResponse";
 
-    fn from_message(m: Message) -> Result<Self> {
+    fn from_message(m: Message) -> Result<Self, Error> {
         Ok(Self {
             response: serde_json::from_value(m.message)
-                .context("gateway response deserialization failed")?,
+                .map_err(Error::MessageDeserializationFailed)?,
         })
     }
 }

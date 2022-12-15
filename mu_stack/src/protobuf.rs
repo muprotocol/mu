@@ -75,6 +75,7 @@ impl From<super::Stack> for Stack {
                                 })
                                 .collect(),
                             runtime: convert_function_runtime(f.runtime),
+                            memoryLimit: f.memory_limit.get_bytes(),
                             ..Default::default()
                         })),
                         ..Default::default()
@@ -159,6 +160,7 @@ impl TryFrom<Stack> for super::Stack {
                             binary: f.binary,
                             env: f.env.into_iter().map(|env| (env.name, env.value)).collect(),
                             runtime: convert_function_runtime(f.runtime)?,
+                            memory_limit: byte_unit::Byte::from_bytes(f.memoryLimit),
                         }))
                     }
                 })
