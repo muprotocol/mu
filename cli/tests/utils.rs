@@ -57,7 +57,7 @@ impl KeypairWithPath {
 
         let name = name
             .map(|i| i.as_ref().to_string())
-            .unwrap_or(keypair.pubkey().to_string());
+            .unwrap_or_else(|| keypair.pubkey().to_string());
 
         let path = Self::get_keypair_path(name)?;
 

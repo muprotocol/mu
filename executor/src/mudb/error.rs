@@ -97,7 +97,7 @@ impl From<JsonCommandError> for Error {
     }
 }
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum ManagerMailBoxError {
     #[error("create_db> {0}")]
     CreateDb(mailbox_processor::Error),
