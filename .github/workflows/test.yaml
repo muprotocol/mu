@@ -29,12 +29,9 @@ jobs:
           target: wasm32-wasi
       - name: Check style
         run: cargo fmt -- --check
-        working-directory: executor
       - name: Run Lints
         run: cargo clippy -- -D warnings
-        working-directory: executor
       - name: Run tests
         run: cargo test --verbose
-        working-directory: executor
         env:
           RUST_BACKTRACE: 1
