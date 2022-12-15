@@ -1,3 +1,6 @@
+// We have to use anchor's error type, we have no control over it
+#![allow(clippy::result_large_err)]
+
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount, Transfer};
 
@@ -134,7 +137,7 @@ pub mod marketplace {
         let transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             transfer,
-            &seeds_wrapper.as_slice(),
+            seeds_wrapper.as_slice(),
         );
         anchor_spl::token::transfer(transfer_ctx, usage_tokens)?;
 

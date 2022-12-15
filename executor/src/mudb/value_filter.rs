@@ -344,13 +344,13 @@ mod test {
 
         let filter4 = json!({});
 
-        assert_eq!(eq(&doc, &filter1), true);
-        assert_eq!(eq(&doc, &filter2), true);
-        assert_eq!(eq(&doc, &filter3), true);
-        assert_eq!(eq(&doc, &filter4), true);
+        assert!(eq(&doc, &filter1));
+        assert!(eq(&doc, &filter2));
+        assert!(eq(&doc, &filter3));
+        assert!(eq(&doc, &filter4));
 
         let none_object_doc = json!("none object");
-        assert_eq!(eq(&none_object_doc, &filter4), true);
+        assert!(eq(&none_object_doc, &filter4));
     }
 
     #[test]
@@ -385,12 +385,12 @@ mod test {
             "code": { "$ne": 300 },
         });
 
-        assert_eq!(eq(&doc, &gt_filter), true);
-        assert_eq!(eq(&doc, &gte_filter), true);
-        assert_eq!(eq(&doc, &lt_filter), true);
-        assert_eq!(eq(&doc, &lte_filter), true);
-        assert_eq!(eq(&doc, &eq_filter), true);
-        assert_eq!(eq(&doc, &ne_filter), true);
+        assert!(eq(&doc, &gt_filter));
+        assert!(eq(&doc, &gte_filter));
+        assert!(eq(&doc, &lt_filter));
+        assert!(eq(&doc, &lte_filter));
+        assert!(eq(&doc, &eq_filter));
+        assert!(eq(&doc, &ne_filter));
     }
 
     #[test]
@@ -406,7 +406,7 @@ mod test {
             }
         });
 
-        assert_eq!(eq(&filter, &doc), false);
+        assert!(!eq(&filter, &doc));
     }
 
     #[test]
@@ -439,12 +439,12 @@ mod test {
             "code": { "$ne": 200 },
         });
 
-        assert_eq!(eq(&doc, &gt_filter), false);
-        assert_eq!(eq(&doc, &gte_filter), false);
-        assert_eq!(eq(&doc, &lt_filter), false);
-        assert_eq!(eq(&doc, &lte_filter), false);
-        assert_eq!(eq(&doc, &eq_filter), false);
-        assert_eq!(eq(&doc, &ne_filter), false);
+        assert!(!eq(&doc, &gt_filter));
+        assert!(!eq(&doc, &gte_filter));
+        assert!(!eq(&doc, &lt_filter));
+        assert!(!eq(&doc, &lte_filter));
+        assert!(!eq(&doc, &eq_filter));
+        assert!(!eq(&doc, &ne_filter));
     }
 
     #[test]
@@ -472,8 +472,8 @@ mod test {
             }
         });
 
-        assert_eq!(ne(&doc, &filter1), false);
-        assert_eq!(ne(&doc, &filter2), true);
+        assert!(!ne(&doc, &filter1));
+        assert!(ne(&doc, &filter2));
         assert_eq!(ne(&doc, &filter3), !eq(&doc, &filter3));
     }
 
@@ -483,7 +483,7 @@ mod test {
         let value = json!(2);
 
         let res = gt(&value, &filter);
-        assert_eq!(res, true)
+        assert!(res)
     }
 
     #[test]
@@ -492,13 +492,13 @@ mod test {
         let filter = json!(5);
         let value = json!(2);
         let res = gt(&value, &filter);
-        assert_eq!(res, false);
+        assert!(!res);
 
         // equal
         let filter = json!(2);
         let value = json!(2);
         let res = gt(&value, &filter);
-        assert_eq!(res, false);
+        assert!(!res);
 
         // not same type
         let filter = json!(2);
@@ -507,7 +507,7 @@ mod test {
         });
 
         let res = gt(&value, &filter);
-        assert_eq!(res, false);
+        assert!(!res);
     }
 
     #[test]
@@ -516,13 +516,13 @@ mod test {
         let filter = json!(1);
         let value = json!(2);
         let res = gte(&value, &filter);
-        assert_eq!(res, true);
+        assert!(res);
 
         // equal
         let filter = json!(2);
         let value = json!(2);
         let res = gte(&value, &filter);
-        assert_eq!(res, true);
+        assert!(res);
     }
 
     #[test]
@@ -531,7 +531,7 @@ mod test {
         let filter = json!(5);
         let value = json!(2);
         let res = gte(&value, &filter);
-        assert_eq!(res, false);
+        assert!(!res);
 
         // not same type
         let filter = json!(2);
@@ -540,7 +540,7 @@ mod test {
         });
 
         let res = gte(&value, &filter);
-        assert_eq!(res, false);
+        assert!(!res);
     }
 
     #[test]
@@ -549,7 +549,7 @@ mod test {
         let value = json!(1);
 
         let res = lt(&value, &filter);
-        assert_eq!(res, true)
+        assert!(res)
     }
 
     #[test]
@@ -558,13 +558,13 @@ mod test {
         let value = json!(5);
         let filter = json!(2);
         let res = lt(&value, &filter);
-        assert_eq!(res, false);
+        assert!(!res);
 
         // equal
         let value = json!(2);
         let filter = json!(2);
         let res = lt(&value, &filter);
-        assert_eq!(res, false);
+        assert!(!res);
 
         // not same type
         let filter = json!(1);
@@ -573,7 +573,7 @@ mod test {
         });
 
         let res = lt(&value, &filter);
-        assert_eq!(res, false);
+        assert!(!res);
     }
 
     #[test]
@@ -582,13 +582,13 @@ mod test {
         let filter = json!(2);
         let value = json!(1);
         let res = lte(&value, &filter);
-        assert_eq!(res, true);
+        assert!(res);
 
         // equal
         let filter = json!(2);
         let value = json!(2);
         let res = lte(&value, &filter);
-        assert_eq!(res, true);
+        assert!(res);
     }
 
     #[test]
@@ -597,7 +597,7 @@ mod test {
         let filter = json!(2);
         let value = json!(5);
         let res = lte(&value, &filter);
-        assert_eq!(res, false);
+        assert!(!res);
 
         // not same type
         let filter = json!(2);
@@ -606,7 +606,7 @@ mod test {
         });
 
         let res = lte(&value, &filter);
-        assert_eq!(res, false);
+        assert!(!res);
     }
 
     #[test]
@@ -614,7 +614,7 @@ mod test {
         let value = json!(5);
         let filter = json!([1, 3, 5, 7]);
         let res = s_in(&value, &filter);
-        assert_eq!(res, true);
+        assert!(res);
     }
 
     #[test]
@@ -622,7 +622,7 @@ mod test {
         let value = json!(10);
         let filter = json!([1, 3, 5, 7]);
         let res = s_in(&value, &filter);
-        assert_eq!(res, false);
+        assert!(!res);
     }
 
     #[test]
@@ -630,7 +630,7 @@ mod test {
         let value = json!(10);
         let filter = json!([1, 3, 5, 7]);
         let res = nin(&value, &filter);
-        assert_eq!(res, true);
+        assert!(res);
     }
 
     #[test]
@@ -638,6 +638,6 @@ mod test {
         let value = json!(5);
         let filter = json!([1, 3, 5, 7]);
         let res = nin(&value, &filter);
-        assert_eq!(res, false);
+        assert!(!res);
     }
 }

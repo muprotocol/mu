@@ -69,8 +69,8 @@ impl From<super::Stack> for Stack {
                                 .env
                                 .into_iter()
                                 .map(|(name, value)| EnvVar {
-                                    name: name,
-                                    value: value,
+                                    name,
+                                    value,
                                     ..Default::default()
                                 })
                                 .collect(),

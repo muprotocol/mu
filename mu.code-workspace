@@ -29,6 +29,9 @@
 				"addWords": false
 			}
 		},
-		"cSpell.language": "en"
+		"cSpell.language": "en",
+		"cSpell.words": [
+			"protos"
+		]
 	}
 }

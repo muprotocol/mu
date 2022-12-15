@@ -52,7 +52,7 @@ impl FromStr for StackID {
             return Err(());
         }
 
-        let variant_code = s.chars().nth(0);
+        let variant_code = s.chars().next();
 
         match variant_code {
             Some('s') => {
