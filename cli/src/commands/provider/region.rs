@@ -26,22 +26,22 @@ pub struct CreateArgs {
     region_num: u32,
 
     #[arg(long, help = "Billion function instructions and MB of RAM")]
-    billion_function_mb_instructions: u32,
+    billion_function_mb_instructions: u64,
 
     #[arg(long, help = "Database GB per month")]
-    db_gigabyte_months: u32,
+    db_gigabyte_months: u64,
 
     #[arg(long, help = "Million Database reads")]
-    million_db_reads: u32,
+    million_db_reads: u64,
 
     #[arg(long, help = "Million Database writes")]
-    million_db_writes: u32,
+    million_db_writes: u64,
 
     #[arg(long, help = "Million gateway requests")]
-    million_gateway_requests: u32,
+    million_gateway_requests: u64,
 
     #[arg(long, help = "Gateway GB traffic")]
-    gigabytes_gateway_traffic: u32,
+    gigabytes_gateway_traffic: u64,
 }
 
 pub fn execute(config: Config, sub_command: Command) -> Result<()> {
