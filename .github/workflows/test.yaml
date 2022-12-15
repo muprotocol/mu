@@ -7,7 +7,7 @@ jobs:
   lint_and_test:
     runs-on: ubuntu-latest
     strategy:
-      matrix: { dir: ['executor', 'cli', 'marketplace', 'mu_stack'] }
+      matrix: { dir: ["executor", "cli", "marketplace", "mu_stack"] }
     steps:
       - uses: actions/checkout@v2
       - uses: actions/cache@v3
@@ -25,10 +25,10 @@ jobs:
             mu_stack/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential curl libssl-dev libudev-dev pkg-config \
-          zlib1g-dev clang cmake make git zsh language-pack-en sudo netcat \
-          libclang-common-12-dev llvm-12-dev tmux \
-          wget apt-transport-https software-properties-common
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: build-essential curl libssl-dev libudev-dev pkg-config zlib1g-dev clang cmake make git zsh language-pack-en sudo netcat libclang-common-12-dev llvm-12-dev tmux wget apt-transport-https software-properties-common
+          version: 1.0
       - name: Install rust stable
         uses: actions-rs/toolchain@v1
         with:
