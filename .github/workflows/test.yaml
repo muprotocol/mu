@@ -37,13 +37,13 @@ jobs:
           components: rustfmt, clippy
           target: wasm32-wasi
       - name: Check style
-        run: cargo fmt -- --check --no-deps
+        run: cargo fmt -- --check --no-deps --all-targets --tests
         working-directory: ${{ matrix.dir }}
       - name: Run Lints
         run: cargo clippy --no-deps --all-targets --tests -- -D warnings
         working-directory: ${{ matrix.dir }}
       - name: Run tests
-        run: cargo test --verbose --no-deps
+        run: cargo test --verbose --no-deps --all-targets --tests
         working-directory: ${{ matrix.dir }}
         env:
           RUST_BACKTRACE: 1
