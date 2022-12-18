@@ -2,6 +2,7 @@ pub mod gateway;
 pub mod infrastructure;
 pub mod mudb;
 pub mod network;
+mod request_routing;
 pub mod runtime;
 pub mod stack;
 pub mod util;
@@ -14,8 +15,10 @@ use std::{
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use log::*;
-use mailbox_processor::NotificationChannel;
+use mailbox_processor::{NotificationChannel, ReplyChannel};
+use mu_stack::StackID;
 use network::rpc_handler::{self, RpcHandler, RpcRequestHandler};
+use request_routing::RoutingTarget;
 use runtime::Runtime;
 use stack::blockchain_monitor::{BlockchainMonitor, BlockchainMonitorNotification};
 use tokio::{select, sync::mpsc};
@@ -25,7 +28,8 @@ use crate::{
     infrastructure::{config, log_setup},
     network::{
         connection_manager::{self, ConnectionManager, ConnectionManagerNotification},
-        gossip::{self, Gossip, GossipNotification, KnownNodeConfig, NodeAddress},
+        gossip::{self, Gossip, GossipNotification, KnownNodeConfig},
+        NodeAddress,
     },
     stack::{
         blockchain_monitor,
@@ -150,9 +154,11 @@ pub async fn run() -> Result<()> {
     );
 
     // TODO: no notification channel for now, requests are sent straight to runtime
-    let gateway_manager = gateway::start(
+    let (gateway_manager, mut route_request_receiver) = gateway::start(
         gateway_manager_config,
         runtime.clone(),
+        connection_manager.clone(),
+        rpc_handler.clone(),
         usage_aggregator.clone(),
     )
     .await
@@ -191,6 +197,7 @@ pub async fn run() -> Result<()> {
             blockchain_monitor.as_ref(),
             &mut blockchain_monitor_notification_receiver,
             rpc_handler.as_ref(),
+            &mut route_request_receiver,
         )
         .await;
 
@@ -303,6 +310,10 @@ async fn glue_modules(
         BlockchainMonitorNotification,
     >,
     rpc_handler: &dyn RpcHandler,
+    route_request_receiver: &mut mpsc::UnboundedReceiver<(
+        StackID,
+        ReplyChannel<Result<RoutingTarget>>,
+    )>,
 ) {
     loop {
         select! {
@@ -326,8 +337,24 @@ async fn glue_modules(
             notification = blockchain_monitor_notification_receiver.recv() => {
                 process_blockchain_monitor_notification(notification, scheduler).await;
             }
+
+            request = route_request_receiver.recv() => {
+                handle_route_request(request, gossip, scheduler).await;
+            }
         }
     }
+}
+
+async fn handle_route_request(
+    request: Option<(StackID, ReplyChannel<Result<RoutingTarget>>)>,
+    gossip: &dyn Gossip,
+    scheduler: &dyn Scheduler,
+) {
+    let Some((stack_id, reply_channel)) = request else {
+        return;
+    };
+    let route = request_routing::get_route(stack_id, scheduler, gossip).await;
+    reply_channel.reply(route);
 }
 
 async fn process_connection_manager_notification(

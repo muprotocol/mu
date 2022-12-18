@@ -2,10 +2,10 @@ mod node_collection;
 
 use std::{
     collections::{HashMap, HashSet},
-    fmt::{Debug, Display},
+    fmt::Debug,
     net::IpAddr,
     pin::Pin,
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 use anyhow::{bail, Context, Error, Result};
@@ -19,20 +19,18 @@ use mailbox_processor::{
 use mu_stack::StackID;
 use rand::{prelude::Distribution, rngs::ThreadRng};
 use serde::{Deserialize, Serialize};
-use stable_hash::{FieldAddress, StableHash};
 use tokio::{select, time::Instant};
 use tokio_serde::{
     formats::{Bincode, SymmetricalBincode},
     Deserializer, Serializer,
 };
 
-use crate::{
-    infrastructure::config::ConfigDuration, network::connection_manager::ConnectionID,
-    util::id::IdExt,
-};
+use crate::{infrastructure::config::ConfigDuration, util::id::IdExt};
 
 pub use self::node_collection::KnownNodes;
 use self::node_collection::*;
+
+use super::{ConnectionID, NodeAddress, NodeConnection, NodeHash};
 
 macro_rules! debug {
     ($state:expr, $($arg:tt)+) => (log::debug!(target: &$state.log_target, $($arg)+))
@@ -48,72 +46,6 @@ macro_rules! warn {
 
 macro_rules! error {
     ($state:expr, $($arg:tt)+) => (log::error!(target: &$state.log_target, $($arg)+))
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NodeHash(pub [u8; 32]);
-
-impl Display for NodeHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", base64::encode(self.0))
-    }
-}
-
-impl Debug for NodeHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self, f)
-    }
-}
-
-/// A node in the network.
-/// Assumed to run all services (executor, gateway, DB, etc.) for now.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct NodeAddress {
-    pub address: IpAddr,
-    pub port: u16,
-    pub generation: u128,
-}
-
-impl Display for NodeAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "<Node {}:{}:{}-{}>",
-            self.address,
-            self.port,
-            self.generation,
-            self.get_hash()
-        )
-    }
-}
-
-impl StableHash for NodeAddress {
-    fn stable_hash<H: stable_hash::StableHasher>(&self, field_address: H::Addr, state: &mut H) {
-        self.address
-            .to_string()
-            .stable_hash(field_address.child(0), state);
-        self.port.stable_hash(field_address.child(1), state);
-        self.generation.stable_hash(field_address.child(2), state);
-    }
-}
-
-impl NodeAddress {
-    pub fn new(address: IpAddr, port: u16) -> Self {
-        let generation = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .context("System time cannot be before 1970-01-01")
-            .unwrap()
-            .as_nanos();
-        Self {
-            address,
-            port,
-            generation,
-        }
-    }
-
-    pub fn get_hash(&self) -> NodeHash {
-        NodeHash(stable_hash::crypto_stable_hash(self))
-    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -142,11 +74,6 @@ enum GossipProtocolMessage {
     Goodbye(NodeAddress),
 }
 
-pub enum NodeConnection {
-    Established(ConnectionID),
-    NotEstablished(NodeAddress),
-}
-
 #[async_trait]
 #[clonable]
 pub trait Gossip: Clone + Sync + Send {
@@ -163,7 +90,7 @@ pub trait Gossip: Clone + Sync + Send {
     async fn stack_deployed_locally(&self, stack_id: StackID) -> Result<()>;
     async fn stack_undeployed_locally(&self, stack_id: StackID) -> Result<()>;
 
-    // async fn get_connection(&self, hash: NodeHash) -> Result<NodeConnection>;
+    async fn get_connection(&self, hash: NodeHash) -> Result<Option<NodeConnection>>;
 
     #[cfg(debug_assertions)]
     async fn log_statistics(&self);
@@ -198,6 +125,8 @@ enum GossipControlMessage {
     ReceiveMessage(ConnectionID, Bytes),
     GetPeers(ReplyChannel<Vec<(NodeHash, NodeAddress)>>),
     Stop(ReplyChannel<()>),
+
+    GetConnection(NodeHash, ReplyChannel<Option<NodeConnection>>),
 
     #[cfg(debug_assertions)]
     LogStatistics(ReplyChannel<()>),
@@ -275,6 +204,13 @@ impl Gossip for GossipImpl {
     async fn stack_undeployed_locally(&self, stack_id: StackID) -> Result<()> {
         self.mailbox
             .post_and_reply(|r| GossipControlMessage::StackUndeployedLocally(stack_id, r))
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_connection(&self, hash: NodeHash) -> Result<Option<NodeConnection>> {
+        self.mailbox
+            .post_and_reply(|r| GossipControlMessage::GetConnection(hash, r))
             .await
             .map_err(Into::into)
     }
@@ -433,6 +369,10 @@ async fn body(
                         r.reply(());
                     },
 
+                    Some(GossipControlMessage::GetConnection(node_hash, r)) => {
+                        r.reply(get_connection(&state, &node_hash));
+                    }
+
                     #[cfg(debug_assertions)]
                     Some(GossipControlMessage::LogStatistics(r)) => {
                         log_statistics(&state);
@@ -442,6 +382,13 @@ async fn body(
             }
         }
     }
+}
+
+fn get_connection(state: &GossipState, node_hash: &NodeHash) -> Option<NodeConnection> {
+    state.node_collection.get_node(node_hash).map(|n| match n {
+        Node::RemoteNode(remote) => NodeConnection::NotEstablished(remote.info().address.clone()),
+        Node::Peer(peer) => NodeConnection::Established(peer.connection_id()),
+    })
 }
 
 fn send_heartbeat(state: &mut GossipState) -> Result<()> {

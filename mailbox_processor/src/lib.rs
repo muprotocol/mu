@@ -70,3 +70,54 @@ impl<T> NotificationChannel<T> {
         let _ = self.sender.send(notification);
     }
 }
+
+/// Can be used to make a request to another task/thread and wait for
+/// a reply.
+///
+/// This is, in essence, very similar to a mailbox; but it is meant for
+/// scenarios where the request-handling end is not a mailbox to begin
+/// with, such as when a child task needs to ask the task that spawned
+/// it for some data. Mailboxes work the other way around, with the
+/// mailbox being spawned by some parent task and receiving messages
+/// from it.
+pub struct RequestReplyChannel<Request, Reply> {
+    sender: mpsc::UnboundedSender<(Request, ReplyChannel<Reply>)>,
+}
+
+impl<Request, Reply> Clone for RequestReplyChannel<Request, Reply> {
+    fn clone(&self) -> Self {
+        Self {
+            sender: self.sender.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum RequestReplyError {
+    #[error("The receiver was dropped before the request could be sent")]
+    ReceiverDropper,
+
+    #[error("The reply channel was dropped while waiting for a reply")]
+    ReplyChannelDropped,
+}
+
+impl<Request, Reply> RequestReplyChannel<Request, Reply> {
+    pub fn new() -> (
+        Self,
+        mpsc::UnboundedReceiver<(Request, ReplyChannel<Reply>)>,
+    ) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (Self { sender: tx }, rx)
+    }
+
+    pub async fn request(&self, request: Request) -> std::result::Result<Reply, RequestReplyError> {
+        let (tx, rx) = oneshot::channel();
+        let reply_channel = ReplyChannel { sender: tx };
+
+        self.sender
+            .send((request, reply_channel))
+            .map_err(|_| RequestReplyError::ReceiverDropper)?;
+
+        rx.await.map_err(|_| RequestReplyError::ReplyChannelDropped)
+    }
+}

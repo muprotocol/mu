@@ -29,7 +29,7 @@ use quinn::{
 use serde::Deserialize;
 use tokio_util::codec::{length_delimited, FramedRead, FramedWrite, LengthDelimitedCodec};
 
-pub type ConnectionID = u32;
+use super::ConnectionID;
 
 #[derive(Deserialize)]
 pub struct ConnectionManagerConfig {

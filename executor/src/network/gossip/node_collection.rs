@@ -10,7 +10,7 @@ use anyhow::{bail, Context, Result};
 use mu_stack::StackID;
 use tokio::time::Instant;
 
-use crate::network::connection_manager::ConnectionID;
+use super::super::ConnectionID;
 
 use super::{Heartbeat, NodeAddress, NodeHash};
 
@@ -53,6 +53,10 @@ impl NodeCollection {
 
     pub(super) fn get_nodes(&self) -> impl Iterator<Item = &Node> {
         self.nodes.values()
+    }
+
+    pub(super) fn get_node(&self, hash: &NodeHash) -> Option<&Node> {
+        self.nodes.get(hash)
     }
 
     // TODO: unsafe, might update node hash
@@ -305,6 +309,12 @@ impl Peer {
 
 #[derive(Debug)]
 pub(super) struct RemoteNode(NodeHash, NodeInfo);
+
+impl RemoteNode {
+    pub fn info(&self) -> &NodeInfo {
+        &self.1
+    }
+}
 
 #[derive(Debug)]
 pub(super) struct TemporaryPeer(NodeHash, NodeInfo, ConnectionID);

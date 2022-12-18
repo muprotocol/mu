@@ -10,8 +10,11 @@ use futures::Future;
 use log::warn;
 use protobuf::{Message, MessageField};
 
+use super::{
+    connection_manager::{ConnectionManager, RequestID},
+    ConnectionID,
+};
 use crate::gateway;
-use crate::network::connection_manager::{ConnectionID, ConnectionManager, RequestID};
 use crate::runtime::types::FunctionID;
 
 // TODO: bad design, we receive the request from glue code, but access the

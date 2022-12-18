@@ -7,14 +7,13 @@ use anyhow::Result;
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::{debug, error, info, trace, warn};
-use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel};
+use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel, ReplyChannel};
 use num::BigInt;
 use serde::Deserialize;
 
 use crate::{
     gateway::GatewayManager, infrastructure::config::ConfigDuration,
-    mudb::service::DatabaseManager, network::gossip::NodeHash, runtime::Runtime,
-    util::ReplaceWithDefault,
+    mudb::service::DatabaseManager, network::NodeHash, runtime::Runtime, util::ReplaceWithDefault,
 };
 
 use mu_stack::{Stack, StackID};
@@ -42,7 +41,7 @@ pub trait Scheduler: Clone + Send + Sync {
     /// an up-to-date view of the cluster.
     async fn ready_to_schedule_stacks(&self) -> Result<()>;
 
-    // async fn get_deployment_status(&self, stack_id: StackID) -> StackDeploymentStatus;
+    async fn get_deployment_status(&self, stack_id: StackID) -> Result<StackDeploymentStatus>;
 
     // This function currently doesn't fail, but we keep the return type
     // a `Result<()>` so we can later implement custom stopping logic.
@@ -70,6 +69,8 @@ enum SchedulerMessage {
     StacksRemoved(Vec<StackID>),
 
     ReadyToScheduleStacks,
+
+    GetDeploymentStatus(StackID, ReplyChannel<StackDeploymentStatus>),
 
     // We could just update the state every time a message arrives,
     // but we need to be able to cache operations for the duration
@@ -132,6 +133,13 @@ impl Scheduler for SchedulerImpl {
     async fn ready_to_schedule_stacks(&self) -> Result<()> {
         self.mailbox
             .post(SchedulerMessage::ReadyToScheduleStacks)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_deployment_status(&self, stack_id: StackID) -> Result<StackDeploymentStatus> {
+        self.mailbox
+            .post_and_reply(|r| SchedulerMessage::GetDeploymentStatus(stack_id, r))
             .await
             .map_err(Into::into)
     }
@@ -440,6 +448,32 @@ async fn step(
                 }
             }
         }
+
+        SchedulerMessage::GetDeploymentStatus(stack_id, r) => r.reply(
+            state
+                .stacks
+                .get(&stack_id)
+                .map(|s| match s {
+                    StackDeployment::Undeployed { .. }
+                    | StackDeployment::HasDeploymentCandidate { .. } => {
+                        StackDeploymentStatus::NotDeployed
+                    }
+
+                    StackDeployment::Unknown { deployed_to }
+                    | StackDeployment::DeployedToOthers { deployed_to, .. } => {
+                        StackDeploymentStatus::DeployedToOthers {
+                            deployed_to: deployed_to.iter().cloned().collect(),
+                        }
+                    }
+
+                    StackDeployment::DeployedToSelf {
+                        deployed_to_others, ..
+                    } => StackDeploymentStatus::DeployedToSelf {
+                        deployed_to_others: deployed_to_others.iter().cloned().collect(),
+                    },
+                })
+                .unwrap_or(StackDeploymentStatus::Unknown),
+        ),
 
         SchedulerMessage::Tick => {
             tick(&mut state).await;

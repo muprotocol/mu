@@ -2,11 +2,11 @@
 
 use std::{borrow::Cow, collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc};
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
-use log::error;
-use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
+use log::{debug, error, trace};
+use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel, RequestReplyChannel};
 use mu_stack::{Gateway, HttpMethod, StackID};
 use rocket::{
     catch, catchers, delete, get, head,
@@ -16,10 +16,17 @@ use rocket::{
     routes, State,
 };
 use serde::{Deserialize, Serialize};
-use tokio::{sync::RwLock, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, RwLock},
+    task::JoinHandle,
+};
 
-use crate::runtime::{types::FunctionID, Runtime};
-use crate::stack::usage_aggregator::{Usage, UsageAggregator};
+use crate::{
+    network::{connection_manager::ConnectionManager, rpc_handler::RpcHandler, NodeConnection},
+    request_routing::RoutingTarget,
+    runtime::{types::FunctionID, Runtime},
+    stack::usage_aggregator::{Usage, UsageAggregator},
+};
 
 #[async_trait]
 #[clonable]
@@ -95,13 +102,41 @@ struct GatewayState {
 }
 
 // Used to access the gateway manager from within request handlers
-#[derive(Clone)]
 struct DependencyAccessor {
     // TODO: break gateway manager's function management logic into new type to avoid
     // dependency cycle and remove need for Arc<RwLock>
     gateway_manager: Arc<RwLock<Option<GatewayManagerImpl>>>,
     runtime: Box<dyn Runtime>,
+    connection_manager: Box<dyn ConnectionManager>,
+    rpc_handler: Box<dyn RpcHandler>,
     usage_aggregator: Box<dyn UsageAggregator>,
+
+    // We can't take a reference to the scheduler here, because the
+    // scheduler also needs a reference to the gateway manager to
+    // deploy the gateways to it.
+    // This problem could be worked around differently, by e.g.
+    // having the scheduler report the stacks it wants to deploy
+    // rather than deploy them itself, which is not a bad idea for
+    // a refactor.
+    // TODO ^^^
+    // Also, another way of going about this is to make all the
+    // different mailboxes and put them in a static variable for
+    // everything else to access as they see fit, but it makes
+    // dependency tracking near impossible.
+    get_routing_target: RequestReplyChannel<StackID, Result<RoutingTarget>>,
+}
+
+impl Clone for DependencyAccessor {
+    fn clone(&self) -> Self {
+        Self {
+            gateway_manager: self.gateway_manager.clone(),
+            runtime: self.runtime.clone(),
+            connection_manager: self.connection_manager.clone(),
+            rpc_handler: self.rpc_handler.clone(),
+            usage_aggregator: self.usage_aggregator.clone(),
+            get_routing_target: self.get_routing_target.clone(),
+        }
+    }
 }
 
 impl<'a> DependencyAccessor {
@@ -114,17 +149,27 @@ impl<'a> DependencyAccessor {
 pub async fn start(
     config: GatewayManagerConfig,
     runtime: Box<dyn Runtime>,
+    connection_manager: Box<dyn ConnectionManager>,
+    rpc_handler: Box<dyn RpcHandler>,
     usage_aggregator: Box<dyn UsageAggregator>,
-) -> Result<Box<dyn GatewayManager>> {
+) -> Result<(
+    Box<dyn GatewayManager>,
+    mpsc::UnboundedReceiver<(StackID, ReplyChannel<Result<RoutingTarget>>)>,
+)> {
     let config = rocket::Config::figment()
         .merge(("address", config.listen_address.to_string()))
         .merge(("port", config.listen_port))
         .merge(("cli-colors", false))
         .merge(("ctrlc", false));
 
+    let (req_rep_channel, req_rep_receiver) = RequestReplyChannel::new();
+
     let accessor = DependencyAccessor {
         gateway_manager: Arc::new(RwLock::new(None)),
         runtime,
+        connection_manager,
+        get_routing_target: req_rep_channel,
+        rpc_handler,
         usage_aggregator,
     };
 
@@ -157,7 +202,7 @@ pub async fn start(
 
     *accessor.gateway_manager.write().await = Some(result.clone());
 
-    Ok(Box::new(result))
+    Ok((Box::new(result), req_rep_receiver))
 }
 
 async fn step(
@@ -353,6 +398,80 @@ impl<'r, 'o: 'r> rocket::response::Responder<'r, 'o> for Response {
     }
 }
 
+// TODO: this function could be in a better location, but currently,
+// only the gateway will be routing requests for the foreseeable future.
+// TODO: alternatively, we could go with the initial idea of a transparent
+// proxy layer between the gateway and runtime, though I don't believe it's
+// justified, given that again, this is the only place we'll be routing
+// requests.
+async fn route_request<'a>(
+    function_id: FunctionID,
+    request: Request<'a>,
+    dependency_accessor: &State<DependencyAccessor>,
+) -> Result<Response> {
+    trace!("Request received for {function_id}, will check deployment status");
+
+    let route = dependency_accessor
+        .get_routing_target
+        .request(function_id.stack_id)
+        .await
+        .context("Failed to request route")?
+        .context("Failed to find route")?;
+
+    debug!(
+        "Deployment status of stack {} is {:?}",
+        function_id.stack_id, route
+    );
+
+    match route {
+        RoutingTarget::NotDeployed => bail!("Stack not deployed"),
+        RoutingTarget::Local => dependency_accessor
+            .runtime
+            .invoke_function(function_id, request)
+            .await
+            .context(""),
+        RoutingTarget::Remote(node_connection) => {
+            let (connection_id, new_connection) = match node_connection {
+                NodeConnection::Established(id) => (id, false),
+                NodeConnection::NotEstablished(address) => {
+                    // TODO! Does connecting to the target node here cause the gossip module to expect heartbeats?
+
+                    // TODO should pool these connections so we don't do a connection handshake
+                    // for each user request. QUIC is faster only if you're using an already open
+                    // connection.
+                    trace!("No connection to target node, will establish new connection");
+                    let connection_id = dependency_accessor
+                        .connection_manager
+                        .connect(address.address, address.port)
+                        .await
+                        .context("Failed to connect to invocation target node")?;
+
+                    (connection_id, true)
+                }
+            };
+
+            trace!("Sending request");
+            let response = dependency_accessor
+                .rpc_handler
+                .send_execute_function(connection_id, function_id, request)
+                .await
+                .context("Error in remote function invocation");
+            trace!("Response received");
+
+            if new_connection {
+                trace!("Will disconnect new connection");
+                // Nothing to do if disconnecting errors out
+                let _ = dependency_accessor
+                    .connection_manager
+                    .disconnect(connection_id)
+                    .await;
+            }
+
+            response
+        }
+    }
+}
+
 async fn handle_request<'a>(
     stack_id: StackIDParam,
     gateway_name: &'a str,
@@ -415,16 +534,15 @@ async fn handle_request<'a>(
         Ok(Some(x)) => x,
     };
 
-    let response = match dependency_accessor
-        .runtime
-        .invoke_function(
-            FunctionID {
-                stack_id,
-                function_name,
-            },
-            request,
-        )
-        .await
+    let response = match route_request(
+        FunctionID {
+            stack_id,
+            function_name,
+        },
+        request,
+        dependency_accessor,
+    )
+    .await
     {
         Ok(r) => {
             traffic += r.calculate_size();

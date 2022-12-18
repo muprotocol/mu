@@ -53,6 +53,7 @@
 			"protoc",
 			"protos",
 			"pubkey",
+			"QUIC",
 			"rcgen",
 			"reconnections",
 			"reqwest",
