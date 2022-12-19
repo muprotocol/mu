@@ -152,3 +152,5 @@ The usage units and billing mechanism varies from service to service. Some servi
 The smart contract will receive this data and will check that the node's certificate is signed by the provider's certificate. Moreover, it will check that the billing struct is signed by the node. This way a chain of trust is built that demonstrates that the provider (and not a malicious attacker) is billing a given service (or services).
 
 Finally the smart contract will calculate the cost by multiplying the provider's prices by the usage and then will take these tokens from the prepayment and transfer it to the provider's account.
+
+Just a litttle word that has problem in spellss :)
