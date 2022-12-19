@@ -1,9 +1,13 @@
 name: test
 on:
   pull_request:
+env:
+  LLVM_SYS_120_PREFIX: /usr/lib/llvm-12/
 jobs:
   lint_and_test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix: { dir: ["executor", "cli", "mailbox_processor", "marketplace", "mu_stack"] }
     steps:
       - uses: actions/checkout@v2
       - uses: actions/cache@v3
@@ -20,21 +24,26 @@ jobs:
             marketplace/target/
             mu_stack/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: build-essential curl libssl-dev libudev-dev pkg-config zlib1g-dev clang cmake make language-pack-en libclang-common-12-dev llvm-12-dev
+          version: 1.0
       - name: Install rust stable
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.63.0
+          toolchain: 1.65.0
           override: true
           components: rustfmt, clippy
           target: wasm32-wasi
       - name: Check style
         run: cargo fmt -- --check
-        working-directory: executor
+        working-directory: ${{ matrix.dir }}
       - name: Run Lints
-        run: cargo clippy -- -D warnings
-        working-directory: executor
+        run: cargo clippy --no-deps --all-targets --tests -- -D warnings
+        working-directory: ${{ matrix.dir }}
       - name: Run tests
         run: cargo test --verbose
-        working-directory: executor
+        working-directory: ${{ matrix.dir }}
         env:
           RUST_BACKTRACE: 1
