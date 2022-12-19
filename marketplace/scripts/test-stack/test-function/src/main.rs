@@ -39,7 +39,7 @@ pub struct Request {
     pub path: String,
     pub query: HashMap<String, String>,
     pub headers: Vec<Header>,
-    pub data: String,
+    pub data: Vec<u8>,
 }
 
 #[derive(Serialize, Debug)]
@@ -47,7 +47,7 @@ pub struct Response {
     pub status: u16,
     pub content_type: String,
     pub headers: Vec<Header>,
-    pub body: String,
+    pub body: Vec<u8>,
 }
 
 #[derive(Debug, Serialize)]
@@ -239,7 +239,8 @@ fn main() {
 
     let body = format!(
         "Hello, {}! You are visitor number {}",
-        request.data, current
+        String::from_utf8_lossy(&request.data),
+        current
     );
-    response(body);
+    response(body.as_bytes().to_vec());
 }
