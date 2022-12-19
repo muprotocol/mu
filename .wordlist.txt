@@ -37,9 +37,12 @@ protobuf
 protoc
 protos
 pubkey
+QUIC
 quinn
 rcgen
 reconnections
+recv
+refcell
 reqwest
 rngs
 runtime

@@ -2,7 +2,10 @@ use std::{cell::RefCell, collections::HashSet, time::Duration};
 
 use futures::future::select_all;
 use mailbox_processor::NotificationChannel;
-use mu::{infrastructure::config::ConfigDuration, network::gossip::*};
+use mu::{
+    infrastructure::config::ConfigDuration,
+    network::{gossip::*, NodeAddress, NodeHash},
+};
 use rand::{seq::SliceRandom, thread_rng};
 use test_log::test;
 use tokio::{sync::mpsc::UnboundedReceiver, time::Instant};

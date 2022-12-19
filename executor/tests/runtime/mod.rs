@@ -5,7 +5,7 @@ use mu::{
 };
 use mu_stack::{self, StackID};
 use serial_test::serial;
-use std::{collections::HashMap, path::Path};
+use std::{borrow::Cow, collections::HashMap, path::Path};
 
 use crate::runtime::utils::{create_db_if_not_exist, create_runtime, Project};
 
@@ -35,10 +35,10 @@ async fn test_simple_func() {
 
     let request = gateway::Request {
         method: mu_stack::HttpMethod::Get,
-        path: "/get_name",
+        path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: "Chappy",
+        data: Cow::Borrowed("Chappy".as_bytes()),
     };
 
     let resp = runtime
@@ -46,7 +46,7 @@ async fn test_simple_func() {
         .await
         .unwrap();
 
-    assert_eq!("Hello Chappy, welcome to MuRuntime", resp.body);
+    assert_eq!("Hello Chappy, welcome to MuRuntime".as_bytes(), resp.body);
     runtime.stop().await.unwrap();
 }
 
@@ -67,10 +67,10 @@ async fn can_query_mudb() {
 
     let request = gateway::Request {
         method: mu_stack::HttpMethod::Get,
-        path: "/get_name",
+        path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: "Dream",
+        data: Cow::Borrowed("Dream".as_bytes()),
     };
 
     let resp = runtime
@@ -78,7 +78,7 @@ async fn can_query_mudb() {
         .await
         .unwrap();
 
-    assert_eq!("Hello Dream", resp.body);
+    assert_eq!(Cow::Borrowed("Hello Dream".as_bytes()), resp.body);
     runtime.stop().await.unwrap();
 }
 
@@ -90,25 +90,38 @@ async fn can_run_multiple_instance_of_the_same_function() {
 
     let make_request = |name| gateway::Request {
         method: mu_stack::HttpMethod::Get,
-        path: "/get_name",
+        path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: name,
+        data: Cow::Borrowed(name),
     };
 
     let instance_1 = runtime
-        .invoke_function(projects[0].id.clone(), make_request("Mathew"))
-        .then(|r| async move { assert_eq!("Hello Mathew, welcome to MuRuntime", r.unwrap().body) });
+        .invoke_function(projects[0].id.clone(), make_request("Mathew".as_bytes()))
+        .then(|r| async move {
+            assert_eq!(
+                "Hello Mathew, welcome to MuRuntime".as_bytes(),
+                r.unwrap().body
+            )
+        });
 
     let instance_2 = runtime
-        .invoke_function(projects[0].id.clone(), make_request("Morpheus"))
-        .then(
-            |r| async move { assert_eq!("Hello Morpheus, welcome to MuRuntime", r.unwrap().body) },
-        );
+        .invoke_function(projects[0].id.clone(), make_request("Morpheus".as_bytes()))
+        .then(|r| async move {
+            assert_eq!(
+                "Hello Morpheus, welcome to MuRuntime".as_bytes(),
+                r.unwrap().body
+            )
+        });
 
     let instance_3 = runtime
-        .invoke_function(projects[0].id.clone(), make_request("Unity"))
-        .then(|r| async move { assert_eq!("Hello Unity, welcome to MuRuntime", r.unwrap().body) });
+        .invoke_function(projects[0].id.clone(), make_request("Unity".as_bytes()))
+        .then(|r| async move {
+            assert_eq!(
+                "Hello Unity, welcome to MuRuntime".as_bytes(),
+                r.unwrap().body
+            )
+        });
 
     tokio::join!(instance_1, instance_2, instance_3);
 
@@ -126,10 +139,10 @@ async fn can_run_instances_of_different_functions() {
 
     let make_request = |name| gateway::Request {
         method: mu_stack::HttpMethod::Get,
-        path: "/get_name",
+        path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: name,
+        data: Cow::Borrowed(name),
     };
 
     let database_id = DatabaseID {
@@ -142,12 +155,17 @@ async fn can_run_instances_of_different_functions() {
         .unwrap();
 
     let instance_1 = runtime
-        .invoke_function(projects[0].id.clone(), make_request("Mathew"))
-        .then(|r| async move { assert_eq!("Hello Mathew, welcome to MuRuntime", r.unwrap().body) });
+        .invoke_function(projects[0].id.clone(), make_request("Mathew".as_bytes()))
+        .then(|r| async move {
+            assert_eq!(
+                "Hello Mathew, welcome to MuRuntime".as_bytes(),
+                r.unwrap().body
+            )
+        });
 
     let instance_2 = runtime
-        .invoke_function(projects[1].id.clone(), make_request("Dream"))
-        .then(|r| async move { assert_eq!("Hello Dream", r.unwrap().body) });
+        .invoke_function(projects[1].id.clone(), make_request("Dream".as_bytes()))
+        .then(|r| async move { assert_eq!("Hello Dream".as_bytes(), r.unwrap().body) });
 
     tokio::join!(instance_1, instance_2);
 
@@ -162,10 +180,10 @@ async fn test_functions_with_early_exit_are_handled() {
 
     let request = gateway::Request {
         method: mu_stack::HttpMethod::Get,
-        path: "/",
+        path: Cow::Borrowed("/"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: "Are You There?",
+        data: Cow::Borrowed("Are You There?".as_bytes()),
     };
 
     use mu::runtime::error::*;
@@ -191,10 +209,10 @@ async fn functions_with_limited_memory_wont_run() {
 
     let request = gateway::Request {
         method: mu_stack::HttpMethod::Get,
-        path: "/get_name",
+        path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: "",
+        data: Cow::Borrowed(&[]),
     };
 
     let result = runtime
@@ -222,15 +240,15 @@ async fn functions_with_limited_memory_will_run_with_enough_memory() {
 
     let request = gateway::Request {
         method: mu_stack::HttpMethod::Get,
-        path: "/get_name",
+        path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: "Test",
+        data: Cow::Borrowed("Test".as_bytes()),
     };
 
     runtime
         .invoke_function(projects[0].id.clone(), request)
-        .then(|r| async move { assert_eq!("Hello Test, i ran!", r.unwrap().body) })
+        .then(|r| async move { assert_eq!("Hello Test, i ran!".as_bytes(), r.unwrap().body) })
         .await;
 
     runtime.stop().await.unwrap();
@@ -244,10 +262,10 @@ async fn function_usage_is_reported_correctly_1() {
 
     let request = gateway::Request {
         method: mu_stack::HttpMethod::Get,
-        path: "/get_name",
+        path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: "Chappy",
+        data: Cow::Borrowed("Chappy".as_bytes()),
     };
 
     runtime
@@ -286,10 +304,10 @@ async fn function_usage_is_reported_correctly_2() {
 
     let request = gateway::Request {
         method: mu_stack::HttpMethod::Get,
-        path: "/get_name",
+        path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: "Chappy",
+        data: Cow::Borrowed("Chappy".as_bytes()),
     };
 
     let database_id = DatabaseID {
