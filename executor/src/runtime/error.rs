@@ -65,10 +65,10 @@ pub enum FunctionLoadingError {
     FailedToBuildWasmEnv(WasiStateCreationError),
 
     #[error("Failed to get Wasi import object: {0}")]
-    FaieldToGetImportObject(WasiError),
+    FailedToGetImportObject(WasiError),
 
     #[error("Failed to instantiate wasm module: {0}")]
-    FaieldToInstantiateWasmModule(InstantiationError),
+    FailedToInstantiateWasmModule(InstantiationError),
 
     #[error("Failed to get memory: {0}")]
     FaieldToGetMemory(ExportError),

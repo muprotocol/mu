@@ -37,7 +37,7 @@ pub fn start(
         .map_err(|e| Error::FunctionLoadingError(FunctionLoadingError::FailedToBuildWasmEnv(e)))?;
 
     let import_object = wasi_env.import_object(&mut store, module).map_err(|e| {
-        Error::FunctionLoadingError(FunctionLoadingError::FaieldToGetImportObject(e))
+        Error::FunctionLoadingError(FunctionLoadingError::FailedToGetImportObject(e))
     })?;
 
     let instance = Instance::new(&mut store, module, &import_object).map_err(|error| {
@@ -53,7 +53,7 @@ pub fn start(
                 Error::FunctionRuntimeError(FunctionRuntimeError::MaximumMemoryExceeded)
             }
             e => {
-                Error::FunctionLoadingError(FunctionLoadingError::FaieldToInstantiateWasmModule(e))
+                Error::FunctionLoadingError(FunctionLoadingError::FailedToInstantiateWasmModule(e))
             }
         }
     })?;
