@@ -61,7 +61,7 @@ pub fn start(
     let memory = instance
         .exports
         .get_memory("memory")
-        .map_err(|e| Error::FunctionLoadingError(FunctionLoadingError::FaieldToGetMemory(e)))?;
+        .map_err(|e| Error::FunctionLoadingError(FunctionLoadingError::FailedToGetMemory(e)))?;
 
     wasi_env.data_mut(&mut store).set_memory(memory.clone());
 

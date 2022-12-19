@@ -71,8 +71,8 @@ pub enum FunctionLoadingError {
     FailedToInstantiateWasmModule(InstantiationError),
 
     #[error("Failed to get memory: {0}")]
-    FaieldToGetMemory(ExportError),
+    FailedToGetMemory(ExportError),
 
     #[error("Function requested memory size is too big")]
-    RequestedMemorySizeToobig,
+    RequestedMemorySizeTooBig,
 }

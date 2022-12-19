@@ -59,6 +59,8 @@ struct
 subcommands
 sysvar
 thiserror
+tokio
+tunables
 undeployed
 Undeployment
 uriparse
