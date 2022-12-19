@@ -56,4 +56,4 @@ jobs:
 
           # Log progress and other information during the action execution.
           # Default: false
-          verbose: false
+          verbose: true
