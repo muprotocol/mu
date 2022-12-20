@@ -398,6 +398,12 @@ async fn step(
         SchedulerMessage::StacksAvailable(stacks) => {
             for (id, stack) in stacks {
                 state.reevaluate_on_next_tick.insert(id);
+
+                // As soon as we get a stack definition, we want to deploy its gateways so we can
+                // route new requests to that stack to the correct node.
+                info!("Deploying gateways for {id}");
+                deploy_gateways(id, &stack, state.gateway_manager.as_ref()).await;
+
                 match state.stacks.entry(id) {
                     Entry::Vacant(vac) => {
                         vac.insert(StackDeployment::Undeployed { stack });
@@ -425,6 +431,8 @@ async fn step(
 
         SchedulerMessage::StacksRemoved(ids) => {
             for id in ids {
+                undeploy_gateways(id, state.gateway_manager.as_ref()).await;
+
                 match state.stacks.entry(id) {
                     Entry::Vacant(_) => warn!("Unknown stack {id} was removed"),
 
@@ -507,7 +515,6 @@ async fn tick(state: &mut SchedulerState) {
                                 stack.clone(),
                                 &state.notification_channel,
                                 state.runtime.as_ref(),
-                                state.gateway_manager.as_ref(),
                                 &state.database_manager,
                             )
                             .await
@@ -571,7 +578,6 @@ async fn tick(state: &mut SchedulerState) {
                                 stack.clone(),
                                 &state.notification_channel,
                                 state.runtime.as_ref(),
-                                state.gateway_manager.as_ref(),
                                 &state.database_manager,
                             )
                             .await
@@ -616,15 +622,24 @@ async fn tick(state: &mut SchedulerState) {
     state.reevaluate_on_next_tick.clear();
 }
 
+async fn deploy_gateways(id: StackID, stack: &Stack, gateway_manager: &dyn GatewayManager) {
+    if let Err(f) = super::deploy::deploy_gateways(id, stack, gateway_manager).await {
+        warn!("Failed to deploy gateways of stack {id} due to: {f:?}");
+    }
+}
+
+async fn undeploy_gateways(_id: StackID, _gateway_manager: &dyn GatewayManager) {
+    error!("Undeployment not implemented yet");
+}
+
 async fn deploy_stack(
     id: StackID,
     stack: Stack,
     notification_channel: &NotificationChannel<SchedulerNotification>,
     runtime: &dyn Runtime,
-    gateway_manager: &dyn GatewayManager,
     database_manager: &DatabaseManager,
 ) -> Result<()> {
-    match super::deploy::deploy(id, stack, runtime, gateway_manager, database_manager).await {
+    match super::deploy::deploy(id, stack, runtime, database_manager).await {
         Err(f) => {
             notification_channel.send(SchedulerNotification::FailedToDeployStack(id));
             Err(f.into())

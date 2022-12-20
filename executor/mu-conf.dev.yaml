@@ -2,7 +2,7 @@ log:
   level: info
   filters:
     - module: mu
-      level: debug
+      level: info
     - module: mu::stack::scheduler
       level: debug
     - module: mu::gateway
