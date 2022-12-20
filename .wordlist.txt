@@ -4,6 +4,7 @@ chrono
 clonable
 codegen
 cranelift
+datagram
 Datagram
 datagrams
 funcs
@@ -26,6 +27,7 @@ mufunction
 mugateway
 MuGateway
 MuProtocol
+muxer
 nanos
 nonblocking
 ocsp
