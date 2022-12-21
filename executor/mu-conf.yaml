@@ -8,7 +8,7 @@ log:
 connection_manager:
   listen_address: 127.0.0.1
   listen_port: 12012
-  max_request_response_size_kb: 8
+  max_request_response_size: 8MiB
 gateway_manager:
   listen_address: 0.0.0.0
   # Note, this is a TCP port. Connection manager uses a UDP port, so it's OK for both

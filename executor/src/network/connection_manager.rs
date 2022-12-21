@@ -35,8 +35,8 @@ use super::ConnectionID;
 pub struct ConnectionManagerConfig {
     pub listen_address: IpAddr,
     pub listen_port: u16,
-    #[serde(rename = "max_request_response_size_kb")]
-    pub max_request_response_size: usize,
+    #[serde(rename = "max_request_response_size")]
+    pub max_request_response_size: byte_unit::Byte,
 }
 
 #[async_trait]
@@ -164,7 +164,13 @@ pub fn start(
     endpoint.set_default_client_config(client_config);
 
     let mut codec_builder = LengthDelimitedCodec::builder();
-    codec_builder.max_frame_length(config.max_request_response_size);
+    codec_builder.max_frame_length(
+        config
+            .max_request_response_size
+            .get_bytes()
+            .try_into()
+            .context("Max request/response size exceeds platform word size")?,
+    );
 
     let mailbox = PlainMailboxProcessor::start(
         move |_mb, r| body(r, notification_sender, endpoint, incoming, codec_builder),
@@ -526,6 +532,9 @@ async fn get_next_message(state: &mut ConnectionManagerState) -> IncomingMessage
             Ok(Some(msg)) => break Some(msg),
             Ok(None) => continue,
             Err(id) => {
+                // TODO: if the sending end fails to send their data for non-network-related
+                // reasons (such as the frame length error we were getting just now), this
+                // code will assume the connection has failed and disconnect, which is no good.
                 debug!("Failed to receive messages from {id}, disconnecting");
                 to_disconnect.push(id);
                 if to_disconnect.len() == num_connections {
