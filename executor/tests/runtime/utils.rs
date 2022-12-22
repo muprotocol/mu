@@ -153,7 +153,7 @@ pub async fn create_runtime(
     };
 
     let (functions, provider) = create_map_function_provider(projects).await.unwrap();
-    let usage_aggregator = HashMapUsageAggregator::new();
+    let usage_aggregator = HashMapUsageAggregator::new_boxed();
     let db_manager_config = DBManagerConfig {
         usage_report_duration: Duration::from_secs(1).into(),
     };

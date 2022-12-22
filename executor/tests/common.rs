@@ -15,7 +15,7 @@ pub struct HashMapUsageAggregator {
 }
 
 impl HashMapUsageAggregator {
-    pub fn new() -> Box<dyn UsageAggregator> {
+    pub fn new_boxed() -> Box<dyn UsageAggregator> {
         Box::new(Self {
             inner: Arc::new(Mutex::new(HashMap::new())),
         })

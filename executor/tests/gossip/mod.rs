@@ -90,7 +90,7 @@ async fn test_node_discovery() {
 
     let bridge_states = bridge(seeds, Duration::from_millis(500), Duration::from_millis(1)).await;
 
-    fn contains_port(v: &Vec<(NodeHash, NodeAddress)>, port: u16) -> bool {
+    fn contains_port(v: &[(NodeHash, NodeAddress)], port: u16) -> bool {
         v.iter().filter(|(_, a)| a.port == port).count() > 0
     }
 
@@ -121,12 +121,13 @@ async fn test_node_discovery() {
 // Since the network manager is abstracted out, we don't need to actually
 // send messages on the network. This function simply passes gossip messages
 // directly to each recipient.
+#[allow(clippy::await_holding_refcell_ref)] // No other task will run simultaneously
 async fn bridge(
     gossips: Vec<BridgeState>,
     timeout: Duration,
     log_stats_interval: Duration,
 ) -> Vec<BridgeState> {
-    fn find_by_port(v: &Vec<RefCell<BridgeState>>, port: u16) -> &RefCell<BridgeState> {
+    fn find_by_port(v: &[RefCell<BridgeState>], port: u16) -> &RefCell<BridgeState> {
         v.iter()
             .find(|b| b.borrow().port == port)
             .expect("Couldn't find port in gossips")

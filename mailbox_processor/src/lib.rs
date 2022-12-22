@@ -4,7 +4,7 @@ use tokio::sync::{mpsc, oneshot};
 pub mod callback;
 pub mod plain;
 
-#[derive(Debug, PartialEq, Error)]
+#[derive(Debug, PartialEq, Eq, Error)]
 pub enum Error {
     #[error("Mailbox is stopped")]
     MailboxStopped,

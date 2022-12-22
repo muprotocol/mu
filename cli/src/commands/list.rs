@@ -9,10 +9,10 @@ use crate::config::Config;
 
 #[derive(Debug, Parser)]
 pub enum Command {
-    /// Manage Regions
+    /// List Providers
     Provider(ListProviderCommand),
 
-    /// Manage authorized signers
+    /// List Regions
     Region(ListRegionCommand),
 }
 
@@ -92,10 +92,24 @@ pub fn execute_list_region(config: Config, cmd: ListRegionCommand) -> Result<()>
         println!("{}. {}:", account.1.region_num, account.1.name);
         println!("\tKey: {}", account.0);
         println!("\tRates:");
-        println!("\t\tCPU/Memory: {}", account.1.rates.mufunction_cpu_mem);
-        println!("\t\tDB Gigabytes: {}", account.1.rates.mudb_gb_month);
-        println!("\t\tGateway requests: {}", account.1.rates.gateway_mreqs);
-        println!("\t\tBandwidth: {}", account.1.rates.bandwidth);
+        println!(
+            "\t\tCPU/Memory: {}",
+            account.1.rates.billion_function_mb_instructions
+        );
+        println!(
+            "\t\tDB Gigabytes Storage: {}",
+            account.1.rates.db_gigabyte_months
+        );
+        println!("\t\tDB Reads: {}", account.1.rates.million_db_reads);
+        println!("\t\tDB Writes: {}", account.1.rates.million_db_writes);
+        println!(
+            "\t\tGateway requests: {}",
+            account.1.rates.million_gateway_requests
+        );
+        println!(
+            "\t\tGateway Bandwidth: {}",
+            account.1.rates.gigabytes_gateway_traffic
+        );
     }
 
     Ok(())
