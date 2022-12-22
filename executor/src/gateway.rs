@@ -4,6 +4,7 @@ use std::{borrow::Cow, collections::HashMap, net::IpAddr, path::PathBuf, sync::A
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
+use borsh::BorshSerialize;
 use dyn_clonable::clonable;
 use log::{debug, error, trace};
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel, RequestReplyChannel};
@@ -293,13 +294,13 @@ impl<'a> FromRequest<'a> for RequestHeaders<'a> {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, BorshSerialize, Serialize, Deserialize)]
 pub struct Header<'a> {
     pub name: Cow<'a, str>,
     pub value: Cow<'a, str>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, BorshSerialize, Serialize)]
 pub struct Request<'a> {
     pub method: HttpMethod,
     pub path: Cow<'a, str>,

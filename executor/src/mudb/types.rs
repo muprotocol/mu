@@ -1,5 +1,6 @@
 use std::{fmt::Display, ops::Deref, str::FromStr};
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use mu_stack::StackID;
 use serde::{Deserialize, Serialize};
 use sled::IVec;
@@ -173,7 +174,7 @@ pub type Item = (Key, Value);
 
 pub type KeyFilter = KeyFilterFrom<String>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, BorshDeserialize)]
 pub enum KeyFilterFrom<T: Into<Key>> {
     Exact(T),
     Prefix(String),
@@ -232,7 +233,7 @@ impl AsRef<[u8]> for TableNameInput {
 
 // TableDescription
 
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct TableDescription {
     pub table_name: String,
     // TODO

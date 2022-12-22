@@ -1,15 +1,14 @@
 use crate::{
     mudb::service::{DatabaseID, Item, Key, KeyFilter, TableDescription},
-    runtime::{error::Error, types::FunctionID},
+    runtime::types::FunctionID,
 };
 
-use super::{FromMessage, Message, ToMessage};
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use borsh::{BorshDeserialize, BorshSerialize};
 
 macro_rules! make_request {
     ($name:ident) => {
-        #[derive(Deserialize)]
+        #[derive(BorshDeserialize)]
         pub struct $name {
             pub db_name: String,
             pub table_name: String,
@@ -17,7 +16,7 @@ macro_rules! make_request {
     };
 
     ($name:ident, $($field:ident : $type:ty),*) => {
-        #[derive(Deserialize)]
+        #[derive(BorshDeserialize)]
         pub struct $name {
             pub db_name: String,
             pub table_name: String,
@@ -39,8 +38,8 @@ make_request!(
     update: String
 );
 
-#[derive(Deserialize)]
-pub enum DbRequestDetails {
+#[derive(BorshDeserialize)]
+pub enum Request {
     CreateTable(CreateTableRequest),
     DropTable(DropTableRequest),
     Find(FindRequest),
@@ -48,49 +47,13 @@ pub enum DbRequestDetails {
     Update(UpdateRequest),
 }
 
-pub struct DbRequest {
-    pub id: u64,
-    pub request: DbRequestDetails,
-}
-
-impl FromMessage for DbRequest {
-    const TYPE: &'static str = "DbRequest";
-
-    fn from_message(m: Message) -> Result<Self, Error> {
-        Ok(Self {
-            id: m.id.ok_or(Error::MessageIDIsNone)?,
-            request: serde_json::from_value(m.message)
-                .map_err(Error::MessageDeserializationFailed)?,
-        })
-    }
-}
-
-#[derive(Serialize)]
-pub enum DbResponseDetails {
+#[derive(BorshSerialize)]
+pub enum Response {
     CreateTable(Result<TableDescription, String>),
     DropTable(Result<Option<TableDescription>, String>),
     Find(Result<Vec<Item>, String>),
     Insert(Result<Key, String>),
     Update(Result<Vec<Item>, String>),
-}
-
-#[derive(Serialize)]
-pub struct DbResponse {
-    pub id: u64,
-    pub response: DbResponseDetails,
-}
-
-impl ToMessage for DbResponse {
-    const TYPE: &'static str = "DbResponse";
-
-    fn to_message(&self) -> Result<Message, Error> {
-        Ok(Message {
-            id: Some(self.id),
-            r#type: Self::TYPE.to_owned(),
-            message: serde_json::to_value(&self.response)
-                .map_err(Error::MessageSerializationFailed)?,
-        })
-    }
 }
 
 pub fn database_id(function_id: &FunctionID, db_name: String) -> DatabaseID {

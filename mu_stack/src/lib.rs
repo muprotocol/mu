@@ -10,6 +10,7 @@ use std::{
 use ::protobuf::Message;
 use anyhow::Result;
 use base58::{FromBase58, ToBase58};
+use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
@@ -150,7 +151,9 @@ pub struct GatewayEndpoint {
     pub route_to: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone, Copy, PartialEq, Eq,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum HttpMethod {
     Get,

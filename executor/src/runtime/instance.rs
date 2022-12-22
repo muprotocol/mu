@@ -1,14 +1,10 @@
-use std::{
-    collections::HashMap,
-    io::{BufRead, Write},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use super::{
     error::{Error, FunctionLoadingError},
     function,
     memory::create_memory,
-    message::{database::*, gateway::*, log::Log, FromMessage, Message, ToMessage},
+    packet::{self, InputPacket, OutputPacket},
     types::{FunctionHandle, FunctionID, InstanceID},
 };
 use crate::{
@@ -17,13 +13,11 @@ use crate::{
 };
 
 use anyhow::{anyhow, Result};
-use bytes::BufMut;
-use log::trace;
+use borsh::{BorshDeserialize, BorshSerialize};
+use log::{error, trace};
 use wasmer::{CompilerConfig, Module, RuntimeError, Store};
 use wasmer_compiler_llvm::LLVM;
 use wasmer_middlewares::{metering::MeteringPoints, Metering};
-
-const MESSAGE_READ_BUF_CAP: usize = 8 * 1024;
 
 pub fn create_store(memory_limit: byte_unit::Byte) -> Result<Store, Error> {
     let mut compiler_config = LLVM::default();
@@ -83,6 +77,7 @@ impl InstanceState for Loaded {}
 
 pub struct Running {
     handle: FunctionHandle,
+    io_state: IOState,
 }
 impl InstanceState for Running {}
 
@@ -115,8 +110,17 @@ impl Instance<Loaded> {
     }
 
     pub fn start(self) -> Result<Instance<Running>, Error> {
+        trace!(
+            "starting instance {} of function {}",
+            self.id.instance_id,
+            self.id.function_id
+        );
+
         let handle = function::start(self.state.store, &self.state.module, self.state.envs)?;
-        let state = Running { handle };
+        let state = Running {
+            handle,
+            io_state: IOState::Idle,
+        };
         Ok(Instance {
             id: self.id,
             state,
@@ -127,58 +131,39 @@ impl Instance<Loaded> {
 
 impl Instance<Running> {
     pub fn is_finished(&mut self) -> bool {
-        let is_finished = self.state.handle.is_finished();
-        trace!(
-            "Instance {:?} status is {}",
-            self.id,
-            if is_finished {
-                "finished"
-            } else {
-                "still running "
-            }
-        );
-
-        is_finished
+        self.state.handle.is_finished()
     }
 
-    fn write_to_stdin(&mut self, input: Message) -> Result<(), Error> {
-        let mut bytes = input.as_bytes()?;
-        bytes.put_u8(b'\n');
+    fn send_packet(&mut self, input: InputPacket) -> Result<(), Error> {
+        trace!(
+            "Sending packet to function {:?}, packet: {:?}",
+            self.id,
+            input
+        );
 
-        self.state
-            .handle
-            .io
-            .stdin
-            .write_all(&bytes)
-            .map_err(|e| Error::Internal(anyhow!("can not write message to IO: {e}")))?;
+        if let Err(e) = BorshSerialize::serialize(&input, &mut self.state.handle.io.stdin) {
+            error!("failed to write data to function: {e}");
 
-        self.state
-            .handle
-            .io
-            .stdin
-            .flush()
-            .map_err(|e| Error::Internal(anyhow!("can not flush written message: {e}")))?;
+            return Err(Error::Internal(anyhow!(
+                "failed to write data to function {e}",
+            )));
+        };
+
+        // Do we need this?
+        //self.state
+        //    .handle
+        //    .io
+        //    .stdin
+        //    .flush()
+        //    .map_err(|e| Error::Internal(anyhow!("can not flush written message: {e}")))?;
 
         Ok(())
     }
 
-    fn read_from_stdout(&mut self) -> Result<Message, Error> {
-        let mut buf = String::with_capacity(MESSAGE_READ_BUF_CAP);
-        loop {
-            let bytes_read = self
-                .state
-                .handle
-                .io
-                .stdout
-                .read_line(&mut buf)
-                .map_err(|e| Error::Internal(anyhow!("can not read line from IO: {e}")))?;
-
-            if bytes_read != 0 {
-                break;
-            };
-        }
-
-        return serde_json::from_slice(buf.as_bytes()).map_err(Error::MessageDeserializationFailed);
+    fn receive_packet(&mut self) -> Result<OutputPacket, Error> {
+        BorshDeserialize::deserialize_reader(&mut self.state.handle.io.stdout).map_err(
+            Error::Internal(anyhow!("failed to receive packet from function")),
+        )
     }
 
     //TODO:
@@ -187,12 +172,12 @@ impl Instance<Running> {
     //
     // - It is not good to pass memory_limit here, but will do for now to be able to make usages all
     // here and encapsulate the usage making process.
-    pub async fn run_request(
+    pub async fn run_request<'a>(
         self,
         memory_limit: byte_unit::Byte,
-        request: Message,
-    ) -> Result<(GatewayResponse, Vec<Usage>), (Error, Vec<Usage>)> {
-        tokio::task::spawn_blocking(move || self._run_request(memory_limit, request))
+        request: packet::gateway::Request<'a>,
+    ) -> Result<(packet::gateway::Response, Vec<Usage>), (Error, Vec<Usage>)> {
+        tokio::task::spawn_blocking(move || self.inner_run_request(memory_limit, request))
             .await
             .map_err(|_| {
                 (
@@ -202,13 +187,15 @@ impl Instance<Running> {
             })?
     }
 
-    fn _run_request(
+    #[inline]
+    fn inner_run_request(
         mut self,
         memory_limit: byte_unit::Byte,
-        request: Message,
-    ) -> Result<(GatewayResponse, Vec<Usage>), (Error, Vec<Usage>)> {
+        request: packet::gateway::Request,
+    ) -> Result<(packet::gateway::Response, Vec<Usage>), (Error, Vec<Usage>)> {
         //TODO: Refactor these to `week` and `strong` when we had database replication
         let (mut database_read_count, mut database_write_count) = (0, 0);
+
         trace!(
             "Running function `{}` instance `{}`",
             self.id.function_id,
@@ -220,6 +207,7 @@ impl Instance<Running> {
                 "Instance {:?} is already exited before sending request",
                 self.id
             );
+
             return Err((
                 Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(
                     RuntimeError::new("Function Early Exit"),
@@ -228,170 +216,198 @@ impl Instance<Running> {
             ));
         }
 
-        self.write_to_stdin(request).map_err(|e| (e, vec![]))?;
+        //TODO: Use a counter for packet id
+        let packet = InputPacket {
+            id: 0,
+            message: request,
+        };
+
+        self.send_packet(packet).map_err(|e| (e, vec![]))?;
+        self.state.io_state = IOState::Processing;
 
         loop {
-            if self.is_finished() {
-                trace!("Instance {:?} exited early", self.id);
-                return Err((
-                    Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(
-                        RuntimeError::new("Function Early Exit"),
-                    )),
+            match (self.state.io_state, self.is_finished()) {
+                // Should never get into this case
+                (IOState::Idle, _) => Err((
+                    Error::Internal("Invalid instance io state, should be processing, was idle"),
                     vec![],
-                ));
-            }
-
-            match self.read_from_stdout() {
-                Ok(message) => match message.r#type.as_str() {
-                    GatewayResponse::TYPE => {
-                        let resp =
-                            GatewayResponse::from_message(message).map_err(|e| (e, vec![]))?;
-
-                        let result = tokio::runtime::Handle::current()
-                            .block_on(self.state.handle.join_handle)
-                            .map(move |m| {
-                                m.map(|points| {
-                                    (
-                                        resp,
-                                        create_usage(
-                                            database_read_count,
-                                            database_write_count,
-                                            metering_point_to_instructions_count(points),
-                                            memory_limit,
-                                        ),
-                                    )
-                                })
-                                .map_err(|(e, points)| {
-                                    (
-                                        e,
-                                        create_usage(
-                                            database_read_count,
-                                            database_write_count,
-                                            metering_point_to_instructions_count(points),
-                                            memory_limit,
-                                        ),
-                                    )
-                                })
-                            })
-                            .map_err(|_| {
-                                (
-                                    Error::Internal(anyhow!("Failed to run function task to end")),
-                                    vec![],
-                                )
-                            })?;
-
-                        return result;
-                    }
-
-                    DbRequest::TYPE => {
-                        let db_req = DbRequest::from_message(message).map_err(|e| (e, vec![]))?;
-                        let db_resp = match db_req.request {
-                            DbRequestDetails::CreateTable(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on(self.database_service.create_table(
-                                        database_id(&self.id.function_id, req.db_name),
-                                        req.table_name,
-                                    ))
-                                    .map_err(|e| e.to_string());
-
-                                database_write_count += 1;
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::CreateTable(res),
-                                }
-                            }
-
-                            DbRequestDetails::DropTable(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on(self.database_service.delete_table(
-                                        database_id(&self.id.function_id, req.db_name),
-                                        req.table_name,
-                                    ))
-                                    .map_err(|e| e.to_string());
-
-                                database_write_count += 1;
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::DropTable(res),
-                                }
-                            }
-
-                            DbRequestDetails::Find(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on(self.database_service.find_item(
-                                        database_id(&self.id.function_id, req.db_name),
-                                        req.table_name,
-                                        req.key_filter,
-                                        req.value_filter.try_into().map_err(|_| {
-                                            (Error::DBError("failed to parse value filter"), vec![])
-                                        })?,
-                                    ))
-                                    .map_err(|e| e.to_string());
-
-                                database_read_count += 1;
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::Find(res),
-                                }
-                            }
-                            DbRequestDetails::Insert(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on({
-                                        self.database_service.insert_one_item(
-                                            database_id(&self.id.function_id, req.db_name),
-                                            req.table_name,
-                                            req.key,
-                                            req.value,
-                                        )
-                                    })
-                                    .map_err(|e| e.to_string());
-
-                                database_write_count += 1;
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::Insert(res),
-                                }
-                            }
-                            DbRequestDetails::Update(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on(self.database_service.update_item(
-                                        database_id(&self.id.function_id, req.db_name),
-                                        req.table_name,
-                                        req.key_filter,
-                                        req.value_filter.try_into().map_err(|_| {
-                                            (Error::DBError("failed to parse value filter"), vec![])
-                                        })?,
-                                        req.update.try_into().map_err(|_| {
-                                            (Error::DBError("failed to parse updater"), vec![])
-                                        })?,
-                                    ))
-                                    .map_err(|e| e.to_string());
-
-                                database_write_count += 1;
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::Update(res),
-                                }
-                            }
-                        };
-
-                        let msg = db_resp.to_message().map_err(|e| (e, vec![]))?;
-                        self.write_to_stdin(msg).map_err(|e| (e, vec![]))?;
-                    }
-
-                    Log::TYPE => {
-                        let log = Log::from_message(message).map_err(|e| (e, vec![]))?;
-                        println!("Log: {log:#?}");
-                    }
-                    t => return Err((Error::InvalidMessageType(t.to_string()), vec![])),
-                },
-                Err(e) => println!("Error while parsing response: {e:?}"),
+                )),
+                (IOState::Processing, true) => {
+                    trace!(
+                        "Instance {:?} is finished while still processing request",
+                        self.id
+                    );
+                    return Err((
+                        Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(
+                            RuntimeError::new("Function Early Exit"),
+                        )),
+                        vec![],
+                    ));
+                }
+                (IOState::Processing, false) => todo!(),
+                (IOState::InRuntimeCall, true) => todo!(),
+                (IOState::InRuntimeCall, false) => todo!(),
+                (IOState::Closed, true) => todo!(),
+                (IOState::Closed, false) => todo!(),
             };
         }
+
+        //match self.recieve_packet() {
+        //    Ok(message) => match message.r#type.as_str() {
+        //        GatewayResponse::TYPE => {
+        //            let resp = GatewayResponse::from_message(message).map_err(|e| (e, vec![]))?;
+
+        //            let result = tokio::runtime::Handle::current()
+        //                .block_on(self.state.handle.join_handle)
+        //                .map(move |m| {
+        //                    m.map(|points| {
+        //                        (
+        //                            resp,
+        //                            create_usage(
+        //                                database_read_count,
+        //                                database_write_count,
+        //                                metering_point_to_instructions_count(points),
+        //                                memory_limit,
+        //                            ),
+        //                        )
+        //                    })
+        //                    .map_err(|(e, points)| {
+        //                        (
+        //                            e,
+        //                            create_usage(
+        //                                database_read_count,
+        //                                database_write_count,
+        //                                metering_point_to_instructions_count(points),
+        //                                memory_limit,
+        //                            ),
+        //                        )
+        //                    })
+        //                })
+        //                .map_err(|_| {
+        //                    (
+        //                        Error::Internal(anyhow!("Failed to run function task to end")),
+        //                        vec![],
+        //                    )
+        //                })?;
+
+        //            return result;
+        //        }
+
+        //        DbRequest::TYPE => {
+        //            let db_req = DbRequest::from_message(message).map_err(|e| (e, vec![]))?;
+        //            let db_resp = match db_req.request {
+        //                DbRequestDetails::CreateTable(req) => {
+        //                    let res = tokio::runtime::Handle::current()
+        //                        .block_on(self.database_service.create_table(
+        //                            database_id(&self.id.function_id, req.db_name),
+        //                            req.table_name,
+        //                        ))
+        //                        .map_err(|e| e.to_string());
+
+        //                    database_write_count += 1;
+
+        //                    DbResponse {
+        //                        id: db_req.id,
+        //                        response: DbResponseDetails::CreateTable(res),
+        //                    }
+        //                }
+
+        //                DbRequestDetails::DropTable(req) => {
+        //                    let res = tokio::runtime::Handle::current()
+        //                        .block_on(self.database_service.delete_table(
+        //                            database_id(&self.id.function_id, req.db_name),
+        //                            req.table_name,
+        //                        ))
+        //                        .map_err(|e| e.to_string());
+
+        //                    database_write_count += 1;
+
+        //                    DbResponse {
+        //                        id: db_req.id,
+        //                        response: DbResponseDetails::DropTable(res),
+        //                    }
+        //                }
+
+        //                DbRequestDetails::Find(req) => {
+        //                    let res = tokio::runtime::Handle::current()
+        //                        .block_on(self.database_service.find_item(
+        //                            database_id(&self.id.function_id, req.db_name),
+        //                            req.table_name,
+        //                            req.key_filter,
+        //                            req.value_filter.try_into().map_err(|_| {
+        //                                (Error::DBError("failed to parse value filter"), vec![])
+        //                            })?,
+        //                        ))
+        //                        .map_err(|e| e.to_string());
+
+        //                    database_read_count += 1;
+
+        //                    DbResponse {
+        //                        id: db_req.id,
+        //                        response: DbResponseDetails::Find(res),
+        //                    }
+        //                }
+        //                DbRequestDetails::Insert(req) => {
+        //                    let res = tokio::runtime::Handle::current()
+        //                        .block_on({
+        //                            self.database_service.insert_one_item(
+        //                                database_id(&self.id.function_id, req.db_name),
+        //                                req.table_name,
+        //                                req.key,
+        //                                req.value,
+        //                            )
+        //                        })
+        //                        .map_err(|e| e.to_string());
+
+        //                    database_write_count += 1;
+
+        //                    DbResponse {
+        //                        id: db_req.id,
+        //                        response: DbResponseDetails::Insert(res),
+        //                    }
+        //                }
+        //                DbRequestDetails::Update(req) => {
+        //                    let res = tokio::runtime::Handle::current()
+        //                        .block_on(self.database_service.update_item(
+        //                            database_id(&self.id.function_id, req.db_name),
+        //                            req.table_name,
+        //                            req.key_filter,
+        //                            req.value_filter.try_into().map_err(|_| {
+        //                                (Error::DBError("failed to parse value filter"), vec![])
+        //                            })?,
+        //                            req.update.try_into().map_err(|_| {
+        //                                (Error::DBError("failed to parse updater"), vec![])
+        //                            })?,
+        //                        ))
+        //                        .map_err(|e| e.to_string());
+
+        //                    database_write_count += 1;
+
+        //                    DbResponse {
+        //                        id: db_req.id,
+        //                        response: DbResponseDetails::Update(res),
+        //                    }
+        //                }
+        //            };
+
+        //            let msg = db_resp.to_message().map_err(|e| (e, vec![]))?;
+        //            self.send_packet(msg).map_err(|e| (e, vec![]))?;
+        //        }
+
+        //        Log::TYPE => {
+        //            let log = Log::from_message(message).map_err(|e| (e, vec![]))?;
+        //            println!("Log: {log:#?}");
+        //        }
+        //        t => return Err((Error::InvalidMessageType(t.to_string()), vec![])),
+        //    },
+        //    Err(e) => println!("Error while parsing response: {e:?}"),
+        //};
     }
+}
+
+enum IOState {
+    Idle,
+    Processing,
+    InRuntimeCall,
+    Closed,
 }

@@ -1,7 +1,4 @@
-use super::{
-    error::Error,
-    message::{gateway::GatewayResponse, Message},
-};
+use super::{error::Error, packet};
 use mu_stack::{FunctionRuntime, StackID};
 
 use anyhow::Result;
@@ -27,11 +24,11 @@ pub trait FunctionProvider: Send {
 }
 
 #[derive(Debug)]
-pub struct InvokeFunctionRequest {
+pub struct InvokeFunctionRequest<'a> {
     // TODO: not needed in public interface
     pub function_id: FunctionID,
-    pub message: Message,
-    pub reply: ReplyChannel<Result<GatewayResponse, Error>>,
+    pub request: packet::gateway::Request<'a>,
+    pub reply: ReplyChannel<Result<packet::gateway::Response, Error>>,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]

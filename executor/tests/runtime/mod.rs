@@ -344,3 +344,27 @@ async fn function_usage_is_reported_correctly_2() {
 
     runtime.stop().await.unwrap();
 }
+
+#[tokio::test]
+#[serial]
+#[ignore = "Not fixed yet"]
+async fn failing_function_should_not_hang() {
+    let projects = vec![create_project("failing", None)];
+    let (runtime, _, _) = create_runtime(&projects).await;
+
+    let request = gateway::Request {
+        method: mu_stack::HttpMethod::Get,
+        path: "/get_name",
+        query: HashMap::new(),
+        headers: Vec::new(),
+        data: "Chappy",
+    };
+
+    let resp = runtime
+        .invoke_function(projects[0].id.clone(), request)
+        .await
+        .unwrap();
+
+    assert_eq!("Hello Chappy, welcome to MuRuntime", resp.body);
+    runtime.stop().await.unwrap();
+}

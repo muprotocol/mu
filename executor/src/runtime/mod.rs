@@ -6,7 +6,7 @@ pub mod error;
 pub mod function;
 pub mod instance;
 pub mod memory;
-pub mod message;
+pub mod packet;
 pub mod providers;
 pub mod types;
 
@@ -23,15 +23,12 @@ use wasmer_cache::{Cache, FileSystemCache};
 use self::{
     error::Error,
     instance::{create_store, Instance, Loaded},
-    message::gateway::GatewayRequest,
     types::{
         FunctionDefinition, FunctionID, FunctionProvider, InvokeFunctionRequest, RuntimeConfig,
     },
 };
 use crate::{
-    gateway,
-    mudb::service::DatabaseManager,
-    runtime::{error::FunctionLoadingError, message::ToMessage},
+    gateway, mudb::service::DatabaseManager, runtime::error::FunctionLoadingError,
     stack::usage_aggregator::UsageAggregator,
 };
 
@@ -41,7 +38,7 @@ pub trait Runtime: Clone + Send + Sync {
     async fn invoke_function<'a>(
         &self,
         function_id: FunctionID,
-        message: gateway::Request<'a>,
+        request: gateway::Request<'a>,
     ) -> Result<gateway::Response, Error>;
 
     async fn stop(&self) -> Result<(), Error>;
@@ -52,7 +49,7 @@ pub trait Runtime: Clone + Send + Sync {
 }
 
 #[derive(Debug)]
-pub enum MailboxMessage {
+pub enum MailboxMessage<'a> {
     InvokeFunction(InvokeFunctionRequest),
     Shutdown,
 
@@ -63,7 +60,7 @@ pub enum MailboxMessage {
 
 #[derive(Clone)]
 struct RuntimeImpl {
-    mailbox: CallbackMailboxProcessor<MailboxMessage>,
+    mailbox: CallbackMailboxProcessor<MailboxMessage>>,
 }
 
 struct CacheHashAndMemoryLimit {
@@ -173,6 +170,7 @@ impl RuntimeState {
     }
 
     async fn instantiate_function(&mut self, function_id: FunctionID) -> Result<Instance<Loaded>> {
+        trace!("instantiate function {}", function_id);
         let definition = self
             .function_provider
             .get(&function_id)
@@ -183,6 +181,7 @@ impl RuntimeState {
             })?
             .to_owned();
 
+        trace!("loading function {}", function_id);
         let (store, module) = self.load_module(&function_id)?;
         Ok(Instance::new(
             function_id,
@@ -199,21 +198,21 @@ impl Runtime for RuntimeImpl {
     async fn invoke_function<'a>(
         &self,
         function_id: FunctionID,
-        message: gateway::Request<'a>,
+        request: gateway::Request<'a>,
     ) -> Result<gateway::Response, Error> {
-        let message = GatewayRequest::new(message).to_message()?;
+        let request = packet::gateway::Request::new(request);
 
         self.mailbox
             .post_and_reply(|r| {
                 MailboxMessage::InvokeFunction(InvokeFunctionRequest {
                     function_id,
-                    message,
+                    request,
                     reply: r,
                 })
             })
             .await
             .map_err(|e| Error::Internal(e.into()))?
-            .map(|r| r.response)
+            .map(|r| r.0)
     }
 
     async fn stop(&self) -> Result<(), Error> {
@@ -285,7 +284,7 @@ async fn mailbox_step(
                         Err(e) => req.reply.reply(Err(e)),
                         Ok(i) => {
                             let result = i
-                                .run_request(memory_limit, req.message)
+                                .run_request(memory_limit, req.request)
                                 .await
                                 .map(|(resp, usages)| {
                                     usage_aggregator
