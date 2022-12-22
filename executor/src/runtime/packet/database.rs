@@ -1,3 +1,8 @@
+use std::{
+    borrow::{Borrow, Cow},
+    io::Cursor,
+};
+
 use crate::{
     mudb::service::{DatabaseID, Item, Key, KeyFilter, TableDescription},
     runtime::types::FunctionID,
@@ -5,6 +10,8 @@ use crate::{
 
 use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
+
+use super::{FromPacket, IntoPacket, PacketType};
 
 macro_rules! make_request {
     ($name:ident) => {
@@ -60,5 +67,22 @@ pub fn database_id(function_id: &FunctionID, db_name: String) -> DatabaseID {
     DatabaseID {
         stack_id: function_id.stack_id,
         db_name,
+    }
+}
+
+impl FromPacket<'static> for Request {
+    const TYPE: super::PacketType = PacketType::DbRequest;
+
+    fn from_bytes(bytes: std::borrow::Cow<'static, [u8]>) -> Result<Self, std::io::Error> {
+        let mut cursor: Cursor<&[u8]> = Cursor::new(bytes.borrow());
+        BorshDeserialize::deserialize_reader(&mut cursor)
+    }
+}
+
+impl IntoPacket<'static> for Response {
+    const TYPE: super::PacketType = PacketType::DbResponse;
+
+    fn as_bytes(&self) -> Result<std::borrow::Cow<'static, [u8]>, std::io::Error> {
+        self.try_to_vec().map(Cow::Owned)
     }
 }

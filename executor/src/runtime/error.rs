@@ -1,7 +1,7 @@
 //TODO
 #![allow(dead_code)]
 
-use super::types::FunctionID;
+use super::{packet::PacketError, types::FunctionID};
 use thiserror::Error;
 use wasmer::{ExportError, InstantiationError, RuntimeError};
 use wasmer_wasi::{WasiError, WasiStateCreationError};
@@ -75,4 +75,7 @@ pub enum FunctionLoadingError {
 
     #[error("Function requested memory size is too big")]
     RequestedMemorySizeTooBig,
+
+    #[error("Failed to serialize request: {0}")]
+    SerializtionError(PacketError),
 }

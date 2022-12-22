@@ -4,7 +4,7 @@ use super::{
     error::{Error, FunctionLoadingError},
     function,
     memory::create_memory,
-    packet::{self, InputPacket, OutputPacket},
+    packet::{self, Packet},
     types::{FunctionHandle, FunctionID, InstanceID},
 };
 use crate::{
@@ -134,7 +134,7 @@ impl Instance<Running> {
         self.state.handle.is_finished()
     }
 
-    fn send_packet(&mut self, input: InputPacket) -> Result<(), Error> {
+    fn send_packet<'a>(&mut self, input: Packet<'a>) -> Result<(), Error> {
         trace!(
             "Sending packet to function {:?}, packet: {:?}",
             self.id,
@@ -160,7 +160,7 @@ impl Instance<Running> {
         Ok(())
     }
 
-    fn receive_packet(&mut self) -> Result<OutputPacket, Error> {
+    fn receive_packet<'a>(&'a mut self) -> Result<Packet<'a>, Error> {
         BorshDeserialize::deserialize_reader(&mut self.state.handle.io.stdout).map_err(|e| {
             error!("Error in deserializing packet: {e}");
             Error::Internal(anyhow!("failed to receive packet from function"))
@@ -176,7 +176,7 @@ impl Instance<Running> {
     pub async fn run_request(
         self,
         memory_limit: byte_unit::Byte,
-        request: packet::gateway::Request<'static>,
+        request: Packet<'static>,
     ) -> Result<(packet::gateway::Response, Vec<Usage>), (Error, Vec<Usage>)> {
         tokio::task::spawn_blocking(move || self.inner_run_request(memory_limit, request))
             .await
@@ -189,10 +189,10 @@ impl Instance<Running> {
     }
 
     #[inline]
-    fn inner_run_request(
+    fn inner_run_request<'a>(
         mut self,
         memory_limit: byte_unit::Byte,
-        request: packet::gateway::Request<'static>,
+        request: Packet<'static>,
     ) -> Result<(packet::gateway::Response, Vec<Usage>), (Error, Vec<Usage>)> {
         //TODO: Refactor these to `week` and `strong` when we had database replication
         let (mut database_read_count, mut database_write_count) = (0, 0);
@@ -217,13 +217,7 @@ impl Instance<Running> {
             ));
         }
 
-        //TODO: Use a counter for packet id
-        let packet = InputPacket {
-            id: 0,
-            message: packet::InputMessage::Request(request),
-        };
-
-        self.send_packet(packet).map_err(|e| (e, vec![]))?;
+        self.send_packet(request).map_err(|e| (e, vec![]))?;
         self.state.io_state = IOState::Processing;
 
         loop {

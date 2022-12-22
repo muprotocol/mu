@@ -23,6 +23,7 @@ use wasmer_cache::{Cache, FileSystemCache};
 use self::{
     error::Error,
     instance::{create_store, Instance, Loaded},
+    packet::IntoPacket,
     types::{
         FunctionDefinition, FunctionID, FunctionProvider, InvokeFunctionRequest, RuntimeConfig,
     },
@@ -35,10 +36,10 @@ use crate::{
 #[async_trait]
 #[clonable]
 pub trait Runtime: Clone + Send + Sync {
-    async fn invoke_function(
+    async fn invoke_function<'a>(
         &self,
         function_id: FunctionID,
-        request: gateway::Request<'static>,
+        request: gateway::Request<'a>,
     ) -> Result<gateway::Response, Error>;
 
     async fn stop(&self) -> Result<(), Error>;
@@ -50,7 +51,7 @@ pub trait Runtime: Clone + Send + Sync {
 
 #[derive(Debug)]
 pub enum MailboxMessage {
-    InvokeFunction(InvokeFunctionRequest<'static>),
+    InvokeFunction(InvokeFunctionRequest),
     Shutdown,
 
     AddFunctions(Vec<FunctionDefinition>),
@@ -195,12 +196,15 @@ impl RuntimeState {
 
 #[async_trait]
 impl Runtime for RuntimeImpl {
-    async fn invoke_function(
+    async fn invoke_function<'a>(
         &self,
         function_id: FunctionID,
-        request: gateway::Request<'static>,
+        request: gateway::Request<'a>,
     ) -> Result<gateway::Response, Error> {
-        let request = packet::gateway::Request::new(request);
+        let request = packet::gateway::Request(request)
+            .into_packet(0)
+            .map(|p| p.to_owned())
+            .map_err(|e| Error::FunctionLoadingError(FunctionLoadingError::SerializtionError(e)))?;
 
         self.mailbox
             .post_and_reply(|r| {
