@@ -8,7 +8,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 macro_rules! make_request {
     ($name:ident) => {
-        #[derive(BorshDeserialize)]
+        #[derive(Debug, BorshDeserialize)]
         pub struct $name {
             pub db_name: String,
             pub table_name: String,
@@ -16,7 +16,7 @@ macro_rules! make_request {
     };
 
     ($name:ident, $($field:ident : $type:ty),*) => {
-        #[derive(BorshDeserialize)]
+        #[derive(Debug, BorshDeserialize)]
         pub struct $name {
             pub db_name: String,
             pub table_name: String,
@@ -38,7 +38,7 @@ make_request!(
     update: String
 );
 
-#[derive(BorshDeserialize)]
+#[derive(Debug, BorshDeserialize)]
 pub enum Request {
     CreateTable(CreateTableRequest),
     DropTable(DropTableRequest),
@@ -47,7 +47,7 @@ pub enum Request {
     Update(UpdateRequest),
 }
 
-#[derive(BorshSerialize)]
+#[derive(Debug, BorshSerialize)]
 pub enum Response {
     CreateTable(Result<TableDescription, String>),
     DropTable(Result<Option<TableDescription>, String>),

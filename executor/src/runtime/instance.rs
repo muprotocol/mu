@@ -161,9 +161,10 @@ impl Instance<Running> {
     }
 
     fn receive_packet(&mut self) -> Result<OutputPacket, Error> {
-        BorshDeserialize::deserialize_reader(&mut self.state.handle.io.stdout).map_err(
-            Error::Internal(anyhow!("failed to receive packet from function")),
-        )
+        BorshDeserialize::deserialize_reader(&mut self.state.handle.io.stdout).map_err(|e| {
+            error!("Error in deserializing packet: {e}");
+            Error::Internal(anyhow!("failed to receive packet from function"))
+        })
     }
 
     //TODO:
@@ -172,10 +173,10 @@ impl Instance<Running> {
     //
     // - It is not good to pass memory_limit here, but will do for now to be able to make usages all
     // here and encapsulate the usage making process.
-    pub async fn run_request<'a>(
+    pub async fn run_request(
         self,
         memory_limit: byte_unit::Byte,
-        request: packet::gateway::Request<'a>,
+        request: packet::gateway::Request<'static>,
     ) -> Result<(packet::gateway::Response, Vec<Usage>), (Error, Vec<Usage>)> {
         tokio::task::spawn_blocking(move || self.inner_run_request(memory_limit, request))
             .await
@@ -191,7 +192,7 @@ impl Instance<Running> {
     fn inner_run_request(
         mut self,
         memory_limit: byte_unit::Byte,
-        request: packet::gateway::Request,
+        request: packet::gateway::Request<'static>,
     ) -> Result<(packet::gateway::Response, Vec<Usage>), (Error, Vec<Usage>)> {
         //TODO: Refactor these to `week` and `strong` when we had database replication
         let (mut database_read_count, mut database_write_count) = (0, 0);
@@ -219,7 +220,7 @@ impl Instance<Running> {
         //TODO: Use a counter for packet id
         let packet = InputPacket {
             id: 0,
-            message: request,
+            message: packet::InputMessage::Request(request),
         };
 
         self.send_packet(packet).map_err(|e| (e, vec![]))?;
@@ -228,10 +229,14 @@ impl Instance<Running> {
         loop {
             match (self.state.io_state, self.is_finished()) {
                 // Should never get into this case
-                (IOState::Idle, _) => Err((
-                    Error::Internal("Invalid instance io state, should be processing, was idle"),
-                    vec![],
-                )),
+                (IOState::Idle, _) => {
+                    return Err((
+                        Error::Internal(anyhow!(
+                            "Invalid instance io state, should be processing, was idle"
+                        )),
+                        vec![],
+                    ));
+                }
                 (IOState::Processing, true) => {
                     trace!(
                         "Instance {:?} is finished while still processing request",
@@ -405,6 +410,7 @@ impl Instance<Running> {
     }
 }
 
+#[derive(Copy, Clone)]
 enum IOState {
     Idle,
     Processing,

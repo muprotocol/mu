@@ -65,9 +65,8 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "borsh"
-version = "0.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15bf3650200d8bffa99015595e10f1fbd17de07abbc25bb067da79e769939bfa"
+version = "0.0.0"
+source = "git+https://github.com/muprotocol/borsh-rs?branch=feature/reader-deserialization#ab3d60e4a4507d1cf6c1224b652df26b4ae01854"
 dependencies = [
  "borsh-derive",
  "hashbrown 0.11.2",
@@ -75,9 +74,8 @@ dependencies = [
 
 [[package]]
 name = "borsh-derive"
-version = "0.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6441c552f230375d18e3cc377677914d2ca2b0d36e52129fe15450a2dce46775"
+version = "0.0.0"
+source = "git+https://github.com/muprotocol/borsh-rs?branch=feature/reader-deserialization#ab3d60e4a4507d1cf6c1224b652df26b4ae01854"
 dependencies = [
  "borsh-derive-internal",
  "borsh-schema-derive-internal",
@@ -88,9 +86,8 @@ dependencies = [
 
 [[package]]
 name = "borsh-derive-internal"
-version = "0.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5449c28a7b352f2d1e592a8a28bf139bc71afb0764a14f3c02500935d8c44065"
+version = "0.0.0"
+source = "git+https://github.com/muprotocol/borsh-rs?branch=feature/reader-deserialization#ab3d60e4a4507d1cf6c1224b652df26b4ae01854"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -99,9 +96,8 @@ dependencies = [
 
 [[package]]
 name = "borsh-schema-derive-internal"
-version = "0.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdbd5696d8bfa21d53d9fe39a714a18538bad11492a42d066dbbc395fb1951c0"
+version = "0.0.0"
+source = "git+https://github.com/muprotocol/borsh-rs?branch=feature/reader-deserialization#ab3d60e4a4507d1cf6c1224b652df26b4ae01854"
 dependencies = [
  "proc-macro2",
  "quote",

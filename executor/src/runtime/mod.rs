@@ -35,10 +35,10 @@ use crate::{
 #[async_trait]
 #[clonable]
 pub trait Runtime: Clone + Send + Sync {
-    async fn invoke_function<'a>(
+    async fn invoke_function(
         &self,
         function_id: FunctionID,
-        request: gateway::Request<'a>,
+        request: gateway::Request<'static>,
     ) -> Result<gateway::Response, Error>;
 
     async fn stop(&self) -> Result<(), Error>;
@@ -49,8 +49,8 @@ pub trait Runtime: Clone + Send + Sync {
 }
 
 #[derive(Debug)]
-pub enum MailboxMessage<'a> {
-    InvokeFunction(InvokeFunctionRequest),
+pub enum MailboxMessage {
+    InvokeFunction(InvokeFunctionRequest<'static>),
     Shutdown,
 
     AddFunctions(Vec<FunctionDefinition>),
@@ -60,7 +60,7 @@ pub enum MailboxMessage<'a> {
 
 #[derive(Clone)]
 struct RuntimeImpl {
-    mailbox: CallbackMailboxProcessor<MailboxMessage>>,
+    mailbox: CallbackMailboxProcessor<MailboxMessage>,
 }
 
 struct CacheHashAndMemoryLimit {
@@ -195,10 +195,10 @@ impl RuntimeState {
 
 #[async_trait]
 impl Runtime for RuntimeImpl {
-    async fn invoke_function<'a>(
+    async fn invoke_function(
         &self,
         function_id: FunctionID,
-        request: gateway::Request<'a>,
+        request: gateway::Request<'static>,
     ) -> Result<gateway::Response, Error> {
         let request = packet::gateway::Request::new(request);
 

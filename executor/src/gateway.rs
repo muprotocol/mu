@@ -4,7 +4,7 @@ use std::{borrow::Cow, collections::HashMap, net::IpAddr, path::PathBuf, sync::A
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
-use borsh::BorshSerialize;
+use borsh::{BorshDeserialize, BorshSerialize};
 use dyn_clonable::clonable;
 use log::{debug, error, trace};
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel, RequestReplyChannel};
@@ -294,7 +294,7 @@ impl<'a> FromRequest<'a> for RequestHeaders<'a> {
     }
 }
 
-#[derive(Debug, BorshSerialize, Serialize, Deserialize)]
+#[derive(Debug, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct Header<'a> {
     pub name: Cow<'a, str>,
     pub value: Cow<'a, str>,
@@ -327,7 +327,7 @@ impl<'a> Request<'a> {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, BorshDeserialize)]
 pub struct Response {
     pub status: u16,
     pub content_type: String,

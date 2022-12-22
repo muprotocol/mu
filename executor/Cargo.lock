@@ -2802,7 +2802,7 @@ dependencies = [
  "anyhow",
  "base58",
  "base64 0.13.0",
- "borsh 0.9.3",
+ "borsh 0.0.0",
  "byte-unit",
  "bytes",
  "clap 4.0.8",

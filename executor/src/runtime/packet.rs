@@ -10,19 +10,19 @@ pub struct InputPacket<'a> {
     pub message: InputMessage<'a>,
 }
 
-#[derive(BorshSerialize)]
+#[derive(Debug, BorshSerialize)]
 pub enum InputMessage<'a> {
     Request(gateway::Request<'a>),
     DbResponse(database::Response),
 }
 
-#[derive(BorshDeserialize)]
+#[derive(Debug, BorshDeserialize)]
 pub struct OutputPacket {
     pub id: u64,
     pub message: OutputMessage,
 }
 
-#[derive(BorshDeserialize)]
+#[derive(Debug, BorshDeserialize)]
 pub enum OutputMessage {
     Response(gateway::Response),
     DbRequest(database::Request),
