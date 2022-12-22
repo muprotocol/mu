@@ -1,13 +1,15 @@
 {
-    "version": "0.2",
-    "language": "en",
-    "caseSensitive": true,
-    "dictionaries": ["MuWords"],
-    "dictionaryDefinitions": [
-      {
-        "name": "MuWords",
-        "path": "./.wordlist.txt",
-        "addWords": true
-      }
-    ]
-  }
+  "version": "0.2",
+  "language": "en",
+  "caseSensitive": false,
+  "dictionaries": [
+    "MuWords"
+  ],
+  "dictionaryDefinitions": [
+    {
+      "name": "MuWords",
+      "path": "./.wordlist.txt",
+      "addWords": true
+    }
+  ]
+}

@@ -2,10 +2,10 @@ log:
   level: info
   filters:
     - module: mu
-      level: debug
+      level: info
     - module: mu::stack::scheduler
       level: debug
-    - module: mu::stack::blockchain_monitor
+    - module: mu::gateway
       level: trace
     - module: mu::network::connection_manager
       level: info
