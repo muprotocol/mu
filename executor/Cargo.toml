@@ -59,10 +59,14 @@ spl-token = "3.3"
 chrono = "0.4"
 byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
 rust-embed = "6.4.2"
+http = "0.2"
 
 [dev-dependencies]
 serial_test = "0.8"
 test-log = "0.2"
+
+[build-dependencies]
+reqwest = { version = "0.11", features = ["blocking"] }
 
 [lib]
 name = "mu"

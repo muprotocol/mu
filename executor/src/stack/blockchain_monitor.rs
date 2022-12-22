@@ -59,7 +59,7 @@ pub enum BlockchainMonitorNotification {
 
 #[derive(Deserialize)]
 pub struct BlockchainMonitorConfig {
-    solana_cluster_rpc_url: String,
+    solana_cluster_rpc_url: String, // TODO: Use ConfigUri
     solana_cluster_pub_sub_url: String,
     solana_provider_public_key: Base58PublicKey,
     solana_region_number: u32,

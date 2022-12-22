@@ -1,6 +1,6 @@
 mod serde_support;
 
-pub use serde_support::{ConfigDuration, ConfigLogLevelFilter};
+pub use serde_support::{ConfigDuration, ConfigLogLevelFilter, ConfigUri};
 
 use anyhow::{Context, Result};
 use config::{Config, Environment, File, FileFormat};

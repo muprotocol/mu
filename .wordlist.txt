@@ -59,6 +59,8 @@ struct
 subcommands
 sysvar
 thiserror
+tikv
+Tikv
 tokio
 tunables
 undeployed

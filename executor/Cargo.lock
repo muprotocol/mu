@@ -1681,6 +1681,7 @@ dependencies = [
  "dyn-clone",
  "env_logger",
  "futures",
+ "http",
  "itertools",
  "log",
  "mailbox_processor",
