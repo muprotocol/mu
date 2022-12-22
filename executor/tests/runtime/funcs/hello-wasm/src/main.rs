@@ -36,7 +36,7 @@ pub struct Request {
     pub path: String,
     pub query: HashMap<String, String>,
     pub headers: Vec<Header>,
-    pub data: String,
+    pub data: Vec<u8>,
 }
 
 #[derive(Serialize, Debug)]
@@ -44,7 +44,7 @@ pub struct Response {
     pub status: u16,
     pub content_type: String,
     pub headers: Vec<Header>,
-    pub body: String,
+    pub body: Vec<u8>,
 }
 
 #[derive(Debug, Serialize)]
@@ -101,6 +101,11 @@ fn main() {
         .map_err(|e| log(e.to_string()))
         .unwrap();
 
-    let body = format!("Hello {}, welcome to MuRuntime", request.data);
+    let body = format!(
+        "Hello {}, welcome to MuRuntime",
+        String::from_utf8_lossy(&request.data)
+    )
+    .as_bytes()
+    .to_vec();
     response(body);
 }

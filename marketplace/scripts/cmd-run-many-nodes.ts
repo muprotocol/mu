@@ -27,7 +27,8 @@ asyncMain(async () => {
         let tempDir = `/tmp/mu-executor/${i}/`;
         run(`mkdir -p '${tempDir}' && cp '${configFilePath}' '${tempDir}' && cp '${devConfigFilePath}' '${tempDir}'`);
 
-        let [name, port] = i < numSeeds ? [`seed-${i + 1}`, 20000 + i] : [`node-${i + 1}`, 21000 + i];
+        let port = 20000 + i;
+        let name = i < numSeeds ? `seed-${i + 1}` : `node-${i + 1}`;
 
         muxer.spawnNew(
             `env -C ${tempDir} ` +

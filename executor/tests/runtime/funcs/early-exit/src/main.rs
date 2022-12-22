@@ -48,5 +48,5 @@ fn main() {
     };
 
     let _msg = read_stdin();
-    log("Eary Exit!".into());
+    log("Early Exit!".into());
 }

@@ -248,7 +248,7 @@ async fn functions_with_limited_memory_will_run_with_enough_memory() {
 
     runtime
         .invoke_function(projects[0].id.clone(), request)
-        .then(|r| async move { assert_eq!("Hello Test, i ran!".as_bytes(), r.unwrap().body) })
+        .then(|r| async move { assert_eq!("Hello Test, I ran!".as_bytes(), r.unwrap().body) })
         .await;
 
     runtime.stop().await.unwrap();
