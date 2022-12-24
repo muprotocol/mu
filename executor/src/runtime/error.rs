@@ -52,6 +52,9 @@ pub enum FunctionRuntimeError {
 
     #[error("_start function is missing: {0}")]
     MissingStartFunction(ExportError),
+
+    #[error("Failed to serialize packet: {0}")]
+    SerializtionError(PacketError),
 }
 #[derive(Error, Debug)]
 pub enum FunctionLoadingError {
@@ -76,6 +79,6 @@ pub enum FunctionLoadingError {
     #[error("Function requested memory size is too big")]
     RequestedMemorySizeTooBig,
 
-    #[error("Failed to serialize request: {0}")]
+    #[error("Failed to serialize packet: {0}")]
     SerializtionError(PacketError),
 }

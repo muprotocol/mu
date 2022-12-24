@@ -24,6 +24,10 @@ impl<'a> Packet<'a> {
             data: Cow::Owned(data),
         }
     }
+
+    pub fn data_type(&self) -> PacketType {
+        self.data_type
+    }
 }
 
 /// Order is important!, don't move.

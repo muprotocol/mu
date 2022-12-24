@@ -1,5 +1,6 @@
 use std::{
     borrow::{Borrow, Cow},
+    fmt::Display,
     io::Cursor,
 };
 
@@ -10,6 +11,12 @@ use super::{FromPacket, PacketType};
 #[derive(Debug, BorshDeserialize)]
 pub struct Log {
     pub body: String, //TODO: use &str if can
+}
+
+impl Display for Log {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.body.fmt(f)
+    }
 }
 
 impl<'a> FromPacket<'a> for Log {
