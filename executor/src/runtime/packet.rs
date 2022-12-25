@@ -8,7 +8,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct Packet<'a> {
-    id: u64,
+    pub id: u64,
     data_type: PacketType,
     data: Cow<'a, [u8]>,
 }
@@ -54,7 +54,7 @@ pub trait IntoPacket<'a> {
     }
 }
 
-pub trait FromPacket<'a>: BorshDeserialize {
+pub trait FromPacket<'a>: Sized {
     const TYPE: PacketType;
 
     fn from_bytes(bytes: Cow<'a, [u8]>) -> Result<Self, std::io::Error>;

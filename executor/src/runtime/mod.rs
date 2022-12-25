@@ -190,6 +190,7 @@ impl RuntimeState {
             store,
             module,
             self.database_service.clone(),
+            definition.memory_limit,
         ))
     }
 }
@@ -275,12 +276,6 @@ async fn mailbox_step(
     match msg {
         MailboxMessage::InvokeFunction(req) => {
             if let Ok(instance) = state.instantiate_function(req.function_id.clone()).await {
-                let memory_limit = state
-                    .hashkey_dict
-                    .get(&req.function_id)
-                    .unwrap()
-                    .memory_limit;
-
                 let usage_aggregator = state.usage_aggregator.clone();
 
                 tokio::spawn(async move {
@@ -288,7 +283,7 @@ async fn mailbox_step(
                         Err(e) => req.reply.reply(Err(e)),
                         Ok(i) => {
                             let result = i
-                                .run_request(memory_limit, req.request)
+                                .run_request(req.request)
                                 .await
                                 .map(|(resp, usages)| {
                                     usage_aggregator
