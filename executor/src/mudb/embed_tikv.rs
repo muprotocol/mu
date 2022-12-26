@@ -97,7 +97,7 @@ struct TikvRunnerArgs {
     tikv_args: Vec<String>,
 }
 
-fn generate_pd_name(node: NodeAddress) -> String {
+fn generate_pd_name(node: &NodeAddress) -> String {
     const PD_PREFIX: &str = "pd_node_";
     format!("{PD_PREFIX}{}_{}", node.address, node.port)
 }
@@ -115,7 +115,7 @@ fn generate_arguments(
         })
         .collect::<Vec<String>>();
 
-    let pd_name = generate_pd_name(node);
+    let pd_name = generate_pd_name(&node_address);
 
     initial_cluster.push(format!(
         "{pd_name}={}:{}",
