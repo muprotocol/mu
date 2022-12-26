@@ -6,6 +6,7 @@ codegen
 cranelift
 Datagram
 datagrams
+flate
 funcs
 Hasher
 hashkey

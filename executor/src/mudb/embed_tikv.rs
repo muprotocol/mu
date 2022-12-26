@@ -3,6 +3,7 @@ use std::{
     net::IpAddr,
     os::unix::prelude::PermissionsExt,
     path::{Path, PathBuf},
+    process::Child,
 };
 
 use anyhow::{Context, Result};
@@ -19,13 +20,19 @@ use crate::network::gossip::NodeAddress;
 #[folder = "assets"]
 pub struct Assets;
 
-async fn extract_embedded_executable(name: &str) -> Result<PathBuf> {
+async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
+    let mut temp_address = env::temp_dir();
+    temp_address.push(name);
+
+    if temp_address.exists() {
+        return Ok(temp_address);
+    }
+
     let tool = <Assets as RustEmbed>::get(name).context("Failed to get embedded asset")?;
     let tool_bytes = tool.data;
 
-    let mut temp_address = env::temp_dir();
-    temp_address.push(name);
     let temp_address_ref: &Path = temp_address.as_ref();
+
     let mut file = File::create(temp_address_ref)
         .await
         .context("Failed to create temp file")?;
@@ -33,6 +40,7 @@ async fn extract_embedded_executable(name: &str) -> Result<PathBuf> {
     file.write_all(&tool_bytes)
         .await
         .context("Failed to write embedded resource to temp file")?;
+
     file.flush().await.context("Failed to flush temp file")?;
 
     let mut perms = file
@@ -40,7 +48,9 @@ async fn extract_embedded_executable(name: &str) -> Result<PathBuf> {
         .await
         .context("Failed to get temp file metadata")?
         .permissions();
+
     perms.set_mode(0o744);
+
     file.set_permissions(perms)
         .await
         .context("Failed to set executable permission on temp file")?;
@@ -48,6 +58,7 @@ async fn extract_embedded_executable(name: &str) -> Result<PathBuf> {
     Ok(temp_address)
 }
 
+// TODO: support hostname (also in gossip as well)
 #[derive(Deserialize)]
 pub struct IpAndPort {
     address: IpAddr,
@@ -75,155 +86,152 @@ pub struct TikvRunnerConfig {
     node: NodeConfig,
 }
 
-// impl PdArgs<'_> {
-//     fn into_arg_string(self) -> Vec<String> {
-//         let client_urls = self
-//             .client_urls
-//             .into_iter()
-//             .map(|uri| uri.to_string())
-//             .collect::<Vec<String>>()
-//             .join(", ");
-
-//         let peer_urls = self
-//             .peer_urls
-//             .into_iter()
-//             .map(|uri| uri.to_string())
-//             .collect::<Vec<String>>()
-//             .join(", ");
-
-//         let initial_cluster = self
-//             .initial_cluster
-//             .into_iter()
-//             .map(|(name, uri)| format!("{name}={uri}"))
-//             .collect::<Vec<String>>()
-//             .join(", ");
-
-//         let mut args = vec![
-//             format!("--name={}", self.name),
-//             format!("--data-dir={}", self.data_dir),
-//             format!("--client-urls=\"{client_urls}\""),
-//             format!("--peer-urls=\"{peer_urls}\"",),
-//             format!("--initial-cluster=\"{initial_cluster}\""),
-//         ];
-
-//         match self.log_file {
-//             Some(path) => args.push(format!("--log-file={}", path)),
-//             None => (),
-//         };
-
-//         args
-//     }
-// }
-
-// impl TikvArgs<'_> {
-//     fn into_arg_string(self) -> Vec<String> {
-//         let pd_endpoints = self
-//             .pd_endpoints
-//             .into_iter()
-//             .map(|uri| uri.to_string())
-//             .collect::<Vec<String>>()
-//             .join(", ");
-
-//         let mut args = vec![
-//             format!("--pd-endpoints=\"{pd_endpoints}\""),
-//             format!("--addr=\"{}\"", self.address),
-//             format!("--data-dir={}", self.data_dir),
-//         ];
-
-//         match &self.log_file {
-//             Some(path) => args.push(format!("--log-file={}", path)),
-//             None => (),
-//         };
-
-//         args
-//     }
-// }
-
 #[async_trait]
 #[clonable]
 pub trait TikvRunner: Clone + Send + Sync {
-    async fn stop(&self);
+    async fn stop(&self) -> Result<()>;
 }
 
-// // TODO: Rename
+struct TikvRunnerArgs {
+    pd_args: Vec<String>,
+    tikv_args: Vec<String>,
+}
+
+fn generate_pd_name(node: NodeAddress) -> String {
+    const PD_PREFIX: &str = "pd_node_";
+    format!("{PD_PREFIX}{}_{}", node.address, node.port)
+}
+
+fn generate_arguments(
+    node_address: NodeAddress,
+    gossip_seeds: &[NodeAddress],
+    config: TikvRunnerConfig,
+) -> TikvRunnerArgs {
+    let initial_cluster = gossip_seeds
+        .into_iter()
+        .map(|seed| {
+            let name = generate_pd_name(seed);
+            format!("{name}={}:{}", seed.address, config.pd.peer_url.port)
+        })
+        .collect::<Vec<String>>();
+
+    let pd_name = generate_pd_name(node);
+
+    initial_cluster.push(format!(
+        "{pd_name}={}:{}",
+        node_address.address, config.pd.peer_url.port
+    ));
+
+    let initial_cluster = initial_cluster.join(", ");
+
+    let pd_args = vec![
+        format!("--name={pd_name}"),
+        format!("--data-dir={}", config.pd.data_dir),
+        format!(
+            "--client-urls=\"{}:{}\"",
+            config.pd.client_url.address, config.pd.client_url.port
+        ),
+        format!(
+            "--peer-urls=\"{}:{}\"",
+            config.pd.peer_url.address, config.pd.peer_url.port
+        ),
+        format!("--initial-cluster==\"{initial_cluster}\""),
+    ];
+
+    match config.pd.log_file {
+        Some(log_file) => pd_args.push(format!("--log-file={log_file}")),
+        None => (),
+    }
+
+    let tikv_args = vec![
+        format!(
+            "--pd-endpoints=\"{}:{}\"",
+            config.pd.client_url.address, config.pd.client_url.port
+        ),
+        format!(
+            "--addr=\"{}:{}\"",
+            config.node.cluster_url.address, config.node.cluster_url.port
+        ),
+        format!("--data-dir={}", config.node.data_dir),
+    ];
+
+    match config.node.log_file {
+        Some(log_file) => tikv_args.push(format!("--log-file={log_file}")),
+        None => (),
+    }
+
+    TikvRunnerArgs { pd_args, tikv_args }
+}
+
 enum Message {
     Stop,
 }
 
-// // TODO: Rename
+#[derive(Clone)]
 struct TikvRunnerImpl {
     mailbox: CallbackMailboxProcessor<Message>,
 }
 
-pub fn start(
+pub async fn start(
     node_address: NodeAddress,
     gossip_seeds: &[NodeAddress],
     config: TikvRunnerConfig,
-) -> Box<dyn TikvRunner> {
-    todo!()
-    //     let mailbox = CallbacjMailboxProcessor::start(
-    //         step,
-    //         TikvEmbedState {
-    //             pd_executable: None,
-    //             tikv_executable: None,
-    //         },
-    //         10000,
-    //     );
+) -> Result<Box<dyn TikvRunner>> {
+    let pd_exe = check_and_extract_embedded_executable("pd-server")
+        .await
+        .context("Failed to create pd-exe")?;
+    let tikv_exe = check_and_extract_embedded_executable("tikv-server")
+        .await
+        .context("Failed to create tikv-exe")?;
 
-    //     let res = TikvEmbedImpl { mailbox };
+    let args = generate_arguments(node_address, gossip_seeds, config);
 
-    //     Box::new(res)
+    let pd_process = std::process::Command::new(pd_exe)
+        .args(args.pd_args)
+        .spawn()
+        .context("Failed to spawn process pd!!")?;
+
+    let tikv_process = std::process::Command::new(tikv_exe)
+        .args(args.tikv_args)
+        .spawn()
+        .context("Failed to spawn process tikv!!")?;
+
+    let mailbox = CallbackMailboxProcessor::start(
+        step,
+        TikvRunnerState {
+            pd_process,
+            tikv_process,
+        },
+        10000,
+    );
+
+    let res = TikvRunnerImpl { mailbox };
+
+    Ok(Box::new(res))
 }
 
-//#[async_trait]
-// impl TikvEmbed for TikvEmbedImpl {
-//     async fn start_pd(&self, args: PdArgs) -> Result<()> {
-//         self.mailbox
-//             .post(TikvMessage::StartPd(args))
-//             .await
-//             .map_error(Into::into)
-//     }
+#[async_trait]
+impl TikvRunner for TikvRunnerImpl {
+    async fn stop(&self) -> Result<()> {
+        self.mailbox.post(Message::Stop).await.map_err(Into::into)
+    }
+}
 
-//     async fn start_tikv(&self, args: TikvArgs) -> Result<()> {
-//         self.mailbox
-//             .post(TikvMessage::StartTikv(args))
-//             .await
-//             .map_error(Into::into)
-//     }
-// }
+struct TikvRunnerState {
+    pd_process: Child,
+    tikv_process: Child,
+}
 
-// // TODO: Rename
-// TODO: store processes
-// struct TikvEmbedState {
-//     pd_executable: Option<Path>,
-//     tikv_executbale: Option<Path>,
-// }
-
-// TODO: remove ***ALL*** unwraps
-// async fn step(
-//     _mb: CallbackMailboxProcessor<TikvMessage>,
-//     msg: TikvMessage,
-//     mut state: TikvEmbedState,
-// ) -> TikvEmbedState {
-//     match msg {
-//         TikvMessage::StartPd(args) => match state.pd_executable {
-//             None => {
-//                 let exe = extract_embedded_executable("pd_server");
-//                 std::process::Command::new(exe).args(args).spawn().unwrap();
-//                 state.pd_executable = Some(exe);
-//             }
-//             Some(exe) => std::process::Command::new(exe).args(args).spawn().unwrap(),
-//         },
-
-//         TikvMessage::StartTikv(args) => match state.tikv_executable {
-//             None => {
-//                 let exe = extract_embedded_executable("tikv_server");
-//                 std::process::Command::new(exe).args(args).spawn().unwrap();
-//                 state.tikv_executable = Some(exe);
-//             }
-//             Some(exe) => std::process::Command::new(exe).args(args).spawn().unwrap(),
-//         },
-//     }
-
-//     state
-// }
+async fn step(
+    _mb: CallbackMailboxProcessor<Message>,
+    msg: Message,
+    mut state: TikvRunnerState,
+) -> TikvRunnerState {
+    match msg {
+        Message::Stop => {
+            state.pd_process.kill();
+            state.tikv_process.kill();
+        }
+    }
+    state
+}
