@@ -7,7 +7,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-use crate::{database::DatabaseResponse, request::Request};
+use crate::{database::DatabaseResponse, Request};
 
 #[repr(u16)]
 #[derive(FromPrimitive)]

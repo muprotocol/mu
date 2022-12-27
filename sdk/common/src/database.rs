@@ -61,6 +61,6 @@ pub struct TableDescription<'a> {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct Item<'a> {
-    key: Cow<'a, str>,
-    value: Cow<'a, str>,
+    pub key: Cow<'a, str>,
+    pub value: Cow<'a, str>,
 }

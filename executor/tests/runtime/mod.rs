@@ -1,10 +1,16 @@
 use futures::FutureExt;
 use mu::{
-    mudb::service::DatabaseID, runtime::types::AssemblyID, stack::usage_aggregator::UsageCategory,
+    mudb::service::DatabaseID,
+    runtime::types::{AssemblyID, FunctionID},
+    stack::usage_aggregator::UsageCategory,
 };
 use mu_stack::{self, StackID};
 use serial_test::serial;
-use std::{borrow::Cow, collections::HashMap, path::Path};
+use std::{
+    borrow::{Borrow, Cow},
+    collections::HashMap,
+    path::Path,
+};
 
 use crate::runtime::utils::{create_db_if_not_exist, create_runtime, Project};
 
@@ -40,12 +46,17 @@ async fn test_simple_func() {
         body: Cow::Borrowed("Chappy".as_bytes()),
     };
 
-    let resp = runtime
-        .invoke_function(projects[0].id.clone(), request)
-        .await
-        .unwrap();
+    let function_id = FunctionID {
+        assembly_id: projects[0].id.clone(),
+        function_name: "say_hello".to_string(),
+    };
 
-    assert_eq!("Hello Chappy, welcome to MuRuntime".as_bytes(), resp.body);
+    let resp = runtime.invoke_function(function_id, request).await.unwrap();
+
+    assert_eq!(
+        "Hello Chappy, welcome to MuRuntime".as_bytes(),
+        resp.body.into_owned()
+    );
     runtime.stop().await.unwrap();
 }
 
