@@ -3,10 +3,7 @@ use std::{borrow::Cow, io::Write};
 use borsh::BorshSerialize;
 use num_derive::FromPrimitive;
 
-use crate::{
-    error::{Error, Result},
-    response::Response,
-};
+use crate::response::Response;
 
 #[repr(u16)]
 #[derive(FromPrimitive)]
@@ -34,15 +31,15 @@ macro_rules! write_cases {
     ($self: ident, $writer: ident, [$($case: ident),+]) => {
         match $self {
             $(OutgoingMessage::$case(x) => {
-                (OutgoingMessageKind::$case as u16).serialize($writer).map_err(Error::CannotSerializeOutgoingMessage)?;
-                x.serialize($writer).map_err(Error::CannotSerializeOutgoingMessage)?;
+                (OutgoingMessageKind::$case as u16).serialize($writer)?;
+                x.serialize($writer)?;
             })+
         }
     };
 }
 
 impl<'a> OutgoingMessage<'a> {
-    pub fn write(&self, writer: &mut impl Write) -> Result<()> {
+    pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
         write_cases!(self, writer, [FatalError, FunctionResult]);
 
         Ok(())

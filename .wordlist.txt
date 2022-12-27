@@ -52,6 +52,7 @@ reqwest
 rngs
 runtime
 Runtime
+rustc
 rustls
 rustup
 scts

@@ -4,10 +4,7 @@ use borsh::BorshDeserialize;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-use crate::{
-    error::{Error, Result},
-    request::Request,
-};
+use crate::request::Request;
 
 #[repr(u16)]
 #[derive(FromPrimitive)]
@@ -31,20 +28,23 @@ macro_rules! read_cases {
     ($kind: ident, $reader: ident, [$($case: ident),+]) => {
         match IncomingMessageKind::from_u16($kind) {
             $(Some(IncomingMessageKind::$case) => {
-                let message: $case<'static> = BorshDeserialize::try_from_reader($reader)
-                    .map_err(Error::CannotDeserializeIncomingMessage)?;
+                let message: $case<'static> = BorshDeserialize::try_from_reader($reader)?;
                 Ok(Self::$case(message))
             })+
 
-            None => Err(Error::UnknownIncomingMessageCode($kind)),
+            None => Err(
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Unknown incoming message code: {}", $kind)
+                )
+            ),
         }
     };
 }
 
 impl<'a> IncomingMessage<'a> {
-    pub fn read(reader: &mut impl Read) -> Result<Self> {
-        let kind: u16 = BorshDeserialize::deserialize_reader(reader)
-            .map_err(Error::CannotDeserializeIncomingMessage)?;
+    pub fn read(reader: &mut impl Read) -> std::io::Result<Self> {
+        let kind: u16 = BorshDeserialize::deserialize_reader(reader)?;
 
         read_cases!(kind, reader, [ExecuteFunction])
     }
