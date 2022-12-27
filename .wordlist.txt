@@ -1,5 +1,6 @@
 balancer
 Bincode
+bufread
 chrono
 clonable
 codegen
@@ -45,6 +46,7 @@ reqwest
 rngs
 runtime
 Runtime
+rustc
 rustls
 rustup
 scts

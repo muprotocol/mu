@@ -177,10 +177,11 @@ pub async fn start(
     gossip_seeds: &[NodeAddress],
     config: TikvRunnerConfig,
 ) -> Result<Box<dyn TikvRunner>> {
-    let pd_exe = check_and_extract_embedded_executable("pd-server")
+    let tikv_version = env!("TIKV_VERSION");
+    let pd_exe = check_and_extract_embedded_executable(&format!("pd-server-{tikv_version}"))
         .await
         .context("Failed to create pd-exe")?;
-    let tikv_exe = check_and_extract_embedded_executable("tikv-server")
+    let tikv_exe = check_and_extract_embedded_executable(&format!("tikv-server-{tikv_version}"))
         .await
         .context("Failed to create tikv-exe")?;
 
