@@ -1,5 +1,6 @@
 balancer
 Bincode
+Borsh
 chrono
 clonable
 codegen
@@ -27,6 +28,7 @@ mufunction
 mugateway
 MuGateway
 MuProtocol
+musdk
 muxer
 nanos
 nonblocking
@@ -45,6 +47,7 @@ rcgen
 reconnections
 recv
 refcell
+repr
 reqwest
 rngs
 runtime
