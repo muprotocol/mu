@@ -16,7 +16,7 @@ use dyn_clonable::clonable;
 use log::*;
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
 use mu_stack::StackID;
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path};
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
 
@@ -73,7 +73,7 @@ struct RuntimeState {
     function_provider: Box<dyn FunctionProvider>,
     hashkey_dict: HashMap<FunctionID, CacheHashAndMemoryLimit>,
     cache: FileSystemCache,
-    database_service: Arc<DatabaseManager>,
+    database_service: DatabaseManager,
     usage_aggregator: Box<dyn UsageAggregator>,
 }
 
@@ -92,7 +92,7 @@ impl RuntimeState {
             hashkey_dict,
             function_provider,
             cache,
-            database_service: Arc::new(database_service),
+            database_service,
             usage_aggregator,
         })
     }
@@ -203,8 +203,7 @@ impl Runtime for RuntimeImpl {
         request: gateway::Request<'a>,
     ) -> Result<gateway::Response, Error> {
         let request = packet::gateway::Request(request)
-            .into_packet(0)
-            .map(|p| p.to_owned())
+            .into_packet()
             .map_err(|e| Error::FunctionLoadingError(FunctionLoadingError::SerializtionError(e)))?;
 
         self.mailbox

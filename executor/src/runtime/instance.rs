@@ -83,8 +83,6 @@ pub struct Running {
     handle: FunctionHandle,
     io_state: IOState,
 
-    next_message_id: u64,
-
     //TODO: Refactor these to `week` and `strong` when we had database replication
     database_write_count: u64,
     database_read_count: u64,
@@ -96,7 +94,7 @@ impl InstanceState for Running {}
 pub struct Instance<S: InstanceState> {
     id: InstanceID,
     state: S,
-    database_service: Arc<DatabaseManager>,
+    database_service: DatabaseManager,
     memory_limit: byte_unit::Byte,
 }
 
@@ -106,7 +104,7 @@ impl Instance<Loaded> {
         envs: HashMap<String, String>,
         store: Store,
         module: Module,
-        database_service: Arc<DatabaseManager>,
+        database_service: DatabaseManager,
         memory_limit: byte_unit::Byte,
     ) -> Self {
         let state = Loaded {
@@ -134,7 +132,6 @@ impl Instance<Loaded> {
         let state = Running {
             handle,
             io_state: IOState::Idle,
-            next_message_id: 1, // 0 was the first message (request)
             database_write_count: 0,
             database_read_count: 0,
         };
@@ -148,58 +145,10 @@ impl Instance<Loaded> {
 }
 
 impl Instance<Running> {
-    pub fn is_finished(&mut self) -> bool {
-        self.state.handle.is_finished()
-    }
-
-    fn send_packet<'a>(&mut self, packet: &Packet<'a>) -> Result<(), Error> {
-        trace!(
-            "Sending packet to function {:?}, packet: {:?}",
-            self.id,
-            packet
-        );
-
-        if let Err(e) = BorshSerialize::serialize(packet, &mut self.state.handle.io.stdin) {
-            error!("failed to write data to function: {e}");
-
-            return Err(Error::Internal(anyhow!(
-                "failed to write data to function {e}",
-            )));
-        };
-
-        //TODO: Do we need this?
-        //self.state
-        //    .handle
-        //    .io
-        //    .stdin
-        //    .flush()
-        //    .map_err(|e| Error::Internal(anyhow!("can not flush written message: {e}")))?;
-
-        Ok(())
-    }
-
-    fn send_raw_packet<'a, P: IntoPacket<'a>>(&mut self, input: &'a P) -> Result<(), Error> {
-        let packet = input
-            .into_packet(self.state.next_message_id)
-            .map_err(|e| Error::FunctionRuntimeError(FunctionRuntimeError::SerializtionError(e)))?;
-
-        self.send_packet(&packet)?;
-        self.state.next_message_id += 1;
-
-        Ok(())
-    }
-
-    fn receive_packet<'a>(&'a mut self) -> Result<Packet<'a>, Error> {
-        BorshDeserialize::deserialize_reader(&mut self.state.handle.io.stdout).map_err(|e| {
-            error!("Error in deserializing packet: {e}");
-            Error::Internal(anyhow!("failed to receive packet from function"))
-        })
-    }
-
     #[inline]
     pub async fn run_request(
         self,
-        request: Packet<'static>,
+        request: Packet,
     ) -> Result<(packet::gateway::Response, Vec<Usage>), (Error, Vec<Usage>)> {
         tokio::task::spawn_blocking(move || self.inner_run_request(request))
             .await
@@ -211,9 +160,35 @@ impl Instance<Running> {
             })?
     }
 
-    fn inner_run_request<'a>(
+    pub fn is_finished(&mut self) -> bool {
+        self.state.handle.is_finished()
+    }
+
+    fn send_packet(&mut self, packet: &Packet) -> Result<(), Error> {
+        BorshSerialize::serialize(packet, &mut self.state.handle.io.stdin).map_err(|e| {
+            error!("failed to write data to function: {e}");
+            Error::Internal(anyhow!("failed to write data to function {e}",))
+        })
+    }
+
+    fn send_raw_packet<P: IntoPacket>(&mut self, input: P) -> Result<(), Error> {
+        let packet = input
+            .into_packet()
+            .map_err(|e| Error::FunctionRuntimeError(FunctionRuntimeError::SerializtionError(e)))?;
+
+        self.send_packet(&packet)
+    }
+
+    fn receive_packet(&mut self) -> Result<Packet, Error> {
+        BorshDeserialize::deserialize_reader(&mut self.state.handle.io.stdout).map_err(|e| {
+            error!("Error in deserializing packet: {e}");
+            Error::Internal(anyhow!("failed to receive packet from function"))
+        })
+    }
+
+    fn inner_run_request(
         mut self,
-        request: Packet<'static>,
+        request: Packet,
     ) -> Result<(packet::gateway::Response, Vec<Usage>), (Error, Vec<Usage>)> {
         trace!("Running {}", &self.id);
 
@@ -235,61 +210,11 @@ impl Instance<Running> {
         self.state.io_state = IOState::Processing;
 
         loop {
-            // Check function state
-            match (self.state.io_state, self.is_finished()) {
-                // Should never get into this case
-                (IOState::Idle, _) => {
-                    trace!(
-                        "Instance {:?} is in invalid io-state, should be processing, was idle",
-                        &self.id
-                    );
-                    return Err((
-                        Error::Internal(anyhow!(
-                            "Invalid instance io-state, should be processing, was idle"
-                        )),
-                        vec![],
-                    ));
-                }
-                (IOState::Processing, true) => {
-                    trace!(
-                        "Instance {:?} exited while was in processing state",
-                        &self.id
-                    );
-                    return Err((
-                        Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(
-                            RuntimeError::new("Function Early Exit"),
-                        )),
-                        vec![],
-                    ));
-                }
-                (IOState::Processing, false) => (),
-                (IOState::InRuntimeCall, true) => {
-                    trace!(
-                        "Instance {:?} exited while was in runtime-call state",
-                        &self.id
-                    );
-                    return Err((
-                        Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(
-                            RuntimeError::new("Function Early Exit"),
-                        )),
-                        vec![],
-                    ));
-                }
-                (IOState::InRuntimeCall, false) => (),
-                (IOState::Closed, true) => (),
-                (IOState::Closed, false) => {
-                    trace!("Instance {:?} has io closed but still running", &self.id);
-                    return Err((
-                        Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(
-                            RuntimeError::new("IO Closed"),
-                        )),
-                        vec![],
-                    ));
-                }
-            }
+            self.check_status().map_err(|e| (e, vec![]))?;
 
             // Now process the Runtime calls from function
-            match self.receive_packet() {
+            let packet = self.receive_packet();
+            match packet {
                 Err(e) => {
                     //TODO: Handle better
                     error!("can not receive packet from instance, {e}");
@@ -325,14 +250,14 @@ impl Instance<Running> {
                                         Ok((r, usage(&m)))
                                     }
                                     (Err((error, m)), Err(r)) => {
-                                        error!("function ran into error but produced the response, {error}");
+                                        error!("function ran into error, {error}");
                                         Err((r, usage(&m)))
                                     }
                                 }
                             })
                             .map_err(|_| {
                                 (
-                                    Error::Internal(anyhow!("Failed to run function task to end")),
+                                    Error::Internal(anyhow!("failed to run function task to end")),
                                     vec![],
                                 )
                             })?;
@@ -344,7 +269,6 @@ impl Instance<Running> {
                             Ok(log) => info!("[Log] [Instance-{}]: {}", &self.id, log),
                             Err(e) => error!("can not deserialize packet into {}, {}", "Log", e),
                         },
-                        PacketType::DbRequest => todo!(),
                         PacketType::DbRequest => {
                             match packet::database::Request::from_packet(packet) {
                                 Ok(req) => {
@@ -447,7 +371,9 @@ impl Instance<Running> {
                                     };
 
                                     //TODO: abort function or just log the error?
-                                    let _ = self.send_raw_packet(&resp);
+                                    if let Err(e) = self.send_raw_packet(resp) {
+                                        error!("can not send packet {}, {}", "DbResponse", e)
+                                    }
                                 }
                                 Err(e) => {
                                     error!("can not deserialize packet into {}, {}", "DbRequest", e)
@@ -462,6 +388,52 @@ impl Instance<Running> {
                     }
                 }
             };
+        }
+    }
+
+    fn check_status(&mut self) -> Result<(), Error> {
+        match (self.state.io_state, self.is_finished()) {
+            // Should never get into this case
+            (IOState::Idle, _) => {
+                trace!(
+                    "Instance {:?} is in invalid io-state, should be processing, was idle",
+                    &self.id
+                );
+                return Err(Error::Internal(anyhow!(
+                    "Invalid instance io-state, should be processing, was idle"
+                )));
+            }
+            (IOState::Processing, true) => {
+                trace!(
+                    "Instance {:?} exited while was in processing state",
+                    &self.id
+                );
+                return Err(Error::FunctionRuntimeError(
+                    FunctionRuntimeError::FunctionEarlyExit(RuntimeError::new(
+                        "Function Early Exit",
+                    )),
+                ));
+            }
+            (IOState::InRuntimeCall, true) => {
+                trace!(
+                    "Instance {:?} exited while was in runtime-call state",
+                    &self.id
+                );
+                return Err(Error::FunctionRuntimeError(
+                    FunctionRuntimeError::FunctionEarlyExit(RuntimeError::new(
+                        "Function Early Exit",
+                    )),
+                ));
+            }
+            (IOState::Closed, false) => {
+                trace!("Instance {:?} has io closed but still running", &self.id);
+                return Err(Error::FunctionRuntimeError(
+                    FunctionRuntimeError::FunctionEarlyExit(RuntimeError::new("IO Closed")),
+                ));
+            }
+            (IOState::Processing, false)
+            | (IOState::InRuntimeCall, false)
+            | (IOState::Closed, true) => Ok(()),
         }
     }
 }

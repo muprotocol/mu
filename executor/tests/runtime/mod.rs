@@ -327,8 +327,6 @@ async fn function_usage_is_reported_correctly_2() {
     let usages = usage_aggregator.get_and_reset_usages().await.unwrap();
     let function_usage = usages.get(&projects[0].id.stack_id).unwrap();
 
-    println!("{:#?}", function_usage);
-
     assert!(function_usage.get(&UsageCategory::DBWrites).unwrap() == &10_001);
 
     assert!(function_usage.get(&UsageCategory::DBReads).unwrap() == &0);
@@ -354,10 +352,10 @@ async fn failing_function_should_not_hang() {
 
     let request = gateway::Request {
         method: mu_stack::HttpMethod::Get,
-        path: "/get_name",
+        path: "/get_name".into(),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: "Chappy",
+        data: Cow::Borrowed(b"Chappy"),
     };
 
     let resp = runtime
@@ -365,6 +363,6 @@ async fn failing_function_should_not_hang() {
         .await
         .unwrap();
 
-    assert_eq!("Hello Chappy, welcome to MuRuntime", resp.body);
+    assert_eq!(b"Hello Chappy, welcome to MuRuntime".to_vec(), resp.body);
     runtime.stop().await.unwrap();
 }

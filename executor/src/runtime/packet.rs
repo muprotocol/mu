@@ -2,29 +2,17 @@ pub mod database;
 pub mod gateway;
 pub mod log;
 
-use std::{borrow::Cow, fmt::Display};
+use std::fmt::Display;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct Packet<'a> {
-    pub id: u64,
+pub struct Packet {
     data_type: PacketType,
-    data: Cow<'a, [u8]>,
+    data: Vec<u8>,
 }
 
-impl<'a> Packet<'a> {
-    //TODO: use ToOwned trait
-    pub fn to_owned(self) -> Packet<'static> {
-        let data = self.data.to_vec();
-
-        Packet {
-            id: self.id,
-            data_type: self.data_type,
-            data: Cow::Owned(data),
-        }
-    }
-
+impl Packet {
     pub fn data_type(&self) -> PacketType {
         self.data_type
     }
@@ -40,30 +28,29 @@ pub enum PacketType {
     DbResponse,
 }
 
-pub trait IntoPacket<'a> {
+pub trait IntoPacket {
     const TYPE: PacketType;
 
-    fn as_bytes(&'a self) -> Result<Cow<'a, [u8]>, std::io::Error>;
+    fn as_bytes(&self) -> Result<Vec<u8>, std::io::Error>;
 
-    fn into_packet(&'a self, id: u64) -> Result<Packet<'a>, PacketError> {
+    fn into_packet(&self) -> Result<Packet, PacketError> {
         Ok(Packet {
-            id,
             data_type: Self::TYPE,
             data: Self::as_bytes(&self).map_err(PacketError::IOError)?,
         })
     }
 }
 
-pub trait FromPacket<'a>: Sized {
+pub trait FromPacket: Sized {
     const TYPE: PacketType;
 
-    fn from_bytes(bytes: Cow<'a, [u8]>) -> Result<Self, std::io::Error>;
+    fn from_bytes(bytes: &mut &[u8]) -> Result<Self, std::io::Error>;
 
-    fn from_packet(packet: Packet<'a>) -> Result<Self, PacketError> {
+    fn from_packet(packet: Packet) -> Result<Self, PacketError> {
         if packet.data_type != Self::TYPE {
             Err(PacketError::PacketTypeMismatch)
         } else {
-            Self::from_bytes(packet.data).map_err(PacketError::IOError)
+            Self::from_bytes(&mut packet.data.as_slice()).map_err(PacketError::IOError)
         }
     }
 }

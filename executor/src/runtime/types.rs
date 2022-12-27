@@ -29,7 +29,7 @@ pub trait FunctionProvider: Send {
 #[derive(Debug)]
 pub struct InvokeFunctionRequest {
     pub function_id: FunctionID,
-    pub request: Packet<'static>,
+    pub request: Packet,
     pub reply: ReplyChannel<Result<packet::gateway::Response, Error>>,
 }
 
