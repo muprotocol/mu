@@ -40,6 +40,9 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("gossip.max_peers", "6"),
         ("gossip.peer_update_interval", "10s"),
         ("gossip.liveness_check_interval", "1s"),
+        ("initial_cluster.ip", "127.0.0.1"),
+        ("initial_cluster.gossip_port", "12012"),
+        ("initial_cluster.pd_port", "12012"),
         ("gateway_manager.listen_ip", "0.0.0.0"),
         ("gateway_manager.listen_port", "12012"),
         ("scheduler.tick_interval", "1s"),
@@ -96,8 +99,10 @@ pub fn initialize_config() -> Result<SystemConfig> {
 
     let gossip_config = config.get("gossip").context("Invalid gossip config")?;
 
+    let tikv_config: TikvRunnerConfig = config.get("tikv").context("Invalid tikv_runner config")?;
+
     let known_node_config: Vec<KnownNodeConfig> = config
-        .get("gossip.seeds")
+        .get("initial_cluster")
         .context("Invalid known_node config")?;
 
     let gateway_config = config

@@ -14,7 +14,7 @@ use rust_embed::RustEmbed;
 use serde::Deserialize;
 use tokio::{fs::File, io::AsyncWriteExt};
 
-use crate::network::gossip::NodeAddress;
+use crate::network::gossip::{KnownNodeConfig, NodeAddress};
 
 #[derive(RustEmbed)]
 #[folder = "assets"]
@@ -97,21 +97,21 @@ struct TikvRunnerArgs {
     tikv_args: Vec<String>,
 }
 
-fn generate_pd_name(node: &NodeAddress) -> String {
+fn generate_pd_name(node: &KnownNodeConfig) -> String {
     const PD_PREFIX: &str = "pd_node_";
     format!("{PD_PREFIX}{}_{}", node.address, node.port)
 }
 
 fn generate_arguments(
     node_address: NodeAddress,
-    gossip_seeds: &[NodeAddress],
+    known_node_config: Vec<KnownNodeConfig>,
     config: TikvRunnerConfig,
 ) -> TikvRunnerArgs {
-    let mut initial_cluster = gossip_seeds
+    let mut initial_cluster = known_node_config
         .into_iter()
-        .map(|seed| {
-            let name = generate_pd_name(seed);
-            format!("{name}={}:{}", seed.address, config.pd.peer_url.port)
+        .map(|node| {
+            let name = generate_pd_name(&node);
+            format!("{name}={}:{}", node.ip, node.pd_port)
         })
         .collect::<Vec<String>>();
 
@@ -174,7 +174,7 @@ struct TikvRunnerImpl {
 
 pub async fn start(
     node_address: NodeAddress,
-    gossip_seeds: &[NodeAddress],
+    known_node_config: Vec<KnownNodeConfig>,
     config: TikvRunnerConfig,
 ) -> Result<Box<dyn TikvRunner>> {
     let tikv_version = env!("TIKV_VERSION");
@@ -185,7 +185,7 @@ pub async fn start(
         .await
         .context("Failed to create tikv-exe")?;
 
-    let args = generate_arguments(node_address, gossip_seeds, config);
+    let args = generate_arguments(node_address, known_node_config, config);
 
     let pd_process = std::process::Command::new(pd_exe)
         .args(args.pd_args)
