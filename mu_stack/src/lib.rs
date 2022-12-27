@@ -13,13 +13,15 @@ use base58::{FromBase58, ToBase58};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
+pub const STACK_ID_SIZE: usize = 32;
+
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StackID {
-    SolanaPublicKey([u8; 32]),
+    SolanaPublicKey([u8; STACK_ID_SIZE]),
 }
 
 impl StackID {
-    pub fn get_bytes(&self) -> &[u8; 32] {
+    pub fn get_bytes(&self) -> &[u8; STACK_ID_SIZE] {
         match self {
             Self::SolanaPublicKey(key) => key,
         }
@@ -64,6 +66,23 @@ impl FromStr for StackID {
             }
             _ => Err(()),
         }
+    }
+}
+
+impl From<StackID> for Vec<u8> {
+    fn from(si: StackID) -> Self {
+        match si {
+            StackID::SolanaPublicKey(key) => key.into(),
+        }
+    }
+}
+
+impl TryFrom<Vec<u8>> for StackID {
+    type Error = ();
+    fn try_from(blob: Vec<u8>) -> Result<Self, Self::Error> {
+        Ok(Self::SolanaPublicKey(
+            blob.as_slice().try_into().map_err(|_| ())?,
+        ))
     }
 }
 

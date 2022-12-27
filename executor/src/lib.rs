@@ -1,6 +1,7 @@
 pub mod gateway;
 pub mod infrastructure;
 pub mod mudb;
+pub mod mudb_tikv;
 pub mod network;
 pub mod runtime;
 pub mod stack;
