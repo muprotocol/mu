@@ -16,11 +16,13 @@ use crate::{
 };
 
 use anyhow::anyhow;
-use log::{error, trace};
-use musdk_common::{incoming_message::IncomingMessage, outgoing_message::OutgoingMessage};
+use log::{error, trace, log, Level};
+use musdk_common::{incoming_message::IncomingMessage, outgoing_message::{OutgoingMessage, LogLevel}};
 use wasmer::{CompilerConfig, Module, RuntimeError, Store};
 use wasmer_compiler_llvm::LLVM;
 use wasmer_middlewares::{metering::MeteringPoints, Metering};
+
+const FUNCTION_LOG_TARGET: &str = "mu_function";
 
 pub fn create_store(memory_limit: byte_unit::Byte) -> Result<Store, Error> {
     let mut compiler_config = LLVM::default();
@@ -95,6 +97,7 @@ pub struct Instance<S: InstanceState> {
     state: S,
     database_service: DatabaseManager,
     memory_limit: byte_unit::Byte,
+    include_logs: bool,
 }
 
 impl Instance<Loaded> {
@@ -105,6 +108,7 @@ impl Instance<Loaded> {
         module: Module,
         database_service: DatabaseManager,
         memory_limit: byte_unit::Byte,
+        include_logs: bool,
     ) -> Self {
         let state = Loaded {
             store,
@@ -117,6 +121,7 @@ impl Instance<Loaded> {
             state,
             database_service,
             memory_limit,
+            include_logs,
         }
     }
 
@@ -139,6 +144,7 @@ impl Instance<Loaded> {
             state,
             database_service: self.database_service,
             memory_limit: self.memory_limit,
+            include_logs: self.include_logs
         })
     }
 }
@@ -280,12 +286,23 @@ impl Instance<Running> {
 
                             return result;
 
-                        } //OutgoingMessage::Log => match packet::log::Log::from_packet(message) {
-                          //    //TODO: Log into a log service
-                          //    Ok(log) => info!("[Log] [Instance-{}]: {}", &self.id, log),
-                          //    Err(e) => error!("can not deserialize packet into {}, {}", "Log", e),
-                          //},
-                          //PacketType::DbRequest => {
+                        }
+
+
+                        OutgoingMessage::Log(log) =>
+                            if self.include_logs {
+                                let level = match log.level {
+                                    LogLevel::Error => Level::Error,
+                                    LogLevel::Warn => Level::Warn,
+                                    LogLevel::Info => Level::Info,
+                                    LogLevel::Debug => Level::Debug,
+                                    LogLevel::Trace => Level::Trace
+                                };
+
+                                log!(target: FUNCTION_LOG_TARGET, level, "{}", log.body);
+                        },
+
+                         //PacketType::DbRequest => {
                           //    match packet::database::Request::from_packet(message) {
                           //        Ok(req) => {
                           //            let resp = match req {

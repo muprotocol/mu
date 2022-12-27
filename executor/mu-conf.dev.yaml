@@ -26,3 +26,6 @@ blockchain_monitor:
 db_manager:
   # Note, this value should not be under 1s
   usage_report_duration: 30s
+runtime:
+  cache_path: runtime-cache
+  include_functions_log: true

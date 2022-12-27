@@ -16,7 +16,7 @@ use log::*;
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
 use mu_stack::StackID;
 use musdk_common::request::Request;
-use std::{borrow::Cow, collections::HashMap, path::Path};
+use std::{borrow::Cow, collections::HashMap};
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
 
@@ -70,6 +70,7 @@ struct CacheHashAndMemoryLimit {
 }
 
 struct RuntimeState {
+    config: RuntimeConfig,
     function_provider: Box<dyn FunctionProvider>,
     hashkey_dict: HashMap<FunctionID, CacheHashAndMemoryLimit>,
     cache: FileSystemCache,
@@ -80,15 +81,17 @@ struct RuntimeState {
 impl RuntimeState {
     pub async fn new(
         function_provider: Box<dyn FunctionProvider>,
-        cache_path: &Path,
+        config: RuntimeConfig,
         database_service: DatabaseManager,
         usage_aggregator: Box<dyn UsageAggregator>,
     ) -> Result<Self> {
         let hashkey_dict = HashMap::new();
-        let mut cache = FileSystemCache::new(cache_path).context("failed to create cache")?;
+        let mut cache =
+            FileSystemCache::new(&config.cache_path).context("failed to create cache")?;
         cache.set_cache_extension(Some("wasmu"));
 
         Ok(Self {
+            config,
             hashkey_dict,
             function_provider,
             cache,
@@ -191,6 +194,7 @@ impl RuntimeState {
             module,
             self.database_service.clone(),
             definition.memory_limit,
+            self.config.include_function_logs,
         ))
     }
 }
@@ -259,13 +263,7 @@ pub async fn start(
     db_service: DatabaseManager,
     usage_aggregator: Box<dyn UsageAggregator>,
 ) -> Result<Box<dyn Runtime>> {
-    let state = RuntimeState::new(
-        function_provider,
-        &config.cache_path,
-        db_service,
-        usage_aggregator,
-    )
-    .await?;
+    let state = RuntimeState::new(function_provider, config, db_service, usage_aggregator).await?;
     let mailbox = CallbackMailboxProcessor::start(mailbox_step, state, 10000);
     Ok(Box::new(RuntimeImpl { mailbox }))
 }

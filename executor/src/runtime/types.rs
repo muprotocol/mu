@@ -152,6 +152,7 @@ impl FunctionHandle {
 #[derive(Deserialize, Clone)]
 pub struct RuntimeConfig {
     pub cache_path: PathBuf,
+    pub include_function_logs: bool,
 }
 
 pub type InstructionsCount = u64;
