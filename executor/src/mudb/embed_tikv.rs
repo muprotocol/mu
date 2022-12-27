@@ -107,7 +107,7 @@ fn generate_arguments(
     gossip_seeds: &[NodeAddress],
     config: TikvRunnerConfig,
 ) -> TikvRunnerArgs {
-    let initial_cluster = gossip_seeds
+    let mut initial_cluster = gossip_seeds
         .into_iter()
         .map(|seed| {
             let name = generate_pd_name(seed);
@@ -124,7 +124,7 @@ fn generate_arguments(
 
     let initial_cluster = initial_cluster.join(", ");
 
-    let pd_args = vec![
+    let mut pd_args = vec![
         format!("--name={pd_name}"),
         format!("--data-dir={}", config.pd.data_dir),
         format!(
@@ -143,7 +143,7 @@ fn generate_arguments(
         None => (),
     }
 
-    let tikv_args = vec![
+    let mut tikv_args = vec![
         format!(
             "--pd-endpoints=\"{}:{}\"",
             config.pd.client_url.address, config.pd.client_url.port
