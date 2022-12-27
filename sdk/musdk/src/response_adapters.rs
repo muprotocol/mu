@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use musdk_common::response::Response;
+use musdk_common::Response;
 
 use crate::error::Result;
 
@@ -49,7 +49,11 @@ impl BinaryResponse {
 
 impl<'a> IntoResponse<'a> for BinaryResponse {
     fn into_response(self) -> Response<'a> {
+        // TODO
         Response {
+            status: 200,
+            content_type: "application/octet-stream".into(),
+            headers: vec![],
             body: Cow::Owned(self.body),
         }
     }

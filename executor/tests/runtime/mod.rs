@@ -1,7 +1,6 @@
 use futures::FutureExt;
 use mu::{
-    gateway, mudb::service::DatabaseID, runtime::types::FunctionID,
-    stack::usage_aggregator::UsageCategory,
+    mudb::service::DatabaseID, runtime::types::AssemblyID, stack::usage_aggregator::UsageCategory,
 };
 use mu_stack::{self, StackID};
 use serial_test::serial;
@@ -19,9 +18,9 @@ pub fn create_project(name: &'static str, memory_limit: Option<byte_unit::Byte>)
     Project {
         name: name.into(),
         path: Path::new(&format!("tests/runtime/funcs/{name}")).into(),
-        id: FunctionID {
+        id: AssemblyID {
             stack_id: StackID::SolanaPublicKey(rand::random()),
-            function_name: name.into(),
+            assembly_name: name.into(),
         },
         memory_limit,
     }
@@ -33,12 +32,12 @@ async fn test_simple_func() {
     let projects = vec![create_project("hello-wasm", None)];
     let (runtime, _, _) = create_runtime(&projects).await;
 
-    let request = gateway::Request {
-        method: mu_stack::HttpMethod::Get,
+    let request = musdk_common::Request {
+        method: musdk_common::HttpMethod::Get,
         path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: Cow::Borrowed("Chappy".as_bytes()),
+        body: Cow::Borrowed("Chappy".as_bytes()),
     };
 
     let resp = runtime
@@ -65,12 +64,12 @@ async fn can_query_mudb() {
         .await
         .unwrap();
 
-    let request = gateway::Request {
+    let request = musdk_common::Request {
         method: mu_stack::HttpMethod::Get,
         path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: Cow::Borrowed("Dream".as_bytes()),
+        body: Cow::Borrowed("Dream".as_bytes()),
     };
 
     let resp = runtime
@@ -88,12 +87,12 @@ async fn can_run_multiple_instance_of_the_same_function() {
     let projects = vec![create_project("hello-wasm", None)];
     let (runtime, _, _) = create_runtime(&projects).await;
 
-    let make_request = |name| gateway::Request {
+    let make_request = |name| musdk_common::Request {
         method: mu_stack::HttpMethod::Get,
         path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: Cow::Borrowed(name),
+        body: Cow::Borrowed(name),
     };
 
     let instance_1 = runtime
@@ -137,12 +136,12 @@ async fn can_run_instances_of_different_functions() {
     ];
     let (runtime, db_service, ..) = create_runtime(&projects).await;
 
-    let make_request = |name| gateway::Request {
+    let make_request = |name| musdk_common::Request {
         method: mu_stack::HttpMethod::Get,
         path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: Cow::Borrowed(name),
+        body: Cow::Borrowed(name),
     };
 
     let database_id = DatabaseID {
@@ -178,12 +177,12 @@ async fn test_functions_with_early_exit_are_handled() {
     let projects = vec![create_project("early-exit", None)];
     let (runtime, _, _) = create_runtime(&projects).await;
 
-    let request = gateway::Request {
+    let request = musdk_common::Request {
         method: mu_stack::HttpMethod::Get,
         path: Cow::Borrowed("/"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: Cow::Borrowed("Are You There?".as_bytes()),
+        body: Cow::Borrowed("Are You There?".as_bytes()),
     };
 
     use mu::runtime::error::*;
@@ -207,12 +206,12 @@ async fn functions_with_limited_memory_wont_run() {
     )];
     let (runtime, ..) = create_runtime(&projects).await;
 
-    let request = gateway::Request {
+    let request = musdk_common::Request {
         method: mu_stack::HttpMethod::Get,
         path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: Cow::Borrowed(&[]),
+        body: Cow::Borrowed(&[]),
     };
 
     let result = runtime
@@ -238,12 +237,12 @@ async fn functions_with_limited_memory_will_run_with_enough_memory() {
     )];
     let (runtime, ..) = create_runtime(&projects).await;
 
-    let request = gateway::Request {
+    let request = musdk_common::Request {
         method: mu_stack::HttpMethod::Get,
         path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: Cow::Borrowed("Test".as_bytes()),
+        body: Cow::Borrowed("Test".as_bytes()),
     };
 
     runtime
@@ -260,12 +259,12 @@ async fn function_usage_is_reported_correctly_1() {
     let projects = vec![create_project("hello-wasm", None)];
     let (runtime, _, usage_aggregator) = create_runtime(&projects).await;
 
-    let request = gateway::Request {
+    let request = musdk_common::Request {
         method: mu_stack::HttpMethod::Get,
         path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: Cow::Borrowed("Chappy".as_bytes()),
+        body: Cow::Borrowed("Chappy".as_bytes()),
     };
 
     runtime
@@ -302,12 +301,12 @@ async fn function_usage_is_reported_correctly_2() {
     let projects = vec![create_project("database-heavy", None)];
     let (runtime, db_service, usage_aggregator) = create_runtime(&projects).await;
 
-    let request = gateway::Request {
+    let request = musdk_common::Request {
         method: mu_stack::HttpMethod::Get,
         path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: Cow::Borrowed("Chappy".as_bytes()),
+        body: Cow::Borrowed("Chappy".as_bytes()),
     };
 
     let database_id = DatabaseID {
@@ -350,12 +349,12 @@ async fn failing_function_should_not_hang() {
     let projects = vec![create_project("failing", None)];
     let (runtime, _, _) = create_runtime(&projects).await;
 
-    let request = gateway::Request {
+    let request = musdk_common::Request {
         method: mu_stack::HttpMethod::Get,
         path: "/get_name".into(),
         query: HashMap::new(),
         headers: Vec::new(),
-        data: Cow::Borrowed(b"Chappy"),
+        body: Cow::Borrowed(b"Chappy"),
     };
 
     let resp = runtime

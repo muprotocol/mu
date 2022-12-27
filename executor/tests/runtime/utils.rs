@@ -7,12 +7,12 @@ use mu::{
     },
     runtime::{
         start,
-        types::{FunctionDefinition, FunctionID, RuntimeConfig},
+        types::{AssemblyDefinition, AssemblyID, RuntimeConfig},
         Runtime,
     },
     stack::usage_aggregator::UsageAggregator,
 };
-use mu_stack::FunctionRuntime;
+use mu_stack::AssemblyRuntime;
 use std::{
     collections::HashMap,
     env,
@@ -24,7 +24,7 @@ use tokio::process::Command;
 
 use crate::common::HashMapUsageAggregator;
 
-use super::providers::MapFunctionProvider;
+use super::providers::MapAssemblyProvider;
 
 fn ensure_project_dir(project_dir: &Path) -> Result<PathBuf> {
     let project_dir = env::current_dir()?.join(project_dir);
@@ -90,7 +90,7 @@ pub async fn create_db_if_not_exist(
 }
 
 pub struct Project {
-    pub id: FunctionID,
+    pub id: AssemblyID,
     pub name: String,
     pub path: PathBuf,
     pub memory_limit: byte_unit::Byte,
@@ -116,7 +116,7 @@ pub async fn build_wasm_projects(projects: &[Project]) -> Result<()> {
 
 pub async fn read_wasm_functions(
     projects: &[Project],
-) -> Result<HashMap<FunctionID, FunctionDefinition>> {
+) -> Result<HashMap<AssemblyID, AssemblyDefinition>> {
     let mut results = HashMap::new();
 
     for project in projects {
@@ -124,10 +124,10 @@ pub async fn read_wasm_functions(
 
         results.insert(
             project.id.clone(),
-            FunctionDefinition::new(
+            AssemblyDefinition::new(
                 project.id.clone(),
                 source,
-                FunctionRuntime::Wasi1_0,
+                AssemblyRuntime::Wasi1_0,
                 [],
                 project.memory_limit,
             ),
@@ -139,10 +139,10 @@ pub async fn read_wasm_functions(
 
 async fn create_map_function_provider(
     projects: &[Project],
-) -> Result<(HashMap<FunctionID, FunctionDefinition>, MapFunctionProvider)> {
+) -> Result<(HashMap<AssemblyID, AssemblyDefinition>, MapAssemblyProvider)> {
     build_wasm_projects(projects).await?;
     let functions = read_wasm_functions(projects).await?;
-    Ok((functions, MapFunctionProvider::new()))
+    Ok((functions, MapAssemblyProvider::new()))
 }
 
 pub async fn create_runtime(
@@ -150,6 +150,7 @@ pub async fn create_runtime(
 ) -> (Box<dyn Runtime>, DatabaseManager, Box<dyn UsageAggregator>) {
     let config = RuntimeConfig {
         cache_path: PathBuf::from_str("runtime-cache").unwrap(),
+        include_function_logs: true,
     };
 
     let (functions, provider) = create_map_function_provider(projects).await.unwrap();

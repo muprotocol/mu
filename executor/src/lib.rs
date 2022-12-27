@@ -134,7 +134,7 @@ pub async fn run() -> Result<()> {
 
     let usage_aggregator = stack::usage_aggregator::start();
 
-    let function_provider = runtime::providers::DefaultFunctionProvider::new();
+    let function_provider = runtime::providers::DefaultAssemblyProvider::new();
     let database_manager =
         DatabaseManager::new(usage_aggregator.clone(), db_manager_config).await?;
     let runtime = runtime::start(

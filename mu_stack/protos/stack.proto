@@ -42,7 +42,8 @@ enum HttpMethod {
 
 message GatewayEndpoint {
     HttpMethod method = 1;
-    string route_to = 2;
+    string route_to_assembly = 2;
+    string route_to_function = 3;
 }
 
 enum FunctionRuntime {

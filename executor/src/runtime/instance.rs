@@ -5,7 +5,7 @@ use super::{
     function,
     memory::create_memory,
     types::{
-        ExecuteFunctionRequest, ExecuteFunctionResponse, FunctionHandle, FunctionID, InstanceID,
+        ExecuteFunctionRequest, ExecuteFunctionResponse, FunctionHandle, AssemblyID, InstanceID,
     },
 };
 use crate::{
@@ -102,7 +102,7 @@ pub struct Instance<S: InstanceState> {
 
 impl Instance<Loaded> {
     pub fn new(
-        function_id: FunctionID,
+        function_id: AssemblyID,
         envs: HashMap<String, String>,
         store: Store,
         module: Module,
@@ -169,7 +169,7 @@ impl Instance<Running> {
         self.state.handle.is_finished()
     }
 
-    fn write_message<'a>(&mut self, message: IncomingMessage<'a>) -> Result<(), Error> {
+    fn write_message(&mut self, message: IncomingMessage) -> Result<(), Error> {
         message.write(&mut self.state.handle.io.stdin).map_err(|e| {
             error!("failed to write data to function: {e}");
             Error::Internal(anyhow!("failed to write data to function {e}",))
@@ -178,8 +178,8 @@ impl Instance<Running> {
 
     fn read_message(&mut self) -> Result<OutgoingMessage<'static>, Error> {
         OutgoingMessage::read(&mut self.state.handle.io.stdout).map_err(|e| {
-            error!("Error in deserializing packet: {e}");
-            Error::Internal(anyhow!("failed to receive packet from function"))
+            error!("Error in deserializing message: {e}");
+            Error::Internal(anyhow!("failed to receive message from function"))
         })
     }
 
@@ -215,8 +215,7 @@ impl Instance<Running> {
             match message {
                 Err(e) => {
                     //TODO: Handle better
-                    error!("can not receive packet from instance, {e}");
-                    ()
+                    error!("can not receive message from instance, {e}");
                 }
                 Ok(message) => {
                     match message {
@@ -427,37 +426,37 @@ impl Instance<Running> {
                     "Instance {:?} is in invalid io-state, should be processing, was idle",
                     &self.id
                 );
-                return Err(Error::Internal(anyhow!(
+                Err(Error::Internal(anyhow!(
                     "Invalid instance io-state, should be processing, was idle"
-                )));
+                )))
             }
             (IOState::Processing, true) => {
                 trace!(
                     "Instance {:?} exited while was in processing state",
                     &self.id
                 );
-                return Err(Error::FunctionRuntimeError(
+                Err(Error::FunctionRuntimeError(
                     FunctionRuntimeError::FunctionEarlyExit(RuntimeError::new(
                         "Function Early Exit",
                     )),
-                ));
+                ))
             }
             (IOState::InRuntimeCall, true) => {
                 trace!(
                     "Instance {:?} exited while was in runtime-call state",
                     &self.id
                 );
-                return Err(Error::FunctionRuntimeError(
+                Err(Error::FunctionRuntimeError(
                     FunctionRuntimeError::FunctionEarlyExit(RuntimeError::new(
                         "Function Early Exit",
                     )),
-                ));
+                ))
             }
             (IOState::Closed, false) => {
                 trace!("Instance {:?} has io closed but still running", &self.id);
-                return Err(Error::FunctionRuntimeError(
+                Err(Error::FunctionRuntimeError(
                     FunctionRuntimeError::FunctionEarlyExit(RuntimeError::new("IO Closed")),
-                ));
+                ))
             }
             (IOState::Processing, false)
             | (IOState::InRuntimeCall, false)

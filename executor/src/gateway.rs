@@ -4,11 +4,11 @@ use std::{borrow::Cow, collections::HashMap, net::IpAddr, path::PathBuf, sync::A
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
-use borsh::{BorshDeserialize, BorshSerialize};
 use dyn_clonable::clonable;
 use log::{debug, error, trace};
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel, RequestReplyChannel};
 use mu_stack::{Gateway, HttpMethod, StackID};
+use musdk_common::{Header, Request, Response};
 use rocket::{
     catch, catchers, delete, get, head,
     http::Status,
@@ -16,7 +16,7 @@ use rocket::{
     request::{FromParam, FromRequest},
     routes, State,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio::{
     sync::{mpsc, RwLock},
     task::JoinHandle,
@@ -25,7 +25,10 @@ use tokio::{
 use crate::{
     network::{connection_manager::ConnectionManager, rpc_handler::RpcHandler, NodeConnection},
     request_routing::RoutingTarget,
-    runtime::{types::FunctionID, Runtime},
+    runtime::{
+        types::{AssemblyID, FunctionID},
+        Runtime,
+    },
     stack::usage_aggregator::{Usage, UsageAggregator},
 };
 
@@ -46,14 +49,16 @@ pub struct GatewayManagerConfig {
 
 type GatewayName = String;
 type RequestPath = String;
+type AssemblyName = String;
+type FunctionName = String;
 
 enum GatewayMessage {
-    GetFunctionName(
+    GetAssemblyAndFunction(
         StackID,
         GatewayName,
         HttpMethod,
         RequestPath,
-        ReplyChannel<Option<String>>,
+        ReplyChannel<Option<(AssemblyName, FunctionName)>>,
     ),
     GetDeployedGatewayNames(StackID, ReplyChannel<Option<Vec<GatewayName>>>),
     DeployGateways(StackID, Vec<Gateway>),
@@ -212,13 +217,19 @@ async fn step(
     mut state: GatewayState,
 ) -> GatewayState {
     match msg {
-        GatewayMessage::GetFunctionName(stack_id, gateway_name, method, request_path, rep) => {
+        GatewayMessage::GetAssemblyAndFunction(
+            stack_id,
+            gateway_name,
+            method,
+            request_path,
+            rep,
+        ) => {
             rep.reply(state.gateways.get(&stack_id).and_then(|gateways| {
                 gateways.get(&gateway_name).and_then(|gateway| {
                     gateway.endpoints.get(&request_path).and_then(|eps| {
                         eps.iter()
                             .find(|ep| ep.method == method)
-                            .map(|ep| ep.route_to.clone())
+                            .map(|ep| (ep.route_to.assembly.clone(), ep.route_to.function.clone()))
                     })
                 })
             }));
@@ -294,106 +305,84 @@ impl<'a> FromRequest<'a> for RequestHeaders<'a> {
     }
 }
 
-#[derive(Debug, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
-pub struct Header<'a> {
-    pub name: Cow<'a, str>,
-    pub value: Cow<'a, str>,
+fn calculate_request_size(r: &Request) -> u64 {
+    let mut size = r.path.as_bytes().len() as u64;
+    size += r
+        .query
+        .iter()
+        .map(|x| x.0.as_bytes().len() as u64 + x.1.as_bytes().len() as u64)
+        .sum::<u64>();
+    size += r
+        .headers
+        .iter()
+        .map(|x| x.name.as_bytes().len() as u64 + x.value.as_bytes().len() as u64)
+        .sum::<u64>();
+    size += r.body.len() as u64;
+    size
 }
 
-#[derive(Debug, BorshSerialize, Serialize)]
-pub struct Request<'a> {
-    pub method: HttpMethod,
-    pub path: Cow<'a, str>,
-    pub query: HashMap<Cow<'a, str>, Cow<'a, str>>,
-    pub headers: Vec<Header<'a>>,
-    pub data: Cow<'a, [u8]>,
+fn calculate_response_size(r: &Response) -> u64 {
+    let mut size = r.content_type.as_bytes().len() as u64;
+    size += r
+        .headers
+        .iter()
+        .map(|x| x.name.as_bytes().len() as u64 + x.value.as_bytes().len() as u64)
+        .sum::<u64>();
+    size += r.body.len() as u64;
+    size
 }
 
-impl<'a> Request<'a> {
-    fn calculate_size(&self) -> u64 {
-        let mut size = self.path.as_bytes().len() as u64;
-        size += self
-            .query
-            .iter()
-            .map(|x| x.0.as_bytes().len() as u64 + x.1.as_bytes().len() as u64)
-            .sum::<u64>();
-        size += self
-            .headers
-            .iter()
-            .map(|x| x.name.as_bytes().len() as u64 + x.value.as_bytes().len() as u64)
-            .sum::<u64>();
-        size += self.data.len() as u64;
-        size
-    }
-}
+struct ResponseWrapper(Response<'static>);
 
-#[derive(Debug, Deserialize, BorshDeserialize)]
-pub struct Response {
-    pub status: u16,
-    pub content_type: String,
-    pub headers: Vec<Header<'static>>,
-    pub body: Vec<u8>,
-}
-
-impl Response {
-    fn calculate_size(&self) -> u64 {
-        let mut size = self.content_type.as_bytes().len() as u64;
-        size += self
-            .headers
-            .iter()
-            .map(|x| x.name.as_bytes().len() as u64 + x.value.as_bytes().len() as u64)
-            .sum::<u64>();
-        size += self.body.len() as u64;
-        size
-    }
-}
-
-impl<'a> Response {
-    fn bad_request(description: &'a str) -> Self {
-        Self {
+impl ResponseWrapper {
+    fn bad_request(description: &str) -> Self {
+        Self(Response {
             status: Status::BadRequest.code,
             content_type: "text/plain".into(),
             headers: vec![],
-            body: description.into(),
-        }
+            body: Cow::Owned(description.into()),
+        })
     }
 
     // TODO: does returning a 404 cause error catchers to run too?
     fn not_found() -> Self {
-        Self {
+        Self(Response {
             status: Status::BadRequest.code,
             content_type: "text/plain".into(),
             headers: vec![],
-            body: "not found".into(),
-        }
+            body: Cow::Owned("not found".into()),
+        })
     }
 
-    fn internal_error(description: &'a str) -> Self {
-        Self {
+    fn internal_error(description: &str) -> Self {
+        Self(Response {
             status: Status::InternalServerError.code,
             content_type: "text/plain".into(),
             headers: vec![],
-            body: description.into(),
-        }
+            body: Cow::Owned(description.into()),
+        })
     }
 }
 
-impl<'r, 'o: 'r> rocket::response::Responder<'r, 'o> for Response {
+impl<'r, 'o: 'r> rocket::response::Responder<'r, 'o> for ResponseWrapper {
     fn respond_to(self, _: &'r rocket::Request<'_>) -> rocket::response::Result<'o> {
         let mut builder = rocket::Response::build();
 
-        builder.status(Status::new(self.status));
+        builder.status(Status::new(self.0.status));
 
-        for header in self.headers {
+        for header in self.0.headers {
             builder.header(rocket::http::Header::new(
                 header.name.into_owned(),
                 header.value.into_owned(),
             ));
         }
 
-        builder.header(rocket::http::Header::new("Content-Type", self.content_type));
+        builder.header(rocket::http::Header::new(
+            "Content-Type",
+            self.0.content_type,
+        ));
 
-        builder.sized_body(self.body.len(), std::io::Cursor::new(self.body));
+        builder.sized_body(self.0.body.len(), std::io::Cursor::new(self.0.body));
 
         builder.ok()
     }
@@ -409,19 +398,19 @@ async fn route_request<'a>(
     function_id: FunctionID,
     request: Request<'a>,
     dependency_accessor: &State<DependencyAccessor>,
-) -> Result<Response> {
+) -> Result<ResponseWrapper> {
     trace!("Request received for {function_id}, will check deployment status");
 
     let route = dependency_accessor
         .get_routing_target
-        .request(function_id.stack_id)
+        .request(function_id.assembly_id.stack_id)
         .await
         .context("Failed to request route")?
         .context("Failed to find route")?;
 
     debug!(
         "Deployment status of stack {} is {:?}",
-        function_id.stack_id, route
+        function_id.assembly_id.stack_id, route
     );
 
     match route {
@@ -430,7 +419,8 @@ async fn route_request<'a>(
             .runtime
             .invoke_function(function_id, request)
             .await
-            .context(""),
+            .map(ResponseWrapper)
+            .map_err(Into::into),
         RoutingTarget::Remote(node_connection) => {
             let (connection_id, new_connection) = match node_connection {
                 NodeConnection::Established(id) => (id, false),
@@ -468,8 +458,20 @@ async fn route_request<'a>(
                     .await;
             }
 
-            response
+            response.map(ResponseWrapper)
         }
+    }
+}
+
+fn stack_http_method_to_sdk(method: mu_stack::HttpMethod) -> musdk_common::HttpMethod {
+    match method {
+        mu_stack::HttpMethod::Get => musdk_common::HttpMethod::Get,
+        mu_stack::HttpMethod::Put => musdk_common::HttpMethod::Put,
+        mu_stack::HttpMethod::Post => musdk_common::HttpMethod::Post,
+        mu_stack::HttpMethod::Delete => musdk_common::HttpMethod::Delete,
+        mu_stack::HttpMethod::Options => musdk_common::HttpMethod::Options,
+        mu_stack::HttpMethod::Patch => musdk_common::HttpMethod::Patch,
+        mu_stack::HttpMethod::Head => musdk_common::HttpMethod::Head,
     }
 }
 
@@ -482,12 +484,12 @@ async fn handle_request<'a>(
     headers: RequestHeaders<'a>,
     data: Option<&'a [u8]>,
     dependency_accessor: &State<DependencyAccessor>,
-) -> Response {
+) -> ResponseWrapper {
     let stack_id = stack_id.0;
 
     let path = match path.to_str() {
         Some(x) => x,
-        None => return Response::bad_request("Invalid UTF-8 in request path"),
+        None => return ResponseWrapper::bad_request("Invalid UTF-8 in request path"),
     };
 
     let query = query
@@ -505,39 +507,42 @@ async fn handle_request<'a>(
         .collect();
 
     let request = Request {
-        method,
+        method: stack_http_method_to_sdk(method),
         path: Cow::Borrowed(path),
         query,
         headers,
-        data: data.map(Cow::Borrowed).unwrap_or(Cow::Owned(vec![])),
+        body: data.map(Cow::Borrowed).unwrap_or(Cow::Owned(vec![])),
     };
 
-    let mut traffic = request.calculate_size();
+    let mut traffic = calculate_request_size(&request);
 
-    let function_name = dependency_accessor
+    let assembly_and_function = dependency_accessor
         .get_gateway_manager()
         .await
         .mailbox
         .post_and_reply(|r| {
-            GatewayMessage::GetFunctionName(
+            GatewayMessage::GetAssemblyAndFunction(
                 stack_id,
                 gateway_name.into(),
-                request.method,
+                method,
                 (*request.path).to_owned(),
                 r,
             )
         })
         .await;
 
-    let function_name = match function_name {
-        Err(_) => return Response::internal_error("Node is shutting down"),
-        Ok(None) => return Response::not_found(),
+    let (assembly_name, function_name) = match assembly_and_function {
+        Err(_) => return ResponseWrapper::internal_error("Node is shutting down"),
+        Ok(None) => return ResponseWrapper::not_found(),
         Ok(Some(x)) => x,
     };
 
     let response = match route_request(
         FunctionID {
-            stack_id,
+            assembly_id: AssemblyID {
+                stack_id,
+                assembly_name,
+            },
             function_name,
         },
         request,
@@ -546,13 +551,13 @@ async fn handle_request<'a>(
     .await
     {
         Ok(r) => {
-            traffic += r.calculate_size();
+            traffic += calculate_response_size(&r.0);
             r
         }
         // TODO: Generate meaningful error messages (propagate user function failure?)
         Err(f) => {
             error!("Failed to run user function: {f:?}");
-            Response::internal_error("User function failure")
+            ResponseWrapper::internal_error("User function failure")
         }
     };
 
@@ -577,7 +582,7 @@ async fn get<'a>(
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
     dependency_accessor: &State<DependencyAccessor>,
-) -> Response {
+) -> ResponseWrapper {
     handle_request(
         stack_id,
         gateway_name,
@@ -600,7 +605,7 @@ async fn post<'a>(
     headers: RequestHeaders<'a>,
     data: &'a [u8],
     dependency_accessor: &State<DependencyAccessor>,
-) -> Response {
+) -> ResponseWrapper {
     handle_request(
         stack_id,
         gateway_name,
@@ -623,7 +628,7 @@ async fn put<'a>(
     headers: RequestHeaders<'a>,
     data: &'a [u8],
     dependency_accessor: &State<DependencyAccessor>,
-) -> Response {
+) -> ResponseWrapper {
     handle_request(
         stack_id,
         gateway_name,
@@ -646,7 +651,7 @@ async fn delete<'a>(
     headers: RequestHeaders<'a>,
     data: &'a [u8],
     dependency_accessor: &State<DependencyAccessor>,
-) -> Response {
+) -> ResponseWrapper {
     handle_request(
         stack_id,
         gateway_name,
@@ -668,7 +673,7 @@ async fn head<'a>(
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
     dependency_accessor: &State<DependencyAccessor>,
-) -> Response {
+) -> ResponseWrapper {
     handle_request(
         stack_id,
         gateway_name,
@@ -691,7 +696,7 @@ async fn patch<'a>(
     headers: RequestHeaders<'a>,
     data: &'a [u8],
     dependency_accessor: &State<DependencyAccessor>,
-) -> Response {
+) -> ResponseWrapper {
     handle_request(
         stack_id,
         gateway_name,
@@ -713,7 +718,7 @@ async fn options<'a>(
     query: HashMap<&'a str, &'a str>,
     headers: RequestHeaders<'a>,
     dependency_accessor: &State<DependencyAccessor>,
-) -> Response {
+) -> ResponseWrapper {
     handle_request(
         stack_id,
         gateway_name,

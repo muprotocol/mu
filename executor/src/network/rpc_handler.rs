@@ -8,13 +8,13 @@ use bytes::Bytes;
 use dyn_clonable::clonable;
 use futures::Future;
 use log::warn;
+use musdk_common::{Request, Response};
 use protobuf::{Message, MessageField};
 
 use super::{
     connection_manager::{ConnectionManager, RequestID},
     ConnectionID,
 };
-use crate::gateway;
 use crate::runtime::types::FunctionID;
 
 // TODO: bad design, we receive the request from glue code, but access the
@@ -36,8 +36,8 @@ pub trait RpcHandler: Send + Sync + Clone {
         &self,
         connection_id: ConnectionID,
         function_id: FunctionID,
-        request: gateway::Request<'a>,
-    ) -> Pin<Box<dyn Future<Output = Result<gateway::Response>> + Send + 'a>>;
+        request: Request<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<Response<'static>>> + Send + 'a>>;
 }
 
 #[async_trait]
@@ -50,10 +50,10 @@ pub trait RpcRequestHandler: Clone {
 pub enum RpcRequest {
     ExecuteFunctionRequest(
         FunctionID,
-        gateway::Request<'static>,
+        Request<'static>,
         Box<
             dyn FnOnce(
-                    Result<gateway::Response>,
+                    Result<Response<'static>>,
                 ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>
                 + Send
                 + Sync,
@@ -103,7 +103,7 @@ impl<RequestHandler: RpcRequestHandler + Clone + Send + Sync + 'static> RpcHandl
                     let Some(request) = request.request.0 else {
                         bail!("Empty request in execute function request");
                     };
-                    let request = gateway::Request::<'static>::try_from(*request)
+                    let request = Request::<'static>::try_from(*request)
                         .context("Execute function request contains invalid data")?;
 
                     let connection_manager = self.connection_manager.clone();
@@ -139,8 +139,8 @@ impl<RequestHandler: RpcRequestHandler + Clone + Send + Sync + 'static> RpcHandl
         &self,
         connection_id: ConnectionID,
         function_id: FunctionID,
-        request: gateway::Request<'a>,
-    ) -> Pin<Box<dyn Future<Output = Result<gateway::Response>> + Send + 'a>> {
+        request: Request<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<Response<'static>>> + Send + 'a>> {
         let connection_manager = self.connection_manager.clone();
         Box::pin(async move {
             let function_id = protos::rpc::FunctionID::from(function_id);
@@ -169,7 +169,7 @@ impl<RequestHandler: RpcRequestHandler + Clone + Send + Sync + 'static> RpcHandl
                     bail!("Received error response to execute function request: {f}")
                 }
                 Some(protos::rpc::execute_function_response::Result::Ok(response)) => {
-                    let response = gateway::Response::try_from(response)
+                    let response = Response::<'static>::try_from(response)
                         .context("Failed to read execute function response")?;
                     Ok(response)
                 }
@@ -180,7 +180,7 @@ impl<RequestHandler: RpcRequestHandler + Clone + Send + Sync + 'static> RpcHandl
 
 async fn send_execute_function_reply(
     connection_manager: Box<dyn ConnectionManager>,
-    response: Result<gateway::Response>,
+    response: Result<Response<'static>>,
     connection_id: ConnectionID,
     request_id: RequestID,
 ) {

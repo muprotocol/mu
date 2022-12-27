@@ -5,7 +5,7 @@ use crate::{
     gateway::GatewayManager,
     mudb::service::{DatabaseID, DatabaseManager},
     runtime::{
-        types::{FunctionDefinition, FunctionID},
+        types::{AssemblyDefinition, AssemblyID},
         Runtime,
     },
 };
@@ -83,10 +83,10 @@ pub(super) async fn deploy(
             .await
             .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
 
-        function_defs.push(FunctionDefinition {
-            id: FunctionID {
+        function_defs.push(AssemblyDefinition {
+            id: AssemblyID {
                 stack_id: id,
-                function_name: func.name.clone(),
+                assembly_name: func.name.clone(),
             },
             source: function_source,
             runtime: func.runtime,

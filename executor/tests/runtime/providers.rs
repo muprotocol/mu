@@ -3,11 +3,11 @@ use mu::runtime::types::*;
 use mu_stack::StackID;
 use std::collections::HashMap;
 
-pub struct MapFunctionProvider {
-    inner: HashMap<FunctionID, FunctionDefinition>,
+pub struct MapAssemblyProvider {
+    inner: HashMap<AssemblyID, AssemblyDefinition>,
 }
 
-impl MapFunctionProvider {
+impl MapAssemblyProvider {
     pub fn new() -> Self {
         Self {
             inner: HashMap::new(),
@@ -16,16 +16,16 @@ impl MapFunctionProvider {
 }
 
 #[async_trait]
-impl FunctionProvider for MapFunctionProvider {
-    fn get(&self, id: &FunctionID) -> Option<&FunctionDefinition> {
+impl AssemblyProvider for MapAssemblyProvider {
+    fn get(&self, id: &AssemblyID) -> Option<&AssemblyDefinition> {
         Some(self.inner.get(id).unwrap())
     }
 
-    fn add_function(&mut self, function: FunctionDefinition) {
+    fn add_function(&mut self, function: AssemblyDefinition) {
         self.inner.insert(function.id.clone(), function);
     }
 
-    fn remove_function(&mut self, id: &FunctionID) {
+    fn remove_function(&mut self, id: &AssemblyID) {
         self.inner.remove(id);
     }
 

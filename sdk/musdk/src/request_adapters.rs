@@ -1,4 +1,4 @@
-use musdk_common::request::Request;
+use musdk_common::Request;
 
 pub trait FromRequest<'a> {
     fn from_request(req: &'a Request) -> Self;
