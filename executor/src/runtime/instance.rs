@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, borrow::Cow};
 
 use super::{
     error::{Error, FunctionLoadingError},
@@ -10,14 +10,14 @@ use super::{
 };
 use crate::{
     mudb::service::DatabaseManager,
-    runtime::
-        error::FunctionRuntimeError,
+    runtime::{
+        error::FunctionRuntimeError, instance::utils::{create_database_id, key_filter_to_mudb}},
     stack::usage_aggregator::Usage,
 };
 
 use anyhow::anyhow;
 use log::{error, trace, log, Level};
-use musdk_common::{incoming_message::IncomingMessage, outgoing_message::{OutgoingMessage, LogLevel}};
+use musdk_common::{incoming_message::IncomingMessage, outgoing_message::{OutgoingMessage, LogLevel}, database::{DatabaseRequest, DatabaseResponse}};
 use wasmer::{CompilerConfig, Module, RuntimeError, Store};
 use wasmer_compiler_llvm::LLVM;
 use wasmer_middlewares::{metering::MeteringPoints, Metering};
@@ -301,120 +301,110 @@ impl Instance<Running> {
                                 log!(target: FUNCTION_LOG_TARGET, level, "{}", log.body);
                         },
 
-                         //PacketType::DbRequest => {
-                          //    match packet::database::Request::from_packet(message) {
-                          //        Ok(req) => {
-                          //            let resp = match req {
-                          //                packet::database::Request::CreateTable(req) => {
-                          //                    let res = tokio::runtime::Handle::current()
-                          //                        .block_on(self.database_service.create_table(
-                          //                            database_id(&self.id.function_id, req.db_name),
-                          //                            req.table_name,
-                          //                        ))
-                          //                        .map_err(|e| e.to_string());
+                        OutgoingMessage::DatabaseRequest(request) => {
+                                     let resp = match request {
+                                         DatabaseRequest::CreateTable(req) => {
+                                             let res = tokio::runtime::Handle::current()
+                                                 .block_on(self.database_service.create_table(
+                                                     create_database_id(&self.id.function_id.stack_id, req.db_name.into_owned()),
+                                                     req.table_name.into_owned(),
+                                                 ))
+                                                 .map_err(|e| e.to_string())
+                                                .map(|d| musdk_common::database::TableDescription { table_name: Cow::Owned(d.table_name)});
 
-                          //                    self.state.database_write_count += 1;
+                                             self.state.database_write_count += 1;
 
-                          //                    packet::database::Response::CreateTable(res)
-                          //                }
+                                             DatabaseResponse::CreateTable(res)
+                                         }
 
-                          //                packet::database::Request::DropTable(req) => {
-                          //                    let res = tokio::runtime::Handle::current()
-                          //                        .block_on(self.database_service.delete_table(
-                          //                            database_id(&self.id.function_id, req.db_name),
-                          //                            req.table_name,
-                          //                        ))
-                          //                        .map_err(|e| e.to_string());
+                                         DatabaseRequest::DropTable(req) => {
+                                             let res = tokio::runtime::Handle::current()
+                                                 .block_on(self.database_service.delete_table(
+                                                     create_database_id(&self.id.function_id.stack_id, req.db_name.into_owned()),
+                                                     req.table_name.into_owned(),
+                                                 ))
+                                                 .map_err(|e| e.to_string())
+                                                .map(|r| r.map(|d| musdk_common::database::TableDescription { table_name: Cow::Owned(d.table_name)}));
 
-                          //                    self.state.database_write_count += 1;
+                                             self.state.database_write_count += 1;
 
-                          //                    packet::database::Response::DropTable(res)
-                          //                }
+                                             DatabaseResponse::DropTable(res)
+                                         }
 
-                          //                packet::database::Request::Find(req) => {
-                          //                    let res = tokio::runtime::Handle::current()
-                          //                        .block_on(self.database_service.find_item(
-                          //                            database_id(&self.id.function_id, req.db_name),
-                          //                            req.table_name,
-                          //                            req.key_filter,
-                          //                            req.value_filter.try_into().map_err(|_| {
-                          //                                (
-                          //                                    Error::DBError(
-                          //                                        "failed to parse value filter",
-                          //                                    ),
-                          //                                    vec![],
-                          //                                )
-                          //                            })?,
-                          //                        ))
-                          //                        .map_err(|e| e.to_string());
+                                         DatabaseRequest::Find(req) => {
+                                             let res = tokio::runtime::Handle::current()
+                                                 .block_on(self.database_service.find_item(
+                                                     create_database_id(&self.id.function_id.stack_id, req.db_name.into_owned()),
+                                                     req.table_name.into_owned(),
+                                                     key_filter_to_mudb(req.key_filter),
+                                                     req.value_filter.to_string().try_into().map_err(|_| {
+                                                         (
+                                                             Error::DBError(
+                                                                 "failed to parse value filter",
+                                                             ),
+                                                             vec![],
+                                                         )
+                                                     })?,
+                                                 ))
+                                                 .map_err(|e| e.to_string())
+                                                .map(|r| r.into_iter().map(|(k, v)| musdk_common::database::Item { key: Cow::Owned(k), value: Cow::Owned(v) }).collect());
 
-                          //                    self.state.database_read_count += 1;
+                                             self.state.database_read_count += 1;
 
-                          //                    packet::database::Response::Find(res)
-                          //                }
-                          //                packet::database::Request::Insert(req) => {
-                          //                    let res = tokio::runtime::Handle::current()
-                          //                        .block_on({
-                          //                            self.database_service.insert_one_item(
-                          //                                database_id(
-                          //                                    &self.id.function_id,
-                          //                                    req.db_name,
-                          //                                ),
-                          //                                req.table_name,
-                          //                                req.key,
-                          //                                req.value,
-                          //                            )
-                          //                        })
-                          //                        .map_err(|e| e.to_string());
+                                             DatabaseResponse::Find(res)
+                                         }
+                                         DatabaseRequest::Insert(req) => {
+                                             let res = tokio::runtime::Handle::current()
+                                                 .block_on({
+                                                     self.database_service.insert_one_item(
+                                                     create_database_id(&self.id.function_id.stack_id, req.db_name.into_owned()),
+                                                         req.table_name.into_owned(),
+                                                         req.key.into_owned(),
+                                                         req.value.into_owned(),
+                                                     )
+                                                 })
+                                                 .map_err(|e| e.to_string())
+                                                .map(Cow::Owned);
 
-                          //                    self.state.database_write_count += 1;
+                                             self.state.database_write_count += 1;
 
-                          //                    packet::database::Response::Insert(res)
-                          //                }
-                          //                packet::database::Request::Update(req) => {
-                          //                    let res = tokio::runtime::Handle::current()
-                          //                        .block_on(self.database_service.update_item(
-                          //                            database_id(&self.id.function_id, req.db_name),
-                          //                            req.table_name,
-                          //                            req.key_filter,
-                          //                            req.value_filter.try_into().map_err(|_| {
-                          //                                (
-                          //                                    Error::DBError(
-                          //                                        "failed to parse value filter",
-                          //                                    ),
-                          //                                    vec![],
-                          //                                )
-                          //                            })?,
-                          //                            req.update.try_into().map_err(|_| {
-                          //                                (
-                          //                                    Error::DBError(
-                          //                                        "failed to parse updater",
-                          //                                    ),
-                          //                                    vec![],
-                          //                                )
-                          //                            })?,
-                          //                        ))
-                          //                        .map_err(|e| e.to_string());
+                                             DatabaseResponse::Insert(res)
+                                         }
+                                         DatabaseRequest::Update(req) => {
+                                             let res = tokio::runtime::Handle::current()
+                                                 .block_on(self.database_service.update_item(
+                                                     create_database_id(&self.id.function_id.stack_id, req.db_name.into_owned()),
+                                                     req.table_name.into_owned(),
+                                                     key_filter_to_mudb(req.key_filter),
+                                                     req.value_filter.to_string().try_into().map_err(|_| {
+                                                         (
+                                                             Error::DBError(
+                                                                 "failed to parse value filter",
+                                                             ),
+                                                             vec![],
+                                                         )
+                                                     })?,
+                                                     req.update.to_string().try_into().map_err(|_| {
+                                                         (
+                                                             Error::DBError(
+                                                                 "failed to parse updater",
+                                                             ),
+                                                             vec![],
+                                                         )
+                                                     })?,
+                                                     )).map_err(|e| e.to_string())
+                                                    .map(|r| r.into_iter().map(|(k, v)| musdk_common::database::Item { key: Cow::Owned(k), value: Cow::Owned(v) }).collect());
 
-                          //                    self.state.database_write_count += 1;
+                                             self.state.database_write_count += 1;
 
-                          //                    packet::database::Response::Update(res)
-                          //                }
-                          //            };
-
-                          //            //TODO: abort function or just log the error?
-                          //            if let Err(e) = self.send_raw_packet(resp) {
-                          //                error!("can not send packet {}, {}", "DbResponse", e)
-                          //            }
-                          //        }
-                          //        Err(e) => {
-                          //            error!("can not deserialize packet into {}, {}", "DbRequest", e)
-                          //        }
-                          //    }
-                          //}
+                                             DatabaseResponse::Update(res)
+                                         }
+                                 };
+                                self.write_message(IncomingMessage::DatabaseResponse(resp));
+                         }
                     }
                 }
-            };
+            }
         }
     }
 
@@ -471,4 +461,26 @@ enum IOState {
     Processing,
     InRuntimeCall,
     Closed,
+}
+
+
+mod utils {
+    use mu_stack::StackID;
+    use crate::mudb::service::DatabaseID;
+
+    pub fn create_database_id(stack_id: &StackID, db_name: String) -> DatabaseID {
+        DatabaseID {
+            stack_id: stack_id.clone(),
+            db_name,
+        }
+    }
+
+    pub fn key_filter_to_mudb(key_filter: musdk_common::database::KeyFilter) -> crate::mudb::service::KeyFilter {
+        match key_filter {
+            musdk_common::database::KeyFilter::Exact(k) => crate::mudb::service::KeyFilter::Exact(k.into_owned()),
+            musdk_common::database::KeyFilter::Prefix(k) => crate::mudb::service::KeyFilter::Prefix(k.into_owned()),
+        }
+
+    }
+
 }

@@ -1,3 +1,4 @@
+pub mod database;
 pub mod incoming_message;
 pub mod outgoing_message;
 

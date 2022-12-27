@@ -7,12 +7,13 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-use crate::Request;
+use crate::{database::DatabaseResponse, request::Request};
 
 #[repr(u16)]
 #[derive(FromPrimitive)]
 enum IncomingMessageKind {
     ExecuteFunction = 1,
+    DatabaseResponse = 2,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -24,6 +25,7 @@ pub struct ExecuteFunction<'a> {
 #[allow(dead_code)]
 pub enum IncomingMessage<'a> {
     ExecuteFunction(ExecuteFunction<'a>),
+    DatabaseResponse(DatabaseResponse<'a>),
 }
 
 macro_rules! read_cases {
@@ -59,11 +61,11 @@ impl<'a> IncomingMessage<'a> {
     pub fn read(reader: &mut impl Read) -> std::io::Result<Self> {
         let kind: u16 = BorshDeserialize::deserialize_reader(reader)?;
 
-        read_cases!(kind, reader, [ExecuteFunction])
+        read_cases!(kind, reader, [ExecuteFunction, DatabaseResponse])
     }
 
     pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        write_cases!(self, writer, [ExecuteFunction]);
+        write_cases!(self, writer, [ExecuteFunction, DatabaseResponse]);
 
         Ok(())
     }

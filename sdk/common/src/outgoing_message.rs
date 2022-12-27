@@ -7,7 +7,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-use crate::Response;
+use crate::{database::DatabaseRequest, response::Response};
 
 #[repr(u16)]
 #[derive(FromPrimitive)]
@@ -15,6 +15,7 @@ pub enum OutgoingMessageKind {
     FatalError = 1,
     FunctionResult = 2,
     Log = 3,
+    DatabaseRequest = 4,
 }
 
 #[derive(BorshDeserialize, BorshSerialize)]
@@ -47,6 +48,7 @@ pub enum OutgoingMessage<'a> {
     FatalError(FatalError<'a>),
     FunctionResult(FunctionResult<'a>),
     Log(Log<'a>),
+    DatabaseRequest(DatabaseRequest<'a>),
 }
 
 macro_rules! read_cases {
@@ -82,11 +84,19 @@ impl<'a> OutgoingMessage<'a> {
     pub fn read(reader: &mut impl Read) -> std::io::Result<Self> {
         let kind: u16 = BorshDeserialize::deserialize_reader(reader)?;
 
-        read_cases!(kind, reader, [FatalError, FunctionResult, Log])
+        read_cases!(
+            kind,
+            reader,
+            [FatalError, FunctionResult, Log, DatabaseRequest]
+        )
     }
 
     pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        write_cases!(self, writer, [FatalError, FunctionResult, Log]);
+        write_cases!(
+            self,
+            writer,
+            [FatalError, FunctionResult, Log, DatabaseRequest]
+        );
 
         Ok(())
     }
