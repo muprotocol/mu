@@ -60,6 +60,7 @@ chrono = "0.4"
 byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
 protobuf = "3.2"
 #//TODO
+musdk-common = { path = "../sdk/common" }
 borsh = { git = "https://github.com/muprotocol/borsh-rs", branch = "feature/reader-deserialization" }
 
 [dev-dependencies]

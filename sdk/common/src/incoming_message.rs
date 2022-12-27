@@ -1,6 +1,9 @@
-use std::{borrow::Cow, io::Read};
+use std::{
+    borrow::Cow,
+    io::{Read, Write},
+};
 
-use borsh::BorshDeserialize;
+use borsh::{BorshDeserialize, BorshSerialize};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
@@ -12,7 +15,7 @@ enum IncomingMessageKind {
     ExecuteFunction = 1,
 }
 
-#[derive(BorshDeserialize)]
+#[derive(Debug, BorshDeserialize, BorshSerialize)]
 pub struct ExecuteFunction<'a> {
     pub function: Cow<'a, str>,
     pub request: Request<'a>,
@@ -21,7 +24,6 @@ pub struct ExecuteFunction<'a> {
 #[allow(dead_code)]
 pub enum IncomingMessage<'a> {
     ExecuteFunction(ExecuteFunction<'a>),
-    SomethingElsePlaceholder,
 }
 
 macro_rules! read_cases {
@@ -42,10 +44,27 @@ macro_rules! read_cases {
     };
 }
 
+macro_rules! write_cases {
+    ($self: ident, $writer: ident, [$($case: ident),+]) => {
+        match $self {
+            $(IncomingMessage::$case(x) => {
+                (IncomingMessageKind::$case as u16).serialize($writer)?;
+                x.serialize($writer)?;
+            })+
+        }
+    };
+}
+
 impl<'a> IncomingMessage<'a> {
     pub fn read(reader: &mut impl Read) -> std::io::Result<Self> {
         let kind: u16 = BorshDeserialize::deserialize_reader(reader)?;
 
         read_cases!(kind, reader, [ExecuteFunction])
+    }
+
+    pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        write_cases!(self, writer, [ExecuteFunction]);
+
+        Ok(())
     }
 }

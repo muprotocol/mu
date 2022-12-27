@@ -1,7 +1,4 @@
-use super::{
-    error::Error,
-    packet::{self, Packet},
-};
+use super::error::Error;
 use mu_stack::{FunctionRuntime, StackID};
 
 use anyhow::Result;
@@ -19,6 +16,9 @@ use uuid::Uuid;
 use wasmer_middlewares::metering::MeteringPoints;
 use wasmer_wasi::Pipe;
 
+pub type ExecuteFunctionRequest<'a> = musdk_common::incoming_message::ExecuteFunction<'a>;
+pub type ExecuteFunctionResponse = musdk_common::outgoing_message::FunctionResult<'static>;
+
 pub trait FunctionProvider: Send {
     fn get(&self, id: &FunctionID) -> Option<&FunctionDefinition>;
     fn add_function(&mut self, function: FunctionDefinition);
@@ -29,8 +29,8 @@ pub trait FunctionProvider: Send {
 #[derive(Debug)]
 pub struct InvokeFunctionRequest {
     pub function_id: FunctionID,
-    pub request: Packet,
-    pub reply: ReplyChannel<Result<packet::gateway::Response, Error>>,
+    pub request: ExecuteFunctionRequest<'static>,
+    pub reply: ReplyChannel<Result<ExecuteFunctionResponse, Error>>,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]

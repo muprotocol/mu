@@ -1728,6 +1728,7 @@ dependencies = [
  "mailbox_processor",
  "marketplace",
  "mu_stack",
+ "musdk-common",
  "num 0.4.0",
  "pin-project",
  "protobuf",
@@ -2832,6 +2833,15 @@ dependencies = [
  "tokio",
  "tokio-util",
  "version_check",
+]
+
+[[package]]
+name = "musdk-common"
+version = "0.1.0"
+dependencies = [
+ "borsh 0.0.0",
+ "num-derive",
+ "num-traits",
 ]
 
 [[package]]

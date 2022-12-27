@@ -6,7 +6,6 @@ pub mod error;
 pub mod function;
 pub mod instance;
 pub mod memory;
-pub mod packet;
 pub mod providers;
 pub mod types;
 
@@ -16,20 +15,21 @@ use dyn_clonable::clonable;
 use log::*;
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
 use mu_stack::StackID;
-use std::{collections::HashMap, path::Path};
+use musdk_common::request::Request;
+use std::{borrow::Cow, collections::HashMap, path::Path};
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
 
 use self::{
     error::Error,
     instance::{create_store, Instance, Loaded},
-    packet::IntoPacket,
     types::{
-        FunctionDefinition, FunctionID, FunctionProvider, InvokeFunctionRequest, RuntimeConfig,
+        ExecuteFunctionRequest, ExecuteFunctionResponse, FunctionDefinition, FunctionID,
+        FunctionProvider, InvokeFunctionRequest, RuntimeConfig,
     },
 };
 use crate::{
-    gateway, mudb::service::DatabaseManager, runtime::error::FunctionLoadingError,
+    mudb::service::DatabaseManager, runtime::error::FunctionLoadingError,
     stack::usage_aggregator::UsageAggregator,
 };
 
@@ -39,8 +39,8 @@ pub trait Runtime: Clone + Send + Sync {
     async fn invoke_function<'a>(
         &self,
         function_id: FunctionID,
-        request: gateway::Request<'a>,
-    ) -> Result<gateway::Response, Error>;
+        request: ExecuteFunctionRequest<'a>,
+    ) -> Result<ExecuteFunctionResponse, Error>;
 
     async fn stop(&self) -> Result<(), Error>;
 
@@ -200,11 +200,15 @@ impl Runtime for RuntimeImpl {
     async fn invoke_function<'a>(
         &self,
         function_id: FunctionID,
-        request: gateway::Request<'a>,
-    ) -> Result<gateway::Response, Error> {
-        let request = packet::gateway::Request(request)
-            .into_packet()
-            .map_err(|e| Error::FunctionLoadingError(FunctionLoadingError::SerializtionError(e)))?;
+        request: ExecuteFunctionRequest<'a>,
+    ) -> Result<ExecuteFunctionResponse, Error> {
+        let request = ExecuteFunctionRequest {
+            function: Cow::Owned(request.function.into_owned()),
+            request: Request {
+                path: Cow::Owned(request.request.path.into_owned()),
+                body: Cow::Owned(request.request.body.into_owned()),
+            },
+        };
 
         self.mailbox
             .post_and_reply(|r| {
@@ -216,7 +220,6 @@ impl Runtime for RuntimeImpl {
             })
             .await
             .map_err(|e| Error::Internal(e.into()))?
-            .map(|r| r.0)
     }
 
     async fn stop(&self) -> Result<(), Error> {

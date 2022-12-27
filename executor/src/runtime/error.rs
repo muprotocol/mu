@@ -1,7 +1,7 @@
 //TODO
 #![allow(dead_code)]
 
-use super::{packet::PacketError, types::FunctionID};
+use super::types::FunctionID;
 use thiserror::Error;
 use wasmer::{ExportError, InstantiationError, RuntimeError};
 use wasmer_wasi::{WasiError, WasiStateCreationError};
@@ -41,6 +41,9 @@ pub enum Error {
 
 #[derive(Error, Debug)]
 pub enum FunctionRuntimeError {
+    #[error("Function reported fatal error: {0}")]
+    FatalError(String),
+
     #[error("Function exited early: {0}")]
     FunctionEarlyExit(RuntimeError),
 
@@ -53,8 +56,8 @@ pub enum FunctionRuntimeError {
     #[error("_start function is missing: {0}")]
     MissingStartFunction(ExportError),
 
-    #[error("Failed to serialize packet: {0}")]
-    SerializtionError(PacketError),
+    #[error("Failed to serialize message: {0}")]
+    SerializtionError(std::io::Error),
 }
 #[derive(Error, Debug)]
 pub enum FunctionLoadingError {
@@ -78,7 +81,4 @@ pub enum FunctionLoadingError {
 
     #[error("Function requested memory size is too big")]
     RequestedMemorySizeTooBig,
-
-    #[error("Failed to serialize packet: {0}")]
-    SerializtionError(PacketError),
 }
