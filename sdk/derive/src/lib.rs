@@ -5,10 +5,7 @@ extern crate quote;
 use proc_macro::TokenStream;
 use proc_macro_error::{abort, proc_macro_error};
 use quote::ToTokens;
-use syn::{
-    parse_macro_input, spanned::Spanned, FnArg, GenericParam, Generics, Ident, Item, ItemFn,
-    ItemMod, Lifetime, LifetimeDef, ReturnType,
-};
+use syn::{parse_macro_input, FnArg, Ident, Item, ItemFn, ItemMod, ReturnType};
 
 type TokenStream2 = proc_macro2::TokenStream;
 
@@ -187,15 +184,7 @@ fn generate_invokers(r#mod: &FunctionsMod) -> Vec<TokenStream2> {
             }) {
                 Some(l) => (f.sig.generics.clone(), l.clone()),
                 None => {
-                    let lifetime =
-                        LifetimeDef::new(Lifetime::new("a", f.sig.generics.lt_token.span()));
-                    let mut params = f.sig.generics.params.clone();
-                    params.insert(0, GenericParam::Lifetime(lifetime.clone()));
-                    let generics = Generics {
-                        params,
-                        ..f.sig.generics.clone()
-                    };
-                    (generics, lifetime)
+                    abort!(f.sig.ident, "mu functions must include a lifetime parameter, used to receive the MuContext by reference")
                 }
             }
         };
