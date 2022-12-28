@@ -17,7 +17,7 @@ pub enum OutgoingMessageKind {
     Log = 3,
 }
 
-#[derive(BorshDeserialize, BorshSerialize)]
+#[derive(Debug, BorshDeserialize, BorshSerialize)]
 pub struct FatalError<'a> {
     pub error: Cow<'a, str>,
 }

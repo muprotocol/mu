@@ -213,11 +213,11 @@ impl Instance<Running> {
         self.state.io_state = IOState::Processing;
 
         loop {
+            trace!("Loop ran");
             self.check_status().map_err(|e| (e, vec![]))?;
 
             // Now process the Runtime calls from function
-            let message = self.read_message();
-            match message {
+            match self.read_message() {
                 Err(e) => {
                     //TODO: Handle better
                     error!("can not receive message from instance, {e}");
@@ -225,6 +225,7 @@ impl Instance<Running> {
                 Ok(message) => {
                     match message {
                         OutgoingMessage::FunctionResult(response) => {
+                            trace!("got message: {:?}", response);
                             //TODO: We need a timeout for function and then kill it if there was a
                             //      `FatalError`
                             let result = tokio::runtime::Handle::current()
@@ -258,6 +259,7 @@ impl Instance<Running> {
                         }
 
                         OutgoingMessage::FatalError(e) => {
+                            trace!("got message: {:?}", e);
                             //TODO: We need a timeout for function and then kill it if there was a
                             //      `FatalError`
                             let result = tokio::runtime::Handle::current()
@@ -293,6 +295,7 @@ impl Instance<Running> {
                         }
 
                         OutgoingMessage::Log(log) => {
+                            trace!("got message: {:?}", log);
                             if self.include_logs {
                                 let level = match log.level {
                                     LogLevel::Error => Level::Error,

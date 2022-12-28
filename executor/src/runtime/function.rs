@@ -9,6 +9,7 @@ use super::{
     types::{FunctionHandle, FunctionIO},
 };
 use anyhow::Result;
+use log::trace;
 use wasmer::{Instance, Module, Store};
 use wasmer_middlewares::metering::get_remaining_points;
 use wasmer_wasi::{FsError, VirtualFile, WasiState};
@@ -124,9 +125,12 @@ impl Pipe {
 
 impl Read for Pipe {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        println!("Reading");
         let mut buffer = self.buffer.0.lock().unwrap();
         if buffer.is_empty() {
+            println!("Empty buffer, sleeping");
             buffer = self.buffer.1.wait(buffer).unwrap();
+            println!("Buffer has bytes");
         }
         let amt = std::cmp::min(buf.len(), buffer.len());
         let buf_iter = buffer.drain(..amt).enumerate();
@@ -139,13 +143,14 @@ impl Read for Pipe {
 
 impl Write for Pipe {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        println!("Writing buf: {buf:?}");
         if buf.is_empty() {
             return Ok(0);
         }
 
         let mut buffer = self.buffer.0.lock().unwrap();
-        self.buffer.1.notify_one();
         buffer.extend(buf);
+        self.buffer.1.notify_one();
         Ok(buf.len())
     }
 
