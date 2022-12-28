@@ -30,6 +30,8 @@ pub fn create_project(name: &'static str, memory_limit: Option<byte_unit::Byte>)
 #[tokio::test]
 #[serial]
 async fn test_simple_func() {
+    let _ = env_logger::init();
+
     let projects = vec![create_project("hello-wasm", None)];
     let (runtime, _, _) = create_runtime(&projects).await;
 
@@ -52,6 +54,7 @@ async fn test_simple_func() {
         "Hello Chappy, welcome to MuRuntime".as_bytes(),
         resp.body.into_owned()
     );
+
     runtime.stop().await.unwrap();
 }
 

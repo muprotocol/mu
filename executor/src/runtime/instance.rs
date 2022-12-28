@@ -171,10 +171,14 @@ impl Instance<Running> {
     }
 
     fn write_message(&mut self, message: IncomingMessage) -> Result<(), Error> {
-        message.write(&mut self.state.handle.io.stdin).map_err(|e| {
-            error!("failed to write data to function: {e}");
-            Error::Internal(anyhow!("failed to write data to function {e}",))
-        })
+        message
+            .write(&mut self.state.handle.io.stdin)
+            .map_err(|e| {
+                error!("failed to write data to function: {e}");
+                Error::Internal(anyhow!("failed to write data to function {e}",))
+            })?;
+
+        Ok(())
     }
 
     fn read_message(&mut self) -> Result<OutgoingMessage<'static>, Error> {

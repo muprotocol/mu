@@ -1,10 +1,4 @@
-//TODO
-#![allow(dead_code)]
-
-use std::{
-    collections::HashMap,
-    io::{BufReader, BufWriter},
-};
+use std::collections::HashMap;
 
 use super::{
     error::{Error, FunctionLoadingError, FunctionRuntimeError},
@@ -105,9 +99,9 @@ pub fn start(
         join_handle,
         is_finished_rx,
         FunctionIO {
-            stdin: BufWriter::new(stdin),
-            stdout: BufReader::new(stdout),
-            stderr: BufReader::new(stderr),
+            stdin,
+            stdout,
+            stderr,
         },
     ))
 }

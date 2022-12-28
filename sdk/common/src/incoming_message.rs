@@ -30,7 +30,7 @@ macro_rules! read_cases {
     ($kind: ident, $reader: ident, [$($case: ident),+]) => {
         match IncomingMessageKind::from_u16($kind) {
             $(Some(IncomingMessageKind::$case) => {
-                let message: $case<'static> = BorshDeserialize::try_from_reader($reader)?;
+                let message: $case<'static> = BorshDeserialize::deserialize_reader($reader)?;
                 Ok(Self::$case(message))
             })+
 

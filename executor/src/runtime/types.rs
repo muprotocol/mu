@@ -5,12 +5,7 @@ use anyhow::Result;
 use bytes::Bytes;
 use mailbox_processor::ReplyChannel;
 use serde::Deserialize;
-use std::{
-    collections::HashMap,
-    fmt::Display,
-    io::{BufReader, BufWriter},
-    path::PathBuf,
-};
+use std::{collections::HashMap, fmt::Display, path::PathBuf};
 use tokio::{sync::oneshot::error::TryRecvError, task::JoinHandle};
 use uuid::Uuid;
 use wasmer_middlewares::metering::MeteringPoints;
@@ -115,9 +110,9 @@ impl AssemblyDefinition {
 
 #[derive(Debug)]
 pub struct FunctionIO {
-    pub stdin: BufWriter<Pipe>,
-    pub stdout: BufReader<Pipe>,
-    pub stderr: BufReader<Pipe>,
+    pub stdin: Pipe,
+    pub stdout: Pipe,
+    pub stderr: Pipe,
 }
 
 #[derive(Debug)]
