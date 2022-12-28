@@ -42,6 +42,17 @@ db_manager:
   usage_report_duration: 15m
 tikv:
   pd:
-    []
+    data_dir: pd1
+    peer_url:
+      address: 127.0.0.1
+      port: 8000
+    client_url:
+      address: 127.0.0.1
+      port: 8001
+    log_file: null
   node:
-    []
+    cluster_url:
+      address: 127.0.0.1
+      port: 8000
+    data_dir: tikv1
+    log_file: null

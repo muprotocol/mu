@@ -1,5 +1,7 @@
 mod serde_support;
 
+use std::ptr::null;
+
 pub use serde_support::{ConfigDuration, ConfigLogLevelFilter, ConfigUri};
 
 use anyhow::{Context, Result};
@@ -21,6 +23,7 @@ pub struct SystemConfig(
     pub ConnectionManagerConfig,
     pub GossipConfig,
     pub Vec<KnownNodeConfig>,
+    pub TikvRunnerConfig,
     pub GatewayManagerConfig,
     pub LogConfig,
     pub RuntimeConfig,
@@ -43,6 +46,14 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("initial_cluster.ip", "127.0.0.1"),
         ("initial_cluster.gossip_port", "12012"),
         ("initial_cluster.pd_port", "12012"),
+        ("tikv.pd.data_dir", "pd1"),
+        ("tikv.pd.peer_url.address", "127.0.0.1"),
+        ("tikv.pd.peer_url.port", "8000"),
+        ("tikv.pd.client_url.address", "127.0.0.1"),
+        ("tikv.pd.client_url.port", "8001"),
+        ("tikv.node.cluster_url.address", "127.0.0.1"),
+        ("tikv.node.cluster_url.port", "8000"),
+        ("tikv.node.data_dir", "tikv1"),
         ("gateway_manager.listen_ip", "0.0.0.0"),
         ("gateway_manager.listen_port", "12012"),
         ("scheduler.tick_interval", "1s"),
@@ -129,6 +140,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
         connection_manager_config,
         gossip_config,
         known_node_config,
+        tikv_config,
         gateway_config,
         log_config,
         runtime_config,
