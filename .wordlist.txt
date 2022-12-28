@@ -4,6 +4,7 @@ Borsh
 chrono
 clonable
 codegen
+Condvar
 cranelift
 datagram
 Datagram

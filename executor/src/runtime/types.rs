@@ -1,4 +1,4 @@
-use super::error::Error;
+use super::{error::Error, function::Pipe};
 use mu_stack::{AssemblyRuntime, StackID};
 
 use anyhow::Result;
@@ -9,7 +9,6 @@ use std::{collections::HashMap, fmt::Display, path::PathBuf};
 use tokio::{sync::oneshot::error::TryRecvError, task::JoinHandle};
 use uuid::Uuid;
 use wasmer_middlewares::metering::MeteringPoints;
-use wasmer_wasi::Pipe;
 
 pub(super) type ExecuteFunctionRequest<'a> = musdk_common::incoming_message::ExecuteFunction<'a>;
 pub(super) type ExecuteFunctionResponse = musdk_common::outgoing_message::FunctionResult<'static>;

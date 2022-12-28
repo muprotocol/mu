@@ -30,7 +30,7 @@ pub fn create_project(name: &'static str, memory_limit: Option<byte_unit::Byte>)
 #[tokio::test]
 #[serial]
 async fn test_simple_func() {
-    let _ = env_logger::init();
+    env_logger::init();
 
     let projects = vec![create_project("hello-wasm", None)];
     let (runtime, _, _) = create_runtime(&projects).await;

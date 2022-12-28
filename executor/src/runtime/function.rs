@@ -1,4 +1,8 @@
-use std::collections::HashMap;
+use std::{
+    collections::{HashMap, VecDeque},
+    io::{self, Read, Seek, Write},
+    sync::{Arc, Condvar, Mutex},
+};
 
 use super::{
     error::{Error, FunctionLoadingError, FunctionRuntimeError},
@@ -7,7 +11,7 @@ use super::{
 use anyhow::Result;
 use wasmer::{Instance, Module, Store};
 use wasmer_middlewares::metering::get_remaining_points;
-use wasmer_wasi::{Pipe, WasiState};
+use wasmer_wasi::{FsError, VirtualFile, WasiState};
 
 //TODO: configure `Builder` of tokio for huge blocking tasks
 pub fn start(
@@ -104,4 +108,111 @@ pub fn start(
             stderr,
         },
     ))
+}
+
+// Re-implementation of wasmer's pipes with an optional Condvar for reading input
+#[derive(Debug, Clone, Default)]
+pub struct Pipe {
+    buffer: Arc<(Mutex<VecDeque<u8>>, Condvar)>,
+}
+
+impl Pipe {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Read for Pipe {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut buffer = self.buffer.0.lock().unwrap();
+        if buffer.is_empty() {
+            buffer = self.buffer.1.wait(buffer).unwrap();
+        }
+        let amt = std::cmp::min(buf.len(), buffer.len());
+        let buf_iter = buffer.drain(..amt).enumerate();
+        for (i, byte) in buf_iter {
+            buf[i] = byte;
+        }
+        Ok(amt)
+    }
+}
+
+impl Write for Pipe {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        let mut buffer = self.buffer.0.lock().unwrap();
+        self.buffer.1.notify_one();
+        buffer.extend(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Seek for Pipe {
+    fn seek(&mut self, _pos: io::SeekFrom) -> io::Result<u64> {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            "can not seek in a pipe",
+        ))
+    }
+}
+
+impl VirtualFile for Pipe {
+    fn last_accessed(&self) -> u64 {
+        0
+    }
+    fn last_modified(&self) -> u64 {
+        0
+    }
+    fn created_time(&self) -> u64 {
+        0
+    }
+    fn size(&self) -> u64 {
+        0
+    }
+    fn set_len(&mut self, _len: u64) -> Result<(), FsError> {
+        Ok(())
+    }
+    fn unlink(&mut self) -> Result<(), FsError> {
+        Ok(())
+    }
+    fn bytes_available_read(&self) -> Result<Option<usize>, FsError> {
+        let buffer = self.buffer.0.lock().unwrap();
+        Ok(Some(buffer.len()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        io::{Read, Write},
+        thread,
+        time::Duration,
+    };
+
+    use super::Pipe;
+
+    #[test]
+    fn read_then_write() {
+        let mut pipe = Pipe::new();
+        let mut pipe_clone = pipe.clone();
+
+        let handle = thread::spawn(move || {
+            let mut buf = [0u8; 5];
+            pipe.read_exact(&mut buf).unwrap();
+            assert_eq!(buf, [1, 2, 3, 4, 5]);
+        });
+
+        thread::sleep(Duration::from_millis(500));
+        let buf = [1u8, 2, 3, 4, 5];
+        assert_eq!(pipe_clone.write(&buf).unwrap(), 5);
+
+        handle.join().unwrap();
+    }
 }
