@@ -294,36 +294,34 @@ async fn mailbox_step(
 ) -> RuntimeState {
     match msg {
         MailboxMessage::InvokeFunction(req) => {
-            if let Ok(instance) = state.instantiate_function(req.assembly_id.clone()).await {
-                let usage_aggregator = state.usage_aggregator.clone();
+            match state.instantiate_function(req.assembly_id.clone()).await {
+                Ok(instance) => {
+                    let usage_aggregator = state.usage_aggregator.clone();
 
-                tokio::spawn(async move {
-                    match instance.start() {
-                        Err(e) => req.reply.reply(Err(e)),
-                        Ok(i) => {
-                            let result = i
-                                .run_request(req.request)
-                                .await
-                                .map(|(resp, usages)| {
-                                    usage_aggregator
-                                        .register_usage(req.assembly_id.stack_id, usages);
-                                    resp
-                                })
-                                .map_err(|(error, usages)| {
-                                    usage_aggregator
-                                        .register_usage(req.assembly_id.stack_id, usages);
-                                    error
-                                });
+                    tokio::spawn(async move {
+                        match instance.start() {
+                            Err(e) => req.reply.reply(Err(e)),
+                            Ok(i) => {
+                                let result = i
+                                    .run_request(req.request)
+                                    .await
+                                    .map(|(resp, usages)| {
+                                        usage_aggregator
+                                            .register_usage(req.assembly_id.stack_id, usages);
+                                        resp
+                                    })
+                                    .map_err(|(error, usages)| {
+                                        usage_aggregator
+                                            .register_usage(req.assembly_id.stack_id, usages);
+                                        error
+                                    });
 
-                            req.reply.reply(result);
+                                req.reply.reply(result);
+                            }
                         }
-                    }
-                });
-            } else {
-                req.reply.reply(
-                    Err(Error::Internal(anyhow!("Can not instantiate function")))
-                        .map_err(Into::into),
-                )
+                    });
+                }
+                Err(f) => req.reply.reply(Err(Error::Internal(f))),
             }
         }
 
