@@ -511,7 +511,7 @@ mod utils {
 
     pub fn create_database_id(stack_id: &StackID, db_name: String) -> DatabaseID {
         DatabaseID {
-            stack_id: stack_id.clone(),
+            stack_id: *stack_id,
             db_name,
         }
     }

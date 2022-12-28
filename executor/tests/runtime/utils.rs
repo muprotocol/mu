@@ -1,10 +1,6 @@
 use anyhow::{bail, Context, Result};
 use mu::{
-    mudb::{
-        self,
-        service::{DatabaseID, DatabaseManager},
-        DBManagerConfig,
-    },
+    mudb::{service::DatabaseManager, DBManagerConfig},
     runtime::{
         start,
         types::{AssemblyDefinition, AssemblyID, RuntimeConfig},
@@ -75,19 +71,19 @@ pub async fn clean_wasm_project(project_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-pub async fn create_db_if_not_exist(
-    db_service: DatabaseManager,
-    database_id: DatabaseID,
-) -> Result<()> {
-    let conf = mudb::Config {
-        database_id,
-        ..Default::default()
-    };
+// pub async fn create_db_if_not_exist(
+//     db_service: DatabaseManager,
+//     database_id: DatabaseID,
+// ) -> Result<()> {
+//     let conf = mudb::Config {
+//         database_id,
+//         ..Default::default()
+//     };
 
-    db_service.create_db_if_not_exist(conf).await?;
+//     db_service.create_db_if_not_exist(conf).await?;
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 pub struct Project {
     pub id: AssemblyID,
