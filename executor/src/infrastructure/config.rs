@@ -1,7 +1,5 @@
 mod serde_support;
 
-use std::ptr::null;
-
 pub use serde_support::{ConfigDuration, ConfigLogLevelFilter, ConfigUri};
 
 use anyhow::{Context, Result};
@@ -10,7 +8,7 @@ use config::{Config, Environment, File, FileFormat};
 use crate::{
     gateway::GatewayManagerConfig,
     log_setup::LogConfig,
-    mudb::DBManagerConfig,
+    mudb::{DBManagerConfig, TikvRunnerConfig},
     network::{
         connection_manager::ConnectionManagerConfig,
         gossip::{GossipConfig, KnownNodeConfig},

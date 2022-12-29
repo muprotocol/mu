@@ -82,8 +82,8 @@ pub struct NodeConfig {
 
 #[derive(Deserialize)]
 pub struct TikvRunnerConfig {
-    pd: PdConfig,
-    node: NodeConfig,
+    pub pd: PdConfig,
+    pub node: NodeConfig,
 }
 
 #[async_trait]
@@ -97,9 +97,17 @@ struct TikvRunnerArgs {
     tikv_args: Vec<String>,
 }
 
-fn generate_pd_name(node: &KnownNodeConfig) -> String {
+enum Node<'a> {
+    Known(&'a KnownNodeConfig),
+    Node(&'a NodeAddress),
+}
+
+fn generate_pd_name(node: Node<'_>) -> String {
     const PD_PREFIX: &str = "pd_node_";
-    format!("{PD_PREFIX}{}_{}", node.address, node.port)
+    match node {
+        Node::Known(n) => format!("{PD_PREFIX}{}_{}", n.ip, n.gossip_port),
+        Node::Node(n) => format!("{PD_PREFIX}{}_{}", n.address, n.port),
+    }
 }
 
 fn generate_arguments(
@@ -110,12 +118,12 @@ fn generate_arguments(
     let mut initial_cluster = known_node_config
         .into_iter()
         .map(|node| {
-            let name = generate_pd_name(&node);
+            let name = generate_pd_name(Node::Known(&node));
             format!("{name}={}:{}", node.ip, node.pd_port)
         })
         .collect::<Vec<String>>();
 
-    let pd_name = generate_pd_name(&node_address);
+    let pd_name = generate_pd_name(Node::Node(&node_address));
 
     initial_cluster.push(format!(
         "{pd_name}={}:{}",
@@ -138,7 +146,7 @@ fn generate_arguments(
         format!("--initial-cluster=\"{initial_cluster}\""),
     ];
 
-    if let (Some(log_file)) = config.pd.log_file {
+    if let Some(log_file) = config.pd.log_file {
         pd_args.push(format!("--log-file={log_file}"))
     }
 
@@ -154,7 +162,7 @@ fn generate_arguments(
         format!("--data-dir={}", config.node.data_dir),
     ];
 
-    if let (Some(log_file)) = config.node.log_file {
+    if let Some(log_file) = config.node.log_file {
         tikv_args.push(format!("--log-file={log_file}"))
     }
 
