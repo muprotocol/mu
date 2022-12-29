@@ -14,29 +14,17 @@ pub enum Error {
     #[error("Function Loading Error: {0:?}")]
     FunctionLoadingError(FunctionLoadingError),
 
-    #[error("Can not convert input message to {0}")]
-    IncorrectInputMessage(&'static str),
-
-    #[error("Can parse {0} from convert output message")]
-    IncorrectOutputMessage(&'static str),
-
-    #[error("Invalid message type: {0}")]
-    InvalidMessageType(String),
-
-    #[error("Message Deserialization failed: {0}")]
-    MessageDeserializationFailed(serde_json::Error),
-
-    #[error("Message Serialization failed: {0}")]
-    MessageSerializationFailed(serde_json::Error),
-
-    #[error("Message id can not be None")]
-    MessageIDIsNone,
-
     #[error("Error in DB")]
     DBError(&'static str),
 
+    #[error("Failed to read message from function: {0:?}")]
+    FailedToReadMessage(std::io::Error),
+
     #[error("Internal error: {0}")]
     Internal(anyhow::Error),
+
+    #[error("Function didn't terminate cleanly")]
+    FunctionDidntTerminateCleanly,
 }
 
 #[derive(Error, Debug)]

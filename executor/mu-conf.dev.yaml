@@ -28,4 +28,4 @@ db_manager:
   usage_report_duration: 30s
 runtime:
   cache_path: runtime-cache
-  include_functions_log: true
+  include_function_logs: true

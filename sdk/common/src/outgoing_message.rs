@@ -43,6 +43,7 @@ pub enum LogLevel {
     Trace = 4,
 }
 
+#[derive(Debug)]
 pub enum OutgoingMessage<'a> {
     FatalError(FatalError<'a>),
     FunctionResult(FunctionResult<'a>),

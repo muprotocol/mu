@@ -21,7 +21,7 @@ pub struct ExecuteFunction<'a> {
     pub request: Request<'a>,
 }
 
-#[allow(dead_code)]
+#[derive(Debug)]
 pub enum IncomingMessage<'a> {
     ExecuteFunction(ExecuteFunction<'a>),
 }

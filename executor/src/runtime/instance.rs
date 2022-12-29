@@ -187,10 +187,33 @@ impl Instance<Running> {
     }
 
     fn read_message(&mut self) -> Result<OutgoingMessage<'static>, Error> {
-        OutgoingMessage::read(&mut self.state.handle.io.stdout).map_err(|e| {
-            error!("Error in deserializing message: {e}");
-            Error::Internal(anyhow!("failed to receive message from function"))
-        })
+        OutgoingMessage::read(&mut self.state.handle.io.stdout).map_err(Error::FailedToReadMessage)
+    }
+
+    fn wait_to_finish_and_get_usage(self) -> Result<Vec<Usage>, (Error, Vec<Usage>)> {
+        tokio::runtime::Handle::current()
+            .block_on(self.state.handle.join_handle)
+            .map(move |metering_points| {
+                let usage = |m| {
+                    create_usage(
+                        &self.state.database_read_count,
+                        &self.state.database_write_count,
+                        metering_point_to_instructions_count(m),
+                        &self.memory_limit,
+                    )
+                };
+
+                match metering_points {
+                    Ok(m) => Ok(usage(&m)),
+                    Err((e, m)) => Err((e, usage(&m))),
+                }
+            })
+            .map_err(|_| {
+                (
+                    Error::Internal(anyhow!("failed to run function task to end")),
+                    vec![],
+                )
+            })?
     }
 
     fn inner_run_request(
@@ -218,89 +241,47 @@ impl Instance<Running> {
         self.state.io_state = IOState::Processing;
 
         loop {
-            trace!("Loop ran");
-            self.check_status().map_err(|e| (e, vec![]))?;
+            // TODO: overall timeout for functions
 
-            // Now process the Runtime calls from function
+            // TODO: make this async? Possible, but needs work in Borsh as well
             match self.read_message() {
+                Err(Error::FailedToReadMessage(e))
+                    if e.kind() == std::io::ErrorKind::InvalidInput =>
+                {
+                    error!("Function did not write a FunctionResult or FatalError to its stdout before stopping");
+                    return match self.wait_to_finish_and_get_usage() {
+                        Ok(u) => Err((Error::FunctionDidntTerminateCleanly, u)),
+                        Err((e, u)) => Err((e, u)),
+                    };
+                }
                 Err(e) => {
-                    //TODO: Handle better
-                    error!("can not receive message from instance, {e}");
+                    error!("Could not receive message from instance: {e:?}");
+                    return match self.wait_to_finish_and_get_usage() {
+                        Ok(u) => Err((e, u)),
+                        Err((e, u)) => Err((e, u)),
+                    };
                 }
                 Ok(message) => {
+                    trace!("Message from function {}: {:?}", self.id, message);
                     match message {
                         OutgoingMessage::FunctionResult(response) => {
-                            trace!("got message: {:?}", response);
-                            //TODO: We need a timeout for function and then kill it if there was a
-                            //      `FatalError`
-                            let result = tokio::runtime::Handle::current()
-                            .block_on(self.state.handle.join_handle)
-                            .map(move |metering_points| {
-                                let usage = |m| {
-                                    create_usage(
-                                        &self.state.database_read_count,
-                                        &self.state.database_write_count,
-                                        metering_point_to_instructions_count(m),
-                                        &self.memory_limit,
-                                    )
-                                };
-
-                                match (metering_points, response) {
-                                    (Ok(m), r) => Ok((r, usage(&m))),
-                                    (Err((error, m)), r) => {
-                                        error!("function ran into error but produced the response, {error:?}");
-                                        Ok((r, usage(&m)))
-                                    }
-                                }
-                            })
-                            .map_err(|_| {
-                                (
-                                    Error::Internal(anyhow!("failed to run function task to end")),
-                                    vec![],
-                                )
-                            })?;
-
-                            return result;
+                            return match self.wait_to_finish_and_get_usage() {
+                                Ok(u) => Ok((response, u)),
+                                Err((e, u)) => Err((e, u)),
+                            };
                         }
 
                         OutgoingMessage::FatalError(e) => {
-                            trace!("got message: {:?}", e);
-                            //TODO: We need a timeout for function and then kill it if there was a
-                            //      `FatalError`
-                            let result = tokio::runtime::Handle::current()
-                            .block_on(self.state.handle.join_handle)
-                            .map(move |metering_points| {
-                                let usage = |m| {
-                                    create_usage(
-                                        &self.state.database_read_count,
-                                        &self.state.database_write_count,
-                                        metering_point_to_instructions_count(m),
-                                        &self.memory_limit,
-                                    )
-                                };
-
-                                match metering_points {
-                                    Ok(m) => {
-                                        Err((Error::FunctionRuntimeError(FunctionRuntimeError::FatalError(e.error.into_owned())), usage(&m)))
-                                    },
-                                    Err((error, m)) => {
-                                        error!("function ran into error but produced the response, {error:?}");
-                                        Err((Error::FunctionRuntimeError(FunctionRuntimeError::FatalError(e.error.into_owned())), usage(&m)))
-                                    }
-                                }
-                            })
-                            .map_err(|_| {
-                                (
-                                    Error::Internal(anyhow!("failed to run function task to end")),
-                                    vec![],
-                                )
-                            })?;
-
-                            return result;
+                            let e = Error::FunctionRuntimeError(FunctionRuntimeError::FatalError(
+                                e.error.into_owned(),
+                            ));
+                            return match self.wait_to_finish_and_get_usage() {
+                                Ok(u) => Err((e, u)),
+                                Err((_, u)) => Err((e, u)),
+                            };
                         }
 
                         OutgoingMessage::Log(log) => {
-                            trace!("got message: {:?}", log);
                             if self.include_logs {
                                 let level = match log.level {
                                     LogLevel::Error => Level::Error,
@@ -310,7 +291,13 @@ impl Instance<Running> {
                                     LogLevel::Trace => Level::Trace,
                                 };
 
-                                log!(target: FUNCTION_LOG_TARGET, level, "{}", log.body);
+                                log!(
+                                    target: FUNCTION_LOG_TARGET,
+                                    level,
+                                    "{}: {}",
+                                    self.id,
+                                    log.body
+                                );
                             }
                         } // OutgoingMessage::DatabaseRequest(request) => {
                           //     let resp = match request {
@@ -452,52 +439,6 @@ impl Instance<Running> {
                     }
                 }
             }
-        }
-    }
-
-    fn check_status(&mut self) -> Result<(), Error> {
-        match (self.state.io_state, self.is_finished()) {
-            // Should never get into this case
-            (IOState::Idle, _) => {
-                trace!(
-                    "Instance {:?} is in invalid io-state, should be processing, was idle",
-                    &self.id
-                );
-                Err(Error::Internal(anyhow!(
-                    "Invalid instance io-state, should be processing, was idle"
-                )))
-            }
-            (IOState::Processing, true) => {
-                trace!(
-                    "Instance {:?} exited while was in processing state",
-                    &self.id
-                );
-                Err(Error::FunctionRuntimeError(
-                    FunctionRuntimeError::FunctionEarlyExit(RuntimeError::new(
-                        "Function Early Exit",
-                    )),
-                ))
-            }
-            (IOState::InRuntimeCall, true) => {
-                trace!(
-                    "Instance {:?} exited while was in runtime-call state",
-                    &self.id
-                );
-                Err(Error::FunctionRuntimeError(
-                    FunctionRuntimeError::FunctionEarlyExit(RuntimeError::new(
-                        "Function Early Exit",
-                    )),
-                ))
-            }
-            (IOState::Closed, false) => {
-                trace!("Instance {:?} has io closed but still running", &self.id);
-                Err(Error::FunctionRuntimeError(
-                    FunctionRuntimeError::FunctionEarlyExit(RuntimeError::new("IO Closed")),
-                ))
-            }
-            (IOState::Processing, false)
-            | (IOState::InRuntimeCall, false)
-            | (IOState::Closed, true) => Ok(()),
         }
     }
 }

@@ -66,6 +66,9 @@ pub fn start(
 
     let (is_finished_tx, is_finished_rx) = tokio::sync::oneshot::channel::<()>();
 
+    let mut stdin_clone = stdin.clone();
+    let mut stdout_clone = stdout.clone();
+    let mut stderr_clone = stderr.clone();
     // If this module exports an _initialize function, run that first.
     let join_handle = tokio::task::spawn_blocking(move || {
         if let Ok(initialize) = instance.exports.get_function("_initialize") {
@@ -93,6 +96,10 @@ pub fn start(
             )
         })?;
 
+        stdin_clone.close();
+        stdout_clone.close();
+        stderr_clone.close();
+
         if let Err(e) = is_finished_tx.send(()) {
             log::error!("error sending finish signal: {e:?}");
         }
@@ -114,12 +121,31 @@ pub fn start(
 // Re-implementation of wasmer's pipes with an optional Condvar for reading input
 #[derive(Debug, Clone, Default)]
 pub struct Pipe {
-    buffer: Arc<(Mutex<VecDeque<u8>>, Condvar)>,
+    arc: Arc<PipeInner>,
+}
+
+#[derive(Debug, Default)]
+struct PipeInner {
+    mutex: Mutex<PipeBuffer>,
+    condvar: Condvar,
+}
+
+#[derive(Debug, Default)]
+struct PipeBuffer {
+    buffer: VecDeque<u8>,
+    is_closed: bool,
 }
 
 impl Pipe {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn close(&mut self) {
+        let mut guard = self.arc.mutex.lock().unwrap();
+        guard.is_closed = true;
+        self.arc.condvar.notify_all();
+        drop(guard);
     }
 }
 
@@ -128,12 +154,12 @@ impl Read for Pipe {
         if buf.is_empty() {
             return Ok(0);
         }
-        let mut buffer = self.buffer.0.lock().unwrap();
-        if buffer.is_empty() {
-            buffer = self.buffer.1.wait(buffer).unwrap();
+        let mut guard = self.arc.mutex.lock().unwrap();
+        if guard.buffer.is_empty() && !guard.is_closed {
+            guard = self.arc.condvar.wait(guard).unwrap();
         }
-        let amt = std::cmp::min(buf.len(), buffer.len());
-        buffer.copy_to_slice(&mut buf[0..amt]);
+        let amt = std::cmp::min(buf.len(), guard.buffer.len());
+        guard.buffer.copy_to_slice(&mut buf[0..amt]);
         Ok(amt)
     }
 }
@@ -144,9 +170,9 @@ impl Write for Pipe {
             return Ok(0);
         }
 
-        let mut buffer = self.buffer.0.lock().unwrap();
-        buffer.extend(buf);
-        self.buffer.1.notify_one();
+        let mut guard = self.arc.mutex.lock().unwrap();
+        guard.buffer.extend(buf);
+        self.arc.condvar.notify_one();
         Ok(buf.len())
     }
 
@@ -184,8 +210,8 @@ impl VirtualFile for Pipe {
         Ok(())
     }
     fn bytes_available_read(&self) -> Result<Option<usize>, FsError> {
-        let buffer = self.buffer.0.lock().unwrap();
-        Ok(Some(buffer.len()))
+        let guard = self.arc.mutex.lock().unwrap();
+        Ok(Some(guard.buffer.len()))
     }
 }
 
@@ -193,6 +219,7 @@ impl VirtualFile for Pipe {
 mod tests {
     use std::{
         io::{Read, Write},
+        sync::{Arc, Mutex},
         thread,
         time::Duration,
     };
@@ -293,6 +320,52 @@ mod tests {
         let mut pipe = Pipe::new();
         let mut buf = [0u8; 0];
         pipe.read_exact(&mut buf).unwrap();
+        assert_eq!(pipe.read(&mut buf).unwrap(), 0);
+    }
+
+    #[test]
+    fn close_while_waiting_to_read() {
+        let mut pipe = Pipe::new();
+        let mut pipe_clone = pipe.clone();
+        let didnt_run_prematurely = Arc::new(Mutex::new(false));
+        let didnt_run_prematurely_clone = didnt_run_prematurely.clone();
+
+        let handle = thread::spawn(move || {
+            let mut buf = [0u8; 5];
+            assert_eq!(pipe.read(&mut buf).unwrap(), 0);
+            assert!(*didnt_run_prematurely.lock().unwrap());
+        });
+
+        thread::sleep(Duration::from_millis(500));
+        *didnt_run_prematurely_clone.lock().unwrap() = true;
+        pipe_clone.close();
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn close_before_read() {
+        let mut pipe = Pipe::new();
+        let mut pipe_clone = pipe.clone();
+
+        let handle = thread::spawn(move || {
+            pipe_clone.close();
+        });
+
+        thread::sleep(Duration::from_millis(500));
+        let mut buf = [0u8; 5];
+        assert_eq!(pipe.read(&mut buf).unwrap(), 0);
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn close_before_read_on_same_thread() {
+        let mut pipe = Pipe::new();
+
+        pipe.close();
+
+        let mut buf = [0u8; 5];
         assert_eq!(pipe.read(&mut buf).unwrap(), 0);
     }
 }
