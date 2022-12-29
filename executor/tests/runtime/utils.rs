@@ -3,7 +3,7 @@ use mu::{
     mudb::{service::DatabaseManager, DBManagerConfig},
     runtime::{
         start,
-        types::{AssemblyDefinition, AssemblyID, RuntimeConfig},
+        types::{AssemblyDefinition, AssemblyID, FunctionID, RuntimeConfig},
         Runtime,
     },
     stack::usage_aggregator::UsageAggregator,
@@ -85,22 +85,34 @@ pub async fn clean_wasm_project(project_dir: &Path) -> Result<()> {
 //     Ok(())
 // }
 
-pub struct Project {
+pub struct Project<'a> {
     pub id: AssemblyID,
-    pub name: String,
+    pub name: &'a str,
     pub path: PathBuf,
     pub memory_limit: byte_unit::Byte,
+    pub functions: &'a [&'a str],
 }
 
-impl Project {
+impl<'a> Project<'a> {
     pub fn wasm_module_path(&self) -> PathBuf {
         self.path
             .join("target/wasm32-wasi/release/")
             .join(format!("{}.wasm", self.name))
     }
+
+    pub fn function_id(&self, index: usize) -> Option<FunctionID> {
+        if index <= self.functions.len() {
+            Some(FunctionID {
+                assembly_id: self.id.clone(),
+                function_name: self.functions[index].to_string(),
+            })
+        } else {
+            None
+        }
+    }
 }
 
-pub async fn build_wasm_projects(projects: &[Project]) -> Result<()> {
+pub async fn build_wasm_projects<'a>(projects: &'a [Project<'a>]) -> Result<()> {
     for p in projects {
         compile_wasm_project(&p.path)
             .await
@@ -110,8 +122,8 @@ pub async fn build_wasm_projects(projects: &[Project]) -> Result<()> {
     Ok(())
 }
 
-pub async fn read_wasm_functions(
-    projects: &[Project],
+pub async fn read_wasm_functions<'a>(
+    projects: &'a [Project<'a>],
 ) -> Result<HashMap<AssemblyID, AssemblyDefinition>> {
     let mut results = HashMap::new();
 
@@ -133,16 +145,16 @@ pub async fn read_wasm_functions(
     Ok(results)
 }
 
-async fn create_map_function_provider(
-    projects: &[Project],
+async fn create_map_function_provider<'a>(
+    projects: &'a [Project<'a>],
 ) -> Result<(HashMap<AssemblyID, AssemblyDefinition>, MapAssemblyProvider)> {
     build_wasm_projects(projects).await?;
     let functions = read_wasm_functions(projects).await?;
     Ok((functions, MapAssemblyProvider::new()))
 }
 
-pub async fn create_runtime(
-    projects: &[Project],
+pub async fn create_runtime<'a>(
+    projects: &'a [Project<'a>],
 ) -> (Box<dyn Runtime>, DatabaseManager, Box<dyn UsageAggregator>) {
     let config = RuntimeConfig {
         cache_path: PathBuf::from_str("runtime-cache").unwrap(),

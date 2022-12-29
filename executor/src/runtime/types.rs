@@ -56,6 +56,12 @@ pub struct FunctionID {
     pub function_name: String,
 }
 
+impl FunctionID {
+    pub fn stack_id(&self) -> &StackID {
+        &self.assembly_id.stack_id
+    }
+}
+
 impl Display for FunctionID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.assembly_id, self.function_name)

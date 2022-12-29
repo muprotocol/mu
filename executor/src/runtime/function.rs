@@ -89,12 +89,7 @@ pub fn start(
             )
         })?;
 
-        start.call(&mut store, &[]).map_err(|e| {
-            (
-                Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(e)),
-                get_remaining_points(&mut store, &instance),
-            )
-        })?;
+        let result = start.call(&mut store, &[]);
 
         stdin_clone.close();
         stdout_clone.close();
@@ -104,7 +99,14 @@ pub fn start(
             log::error!("error sending finish signal: {e:?}");
         }
 
-        Ok(get_remaining_points(&mut store, &instance))
+        result
+            .map(|_| get_remaining_points(&mut store, &instance))
+            .map_err(|e| {
+                (
+                    Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(e)),
+                    get_remaining_points(&mut store, &instance),
+                )
+            })
     });
 
     Ok(FunctionHandle::new(
