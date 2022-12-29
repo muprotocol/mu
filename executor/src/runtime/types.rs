@@ -7,7 +7,6 @@ use mailbox_processor::ReplyChannel;
 use serde::Deserialize;
 use std::{collections::HashMap, fmt::Display, path::PathBuf};
 use tokio::{sync::oneshot::error::TryRecvError, task::JoinHandle};
-use uuid::Uuid;
 use wasmer_middlewares::metering::MeteringPoints;
 
 pub(super) type ExecuteFunctionRequest<'a> = musdk_common::incoming_message::ExecuteFunction<'a>;
@@ -30,21 +29,12 @@ pub struct InvokeFunctionRequest {
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct InstanceID {
     pub function_id: AssemblyID,
-    pub instance_id: Uuid,
+    pub instance_id: u64,
 }
 
 impl Display for InstanceID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.function_id, self.instance_id)
-    }
-}
-
-impl InstanceID {
-    pub fn generate_random(function_id: AssemblyID) -> Self {
-        Self {
-            function_id,
-            instance_id: Uuid::new_v4(),
-        }
     }
 }
 

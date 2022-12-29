@@ -102,8 +102,10 @@ pub struct Instance<S: InstanceState> {
 }
 
 impl Instance<Loaded> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         function_id: AssemblyID,
+        instance_id: u64,
         envs: HashMap<String, String>,
         store: Store,
         module: Module,
@@ -118,7 +120,10 @@ impl Instance<Loaded> {
         };
 
         Instance {
-            id: InstanceID::generate_random(function_id),
+            id: InstanceID {
+                function_id,
+                instance_id,
+            },
             state,
             database_service,
             memory_limit,

@@ -30,7 +30,7 @@ use self::{
 };
 use crate::{
     mudb::service::DatabaseManager, runtime::error::FunctionLoadingError,
-    stack::usage_aggregator::UsageAggregator,
+    stack::usage_aggregator::UsageAggregator, util::id::IdExt,
 };
 
 #[async_trait]
@@ -76,6 +76,7 @@ struct RuntimeState {
     cache: FileSystemCache,
     database_service: DatabaseManager,
     usage_aggregator: Box<dyn UsageAggregator>,
+    next_instance_id: u64,
 }
 
 impl RuntimeState {
@@ -97,6 +98,7 @@ impl RuntimeState {
             cache,
             database_service,
             usage_aggregator,
+            next_instance_id: 0,
         })
     }
 
@@ -189,6 +191,7 @@ impl RuntimeState {
         let (store, module) = self.load_module(&function_id)?;
         Ok(Instance::new(
             function_id,
+            self.next_instance_id.get_and_increment(),
             definition.envs,
             store,
             module,
