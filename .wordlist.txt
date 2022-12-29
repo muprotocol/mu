@@ -9,6 +9,7 @@ cranelift
 datagram
 Datagram
 datagrams
+deque
 funcs
 Hasher
 hashkey
