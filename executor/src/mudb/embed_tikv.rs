@@ -135,12 +135,11 @@ fn generate_arguments(
             "--peer-urls=\"{}:{}\"",
             config.pd.peer_url.address, config.pd.peer_url.port
         ),
-        format!("--initial-cluster==\"{initial_cluster}\""),
+        format!("--initial-cluster=\"{initial_cluster}\""),
     ];
 
-    match config.pd.log_file {
-        Some(log_file) => pd_args.push(format!("--log-file={log_file}")),
-        None => (),
+    if let (Some(log_file)) = config.pd.log_file {
+        pd_args.push(format!("--log-file={log_file}"))
     }
 
     let mut tikv_args = vec![
@@ -155,9 +154,8 @@ fn generate_arguments(
         format!("--data-dir={}", config.node.data_dir),
     ];
 
-    match config.node.log_file {
-        Some(log_file) => tikv_args.push(format!("--log-file={log_file}")),
-        None => (),
+    if let (Some(log_file)) = config.node.log_file {
+        tikv_args.push(format!("--log-file={log_file}"))
     }
 
     TikvRunnerArgs { pd_args, tikv_args }
