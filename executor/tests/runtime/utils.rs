@@ -180,7 +180,7 @@ pub async fn create_runtime<'a>(
     .unwrap();
 
     runtime
-        .add_functions(functions.clone().into_iter().map(|(_, d)| d).collect())
+        .add_functions(functions.clone().into_values().into_iter().collect())
         .await
         .unwrap();
 
