@@ -34,7 +34,6 @@ pub struct Request<'a> {
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct Response<'a> {
     pub status: u16,
-    pub content_type: Cow<'a, str>,
     pub headers: Vec<Header<'a>>,
     pub body: Cow<'a, [u8]>,
 }
