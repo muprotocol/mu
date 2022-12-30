@@ -1,3 +1,4 @@
+actix
 balancer
 Bincode
 Borsh
