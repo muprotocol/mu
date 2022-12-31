@@ -1,6 +1,5 @@
 mod config;
 mod db;
-mod embed_tikv;
 mod error;
 mod manager;
 pub mod service;
@@ -12,7 +11,6 @@ mod value_filter;
 
 // re-exports
 pub use self::config::Config;
-pub use self::embed_tikv::TikvRunnerConfig;
 pub use self::manager::DBManagerConfig;
 pub use error::{Error, Result};
 

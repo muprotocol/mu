@@ -8,7 +8,8 @@ use config::{Config, Environment, File, FileFormat};
 use crate::{
     gateway::GatewayManagerConfig,
     log_setup::LogConfig,
-    mudb::{DBManagerConfig, TikvRunnerConfig},
+    mudb::DBManagerConfig,
+    mudb_tikv::TikvRunnerConfig,
     network::{
         connection_manager::ConnectionManagerConfig,
         gossip::{GossipConfig, KnownNodeConfig},
