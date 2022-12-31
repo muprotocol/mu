@@ -45,6 +45,7 @@ pub async fn run() -> Result<()> {
         connection_manager_config,
         gossip_config,
         mut known_nodes_config,
+        tikv_config,
         gateway_manager_config,
         log_config,
         runtime_config,
@@ -93,11 +94,11 @@ pub async fn run() -> Result<()> {
     info!("Establishing connection to seeds");
 
     for node in known_nodes_config {
-        match connection_manager.connect(node.address, node.port).await {
+        match connection_manager.connect(node.ip, node.gossip_port).await {
             Ok(connection_id) => known_nodes.push((
                 NodeAddress {
-                    address: node.address,
-                    port: node.port,
+                    address: node.ip,
+                    port: node.gossip_port,
                     generation: 0,
                 },
                 connection_id,
@@ -105,7 +106,7 @@ pub async fn run() -> Result<()> {
 
             Err(f) => warn!(
                 "Failed to connect to seed {}:{}, will ignore this seed. Error is {f}",
-                node.address, node.port
+                node.ip, node.gossip_port
             ),
         }
 
@@ -249,7 +250,7 @@ pub async fn run() -> Result<()> {
 }
 
 fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
-    node.port == me.port && (node.address == me.address || node.address.is_loopback())
+    node.gossip_port == me.port && (node.ip == me.address || node.ip.is_loopback())
 }
 
 #[allow(clippy::too_many_arguments)]

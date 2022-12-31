@@ -6,6 +6,12 @@ use tar::Archive;
 const TIKV_VERSION: &str = "6.4.0";
 
 fn download_and_extract_file(url: String, dest: &str, file_name: &str) -> Result<()> {
+    let new_path = Path::new(dest).join(format!("{file_name}-{TIKV_VERSION}"));
+
+    // TODO: figure out whats wrong with rerun-if-changed then remove this
+    if new_path.exists() {
+        return Ok(());
+    }
     let client = reqwest::blocking::Client::new();
     let req = client.get(url);
     let bytes = req
@@ -21,7 +27,6 @@ fn download_and_extract_file(url: String, dest: &str, file_name: &str) -> Result
         .context(format!("Failed to extract file:{file_name}"))?;
 
     let path = Path::new(dest).join(file_name);
-    let new_path = Path::new(dest).join(format!("{file_name}-{TIKV_VERSION}"));
 
     rename(path, new_path).context("Failed to rename file")?;
 
@@ -29,14 +34,16 @@ fn download_and_extract_file(url: String, dest: &str, file_name: &str) -> Result
 }
 
 fn main() {
-    // println!("cargo:rerun-if-changed=assets");
-    // println!("cargo:rustc-env=TIKV_VERSION={TIKV_VERSION}");
+    println!("cargo:rerun-if-changed=assets/pd-server-6.4.0");
+    println!("cargo:rustc-env=TIKV_VERSION={TIKV_VERSION}");
+    let pd_url = format!("http://0.0.0.0:8080/pd-v{TIKV_VERSION}-linux-amd64.tar.gz");
+    let tikv_url = format!("http://0.0.0.0:8080/tikv-v{TIKV_VERSION}-linux-amd64.tar.gz");
+    // let pd_url = format!("https://tiup-mirrors.pingcap.com/pd-v{TIKV_VERSION}-linux-amd64.tar.gz");
+    // let tikv_url =
+    //     format!("https://tiup-mirrors.pingcap.com/tikv-v{TIKV_VERSION}-linux-amd64.tar.gz");
 
-    // // let pd_url = format!("https://tiup-mirrors.pingcap.com/pd-v{TIKV_VERSION}-linux-amd64.tar.gz");
-    // let pd_url = format!("http://0.0.0.0:8080/pd-v{TIKV_VERSION}-linux-amd64.tar.gz");
-    // let tikv_url = format!("http://0.0.0.0:8080/tikv-v{TIKV_VERSION}-linux-amd64.tar.gz");
-    // // format!("https://tiup-mirrors.pingcap.com/tikv-v{TIKV_VERSION}-linux-amd64.tar.gz");
+    download_and_extract_file(pd_url, "assets", "pd-server").unwrap();
+    download_and_extract_file(tikv_url, "assets", "tikv-server").unwrap();
 
-    // download_and_extract_file(pd_url, "assets", "pd-server").unwrap();
-    // download_and_extract_file(tikv_url, "assets", "tikv-server").unwrap();
+    println!("build script ran");
 }

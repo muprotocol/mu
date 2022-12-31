@@ -8,7 +8,7 @@ use config::{Config, Environment, File, FileFormat};
 use crate::{
     gateway::GatewayManagerConfig,
     log_setup::LogConfig,
-    mudb::DBManagerConfig,
+    mudb::{DBManagerConfig, TikvRunnerConfig},
     network::{
         connection_manager::ConnectionManagerConfig,
         gossip::{GossipConfig, KnownNodeConfig},
@@ -21,6 +21,7 @@ pub struct SystemConfig(
     pub ConnectionManagerConfig,
     pub GossipConfig,
     pub Vec<KnownNodeConfig>,
+    pub TikvRunnerConfig,
     pub GatewayManagerConfig,
     pub LogConfig,
     pub RuntimeConfig,
@@ -40,6 +41,17 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("gossip.max_peers", "6"),
         ("gossip.peer_update_interval", "10s"),
         ("gossip.liveness_check_interval", "1s"),
+        ("initial_cluster.ip", "127.0.0.1"),
+        ("initial_cluster.gossip_port", "12012"),
+        ("initial_cluster.pd_port", "12012"),
+        ("tikv.pd.data_dir", "pd1"),
+        ("tikv.pd.peer_url.address", "127.0.0.1"),
+        ("tikv.pd.peer_url.port", "8000"),
+        ("tikv.pd.client_url.address", "127.0.0.1"),
+        ("tikv.pd.client_url.port", "8001"),
+        ("tikv.node.cluster_url.address", "127.0.0.1"),
+        ("tikv.node.cluster_url.port", "8000"),
+        ("tikv.node.data_dir", "tikv1"),
         ("gateway_manager.listen_ip", "0.0.0.0"),
         ("gateway_manager.listen_port", "12012"),
         ("scheduler.tick_interval", "1s"),
@@ -96,8 +108,10 @@ pub fn initialize_config() -> Result<SystemConfig> {
 
     let gossip_config = config.get("gossip").context("Invalid gossip config")?;
 
+    let tikv_config: TikvRunnerConfig = config.get("tikv").context("Invalid tikv_runner config")?;
+
     let known_node_config: Vec<KnownNodeConfig> = config
-        .get("gossip.seeds")
+        .get("initial_cluster")
         .context("Invalid known_node config")?;
 
     let gateway_config = config
@@ -124,6 +138,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
         connection_manager_config,
         gossip_config,
         known_node_config,
+        tikv_config,
         gateway_config,
         log_config,
         runtime_config,
