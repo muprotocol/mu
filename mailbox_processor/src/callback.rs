@@ -32,8 +32,8 @@ enum ControlMessage<T> {
 /// step function then gets the updated state from the previous invocation.
 ///
 /// ```
-/// use tokio_mailbox_processor::*;
-/// use tokio_mailbox_processor::callback::*;
+/// use mailbox_processor::*;
+/// use mailbox_processor::callback::*;
 ///
 /// enum Message {
 ///     Set(i32),
@@ -112,11 +112,9 @@ impl<T: Send + 'static> CallbackMailboxProcessor<T> {
                     ControlMessage::UserMessageAndAck(msg, tx) => {
                         state = step(mailbox_clone.clone(), msg, state).await;
 
-                        match tx.send(()) {
-                            // If the rx end panics while we process the message (which shouldn't happen),
-                            // we don't want to stop the entire mailbox
-                            _ => (),
-                        }
+                        // If the rx end panics while we process the message (which shouldn't happen)
+                        // because they should be waiting for use, we don't want to stop the entire mailbox
+                        let _ = tx.send(());
                     }
 
                     ControlMessage::UserMessage(msg) => {
@@ -152,7 +150,7 @@ impl<T: Send + 'static> CallbackMailboxProcessor<T> {
         ignore_error(rx.await);
     }
 
-    /// Posts a message to the mailbox without waiting for the response. Note than
+    /// Posts a message to the mailbox without waiting for the response. Note that
     /// the mailbox may be stopped and the message may never be processed at all.
     pub fn post_and_forget(&self, msg: T) {
         let sender = self.sender.to_owned();
@@ -272,7 +270,7 @@ mod tests {
         let (mb, _) = make_mb();
 
         mb.post(Message::Increment(5)).await?;
-        let current = mb.post_and_reply(|tx| Message::Get(tx)).await?;
+        let current = mb.post_and_reply(Message::Get).await?;
 
         assert_eq!(current, 5);
 
@@ -284,13 +282,13 @@ mod tests {
         let (mb, _) = make_mb();
 
         mb.post(Message::Increment(5)).await?;
-        assert_eq!(mb.post_and_reply(|tx| Message::Get(tx)).await?, 5);
+        assert_eq!(mb.post_and_reply(Message::Get).await?, 5);
 
         mb.post(Message::Decrement(15)).await?;
-        assert_eq!(mb.post_and_reply(|tx| Message::Get(tx)).await?, -10);
+        assert_eq!(mb.post_and_reply(Message::Get).await?, -10);
 
         mb.post(Message::Increment(20)).await?;
-        assert_eq!(mb.post_and_reply(|tx| Message::Get(tx)).await?, 10);
+        assert_eq!(mb.post_and_reply(Message::Get).await?, 10);
 
         Ok(())
     }
@@ -312,7 +310,7 @@ mod tests {
         let (mb, _) = make_mb();
 
         mb.post(Message::Increment(5)).await?;
-        assert_eq!(mb.post_and_reply(|tx| Message::Get(tx)).await?, 5);
+        assert_eq!(mb.post_and_reply(Message::Get).await?, 5);
 
         let mb2 = mb.clone();
         mb.stop().await;
@@ -329,7 +327,7 @@ mod tests {
         let (mb, _) = make_mb();
 
         mb.post(Message::Increment(5)).await?;
-        assert_eq!(mb.post_and_reply(|tx| Message::Get(tx)).await?, 5);
+        assert_eq!(mb.post_and_reply(Message::Get).await?, 5);
 
         let mb2 = mb.clone();
         let mb3 = mb.clone();
@@ -360,7 +358,7 @@ mod tests {
         let (mb, _) = make_mb();
 
         mb.post(Message::SendMessageToSelf(5)).await?;
-        assert_eq!(mb.post_and_reply(|tx| Message::Get(tx)).await?, 5);
+        assert_eq!(mb.post_and_reply(Message::Get).await?, 5);
 
         Ok(())
     }

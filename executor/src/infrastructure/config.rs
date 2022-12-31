@@ -1,6 +1,6 @@
 mod serde_support;
 
-pub use serde_support::{ConfigDuration, ConfigLogLevelFilter};
+pub use serde_support::{ConfigDuration, ConfigLogLevelFilter, ConfigUri};
 
 use anyhow::{Context, Result};
 use config::{Config, Environment, File, FileFormat};
@@ -8,6 +8,7 @@ use config::{Config, Environment, File, FileFormat};
 use crate::{
     gateway::GatewayManagerConfig,
     log_setup::LogConfig,
+    mudb::DBManagerConfig,
     network::{
         connection_manager::ConnectionManagerConfig,
         gossip::{GossipConfig, KnownNodeConfig},
@@ -25,6 +26,7 @@ pub struct SystemConfig(
     pub RuntimeConfig,
     pub SchedulerConfig,
     pub BlockchainMonitorConfig,
+    pub DBManagerConfig,
 );
 
 pub fn initialize_config() -> Result<SystemConfig> {
@@ -47,6 +49,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("blockchain_monitor.solana_region_number", "1"),
         ("blockchain_monitor.solana_usage_signer_private_key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
         ("blockchain_monitor.solana_min_escrow_balance", "50"),
+        ("db_manager.usage_report_duration", "15m"),
     ];
 
     let default_arrays = vec!["log.filters", "gossip.seeds"];
@@ -113,6 +116,10 @@ pub fn initialize_config() -> Result<SystemConfig> {
         .get("blockchain_monitor")
         .context("Invalid blockchain monitor config")?;
 
+    let db_manager_config = config
+        .get("db_manager")
+        .context("Invalid db manager config")?;
+
     Ok(SystemConfig(
         connection_manager_config,
         gossip_config,
@@ -122,5 +129,6 @@ pub fn initialize_config() -> Result<SystemConfig> {
         runtime_config,
         scheduler_config,
         blockchain_monitor_config,
+        db_manager_config,
     ))
 }

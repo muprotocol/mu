@@ -13,6 +13,7 @@ log = "0.4"
 protobuf = "3.2"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
+byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
 
 [build-dependencies]
 protobuf-codegen = "3.2"

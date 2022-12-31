@@ -45,6 +45,7 @@ rocket = "0.5.0-rc.2"
 reqwest = "0.11"
 sled = "0.34"
 assert_matches = "1.5"
+itertools = "0.10"
 validator = { version = "0.16", features = ["derive"] }
 mu_stack = { path = "../mu_stack" }
 marketplace = { path = "../marketplace/programs/marketplace" }
@@ -55,10 +56,21 @@ solana-account-decoder = "1.10"
 solana-client = "1.10"
 solana-sdk = "1.10"
 tikv-client = "0.1.0"
+spl-token = "3.3"
+chrono = "0.4"
+byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
+rust-embed = "6.4.2"
+http = "0.2"
 
 [dev-dependencies]
 serial_test = "0.8"
 test-log = "0.2"
+
+[build-dependencies]
+reqwest = { version = "0.11", features = ["blocking"] }
+anyhow = "1.0"
+flate2 = "1.0.25"
+tar = "0.4.38"
 
 [lib]
 name = "mu"

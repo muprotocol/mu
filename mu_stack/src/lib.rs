@@ -54,7 +54,7 @@ impl FromStr for StackID {
             return Err(());
         }
 
-        let variant_code = s.chars().nth(0);
+        let variant_code = s.chars().next();
 
         match variant_code {
             Some('s') => {
@@ -187,6 +187,7 @@ pub struct Function {
     pub binary: String,
     pub runtime: FunctionRuntime,
     pub env: HashMap<String, String>,
+    pub memory_limit: byte_unit::Byte,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]

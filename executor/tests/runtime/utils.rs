@@ -3,12 +3,14 @@ use mu::{
     mudb::{
         self,
         service::{DatabaseID, DatabaseManager},
+        DBManagerConfig,
     },
     runtime::{
         start,
         types::{FunctionDefinition, FunctionID, RuntimeConfig},
         Runtime,
     },
+    stack::usage_aggregator::UsageAggregator,
 };
 use mu_stack::FunctionRuntime;
 use std::{
@@ -16,8 +18,11 @@ use std::{
     env,
     path::{Path, PathBuf},
     str::FromStr,
+    time::Duration,
 };
 use tokio::process::Command;
+
+use crate::common::HashMapUsageAggregator;
 
 use super::providers::MapFunctionProvider;
 
@@ -88,6 +93,7 @@ pub struct Project {
     pub id: FunctionID,
     pub name: String,
     pub path: PathBuf,
+    pub memory_limit: byte_unit::Byte,
 }
 
 impl Project {
@@ -118,7 +124,13 @@ pub async fn read_wasm_functions(
 
         results.insert(
             project.id.clone(),
-            FunctionDefinition::new(project.id.clone(), source, FunctionRuntime::Wasi1_0, []),
+            FunctionDefinition::new(
+                project.id.clone(),
+                source,
+                FunctionRuntime::Wasi1_0,
+                [],
+                project.memory_limit,
+            ),
         );
     }
 
@@ -128,26 +140,40 @@ pub async fn read_wasm_functions(
 async fn create_map_function_provider(
     projects: &[Project],
 ) -> Result<(HashMap<FunctionID, FunctionDefinition>, MapFunctionProvider)> {
-    build_wasm_projects(&projects).await?;
-    let functions = read_wasm_functions(&projects).await?;
+    build_wasm_projects(projects).await?;
+    let functions = read_wasm_functions(projects).await?;
     Ok((functions, MapFunctionProvider::new()))
 }
 
-pub async fn create_runtime(projects: &[Project]) -> (Box<dyn Runtime>, DatabaseManager) {
+pub async fn create_runtime(
+    projects: &[Project],
+) -> (Box<dyn Runtime>, DatabaseManager, Box<dyn UsageAggregator>) {
     let config = RuntimeConfig {
         cache_path: PathBuf::from_str("runtime-cache").unwrap(),
     };
 
     let (functions, provider) = create_map_function_provider(projects).await.unwrap();
-    let db_service = DatabaseManager::new().await.unwrap();
-    let runtime = start(Box::new(provider), config, db_service.clone())
+    let usage_aggregator = HashMapUsageAggregator::new_boxed();
+    let db_manager_config = DBManagerConfig {
+        usage_report_duration: Duration::from_secs(1).into(),
+    };
+
+    let db_service = DatabaseManager::new(usage_aggregator.clone(), db_manager_config)
         .await
         .unwrap();
+    let runtime = start(
+        Box::new(provider),
+        config,
+        db_service.clone(),
+        usage_aggregator.clone(),
+    )
+    .await
+    .unwrap();
 
     runtime
-        .add_functions(functions.into_iter().map(|(_, d)| d).collect())
+        .add_functions(functions.clone().into_iter().map(|(_, d)| d).collect())
         .await
         .unwrap();
 
-    (runtime, db_service)
+    (runtime, db_service, usage_aggregator)
 }

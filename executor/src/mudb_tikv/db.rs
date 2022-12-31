@@ -1,32 +1,55 @@
+use std::net::{IpAddr, Ipv4Addr};
+
 use super::{
+    // embed_tikv::*,
     error::{Error, Result},
     types::*,
 };
+use crate::network::gossip::NodeAddress;
 use async_trait::async_trait;
 use mu_stack::StackID;
 use tikv_client::{self, KvPair, RawClient, Value};
 
+// TODO: consider caching
+// stacks_and_tables: HashMap<StackID, Vec<TableName>>,
 #[derive(Clone)]
 pub struct Db {
     inner: tikv_client::RawClient,
-    // TODO: consider caching
-    // stacks_and_tables: HashMap<StackID, Vec<TableName>>,
+    // TODO
+    // tikv_runner: Option<Box<dyn TikvRunner>>,
 }
 
 impl Db {
+    // TODO
+    // pub async fn new(
+    //     node_address: NodeAddress,
+    //     gossip_seeds: &[NodeAddress],
+    //     config: TikvRunnerConfig,
+    // ) -> Result<Self> {
+    //     Ok(Self {
+    //         tikv_runner: Some(start(node_address, gossip_seeds, config).await?),
+    //         inner: RawClient::new(config.pd.client_url.address).await?,
+    //     })
+    // }
     // TODO: change to use Hossian's code
-    pub async fn new<S>(endpoints: Vec<S>) -> Result<Self>
+    pub async fn new_test<S>(endpoints: Vec<S>) -> Result<Self>
     where
         S: Into<String> + Send,
     {
         let inner = RawClient::new(endpoints).await?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner,
+            // TODO
+            // tikv_runner: None,
+        })
     }
 
     fn atomic_or_not(&self, is_atomic: bool) -> Self {
         if is_atomic {
             Self {
                 inner: self.inner.with_atomic_for_cas(),
+                // TODO
+                // tikv_runner: self.tikv_runner.clone(),
             }
         } else {
             self.clone()

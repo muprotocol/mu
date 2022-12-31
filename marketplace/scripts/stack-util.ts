@@ -10,7 +10,7 @@ function ensureStackCliTool() {
         return;
 
     util.run(`env -C ${path.resolve(__dirname, "../../mu_stack")} cargo build --bin mu_stack_cli -r && ` +
-        `mkdir ${toolDir} && ` +
+        `mkdir -p ${toolDir} && ` +
         `cp ${path.resolve(__dirname, "../../mu_stack/target/release/mu_stack_cli")} ${toolDir}`);
 }
 

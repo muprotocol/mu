@@ -4,7 +4,7 @@ use tokio::sync::{mpsc, oneshot};
 pub mod callback;
 pub mod plain;
 
-#[derive(Debug, PartialEq, Error)]
+#[derive(Debug, PartialEq, Eq, Error)]
 pub enum Error {
     #[error("Mailbox is stopped")]
     MailboxStopped,
@@ -67,8 +67,6 @@ impl<T> NotificationChannel<T> {
     pub fn send(&self, notification: T) {
         // Notifications aren't guaranteed to arrive, and we don't need to handle
         // closed receivers.
-        match self.sender.send(notification) {
-            _ => (),
-        };
+        let _ = self.sender.send(notification);
     }
 }

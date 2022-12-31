@@ -3,7 +3,9 @@ log:
   filters:
     - module: mu
       level: debug
-    - module: mu::mu_stack::scheduler
+    - module: mu::stack::scheduler
+      level: debug
+    - module: mu::stack::blockchain_monitor
       level: trace
     - module: mu::network::connection_manager
       level: info
@@ -20,3 +22,7 @@ blockchain_monitor:
   solana_region_number: 1
   solana_usage_signer_private_key: 4GhpeXmHAsQW1K29Q3PBuKzq7fdQzAQS4Bsh5uP3oev1HvZg3tEgT8nZpYAVVikBdKtWGauYBXBDGCeseqyM9R4p
   solana_min_escrow_balance: 50
+  solana_usage_report_interval: 5s
+db_manager:
+  # Note, this value should not be under 1s
+  usage_report_duration: 30s

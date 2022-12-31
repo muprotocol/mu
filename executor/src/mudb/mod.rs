@@ -1,17 +1,18 @@
 mod config;
 mod db;
+mod embed_tikv;
 mod error;
 mod manager;
+pub mod service;
 mod table;
 mod types;
 mod update;
 mod value_filter;
-
-pub mod service;
 // TODO: make some type private and others reexport
 
 // re-exports
 pub use self::config::Config;
+pub use self::manager::DBManagerConfig;
 pub use error::{Error, Result};
 
 // TODO: remove and make private

@@ -168,34 +168,6 @@ async fn predictable_scan_for_keys_test(
         .map(Clone::clone)
         .collect();
     assert_eq!(res, x);
-
-    // TODO: remove
-    // let scan = Scan::ByTableName(stack_id(), table_list()[0].clone());
-    // let res = db.scan_keys(scan, 32).await.unwrap();
-    // assert_eq!(
-    //     res,
-    //     vec![keys()[0].clone(), keys()[1].clone(), keys()[2].clone()]
-    // );
-
-    // let scan = Scan::ByTableName(stack_id(), table_list()[1].clone());
-    // let res = db.scan_keys(scan, 32).await.unwrap();
-    // assert_eq!(res, vec![keys()[3].clone()]);
-
-    // let scan = Scan::ByInnerKeyPrefix(stack_id(), table_list()[0].clone(), vec![0, 1]);
-    // let res = db.scan_keys(scan, 32).await.unwrap();
-    // assert_eq!(res, vec![keys()[1].clone(), keys()[2].clone()]);
-
-    // let scan = Scan::ByInnerKey(
-    //     stack_id(),
-    //     table_list()[0].clone(),
-    //     keys()[0].inner_key.clone(),
-    // );
-    // let res = db.scan_keys(scan, 32).await.unwrap();
-    // assert_eq!(res, vec![keys()[0].clone()]);
-
-    // let scan = Scan::ByInnerKey(stack_id(), table_list()[0].clone(), vec![0, 0, 1]);
-    // let res = db.scan(scan, 32).await.unwrap();
-    // assert_eq!(res, vec![(keys()[0].clone(), values()[0].clone())]);
 }
 
 async fn unpredictable_scan_for_keys_test(
@@ -259,7 +231,7 @@ async fn table_list_test(db: Db, tl: Vec<TableName>) {
 #[tokio::test]
 #[serial]
 async fn test_mudb_tikv() {
-    let db = Db::new(vec![
+    let db = Db::new_test(vec![
         "127.0.0.1:2379".to_string(),
         "127.0.0.1:2382".to_string(),
         "127.0.0.1:2384".to_string(),
@@ -328,7 +300,7 @@ fn rand_keys(si: StackID, tl: [TableName; 2]) -> [Key; 4] {
 }
 
 async fn n_node_with_same_stack_id_and_tables(endpoints: Vec<String>, n: u8) {
-    let db = Db::new(endpoints).await.unwrap();
+    let db = Db::new_test(endpoints).await.unwrap();
 
     db.clear_all_data().await.unwrap();
 
@@ -387,7 +359,7 @@ async fn test_50_node_with_same_stack_id_and_tables() {
 }
 
 async fn n_node_with_same_stack_id(endpoints: Vec<String>, n: u8) {
-    let db = Db::new(endpoints).await.unwrap();
+    let db = Db::new_test(endpoints).await.unwrap();
 
     db.clear_all_data().await.unwrap();
 
@@ -448,7 +420,7 @@ async fn test_50_node_with_same_stack_id() {
 }
 
 async fn n_node_with_different_stack_id_and_tables(endpoints: Vec<String>, n: u8) {
-    let db = Db::new(endpoints).await.unwrap();
+    let db = Db::new_test(endpoints).await.unwrap();
 
     db.clear_all_data().await.unwrap();
 
@@ -507,6 +479,71 @@ async fn test_50_node_with_different_stack_id_and_tables() {
         50,
     )
     .await;
+}
+
+#[tokio::test]
+#[serial]
+async fn test_multi_node_with_manual_cluster_with_diffrent_endpoint_but_same_tikv() {
+    let si = stack_id();
+    let tl = table_list();
+    let ks = keys(si.clone(), tl.clone());
+    let vs = values();
+
+    let db = Db::new_test(vec![
+        "127.0.0.1:2379".to_string(),
+        // "127.0.0.1:2382".to_string(),
+        // "127.0.0.1:2384".to_string(),
+    ])
+    .await
+    .unwrap();
+
+    let db2 = Db::new_test(vec![
+        // "127.0.0.1:2379".to_string(),
+        "127.0.0.1:2382".to_string(),
+        // "127.0.0.1:2384".to_string(),
+    ])
+    .await
+    .unwrap();
+
+    let db3 = Db::new_test(vec![
+        // "127.0.0.1:2379".to_string(),
+        // "127.0.0.1:2382".to_string(),
+        "127.0.0.1:2384".to_string(),
+    ])
+    .await
+    .unwrap();
+
+    for x in [&db, &db2, &db3] {
+        x.clear_all_data().await.unwrap();
+        x.put_stack_manifest(stack_id(), table_list().into())
+            .await
+            .unwrap();
+    }
+
+    db.put(ks[0].clone(), vs[0].clone(), false).await.unwrap();
+    db2.put(ks[1].clone(), vs[1].clone(), false).await.unwrap();
+    db3.put(ks[2].clone(), vs[2].clone(), false).await.unwrap();
+
+    let x = db.get(ks[0].clone()).await.unwrap();
+    let y = db2.get(ks[0].clone()).await.unwrap();
+    let z = db3.get(ks[0].clone()).await.unwrap();
+    assert_eq!(x, Some(vs[0].clone()));
+    assert_eq!(y, Some(vs[0].clone()));
+    assert_eq!(z, Some(vs[0].clone()));
+
+    let x = db.get(ks[1].clone()).await.unwrap();
+    let y = db2.get(ks[1].clone()).await.unwrap();
+    let z = db3.get(ks[1].clone()).await.unwrap();
+    assert_eq!(x, Some(vs[1].clone()));
+    assert_eq!(y, Some(vs[1].clone()));
+    assert_eq!(z, Some(vs[1].clone()));
+
+    let x = db.get(ks[2].clone()).await.unwrap();
+    let y = db2.get(ks[2].clone()).await.unwrap();
+    let z = db3.get(ks[2].clone()).await.unwrap();
+    assert_eq!(x, Some(vs[2].clone()));
+    assert_eq!(y, Some(vs[2].clone()));
+    assert_eq!(z, Some(vs[2].clone()));
 }
 
 // ============== OLD ================

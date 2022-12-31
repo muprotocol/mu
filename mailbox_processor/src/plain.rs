@@ -26,8 +26,8 @@ impl<T: Send + 'static> MessageReceiver<T> {
 /// may fill the internal mspc channel's buffer.
 ///
 /// ```
-/// use tokio_mailbox_processor::*;
-/// use tokio_mailbox_processor::plain::*;
+/// use mailbox_processor::*;
+/// use mailbox_processor::plain::*;
 ///
 /// enum Message {
 ///     Set(i32, ReplyChannel<()>),
@@ -221,7 +221,7 @@ mod tests {
         let (mb, _) = make_mb();
 
         mb.post_and_reply(|r| Message::Increment(5, r)).await?;
-        let current = mb.post_and_reply(|tx| Message::Get(tx)).await?;
+        let current = mb.post_and_reply(Message::Get).await?;
 
         assert_eq!(current, 5);
 
@@ -233,13 +233,13 @@ mod tests {
         let (mb, _) = make_mb();
 
         mb.post_and_reply(|r| Message::Increment(5, r)).await?;
-        assert_eq!(mb.post_and_reply(|tx| Message::Get(tx)).await?, 5);
+        assert_eq!(mb.post_and_reply(Message::Get).await?, 5);
 
         mb.post_and_reply(|r| Message::Decrement(15, r)).await?;
-        assert_eq!(mb.post_and_reply(|tx| Message::Get(tx)).await?, -10);
+        assert_eq!(mb.post_and_reply(Message::Get).await?, -10);
 
         mb.post_and_reply(|r| Message::Increment(20, r)).await?;
-        assert_eq!(mb.post_and_reply(|tx| Message::Get(tx)).await?, 10);
+        assert_eq!(mb.post_and_reply(Message::Get).await?, 10);
 
         Ok(())
     }
@@ -261,9 +261,9 @@ mod tests {
         let (mb, _) = make_mb();
 
         mb.post_and_reply(|r| Message::Increment(5, r)).await?;
-        assert_eq!(mb.post_and_reply(|tx| Message::Get(tx)).await?, 5);
+        assert_eq!(mb.post_and_reply(Message::Get).await?, 5);
 
-        mb.post_and_reply(|r| Message::Stop(r)).await?;
+        mb.post_and_reply(Message::Stop).await?;
 
         assert_eq!(
             mb.post_and_reply(|r| Message::Increment(10, r)).await,
@@ -279,7 +279,7 @@ mod tests {
 
         mb.post_and_reply(|r| Message::SendMessageToSelf(5, r))
             .await?;
-        assert_eq!(mb.post_and_reply(|tx| Message::Get(tx)).await?, 5);
+        assert_eq!(mb.post_and_reply(Message::Get).await?, 5);
 
         Ok(())
     }

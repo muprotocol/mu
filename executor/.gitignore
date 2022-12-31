@@ -2,3 +2,4 @@
 /tests/runtime/funcs/*/target
 /mudb
 /runtime-cache
+/assets
