@@ -6,7 +6,8 @@ use std::{
     process::Child,
 };
 
-use anyhow::{Context, Result};
+// use anyhow::{Context, Result};
+use super::error::{Error::EmbeddingTikvErr, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use mailbox_processor::callback::CallbackMailboxProcessor;
@@ -28,32 +29,36 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
         return Ok(temp_address);
     }
 
-    let tool = <Assets as RustEmbed>::get(name).context("Failed to get embedded asset")?;
+    let tool = <Assets as RustEmbed>::get(name)
+        .ok_or(EmbeddingTikvErr("Failed to get embedded asset".into()))?;
+
     let tool_bytes = tool.data;
 
     let temp_address_ref: &Path = temp_address.as_ref();
 
     let mut file = File::create(temp_address_ref)
         .await
-        .context("Failed to create temp file")?;
+        .map_err(|_| EmbeddingTikvErr("Failed to create temp file".into()))?;
 
     file.write_all(&tool_bytes)
         .await
-        .context("Failed to write embedded resource to temp file")?;
+        .map_err(|_| EmbeddingTikvErr("Failed to write embedded resource to temp file".into()))?;
 
-    file.flush().await.context("Failed to flush temp file")?;
+    file.flush()
+        .await
+        .map_err(|_| EmbeddingTikvErr("Failed to flush temp file".into()))?;
 
     let mut perms = file
         .metadata()
         .await
-        .context("Failed to get temp file metadata")?
+        .map_err(|_| EmbeddingTikvErr("Failed to get temp file metadata".into()))?
         .permissions();
 
     perms.set_mode(0o744);
 
     file.set_permissions(perms)
         .await
-        .context("Failed to set executable permission on temp file")?;
+        .map_err(|_| EmbeddingTikvErr("Failed to set executable permission on temp file".into()))?;
 
     Ok(temp_address)
 }
@@ -186,22 +191,22 @@ pub async fn start(
     let tikv_version = env!("TIKV_VERSION");
     let pd_exe = check_and_extract_embedded_executable(&format!("pd-server-{tikv_version}"))
         .await
-        .context("Failed to create pd-exe")?;
+        .map_err(|_| EmbeddingTikvErr("Failed to create pd-exe".into()))?;
     let tikv_exe = check_and_extract_embedded_executable(&format!("tikv-server-{tikv_version}"))
         .await
-        .context("Failed to create tikv-exe")?;
+        .map_err(|_| EmbeddingTikvErr("Failed to create tikv-exe".into()))?;
 
     let args = generate_arguments(node_address, known_node_config, config);
 
     let pd_process = std::process::Command::new(pd_exe)
         .args(args.pd_args)
         .spawn()
-        .context("Failed to spawn process pd!!")?;
+        .map_err(|_| EmbeddingTikvErr("Failed to spawn process pd!!".into()))?;
 
     let tikv_process = std::process::Command::new(tikv_exe)
         .args(args.tikv_args)
         .spawn()
-        .context("Failed to spawn process tikv!!")?;
+        .map_err(|_| EmbeddingTikvErr("Failed to spawn process tikv!!".into()))?;
 
     let mailbox = CallbackMailboxProcessor::start(
         step,
@@ -220,7 +225,10 @@ pub async fn start(
 #[async_trait]
 impl TikvRunner for TikvRunnerImpl {
     async fn stop(&self) -> Result<()> {
-        self.mailbox.post(Message::Stop).await.map_err(Into::into)
+        self.mailbox
+            .post(Message::Stop)
+            .await
+            .map_err(|e| EmbeddingTikvErr(format!("{e}")))
     }
 }
 

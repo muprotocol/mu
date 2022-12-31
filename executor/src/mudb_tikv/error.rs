@@ -9,6 +9,8 @@ pub enum Error {
     CantDeserializeKey(String),
     #[error("mudb_error -> stack_id or table dosen't exist -> {0:?}")]
     StackIdOrTableDoseNotExist(Key),
+    #[error("mudb_error -> embedding tikv error -> {0}")]
+    EmbeddingTikvErr(String),
 }
 
 impl From<tikv_client::Error> for Error {
