@@ -6,7 +6,6 @@ use std::{
     process::Child,
 };
 
-// use anyhow::{Context, Result};
 use super::error::{Error::EmbeddingTikvErr, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
@@ -70,11 +69,17 @@ pub struct IpAndPort {
     port: u16,
 }
 
+impl ToString for IpAndPort {
+    fn to_string(&self) -> String {
+        format!("{}:{}", self.address, self.port)
+    }
+}
+
 #[derive(Deserialize)]
 pub struct PdConfig {
     data_dir: String,
     peer_url: IpAndPort,
-    client_url: IpAndPort,
+    pub client_url: IpAndPort,
     log_file: Option<String>,
 }
 
@@ -244,8 +249,9 @@ async fn step(
 ) -> TikvRunnerState {
     match msg {
         Message::Stop => {
-            state.pd_process.kill();
-            state.tikv_process.kill();
+            // TODO: consider unwraps
+            state.pd_process.kill().unwrap();
+            state.tikv_process.kill().unwrap();
         }
     }
     state

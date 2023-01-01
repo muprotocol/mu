@@ -1,9 +1,16 @@
 //! pd endpoints: 127.0.0.1:2379, 127.0.0.1:2382, 127.0.0.1:2384
 //! command: `tiup playground --mode tikv-slim --kv 3 --pd 3`
 
+// TODO
+// use crate::infrastructure::config::*;
 use assert_matches::assert_matches;
 use futures::Future;
-use mu::mudb_tikv::{db::Db, error::*, types::*};
+use mu::mudb_tikv::{
+    db::{Db, MudbReflection},
+    embed_tikv::TikvRunner,
+    error::*,
+    types::*,
+};
 use mu_stack::StackID;
 use rand::Rng;
 use serial_test::serial;
@@ -228,16 +235,7 @@ async fn table_list_test(db: Db, tl: Vec<TableName>) {
     assert_eq!(table_names, tl);
 }
 
-#[tokio::test]
-#[serial]
-async fn test_mudb_tikv() {
-    let db = Db::new_test(vec![
-        "127.0.0.1:2379".to_string(),
-        "127.0.0.1:2382".to_string(),
-        "127.0.0.1:2384".to_string(),
-    ])
-    .await
-    .unwrap();
+async fn single_node(db: Db) {
     db.clear_all_data().await.unwrap();
 
     let db_clone = db.clone();
@@ -274,6 +272,40 @@ async fn test_mudb_tikv() {
     // assert_eq!(table_names.len(), 0);
 }
 
+#[tokio::test]
+#[serial]
+#[ignore]
+async fn test_single_node_without_embed() {
+    single_node(
+        Db::new_without_embed(vec![
+            "127.0.0.1:2379".to_string(),
+            "127.0.0.1:2382".to_string(),
+            "127.0.0.1:2384".to_string(),
+        ])
+        .await
+        .unwrap(),
+    )
+    .await;
+}
+
+// TODO
+// #[tokio::test]
+// #[serial]
+// async fn test_single_node() {
+//     let conf = initialize_config();
+//     let node_address = NodeAddress {
+//         address: "127.0.0.1".parse().unwrap(),
+//         port: i,
+//         generation: 1,
+//     };
+//     let known_node_conf = conf.2.clone();
+//     let tikv_runner_conf = conf.3.clone();
+//     let db = Db::new(node_address, known_node_conf, tikv_runner_conf)
+//         .await
+//         .unwrap();
+//     single_node(db)
+// }
+
 fn rand_keys(si: StackID, tl: [TableName; 2]) -> [Key; 4] {
     [
         Key {
@@ -299,9 +331,7 @@ fn rand_keys(si: StackID, tl: [TableName; 2]) -> [Key; 4] {
     ]
 }
 
-async fn n_node_with_same_stack_id_and_tables(endpoints: Vec<String>, n: u8) {
-    let db = Db::new_test(endpoints).await.unwrap();
-
+async fn n_node_with_same_stack_id_and_tables(db: Db, n: u8) {
     db.clear_all_data().await.unwrap();
 
     let mut handles = vec![];
@@ -332,13 +362,16 @@ async fn n_node_with_same_stack_id_and_tables(endpoints: Vec<String>, n: u8) {
 
 #[tokio::test]
 #[serial]
+#[ignore]
 async fn test_7_node_with_same_stack_id_and_tables() {
     n_node_with_same_stack_id_and_tables(
-        vec![
+        Db::new_without_embed(vec![
             "127.0.0.1:2379".to_string(),
             "127.0.0.1:2382".to_string(),
             "127.0.0.1:2384".to_string(),
-        ],
+        ])
+        .await
+        .unwrap(),
         7,
     )
     .await;
@@ -346,21 +379,22 @@ async fn test_7_node_with_same_stack_id_and_tables() {
 
 #[tokio::test]
 #[serial]
+#[ignore]
 async fn test_50_node_with_same_stack_id_and_tables() {
     n_node_with_same_stack_id_and_tables(
-        vec![
+        Db::new_without_embed(vec![
             "127.0.0.1:2379".to_string(),
             "127.0.0.1:2382".to_string(),
             "127.0.0.1:2384".to_string(),
-        ],
+        ])
+        .await
+        .unwrap(),
         50,
     )
     .await;
 }
 
-async fn n_node_with_same_stack_id(endpoints: Vec<String>, n: u8) {
-    let db = Db::new_test(endpoints).await.unwrap();
-
+async fn n_node_with_same_stack_id(db: Db, n: u8) {
     db.clear_all_data().await.unwrap();
 
     let mut handles = vec![];
@@ -393,13 +427,16 @@ async fn n_node_with_same_stack_id(endpoints: Vec<String>, n: u8) {
 
 #[tokio::test]
 #[serial]
+#[ignore]
 async fn test_7_node_with_same_stack_id() {
     n_node_with_same_stack_id(
-        vec![
+        Db::new_without_embed(vec![
             "127.0.0.1:2379".to_string(),
             "127.0.0.1:2382".to_string(),
             "127.0.0.1:2384".to_string(),
-        ],
+        ])
+        .await
+        .unwrap(),
         7,
     )
     .await;
@@ -407,21 +444,22 @@ async fn test_7_node_with_same_stack_id() {
 
 #[tokio::test]
 #[serial]
+#[ignore]
 async fn test_50_node_with_same_stack_id() {
     n_node_with_same_stack_id(
-        vec![
+        Db::new_without_embed(vec![
             "127.0.0.1:2379".to_string(),
             "127.0.0.1:2382".to_string(),
             "127.0.0.1:2384".to_string(),
-        ],
+        ])
+        .await
+        .unwrap(),
         50,
     )
     .await;
 }
 
-async fn n_node_with_different_stack_id_and_tables(endpoints: Vec<String>, n: u8) {
-    let db = Db::new_test(endpoints).await.unwrap();
-
+async fn n_node_with_different_stack_id_and_tables(db: Db, n: u8) {
     db.clear_all_data().await.unwrap();
 
     let mut handles = vec![];
@@ -455,13 +493,16 @@ async fn n_node_with_different_stack_id_and_tables(endpoints: Vec<String>, n: u8
 
 #[tokio::test]
 #[serial]
+#[ignore]
 async fn test_7_node_with_different_stack_id_and_tables() {
     n_node_with_different_stack_id_and_tables(
-        vec![
+        Db::new_without_embed(vec![
             "127.0.0.1:2379".to_string(),
             "127.0.0.1:2382".to_string(),
             "127.0.0.1:2384".to_string(),
-        ],
+        ])
+        .await
+        .unwrap(),
         7,
     )
     .await;
@@ -469,13 +510,16 @@ async fn test_7_node_with_different_stack_id_and_tables() {
 
 #[tokio::test]
 #[serial]
+#[ignore]
 async fn test_50_node_with_different_stack_id_and_tables() {
     n_node_with_different_stack_id_and_tables(
-        vec![
+        Db::new_without_embed(vec![
             "127.0.0.1:2379".to_string(),
             "127.0.0.1:2382".to_string(),
             "127.0.0.1:2384".to_string(),
-        ],
+        ])
+        .await
+        .unwrap(),
         50,
     )
     .await;
@@ -483,13 +527,14 @@ async fn test_50_node_with_different_stack_id_and_tables() {
 
 #[tokio::test]
 #[serial]
+#[ignore]
 async fn test_multi_node_with_manual_cluster_with_diffrent_endpoint_but_same_tikv() {
     let si = stack_id();
     let tl = table_list();
     let ks = keys(si.clone(), tl.clone());
     let vs = values();
 
-    let db = Db::new_test(vec![
+    let db = Db::new_without_embed(vec![
         "127.0.0.1:2379".to_string(),
         // "127.0.0.1:2382".to_string(),
         // "127.0.0.1:2384".to_string(),
@@ -497,7 +542,7 @@ async fn test_multi_node_with_manual_cluster_with_diffrent_endpoint_but_same_tik
     .await
     .unwrap();
 
-    let db2 = Db::new_test(vec![
+    let db2 = Db::new_without_embed(vec![
         // "127.0.0.1:2379".to_string(),
         "127.0.0.1:2382".to_string(),
         // "127.0.0.1:2384".to_string(),
@@ -505,7 +550,7 @@ async fn test_multi_node_with_manual_cluster_with_diffrent_endpoint_but_same_tik
     .await
     .unwrap();
 
-    let db3 = Db::new_test(vec![
+    let db3 = Db::new_without_embed(vec![
         // "127.0.0.1:2379".to_string(),
         // "127.0.0.1:2382".to_string(),
         "127.0.0.1:2384".to_string(),
