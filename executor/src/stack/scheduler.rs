@@ -7,17 +7,23 @@ use anyhow::Result;
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::{debug, error, info, trace, warn};
-use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel};
+use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel, ReplyChannel};
 use num::BigInt;
 use serde::Deserialize;
 
 use crate::{
     gateway::GatewayManager, infrastructure::config::ConfigDuration,
-    mudb::service::DatabaseManager, network::gossip::NodeHash, runtime::Runtime,
-    util::ReplaceWithDefault,
+    mudb::service::DatabaseManager, network::NodeHash, runtime::Runtime, util::ReplaceWithDefault,
 };
 
 use mu_stack::{Stack, StackID};
+
+pub enum StackDeploymentStatus {
+    DeployedToSelf { deployed_to_others: Vec<NodeHash> },
+    DeployedToOthers { deployed_to: Vec<NodeHash> },
+    NotDeployed,
+    Unknown,
+}
 
 #[async_trait]
 #[clonable]
@@ -34,6 +40,9 @@ pub trait Scheduler: Clone + Send + Sync {
     /// We start scheduling stacks after a delay, to make sure we have
     /// an up-to-date view of the cluster.
     async fn ready_to_schedule_stacks(&self) -> Result<()>;
+
+    async fn get_deployment_status(&self, stack_id: StackID) -> Result<StackDeploymentStatus>;
+
     // This function currently doesn't fail, but we keep the return type
     // a `Result<()>` so we can later implement custom stopping logic.
     async fn stop(&self) -> Result<()>;
@@ -60,6 +69,8 @@ enum SchedulerMessage {
     StacksRemoved(Vec<StackID>),
 
     ReadyToScheduleStacks,
+
+    GetDeploymentStatus(StackID, ReplyChannel<StackDeploymentStatus>),
 
     // We could just update the state every time a message arrives,
     // but we need to be able to cache operations for the duration
@@ -122,6 +133,13 @@ impl Scheduler for SchedulerImpl {
     async fn ready_to_schedule_stacks(&self) -> Result<()> {
         self.mailbox
             .post(SchedulerMessage::ReadyToScheduleStacks)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_deployment_status(&self, stack_id: StackID) -> Result<StackDeploymentStatus> {
+        self.mailbox
+            .post_and_reply(|r| SchedulerMessage::GetDeploymentStatus(stack_id, r))
             .await
             .map_err(Into::into)
     }
@@ -380,6 +398,12 @@ async fn step(
         SchedulerMessage::StacksAvailable(stacks) => {
             for (id, stack) in stacks {
                 state.reevaluate_on_next_tick.insert(id);
+
+                // As soon as we get a stack definition, we want to deploy its gateways so we can
+                // route new requests to that stack to the correct node.
+                info!("Deploying gateways for {id}");
+                deploy_gateways(id, &stack, state.gateway_manager.as_ref()).await;
+
                 match state.stacks.entry(id) {
                     Entry::Vacant(vac) => {
                         vac.insert(StackDeployment::Undeployed { stack });
@@ -407,6 +431,8 @@ async fn step(
 
         SchedulerMessage::StacksRemoved(ids) => {
             for id in ids {
+                undeploy_gateways(id, state.gateway_manager.as_ref()).await;
+
                 match state.stacks.entry(id) {
                     Entry::Vacant(_) => warn!("Unknown stack {id} was removed"),
 
@@ -430,6 +456,32 @@ async fn step(
                 }
             }
         }
+
+        SchedulerMessage::GetDeploymentStatus(stack_id, r) => r.reply(
+            state
+                .stacks
+                .get(&stack_id)
+                .map(|s| match s {
+                    StackDeployment::Undeployed { .. }
+                    | StackDeployment::HasDeploymentCandidate { .. } => {
+                        StackDeploymentStatus::NotDeployed
+                    }
+
+                    StackDeployment::Unknown { deployed_to }
+                    | StackDeployment::DeployedToOthers { deployed_to, .. } => {
+                        StackDeploymentStatus::DeployedToOthers {
+                            deployed_to: deployed_to.iter().cloned().collect(),
+                        }
+                    }
+
+                    StackDeployment::DeployedToSelf {
+                        deployed_to_others, ..
+                    } => StackDeploymentStatus::DeployedToSelf {
+                        deployed_to_others: deployed_to_others.iter().cloned().collect(),
+                    },
+                })
+                .unwrap_or(StackDeploymentStatus::Unknown),
+        ),
 
         SchedulerMessage::Tick => {
             tick(&mut state).await;
@@ -463,7 +515,6 @@ async fn tick(state: &mut SchedulerState) {
                                 stack.clone(),
                                 &state.notification_channel,
                                 state.runtime.as_ref(),
-                                state.gateway_manager.as_ref(),
                                 &state.database_manager,
                             )
                             .await
@@ -527,7 +578,6 @@ async fn tick(state: &mut SchedulerState) {
                                 stack.clone(),
                                 &state.notification_channel,
                                 state.runtime.as_ref(),
-                                state.gateway_manager.as_ref(),
                                 &state.database_manager,
                             )
                             .await
@@ -572,15 +622,24 @@ async fn tick(state: &mut SchedulerState) {
     state.reevaluate_on_next_tick.clear();
 }
 
+async fn deploy_gateways(id: StackID, stack: &Stack, gateway_manager: &dyn GatewayManager) {
+    if let Err(f) = super::deploy::deploy_gateways(id, stack, gateway_manager).await {
+        warn!("Failed to deploy gateways of stack {id} due to: {f:?}");
+    }
+}
+
+async fn undeploy_gateways(_id: StackID, _gateway_manager: &dyn GatewayManager) {
+    error!("Undeployment not implemented yet");
+}
+
 async fn deploy_stack(
     id: StackID,
     stack: Stack,
     notification_channel: &NotificationChannel<SchedulerNotification>,
     runtime: &dyn Runtime,
-    gateway_manager: &dyn GatewayManager,
     database_manager: &DatabaseManager,
 ) -> Result<()> {
-    match super::deploy::deploy(id, stack, runtime, gateway_manager, database_manager).await {
+    match super::deploy::deploy(id, stack, runtime, database_manager).await {
         Err(f) => {
             notification_channel.send(SchedulerNotification::FailedToDeployStack(id));
             Err(f.into())

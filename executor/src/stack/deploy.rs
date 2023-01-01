@@ -61,7 +61,6 @@ pub(super) async fn deploy(
     id: StackID,
     stack: Stack,
     runtime: &dyn Runtime,
-    gateway_manager: &dyn GatewayManager,
     db_service: &DatabaseManager,
 ) -> Result<(), StackDeploymentError> {
     let stack = validate(stack).map_err(StackDeploymentError::ValidationError)?;
@@ -126,35 +125,7 @@ pub(super) async fn deploy(
         }
     }
 
-    // Step 3: Gateways
-    let mut gateway_names = vec![];
-    let mut gateways_to_deploy = vec![];
-    for gw in stack.gateways() {
-        gateways_to_deploy.push(gw.clone_normalized());
-        gateway_names.push(&gw.name);
-    }
-    gateway_manager
-        .deploy_gateways(id, gateways_to_deploy)
-        .await
-        .map_err(StackDeploymentError::FailedToDeployGateways)?;
-
     // Now that everything deployed successfully, remove all obsolete services
-
-    let existing_gateways = gateway_manager
-        .get_deployed_gateway_names(id)
-        .await
-        .unwrap_or(Some(vec![]))
-        .unwrap_or_default();
-    let mut gateways_to_remove = vec![];
-    for existing in existing_gateways {
-        if !gateway_names.iter().any(|n| ***n == *existing) {
-            gateways_to_remove.push(existing);
-        }
-    }
-    gateway_manager
-        .delete_gateways(id, gateways_to_remove)
-        .await
-        .unwrap_or(());
 
     let prefix = format!("{id}!");
     for db_id in db_service.query_db_by_prefix(&prefix).unwrap_or_default() {
@@ -186,10 +157,46 @@ fn validate(stack: Stack) -> Result<Stack, StackValidationError> {
 }
 
 async fn download_function(url: Url) -> Result<bytes::Bytes, StackDeploymentError> {
+    // TODO: implement a better function storage scenario
     reqwest::get(url)
         .await
         .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?
         .bytes()
         .await
         .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))
+}
+
+pub(super) async fn deploy_gateways(
+    id: StackID,
+    stack: &Stack,
+    gateway_manager: &dyn GatewayManager,
+) -> Result<(), StackDeploymentError> {
+    let mut gateway_names = vec![];
+    let mut gateways_to_deploy = vec![];
+    for gw in stack.gateways() {
+        gateways_to_deploy.push(gw.clone_normalized());
+        gateway_names.push(&gw.name);
+    }
+    gateway_manager
+        .deploy_gateways(id, gateways_to_deploy)
+        .await
+        .map_err(StackDeploymentError::FailedToDeployGateways)?;
+
+    let existing_gateways = gateway_manager
+        .get_deployed_gateway_names(id)
+        .await
+        .unwrap_or(Some(vec![]))
+        .unwrap_or_default();
+    let mut gateways_to_remove = vec![];
+    for existing in existing_gateways {
+        if !gateway_names.iter().any(|n| ***n == *existing) {
+            gateways_to_remove.push(existing);
+        }
+    }
+    gateway_manager
+        .delete_gateways(id, gateways_to_remove)
+        .await
+        .unwrap_or(());
+
+    Ok(())
 }

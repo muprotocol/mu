@@ -3,6 +3,7 @@ pub mod infrastructure;
 pub mod mudb;
 pub mod mudb_tikv;
 pub mod network;
+mod request_routing;
 pub mod runtime;
 pub mod stack;
 pub mod util;
@@ -13,8 +14,13 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
+use async_trait::async_trait;
 use log::*;
-use mailbox_processor::NotificationChannel;
+use mailbox_processor::{NotificationChannel, ReplyChannel};
+use mu_stack::StackID;
+use network::rpc_handler::{self, RpcHandler, RpcRequestHandler};
+use request_routing::RoutingTarget;
+use runtime::Runtime;
 use stack::blockchain_monitor::{BlockchainMonitor, BlockchainMonitorNotification};
 use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
@@ -23,7 +29,8 @@ use crate::{
     infrastructure::{config, log_setup},
     network::{
         connection_manager::{self, ConnectionManager, ConnectionManagerNotification},
-        gossip::{self, Gossip, GossipNotification, KnownNodeConfig, NodeAddress},
+        gossip::{self, Gossip, GossipNotification, KnownNodeConfig},
+        NodeAddress,
     },
     stack::{
         blockchain_monitor,
@@ -105,8 +112,8 @@ pub async fn run() -> Result<()> {
             )),
 
             Err(f) => warn!(
-                "Failed to connect to seed {}:{}, will ignore this seed. Error is {f}",
-                node.ip, node.gossip_port
+                "Failed to connect to seed {}:{}, will ignore this seed. Error is: {f:?}",
+                node.address, node.port
             ),
         }
 
@@ -141,10 +148,19 @@ pub async fn run() -> Result<()> {
     .await
     .context("Failed to initiate runtime")?;
 
+    let rpc_handler = rpc_handler::new(
+        connection_manager.clone(),
+        RpcRequestHandlerImpl {
+            runtime: runtime.clone(),
+        },
+    );
+
     // TODO: no notification channel for now, requests are sent straight to runtime
-    let gateway_manager = gateway::start(
+    let (gateway_manager, mut route_request_receiver) = gateway::start(
         gateway_manager_config,
         runtime.clone(),
+        connection_manager.clone(),
+        rpc_handler.clone(),
         usage_aggregator.clone(),
     )
     .await
@@ -182,6 +198,8 @@ pub async fn run() -> Result<()> {
             &mut scheduler_notification_receiver,
             blockchain_monitor.as_ref(),
             &mut blockchain_monitor_notification_receiver,
+            rpc_handler.as_ref(),
+            &mut route_request_receiver,
         )
         .await;
 
@@ -253,6 +271,31 @@ fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
     node.gossip_port == me.port && (node.ip == me.address || node.ip.is_loopback())
 }
 
+#[derive(Clone)]
+struct RpcRequestHandlerImpl {
+    runtime: Box<dyn Runtime>,
+}
+
+#[async_trait]
+impl RpcRequestHandler for RpcRequestHandlerImpl {
+    async fn handle_request(&self, request: rpc_handler::RpcRequest) {
+        let rpc_handler::RpcRequest::ExecuteFunctionRequest(function_id, request, send_response) =
+            request;
+
+        let helper = async move {
+            let result = self
+                .runtime
+                .invoke_function(function_id, request)
+                .await
+                .context("Failed to invoke function")?;
+
+            Ok(result)
+        };
+
+        send_response(helper.await).await;
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn glue_modules(
     cancellation_token: CancellationToken,
@@ -268,6 +311,11 @@ async fn glue_modules(
     blockchain_monitor_notification_receiver: &mut mpsc::UnboundedReceiver<
         BlockchainMonitorNotification,
     >,
+    rpc_handler: &dyn RpcHandler,
+    route_request_receiver: &mut mpsc::UnboundedReceiver<(
+        StackID,
+        ReplyChannel<Result<RoutingTarget>>,
+    )>,
 ) {
     loop {
         select! {
@@ -277,7 +325,7 @@ async fn glue_modules(
             }
 
             notification = connection_manager_notification_receiver.recv() => {
-                process_connection_manager_notification(notification, connection_manager, gossip).await;
+                process_connection_manager_notification(notification, gossip, rpc_handler).await;
             }
 
             notification = gossip_notification_receiver.recv() => {
@@ -291,22 +339,38 @@ async fn glue_modules(
             notification = blockchain_monitor_notification_receiver.recv() => {
                 process_blockchain_monitor_notification(notification, scheduler).await;
             }
+
+            request = route_request_receiver.recv() => {
+                handle_route_request(request, gossip, scheduler).await;
+            }
         }
     }
 }
 
+async fn handle_route_request(
+    request: Option<(StackID, ReplyChannel<Result<RoutingTarget>>)>,
+    gossip: &dyn Gossip,
+    scheduler: &dyn Scheduler,
+) {
+    let Some((stack_id, reply_channel)) = request else {
+        return;
+    };
+    let route = request_routing::get_route(stack_id, scheduler, gossip).await;
+    reply_channel.reply(route);
+}
+
 async fn process_connection_manager_notification(
     notification: Option<ConnectionManagerNotification>,
-    connection_manager: &dyn ConnectionManager,
     gossip: &dyn Gossip,
+    rpc_handler: &dyn RpcHandler,
 ) {
     match notification {
         None => (), // TODO
         Some(ConnectionManagerNotification::NewConnectionAvailable(id)) => {
-            info!("New connection available: {}", id)
+            debug!("New connection available: {}", id)
         }
         Some(ConnectionManagerNotification::ConnectionClosed(id)) => {
-            info!("Connection closed: {}", id)
+            debug!("Connection closed: {}", id)
         }
         Some(ConnectionManagerNotification::DatagramReceived(id, bytes)) => {
             debug!(
@@ -323,9 +387,7 @@ async fn process_connection_manager_notification(
                 id,
                 String::from_utf8_lossy(&bytes)
             );
-            if let Err(f) = connection_manager.send_reply(id, req_id, bytes).await {
-                error!("Failed to send reply: {}", f);
-            }
+            rpc_handler.request_received(id, req_id, bytes);
         }
     }
 }

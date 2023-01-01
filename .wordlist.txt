@@ -5,6 +5,7 @@ chrono
 clonable
 codegen
 cranelift
+datagram
 Datagram
 datagrams
 flate
@@ -29,6 +30,7 @@ mufunction
 mugateway
 MuGateway
 MuProtocol
+muxer
 nanos
 nonblocking
 ocsp
@@ -40,9 +42,12 @@ protobuf
 protoc
 protos
 pubkey
+QUIC
 quinn
 rcgen
 reconnections
+recv
+refcell
 reqwest
 rngs
 runtime
