@@ -6,7 +6,7 @@ import { deployStack, getMu, getRegion, loadProviderFromStaticKeypair, readMintF
 
 util.asyncMain(async () => {
     let stackSeed = parseInt(process.argv[2]);
-    if (stackSeed == NaN)
+    if (Number.isNaN(stackSeed))
         stackSeed = 1;
 
     let anchorProvider = AnchorProvider.local();

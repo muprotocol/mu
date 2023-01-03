@@ -1,13 +1,9 @@
 import * as base64 from 'base64-js';
-import * as fs from "fs";
 import path from "path";
 import util from "./util";
 
 function ensureStackCliTool() {
     let toolDir = path.resolve(__dirname, ".tools");
-    let toolPath = path.join(toolDir, "mu_stack_cli");
-    if (fs.existsSync(toolPath))
-        return;
 
     util.run(`env -C ${path.resolve(__dirname, "../../mu_stack")} cargo build --bin mu_stack_cli -r && ` +
         `mkdir -p ${toolDir} && ` +
