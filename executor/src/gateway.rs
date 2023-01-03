@@ -186,10 +186,7 @@ pub async fn start(
                     )
                     .to(handle_request),
             )
-        // .app_data(state.clone())
-        // .wrap(Logger::default())
-        // .route("/hey", web::get().to(manual_hello))
-        // .default_service(svc) TO OVERRIDE THE DEFAULT NOT FOUND
+            .default_service(web::to(|| async { ResponseWrapper::not_found() }))
     })
     .bind((config.listen_address, config.listen_port))
     .context("Failed to bind HTTP server port")?
