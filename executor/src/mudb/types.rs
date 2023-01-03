@@ -173,7 +173,7 @@ pub type Item = (Key, Value);
 
 pub type KeyFilter = KeyFilterFrom<String>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KeyFilterFrom<T: Into<Key>> {
     Exact(T),
     Prefix(String),

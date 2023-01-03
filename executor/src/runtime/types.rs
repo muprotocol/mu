@@ -1,43 +1,35 @@
-use super::{
-    error::Error,
-    message::{gateway::GatewayResponse, Message},
-};
-use mu_stack::{FunctionRuntime, StackID};
+use super::{error::Error, function::Pipe};
+use mu_stack::{AssemblyRuntime, StackID};
 
 use anyhow::Result;
 use bytes::Bytes;
 use mailbox_processor::ReplyChannel;
 use serde::Deserialize;
-use std::{
-    collections::HashMap,
-    fmt::Display,
-    io::{BufReader, BufWriter},
-    path::PathBuf,
-};
+use std::{collections::HashMap, fmt::Display, path::PathBuf};
 use tokio::{sync::oneshot::error::TryRecvError, task::JoinHandle};
-use uuid::Uuid;
 use wasmer_middlewares::metering::MeteringPoints;
-use wasmer_wasi::Pipe;
 
-pub trait FunctionProvider: Send {
-    fn get(&self, id: &FunctionID) -> Option<&FunctionDefinition>;
-    fn add_function(&mut self, function: FunctionDefinition);
-    fn remove_function(&mut self, id: &FunctionID);
+pub(super) type ExecuteFunctionRequest<'a> = musdk_common::incoming_message::ExecuteFunction<'a>;
+pub(super) type ExecuteFunctionResponse = musdk_common::outgoing_message::FunctionResult<'static>;
+
+pub trait AssemblyProvider: Send {
+    fn get(&self, id: &AssemblyID) -> Option<&AssemblyDefinition>;
+    fn add_function(&mut self, function: AssemblyDefinition);
+    fn remove_function(&mut self, id: &AssemblyID);
     fn get_function_names(&self, stack_id: &StackID) -> Vec<String>;
 }
 
 #[derive(Debug)]
 pub struct InvokeFunctionRequest {
-    // TODO: not needed in public interface
-    pub function_id: FunctionID,
-    pub message: Message,
-    pub reply: ReplyChannel<Result<GatewayResponse, Error>>,
+    pub assembly_id: AssemblyID,
+    pub request: ExecuteFunctionRequest<'static>,
+    pub reply: ReplyChannel<Result<ExecuteFunctionResponse, Error>>,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct InstanceID {
-    pub function_id: FunctionID,
-    pub instance_id: Uuid,
+    pub function_id: AssemblyID,
+    pub instance_id: u64,
 }
 
 impl Display for InstanceID {
@@ -46,45 +38,54 @@ impl Display for InstanceID {
     }
 }
 
-impl InstanceID {
-    pub fn generate_random(function_id: FunctionID) -> Self {
-        Self {
-            function_id,
-            instance_id: Uuid::new_v4(),
-        }
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct AssemblyID {
+    pub stack_id: StackID,
+    pub assembly_name: String,
+}
+
+impl Display for AssemblyID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.stack_id, self.assembly_name)
     }
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct FunctionID {
-    pub stack_id: StackID,
+    pub assembly_id: AssemblyID,
     pub function_name: String,
+}
+
+impl FunctionID {
+    pub fn stack_id(&self) -> &StackID {
+        &self.assembly_id.stack_id
+    }
 }
 
 impl Display for FunctionID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.stack_id, self.function_name)
+        write!(f, "{}.{}", self.assembly_id, self.function_name)
     }
 }
 
-pub type FunctionSource = Bytes;
+pub type AssemblySource = Bytes;
 
 #[derive(Clone, Debug)]
-pub struct FunctionDefinition {
-    pub id: FunctionID,
-    pub source: FunctionSource,
-    pub runtime: FunctionRuntime,
+pub struct AssemblyDefinition {
+    pub id: AssemblyID,
+    pub source: AssemblySource,
+    pub runtime: AssemblyRuntime,
 
     // TODO: key must not contain `=` and both must not contain `null` byte
     pub envs: HashMap<String, String>,
     pub memory_limit: byte_unit::Byte,
 }
 
-impl FunctionDefinition {
+impl AssemblyDefinition {
     pub fn new(
-        id: FunctionID,
-        source: FunctionSource,
-        runtime: FunctionRuntime,
+        id: AssemblyID,
+        source: AssemblySource,
+        runtime: AssemblyRuntime,
         envs: impl IntoIterator<
             IntoIter = impl Iterator<Item = (String, String)>,
             Item = (String, String),
@@ -104,9 +105,9 @@ impl FunctionDefinition {
 
 #[derive(Debug)]
 pub struct FunctionIO {
-    pub stdin: BufWriter<Pipe>,
-    pub stdout: BufReader<Pipe>,
-    pub stderr: BufReader<Pipe>,
+    pub stdin: Pipe,
+    pub stdout: Pipe,
+    pub stderr: Pipe,
 }
 
 #[derive(Debug)]
@@ -153,6 +154,7 @@ impl FunctionHandle {
 #[derive(Deserialize, Clone)]
 pub struct RuntimeConfig {
     pub cache_path: PathBuf,
+    pub include_function_logs: bool,
 }
 
 pub type InstructionsCount = u64;

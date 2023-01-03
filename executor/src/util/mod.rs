@@ -31,7 +31,9 @@ pub trait ReplaceWith: Sized {
     /// This function passes ownership of the value contained in the
     /// reference to a transformation function and replaces the value
     /// in the reference with the new value.
-    fn replace_value(&mut self, f: impl FnOnce(Self) -> Self) {
+    /// # Safety
+    /// The callback must not panic. Otherwise, a double-free will happen.
+    unsafe fn replace_value(&mut self, f: impl FnOnce(Self) -> Self) {
         unsafe {
             // Safety: the old, duplicated value is overwritten immediately before
             // control leaves this function, so nothing is duplicated.

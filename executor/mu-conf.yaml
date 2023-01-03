@@ -25,6 +25,7 @@ gossip:
       port: 12012
 runtime:
   cache_path: runtime-cache
+  include_function_logs: false
 scheduler:
   tick_interval: 1s
 blockchain_monitor:

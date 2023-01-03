@@ -1,18 +1,14 @@
 use anyhow::{bail, Context, Result};
 use mu::{
-    mudb::{
-        self,
-        service::{DatabaseID, DatabaseManager},
-        DBManagerConfig,
-    },
+    mudb::{service::DatabaseManager, DBManagerConfig},
     runtime::{
         start,
-        types::{FunctionDefinition, FunctionID, RuntimeConfig},
+        types::{AssemblyDefinition, AssemblyID, FunctionID, RuntimeConfig},
         Runtime,
     },
     stack::usage_aggregator::UsageAggregator,
 };
-use mu_stack::FunctionRuntime;
+use mu_stack::AssemblyRuntime;
 use std::{
     collections::HashMap,
     env,
@@ -24,7 +20,7 @@ use tokio::process::Command;
 
 use crate::common::HashMapUsageAggregator;
 
-use super::providers::MapFunctionProvider;
+use super::providers::MapAssemblyProvider;
 
 fn ensure_project_dir(project_dir: &Path) -> Result<PathBuf> {
     let project_dir = env::current_dir()?.join(project_dir);
@@ -75,36 +71,48 @@ pub async fn clean_wasm_project(project_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-pub async fn create_db_if_not_exist(
-    db_service: DatabaseManager,
-    database_id: DatabaseID,
-) -> Result<()> {
-    let conf = mudb::Config {
-        database_id,
-        ..Default::default()
-    };
+// pub async fn create_db_if_not_exist(
+//     db_service: DatabaseManager,
+//     database_id: DatabaseID,
+// ) -> Result<()> {
+//     let conf = mudb::Config {
+//         database_id,
+//         ..Default::default()
+//     };
 
-    db_service.create_db_if_not_exist(conf).await?;
+//     db_service.create_db_if_not_exist(conf).await?;
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-pub struct Project {
-    pub id: FunctionID,
-    pub name: String,
+pub struct Project<'a> {
+    pub id: AssemblyID,
+    pub name: &'a str,
     pub path: PathBuf,
     pub memory_limit: byte_unit::Byte,
+    pub functions: &'a [&'a str],
 }
 
-impl Project {
+impl<'a> Project<'a> {
     pub fn wasm_module_path(&self) -> PathBuf {
         self.path
             .join("target/wasm32-wasi/release/")
             .join(format!("{}.wasm", self.name))
     }
+
+    pub fn function_id(&self, index: usize) -> Option<FunctionID> {
+        if index <= self.functions.len() {
+            Some(FunctionID {
+                assembly_id: self.id.clone(),
+                function_name: self.functions[index].to_string(),
+            })
+        } else {
+            None
+        }
+    }
 }
 
-pub async fn build_wasm_projects(projects: &[Project]) -> Result<()> {
+pub async fn build_wasm_projects<'a>(projects: &'a [Project<'a>]) -> Result<()> {
     for p in projects {
         compile_wasm_project(&p.path)
             .await
@@ -114,9 +122,9 @@ pub async fn build_wasm_projects(projects: &[Project]) -> Result<()> {
     Ok(())
 }
 
-pub async fn read_wasm_functions(
-    projects: &[Project],
-) -> Result<HashMap<FunctionID, FunctionDefinition>> {
+pub async fn read_wasm_functions<'a>(
+    projects: &'a [Project<'a>],
+) -> Result<HashMap<AssemblyID, AssemblyDefinition>> {
     let mut results = HashMap::new();
 
     for project in projects {
@@ -124,10 +132,10 @@ pub async fn read_wasm_functions(
 
         results.insert(
             project.id.clone(),
-            FunctionDefinition::new(
+            AssemblyDefinition::new(
                 project.id.clone(),
                 source,
-                FunctionRuntime::Wasi1_0,
+                AssemblyRuntime::Wasi1_0,
                 [],
                 project.memory_limit,
             ),
@@ -137,19 +145,20 @@ pub async fn read_wasm_functions(
     Ok(results)
 }
 
-async fn create_map_function_provider(
-    projects: &[Project],
-) -> Result<(HashMap<FunctionID, FunctionDefinition>, MapFunctionProvider)> {
+async fn create_map_function_provider<'a>(
+    projects: &'a [Project<'a>],
+) -> Result<(HashMap<AssemblyID, AssemblyDefinition>, MapAssemblyProvider)> {
     build_wasm_projects(projects).await?;
     let functions = read_wasm_functions(projects).await?;
-    Ok((functions, MapFunctionProvider::new()))
+    Ok((functions, MapAssemblyProvider::new()))
 }
 
-pub async fn create_runtime(
-    projects: &[Project],
+pub async fn create_runtime<'a>(
+    projects: &'a [Project<'a>],
 ) -> (Box<dyn Runtime>, DatabaseManager, Box<dyn UsageAggregator>) {
     let config = RuntimeConfig {
         cache_path: PathBuf::from_str("runtime-cache").unwrap(),
+        include_function_logs: true,
     };
 
     let (functions, provider) = create_map_function_provider(projects).await.unwrap();
@@ -171,7 +180,7 @@ pub async fn create_runtime(
     .unwrap();
 
     runtime
-        .add_functions(functions.clone().into_iter().map(|(_, d)| d).collect())
+        .add_functions(functions.clone().into_values().into_iter().collect())
         .await
         .unwrap();
 

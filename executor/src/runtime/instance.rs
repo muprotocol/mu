@@ -1,29 +1,29 @@
-use std::{
-    collections::HashMap,
-    io::{BufRead, Write},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use super::{
     error::{Error, FunctionLoadingError},
     function,
     memory::create_memory,
-    message::{database::*, gateway::*, log::Log, FromMessage, Message, ToMessage},
-    types::{FunctionHandle, FunctionID, InstanceID},
+    types::{
+        AssemblyID, ExecuteFunctionRequest, ExecuteFunctionResponse, FunctionHandle, InstanceID,
+    },
 };
 use crate::{
     mudb::service::DatabaseManager, runtime::error::FunctionRuntimeError,
     stack::usage_aggregator::Usage,
 };
 
-use anyhow::{anyhow, Result};
-use bytes::BufMut;
-use log::trace;
+use anyhow::anyhow;
+use log::{error, log, trace, Level};
+use musdk_common::{
+    incoming_message::IncomingMessage,
+    outgoing_message::{LogLevel, OutgoingMessage},
+};
 use wasmer::{CompilerConfig, Module, RuntimeError, Store};
 use wasmer_compiler_llvm::LLVM;
 use wasmer_middlewares::{metering::MeteringPoints, Metering};
 
-const MESSAGE_READ_BUF_CAP: usize = 8 * 1024;
+const FUNCTION_LOG_TARGET: &str = "mu_function";
 
 pub fn create_store(memory_limit: byte_unit::Byte) -> Result<Store, Error> {
     let mut compiler_config = LLVM::default();
@@ -39,10 +39,10 @@ pub fn create_store(memory_limit: byte_unit::Byte) -> Result<Store, Error> {
 }
 
 fn create_usage(
-    db_read: u64,
-    db_write: u64,
+    db_read: &u64,
+    db_write: &u64,
     instructions_count: u64,
-    memory: byte_unit::Byte,
+    memory: &byte_unit::Byte,
 ) -> Vec<Usage> {
     let memory_megabytes = memory
         .get_adjusted_unit(byte_unit::ByteUnit::MB)
@@ -51,11 +51,11 @@ fn create_usage(
 
     vec![
         Usage::DBRead {
-            weak_reads: db_read,
+            weak_reads: *db_read,
             strong_reads: 0,
         },
         Usage::DBWrite {
-            weak_writes: db_write,
+            weak_writes: *db_write,
             strong_writes: 0,
         },
         Usage::FunctionMBInstructions {
@@ -65,7 +65,7 @@ fn create_usage(
     ]
 }
 
-fn metering_point_to_instructions_count(points: MeteringPoints) -> u64 {
+fn metering_point_to_instructions_count(points: &MeteringPoints) -> u64 {
     match points {
         MeteringPoints::Exhausted => u64::MAX,
         MeteringPoints::Remaining(p) => u64::MAX - p,
@@ -83,23 +83,35 @@ impl InstanceState for Loaded {}
 
 pub struct Running {
     handle: FunctionHandle,
+    io_state: IOState,
+
+    //TODO: Refactor these to `week` and `strong` when we had database replication
+    database_write_count: u64,
+    database_read_count: u64,
 }
+
 impl InstanceState for Running {}
 
 #[derive(Debug)]
 pub struct Instance<S: InstanceState> {
     id: InstanceID,
     state: S,
-    database_service: Arc<DatabaseManager>,
+    database_service: DatabaseManager,
+    memory_limit: byte_unit::Byte,
+    include_logs: bool,
 }
 
 impl Instance<Loaded> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        function_id: FunctionID,
+        function_id: AssemblyID,
+        instance_id: u64,
         envs: HashMap<String, String>,
         store: Store,
         module: Module,
-        database_service: Arc<DatabaseManager>,
+        database_service: DatabaseManager,
+        memory_limit: byte_unit::Byte,
+        include_logs: bool,
     ) -> Self {
         let state = Loaded {
             store,
@@ -108,91 +120,48 @@ impl Instance<Loaded> {
         };
 
         Instance {
-            id: InstanceID::generate_random(function_id),
+            id: InstanceID {
+                function_id,
+                instance_id,
+            },
             state,
             database_service,
+            memory_limit,
+            include_logs,
         }
     }
 
     pub fn start(self) -> Result<Instance<Running>, Error> {
+        trace!(
+            "starting instance {} of function {}",
+            self.id.instance_id,
+            self.id.function_id
+        );
+
         let handle = function::start(self.state.store, &self.state.module, self.state.envs)?;
-        let state = Running { handle };
+        let state = Running {
+            handle,
+            io_state: IOState::Idle,
+            database_write_count: 0,
+            database_read_count: 0,
+        };
         Ok(Instance {
             id: self.id,
             state,
             database_service: self.database_service,
+            memory_limit: self.memory_limit,
+            include_logs: self.include_logs,
         })
     }
 }
 
 impl Instance<Running> {
-    pub fn is_finished(&mut self) -> bool {
-        let is_finished = self.state.handle.is_finished();
-        trace!(
-            "Instance {:?} status is {}",
-            self.id,
-            if is_finished {
-                "finished"
-            } else {
-                "still running "
-            }
-        );
-
-        is_finished
-    }
-
-    fn write_to_stdin(&mut self, input: Message) -> Result<(), Error> {
-        let mut bytes = input.as_bytes()?;
-        bytes.put_u8(b'\n');
-
-        self.state
-            .handle
-            .io
-            .stdin
-            .write_all(&bytes)
-            .map_err(|e| Error::Internal(anyhow!("can not write message to IO: {e}")))?;
-
-        self.state
-            .handle
-            .io
-            .stdin
-            .flush()
-            .map_err(|e| Error::Internal(anyhow!("can not flush written message: {e}")))?;
-
-        Ok(())
-    }
-
-    fn read_from_stdout(&mut self) -> Result<Message, Error> {
-        let mut buf = String::with_capacity(MESSAGE_READ_BUF_CAP);
-        loop {
-            let bytes_read = self
-                .state
-                .handle
-                .io
-                .stdout
-                .read_line(&mut buf)
-                .map_err(|e| Error::Internal(anyhow!("can not read line from IO: {e}")))?;
-
-            if bytes_read != 0 {
-                break;
-            };
-        }
-
-        return serde_json::from_slice(buf.as_bytes()).map_err(Error::MessageDeserializationFailed);
-    }
-
-    //TODO:
-    // - The case when we are waiting for function's respond and function is exited is not covered.
-    // and there should be a timeout for the amount of time we are waiting for function response.
-    //
-    // - It is not good to pass memory_limit here, but will do for now to be able to make usages all
-    // here and encapsulate the usage making process.
+    #[inline]
     pub async fn run_request(
         self,
-        memory_limit: byte_unit::Byte,
-        request: Message,
-    ) -> Result<(GatewayResponse, Vec<Usage>), (Error, Vec<Usage>)> {
-        tokio::task::spawn_blocking(move || self._run_request(memory_limit, request))
+        request: ExecuteFunctionRequest<'static>,
+    ) -> Result<(ExecuteFunctionResponse, Vec<Usage>), (Error, Vec<Usage>)> {
+        tokio::task::spawn_blocking(move || self.inner_run_request(request))
             .await
             .map_err(|_| {
                 (
@@ -202,24 +171,63 @@ impl Instance<Running> {
             })?
     }
 
-    fn _run_request(
+    pub fn is_finished(&mut self) -> bool {
+        self.state.handle.is_finished()
+    }
+
+    fn write_message(&mut self, message: IncomingMessage) -> Result<(), Error> {
+        message
+            .write(&mut self.state.handle.io.stdin)
+            .map_err(|e| {
+                error!("failed to write data to function: {e}");
+                Error::Internal(anyhow!("failed to write data to function {e}",))
+            })?;
+
+        Ok(())
+    }
+
+    fn read_message(&mut self) -> Result<OutgoingMessage<'static>, Error> {
+        OutgoingMessage::read(&mut self.state.handle.io.stdout).map_err(Error::FailedToReadMessage)
+    }
+
+    fn wait_to_finish_and_get_usage(self) -> Result<Vec<Usage>, (Error, Vec<Usage>)> {
+        tokio::runtime::Handle::current()
+            .block_on(self.state.handle.join_handle)
+            .map(move |metering_points| {
+                let usage = |m| {
+                    create_usage(
+                        &self.state.database_read_count,
+                        &self.state.database_write_count,
+                        metering_point_to_instructions_count(m),
+                        &self.memory_limit,
+                    )
+                };
+
+                match metering_points {
+                    Ok(m) => Ok(usage(&m)),
+                    Err((e, m)) => Err((e, usage(&m))),
+                }
+            })
+            .map_err(|_| {
+                (
+                    Error::Internal(anyhow!("failed to run function task to end")),
+                    vec![],
+                )
+            })?
+    }
+
+    fn inner_run_request(
         mut self,
-        memory_limit: byte_unit::Byte,
-        request: Message,
-    ) -> Result<(GatewayResponse, Vec<Usage>), (Error, Vec<Usage>)> {
-        //TODO: Refactor these to `week` and `strong` when we had database replication
-        let (mut database_read_count, mut database_write_count) = (0, 0);
-        trace!(
-            "Running function `{}` instance `{}`",
-            self.id.function_id,
-            self.id.instance_id
-        );
+        request: ExecuteFunctionRequest<'static>,
+    ) -> Result<(ExecuteFunctionResponse, Vec<Usage>), (Error, Vec<Usage>)> {
+        trace!("Running {}", &self.id);
 
         if self.is_finished() {
             trace!(
                 "Instance {:?} is already exited before sending request",
-                self.id
+                &self.id
             );
+
             return Err((
                 Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(
                     RuntimeError::new("Function Early Exit"),
@@ -228,170 +236,242 @@ impl Instance<Running> {
             ));
         }
 
-        self.write_to_stdin(request).map_err(|e| (e, vec![]))?;
+        self.write_message(IncomingMessage::ExecuteFunction(request))
+            .map_err(|e| (e, vec![]))?;
+        self.state.io_state = IOState::Processing;
 
         loop {
-            if self.is_finished() {
-                trace!("Instance {:?} exited early", self.id);
-                return Err((
-                    Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(
-                        RuntimeError::new("Function Early Exit"),
-                    )),
-                    vec![],
-                ));
+            // TODO: overall timeout for functions
+
+            // TODO: make this async? Possible, but needs work in Borsh as well
+            match self.read_message() {
+                Err(Error::FailedToReadMessage(e))
+                    if e.kind() == std::io::ErrorKind::InvalidInput =>
+                {
+                    error!("Function did not write a FunctionResult or FatalError to its stdout before stopping");
+                    return match self.wait_to_finish_and_get_usage() {
+                        Ok(u) => Err((Error::FunctionDidntTerminateCleanly, u)),
+                        Err((e, u)) => Err((e, u)),
+                    };
+                }
+                Err(e) => {
+                    error!("Could not receive message from instance: {e:?}");
+                    return match self.wait_to_finish_and_get_usage() {
+                        Ok(u) => Err((e, u)),
+                        Err((e, u)) => Err((e, u)),
+                    };
+                }
+                Ok(message) => {
+                    trace!("Message from function {}: {:?}", self.id, message);
+                    match message {
+                        OutgoingMessage::FunctionResult(response) => {
+                            return match self.wait_to_finish_and_get_usage() {
+                                Ok(u) => Ok((response, u)),
+                                Err((e, u)) => Err((e, u)),
+                            };
+                        }
+
+                        OutgoingMessage::FatalError(e) => {
+                            let e = Error::FunctionRuntimeError(FunctionRuntimeError::FatalError(
+                                e.error.into_owned(),
+                            ));
+                            return match self.wait_to_finish_and_get_usage() {
+                                Ok(u) => Err((e, u)),
+                                Err((_, u)) => Err((e, u)),
+                            };
+                        }
+
+                        OutgoingMessage::Log(log) => {
+                            if self.include_logs {
+                                let level = match log.level {
+                                    LogLevel::Error => Level::Error,
+                                    LogLevel::Warn => Level::Warn,
+                                    LogLevel::Info => Level::Info,
+                                    LogLevel::Debug => Level::Debug,
+                                    LogLevel::Trace => Level::Trace,
+                                };
+
+                                log!(
+                                    target: FUNCTION_LOG_TARGET,
+                                    level,
+                                    "{}: {}",
+                                    self.id,
+                                    log.body
+                                );
+                            }
+                        } // OutgoingMessage::DatabaseRequest(request) => {
+                          //     let resp = match request {
+                          //         DatabaseRequest::CreateTable(req) => {
+                          //             let res = tokio::runtime::Handle::current()
+                          //                 .block_on(self.database_service.create_table(
+                          //                     create_database_id(
+                          //                         &self.id.function_id.stack_id,
+                          //                         req.db_name.into_owned(),
+                          //                     ),
+                          //                     req.table_name.into_owned(),
+                          //                 ))
+                          //                 .map_err(|e| e.to_string())
+                          //                 .map(|d| musdk_common::database::TableDescription {
+                          //                     table_name: Cow::Owned(d.table_name),
+                          //                 });
+
+                          //             self.state.database_write_count += 1;
+
+                          //             DatabaseResponse::CreateTable(res)
+                          //         }
+
+                          //         DatabaseRequest::DropTable(req) => {
+                          //             let res = tokio::runtime::Handle::current()
+                          //                 .block_on(self.database_service.delete_table(
+                          //                     create_database_id(
+                          //                         &self.id.function_id.stack_id,
+                          //                         req.db_name.into_owned(),
+                          //                     ),
+                          //                     req.table_name.into_owned(),
+                          //                 ))
+                          //                 .map_err(|e| e.to_string())
+                          //                 .map(|r| {
+                          //                     r.map(|d| musdk_common::database::TableDescription {
+                          //                         table_name: Cow::Owned(d.table_name),
+                          //                     })
+                          //                 });
+
+                          //             self.state.database_write_count += 1;
+
+                          //             DatabaseResponse::DropTable(res)
+                          //         }
+
+                          //         DatabaseRequest::Find(req) => {
+                          //             let res = tokio::runtime::Handle::current()
+                          //                 .block_on(self.database_service.find_item(
+                          //                     create_database_id(
+                          //                         &self.id.function_id.stack_id,
+                          //                         req.db_name.into_owned(),
+                          //                     ),
+                          //                     req.table_name.into_owned(),
+                          //                     key_filter_to_mudb(req.key_filter),
+                          //                     req.value_filter.to_string().try_into().map_err(
+                          //                         |_| {
+                          //                             (
+                          //                                 Error::DBError(
+                          //                                     "failed to parse value filter",
+                          //                                 ),
+                          //                                 vec![],
+                          //                             )
+                          //                         },
+                          //                     )?,
+                          //                 ))
+                          //                 .map_err(|e| e.to_string())
+                          //                 .map(|r| {
+                          //                     r.into_iter()
+                          //                         .map(|(k, v)| musdk_common::database::Item {
+                          //                             key: Cow::Owned(k),
+                          //                             value: Cow::Owned(v),
+                          //                         })
+                          //                         .collect()
+                          //                 });
+
+                          //             self.state.database_read_count += 1;
+
+                          //             DatabaseResponse::Find(res)
+                          //         }
+                          //         DatabaseRequest::Insert(req) => {
+                          //             let res = tokio::runtime::Handle::current()
+                          //                 .block_on({
+                          //                     self.database_service.insert_one_item(
+                          //                         create_database_id(
+                          //                             &self.id.function_id.stack_id,
+                          //                             req.db_name.into_owned(),
+                          //                         ),
+                          //                         req.table_name.into_owned(),
+                          //                         req.key.into_owned(),
+                          //                         req.value.into_owned(),
+                          //                     )
+                          //                 })
+                          //                 .map_err(|e| e.to_string())
+                          //                 .map(Cow::Owned);
+
+                          //             self.state.database_write_count += 1;
+
+                          //             DatabaseResponse::Insert(res)
+                          //         }
+                          //         DatabaseRequest::Update(req) => {
+                          //             let res = tokio::runtime::Handle::current()
+                          //                 .block_on(self.database_service.update_item(
+                          //                     create_database_id(
+                          //                         &self.id.function_id.stack_id,
+                          //                         req.db_name.into_owned(),
+                          //                     ),
+                          //                     req.table_name.into_owned(),
+                          //                     key_filter_to_mudb(req.key_filter),
+                          //                     req.value_filter.to_string().try_into().map_err(
+                          //                         |_| {
+                          //                             (
+                          //                                 Error::DBError(
+                          //                                     "failed to parse value filter",
+                          //                                 ),
+                          //                                 vec![],
+                          //                             )
+                          //                         },
+                          //                     )?,
+                          //                     req.update.to_string().try_into().map_err(|_| {
+                          //                         (Error::DBError("failed to parse updater"), vec![])
+                          //                     })?,
+                          //                 ))
+                          //                 .map_err(|e| e.to_string())
+                          //                 .map(|r| {
+                          //                     r.into_iter()
+                          //                         .map(|(k, v)| musdk_common::database::Item {
+                          //                             key: Cow::Owned(k),
+                          //                             value: Cow::Owned(v),
+                          //                         })
+                          //                         .collect()
+                          //                 });
+
+                          //             self.state.database_write_count += 1;
+
+                          //             DatabaseResponse::Update(res)
+                          //         }
+                          //     };
+                          //     self.write_message(IncomingMessage::DatabaseResponse(resp))
+                          //         .map_err(|e| (e, vec![]))?;
+                          // }
+                    }
+                }
             }
-
-            match self.read_from_stdout() {
-                Ok(message) => match message.r#type.as_str() {
-                    GatewayResponse::TYPE => {
-                        let resp =
-                            GatewayResponse::from_message(message).map_err(|e| (e, vec![]))?;
-
-                        let result = tokio::runtime::Handle::current()
-                            .block_on(self.state.handle.join_handle)
-                            .map(move |m| {
-                                m.map(|points| {
-                                    (
-                                        resp,
-                                        create_usage(
-                                            database_read_count,
-                                            database_write_count,
-                                            metering_point_to_instructions_count(points),
-                                            memory_limit,
-                                        ),
-                                    )
-                                })
-                                .map_err(|(e, points)| {
-                                    (
-                                        e,
-                                        create_usage(
-                                            database_read_count,
-                                            database_write_count,
-                                            metering_point_to_instructions_count(points),
-                                            memory_limit,
-                                        ),
-                                    )
-                                })
-                            })
-                            .map_err(|_| {
-                                (
-                                    Error::Internal(anyhow!("Failed to run function task to end")),
-                                    vec![],
-                                )
-                            })?;
-
-                        return result;
-                    }
-
-                    DbRequest::TYPE => {
-                        let db_req = DbRequest::from_message(message).map_err(|e| (e, vec![]))?;
-                        let db_resp = match db_req.request {
-                            DbRequestDetails::CreateTable(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on(self.database_service.create_table(
-                                        database_id(&self.id.function_id, req.db_name),
-                                        req.table_name,
-                                    ))
-                                    .map_err(|e| e.to_string());
-
-                                database_write_count += 1;
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::CreateTable(res),
-                                }
-                            }
-
-                            DbRequestDetails::DropTable(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on(self.database_service.delete_table(
-                                        database_id(&self.id.function_id, req.db_name),
-                                        req.table_name,
-                                    ))
-                                    .map_err(|e| e.to_string());
-
-                                database_write_count += 1;
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::DropTable(res),
-                                }
-                            }
-
-                            DbRequestDetails::Find(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on(self.database_service.find_item(
-                                        database_id(&self.id.function_id, req.db_name),
-                                        req.table_name,
-                                        req.key_filter,
-                                        req.value_filter.try_into().map_err(|_| {
-                                            (Error::DBError("failed to parse value filter"), vec![])
-                                        })?,
-                                    ))
-                                    .map_err(|e| e.to_string());
-
-                                database_read_count += 1;
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::Find(res),
-                                }
-                            }
-                            DbRequestDetails::Insert(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on({
-                                        self.database_service.insert_one_item(
-                                            database_id(&self.id.function_id, req.db_name),
-                                            req.table_name,
-                                            req.key,
-                                            req.value,
-                                        )
-                                    })
-                                    .map_err(|e| e.to_string());
-
-                                database_write_count += 1;
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::Insert(res),
-                                }
-                            }
-                            DbRequestDetails::Update(req) => {
-                                let res = tokio::runtime::Handle::current()
-                                    .block_on(self.database_service.update_item(
-                                        database_id(&self.id.function_id, req.db_name),
-                                        req.table_name,
-                                        req.key_filter,
-                                        req.value_filter.try_into().map_err(|_| {
-                                            (Error::DBError("failed to parse value filter"), vec![])
-                                        })?,
-                                        req.update.try_into().map_err(|_| {
-                                            (Error::DBError("failed to parse updater"), vec![])
-                                        })?,
-                                    ))
-                                    .map_err(|e| e.to_string());
-
-                                database_write_count += 1;
-
-                                DbResponse {
-                                    id: db_req.id,
-                                    response: DbResponseDetails::Update(res),
-                                }
-                            }
-                        };
-
-                        let msg = db_resp.to_message().map_err(|e| (e, vec![]))?;
-                        self.write_to_stdin(msg).map_err(|e| (e, vec![]))?;
-                    }
-
-                    Log::TYPE => {
-                        let log = Log::from_message(message).map_err(|e| (e, vec![]))?;
-                        println!("Log: {log:#?}");
-                    }
-                    t => return Err((Error::InvalidMessageType(t.to_string()), vec![])),
-                },
-                Err(e) => println!("Error while parsing response: {e:?}"),
-            };
         }
     }
+}
+
+#[derive(Copy, Clone)]
+enum IOState {
+    Idle,
+    Processing,
+    InRuntimeCall,
+    Closed,
+}
+
+mod utils {
+    // use crate::mudb::service::DatabaseID;
+    // use mu_stack::StackID;
+
+    // pub fn create_database_id(stack_id: &StackID, db_name: String) -> DatabaseID {
+    //     DatabaseID {
+    //         stack_id: *stack_id,
+    //         db_name,
+    //     }
+    // }
+
+    // pub fn key_filter_to_mudb(
+    //     key_filter: musdk_common::database::KeyFilter,
+    // ) -> crate::mudb::service::KeyFilter {
+    //     match key_filter {
+    //         musdk_common::database::KeyFilter::Exact(k) => {
+    //             crate::mudb::service::KeyFilter::Exact(k.into_owned())
+    //         }
+    //         musdk_common::database::KeyFilter::Prefix(k) => {
+    //             crate::mudb::service::KeyFilter::Prefix(k.into_owned())
+    //         }
+    //     }
+    // }
 }

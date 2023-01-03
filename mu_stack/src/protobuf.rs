@@ -17,10 +17,10 @@ impl From<super::Stack> for Stack {
         }
 
         fn convert_function_runtime(
-            runtime: super::FunctionRuntime,
+            runtime: super::AssemblyRuntime,
         ) -> EnumOrUnknown<FunctionRuntime> {
             match runtime {
-                super::FunctionRuntime::Wasi1_0 => EnumOrUnknown::new(FunctionRuntime::WASI1_0),
+                super::AssemblyRuntime::Wasi1_0 => EnumOrUnknown::new(FunctionRuntime::WASI1_0),
             }
         }
 
@@ -50,7 +50,8 @@ impl From<super::Stack> for Stack {
                                         .into_iter()
                                         .map(|ep| GatewayEndpoint {
                                             method: convert_http_method(ep.method),
-                                            route_to: ep.route_to,
+                                            route_to_assembly: ep.route_to.assembly,
+                                            route_to_function: ep.route_to.function,
                                             ..Default::default()
                                         })
                                         .collect(),
@@ -108,11 +109,11 @@ impl TryFrom<Stack> for super::Stack {
 
         fn convert_function_runtime(
             runtime: EnumOrUnknown<FunctionRuntime>,
-        ) -> Result<super::FunctionRuntime> {
+        ) -> Result<super::AssemblyRuntime> {
             runtime
                 .enum_value()
                 .map(|r| match r {
-                    FunctionRuntime::WASI1_0 => super::FunctionRuntime::Wasi1_0,
+                    FunctionRuntime::WASI1_0 => super::AssemblyRuntime::Wasi1_0,
                 })
                 .map_err(|i| anyhow!("Unknown enum value {i} for type FunctionRuntime"))
         }
@@ -144,7 +145,10 @@ impl TryFrom<Stack> for super::Stack {
                                             .map(|ep| {
                                                 anyhow::Ok(super::GatewayEndpoint {
                                                     method: convert_http_method(ep.method)?,
-                                                    route_to: ep.route_to,
+                                                    route_to: crate::AssemblyAndFunction {
+                                                        assembly: ep.route_to_assembly,
+                                                        function: ep.route_to_function,
+                                                    },
                                                 })
                                             })
                                             .collect::<Result<Vec<_>, _>>()?,

@@ -38,7 +38,8 @@ message StackID {
 
 message FunctionID {
     StackID stack_id = 1;
-    string function_name = 2;
+    string assembly_name = 2;
+    string function_name = 3;
 }
 
 message ExecuteFunctionRequest {

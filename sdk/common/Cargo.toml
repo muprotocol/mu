@@ -1,0 +1,12 @@
+[package]
+name = "musdk-common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+borsh = { git = "https://github.com/muprotocol/borsh-rs.git", branch = "feature/reader-deserialization" }
+num-derive = "0.3.3"
+num-traits = "0.2.15"
+
+[lib]
+name = "musdk_common"

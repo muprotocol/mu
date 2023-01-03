@@ -1,7 +1,7 @@
 //TODO
 #![allow(dead_code)]
 
-use super::types::FunctionID;
+use super::types::AssemblyID;
 use thiserror::Error;
 use wasmer::{ExportError, InstantiationError, RuntimeError};
 use wasmer_wasi::{WasiError, WasiStateCreationError};
@@ -14,33 +14,24 @@ pub enum Error {
     #[error("Function Loading Error: {0:?}")]
     FunctionLoadingError(FunctionLoadingError),
 
-    #[error("Can not convert input message to {0}")]
-    IncorrectInputMessage(&'static str),
-
-    #[error("Can parse {0} from convert output message")]
-    IncorrectOutputMessage(&'static str),
-
-    #[error("Invalid message type: {0}")]
-    InvalidMessageType(String),
-
-    #[error("Message Deserialization failed: {0}")]
-    MessageDeserializationFailed(serde_json::Error),
-
-    #[error("Message Serialization failed: {0}")]
-    MessageSerializationFailed(serde_json::Error),
-
-    #[error("Message id can not be None")]
-    MessageIDIsNone,
-
     #[error("Error in DB")]
     DBError(&'static str),
 
+    #[error("Failed to read message from function: {0:?}")]
+    FailedToReadMessage(std::io::Error),
+
     #[error("Internal error: {0}")]
     Internal(anyhow::Error),
+
+    #[error("Function didn't terminate cleanly")]
+    FunctionDidntTerminateCleanly,
 }
 
 #[derive(Error, Debug)]
 pub enum FunctionRuntimeError {
+    #[error("Function reported fatal error: {0}")]
+    FatalError(String),
+
     #[error("Function exited early: {0}")]
     FunctionEarlyExit(RuntimeError),
 
@@ -52,14 +43,17 @@ pub enum FunctionRuntimeError {
 
     #[error("_start function is missing: {0}")]
     MissingStartFunction(ExportError),
+
+    #[error("Failed to serialize message: {0}")]
+    SerializationError(std::io::Error),
 }
 #[derive(Error, Debug)]
 pub enum FunctionLoadingError {
-    #[error("Can not find function with id {0:?}")]
-    FunctionNotFound(FunctionID),
+    #[error("Can not find assembly with id {0:?}")]
+    AssemblyNotFound(AssemblyID),
 
-    #[error("Function {0:?} wasm module is corrupted or invalid ")]
-    InvalidFunctionModule(FunctionID),
+    #[error("WASM module for assembly {0:?} is corrupted or invalid ")]
+    InvalidAssembly(AssemblyID),
 
     #[error("Failed to build Wasi Env: {0}")]
     FailedToBuildWasmEnv(WasiStateCreationError),
