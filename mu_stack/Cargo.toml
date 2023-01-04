@@ -14,8 +14,7 @@ protobuf = "3.2"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
-#//TODO
-borsh = { git = "https://github.com/muprotocol/borsh-rs", branch = "feature/reader-deserialization" }
+borsh = { git = "https://github.com/near/borsh-rs/", rev = "67448a3000926ff6ad10e6cdcaf47dadd692c78f" }
 
 [build-dependencies]
 protobuf-codegen = "3.2"
