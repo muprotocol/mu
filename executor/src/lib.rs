@@ -112,8 +112,15 @@ pub async fn run() -> Result<()> {
             )),
 
             Err(f) => warn!(
-                "Failed to connect to seed {}:{}, will ignore this seed. Error is: {f:?}",
-                node.address, node.port
+                // TODO: remove
+                // <<<<<<< HEAD
+                "Failed to connect to seed {}:{}, will ignore this seed. Error is {f}",
+                node.ip,
+                node.gossip_port // TODO: remove
+                                 // =======
+                                 //                 "Failed to connect to seed {}:{}, will ignore this seed. Error is: {f:?}",
+                                 //                 node.address, node.port
+                                 // >>>>>>> master
             ),
         }
 

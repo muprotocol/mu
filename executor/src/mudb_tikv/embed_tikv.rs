@@ -1,20 +1,21 @@
-use std::{
-    env,
-    net::IpAddr,
-    os::unix::prelude::PermissionsExt,
-    path::{Path, PathBuf},
-    process::Child,
+use super::{
+    error::{Error::EmbeddingTikvErr, Result},
+    types::IpAndPort,
 };
-
-use super::error::{Error::EmbeddingTikvErr, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use mailbox_processor::callback::CallbackMailboxProcessor;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
+use std::{
+    env,
+    os::unix::prelude::PermissionsExt,
+    path::{Path, PathBuf},
+    process::Child,
+};
 use tokio::{fs::File, io::AsyncWriteExt};
 
-use crate::network::gossip::{KnownNodeConfig, NodeAddress};
+use crate::network::{gossip::KnownNodeConfig, NodeAddress};
 
 #[derive(RustEmbed)]
 #[folder = "assets"]
@@ -60,19 +61,6 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
         .map_err(|_| EmbeddingTikvErr("Failed to set executable permission on temp file".into()))?;
 
     Ok(temp_address)
-}
-
-// TODO: support hostname (also in gossip as well)
-#[derive(Deserialize)]
-pub struct IpAndPort {
-    address: IpAddr,
-    port: u16,
-}
-
-impl ToString for IpAndPort {
-    fn to_string(&self) -> String {
-        format!("{}:{}", self.address, self.port)
-    }
 }
 
 #[derive(Deserialize)]

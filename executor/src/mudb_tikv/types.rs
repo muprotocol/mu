@@ -1,9 +1,10 @@
-use super::error::Result;
+use super::{error::Result, TikvRunnerConfig};
+use crate::network::{gossip::KnownNodeConfig, NodeAddress};
 use async_trait::async_trait;
 use mu_stack::StackID;
 use serde::{Deserialize, Serialize};
-use std::any::type_name;
 use std::ops::Deref;
+use std::{any::type_name, net::IpAddr};
 use tikv_client::{BoundRange, Value};
 
 // TODO: add constrait to Key (acually key.stack_id) to avoid this name
@@ -11,17 +12,17 @@ use tikv_client::{BoundRange, Value};
 pub const TABLE_LIST: &str = "__tl";
 
 pub type Blob = Vec<u8>;
-pub trait KeyPart: Into<Blob> + TryFrom<Blob> + PartialEq + Clone + Send {}
-impl<T> KeyPart for T where T: Into<Blob> + TryFrom<Blob> + PartialEq + Clone + Send {}
+pub trait KeysPart: Into<Blob> + TryFrom<Blob> + PartialEq + Clone + Send {}
+impl<T> KeysPart for T where T: Into<Blob> + TryFrom<Blob> + PartialEq + Clone + Send {}
 
 // === Abc Key ===
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct AbcKey<A, B, C>
 where
-    A: KeyPart,
-    B: KeyPart,
-    C: KeyPart,
+    A: KeysPart,
+    B: KeysPart,
+    C: KeysPart,
 {
     pub a: A,
     pub b: B,
@@ -31,9 +32,9 @@ where
 // TODO : change it to TryFrom due to below consideration
 impl<A, B, C> From<AbcKey<A, B, C>> for tikv_client::Key
 where
-    A: KeyPart,
-    B: KeyPart,
-    C: KeyPart,
+    A: KeysPart,
+    B: KeysPart,
+    C: KeysPart,
 {
     fn from(key: AbcKey<A, B, C>) -> Self {
         let mut si: Blob = key.a.into();
@@ -54,9 +55,9 @@ where
 
 impl<A, B, C> TryFrom<tikv_client::Key> for AbcKey<A, B, C>
 where
-    A: KeyPart,
-    B: KeyPart,
-    C: KeyPart,
+    A: KeysPart,
+    B: KeysPart,
+    C: KeysPart,
 {
     type Error = String;
     fn try_from(tkey: tikv_client::Key) -> std::result::Result<Self, Self::Error> {
@@ -89,16 +90,16 @@ where
     }
 }
 
-pub type TableListKey = AbcKey<StringKeyPart, StackID, TableName>;
+pub type TableListKey = AbcKey<StringKeysPart, StackID, TableName>;
 
 // === Abc Scan ===
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AbcScan<A, B, C>
 where
-    A: KeyPart,
-    B: KeyPart,
-    C: KeyPart,
+    A: KeysPart,
+    B: KeysPart,
+    C: KeysPart,
 {
     ByA(A),
     ByAb(A, B),
@@ -109,9 +110,9 @@ where
 // TODO : change it to TryFrom due to below consideration
 impl<A, B, C> From<AbcScan<A, B, C>> for BoundRange
 where
-    A: KeyPart,
-    B: KeyPart,
-    C: KeyPart,
+    A: KeysPart,
+    B: KeysPart,
+    C: KeysPart,
 {
     fn from(s: AbcScan<A, B, C>) -> Self {
         let prefixed_size = |mut x: Blob| {
@@ -159,7 +160,7 @@ where
     }
 }
 
-pub type TableListScan = AbcScan<StringKeyPart, StackID, TableName>;
+pub type TableListScan = AbcScan<StringKeysPart, StackID, TableName>;
 
 fn subset_range(from: Blob) -> BoundRange {
     // TODO: remove old
@@ -214,40 +215,40 @@ fn single_item_range(item: Blob) -> BoundRange {
 // === TableName ===
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StringKeyPart(String);
+pub struct StringKeysPart(String);
 
-impl From<StringKeyPart> for String {
-    fn from(t: StringKeyPart) -> Self {
+impl From<StringKeysPart> for String {
+    fn from(t: StringKeysPart) -> Self {
         t.0
     }
 }
 
-impl From<StringKeyPart> for Blob {
-    fn from(t: StringKeyPart) -> Self {
+impl From<StringKeysPart> for Blob {
+    fn from(t: StringKeysPart) -> Self {
         t.0.into()
     }
 }
 
-impl TryFrom<Blob> for StringKeyPart {
+impl TryFrom<Blob> for StringKeysPart {
     type Error = String;
     fn try_from(blob: Blob) -> std::result::Result<Self, Self::Error> {
         Ok(Self(String::from_utf8(blob).map_err(|x| x.to_string())?))
     }
 }
 
-impl From<String> for StringKeyPart {
+impl From<String> for StringKeysPart {
     fn from(s: String) -> Self {
         Self(s)
     }
 }
 
-impl From<&str> for StringKeyPart {
+impl From<&str> for StringKeysPart {
     fn from(s: &str) -> Self {
         Self(s.into())
     }
 }
 
-impl Deref for StringKeyPart {
+impl Deref for StringKeysPart {
     type Target = String;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -255,7 +256,7 @@ impl Deref for StringKeyPart {
 }
 
 // TODO: max 255 byte, min 8 byte
-pub type TableName = StringKeyPart;
+pub type TableName = StringKeysPart;
 
 // === Key ===
 
@@ -325,11 +326,44 @@ impl From<Scan> for BoundRange {
     }
 }
 
-// === DatabaseManager === DbManagerCommone, DbManagerAtomic, AtomicDbManager, NoneAtomicDbManager,
-// DbManager
+// === IpAndPort ===
+
+// TODO: support hostname (also in gossip as well)
+#[derive(Deserialize, Clone)]
+pub struct IpAndPort {
+    pub address: IpAddr,
+    pub port: u16,
+}
+
+impl From<IpAndPort> for String {
+    fn from(value: IpAndPort) -> Self {
+        format!("{}:{}", value.address, value.port)
+    }
+}
+
+impl TryFrom<&str> for IpAndPort {
+    type Error = String;
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        let x: Vec<&str> = value.split(':').collect();
+        if x.len() != 2 {
+            Err("Cant parse".into())
+        } else {
+            Ok(IpAndPort {
+                address: x[0].parse().map_err(|e| format!("{e}"))?,
+                port: x[1].parse().map_err(|e| format!("{e}"))?,
+            })
+        }
+    }
+}
+
+// impl From<String> for IpAndPort {
+//     fn from(value: String) -> Self {
+//         let (ip, port) = value.sp
+//     }
+// }
 
 #[async_trait]
-pub trait DatabaseManager: Clone {
+pub trait Db: Clone {
     async fn put_stack_manifest(&self, stack_id: StackID, tables: Vec<TableName>) -> Result<()>;
     async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()>;
     async fn get(&self, key: Key) -> Result<Option<Value>>;
@@ -380,6 +414,23 @@ pub trait DatabaseManager: Clone {
         previous_value: Option<Value>,
         new_value: Value,
     ) -> Result<(Option<Value>, bool)>;
+}
+
+#[async_trait]
+pub trait DbNewWithEmbedCluster: Sized + Db {
+    async fn new_with_embed_cluster(
+        node_address: NodeAddress,
+        known_node_config: Vec<KnownNodeConfig>,
+        config: TikvRunnerConfig,
+    ) -> Result<Self>;
+
+    async fn stop_embed_cluster(&self) -> Result<()>;
+}
+
+#[async_trait]
+pub trait DbNewWithoutEmbedCluster: Sized + Db {
+    // TODO get IpAddr instead String
+    async fn new_without_embed_cluster(endpoints: Vec<IpAndPort>) -> Result<Self>;
 }
 
 #[cfg(test)]

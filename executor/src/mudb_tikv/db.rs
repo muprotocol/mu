@@ -3,7 +3,7 @@ use super::{
     error::{Error, Result},
     types::*,
 };
-use crate::network::gossip::{KnownNodeConfig, NodeAddress};
+use crate::network::{gossip::KnownNodeConfig, NodeAddress};
 use async_trait::async_trait;
 use mu_stack::StackID;
 use tikv_client::{self, KvPair, RawClient, Value};
@@ -11,23 +11,13 @@ use tikv_client::{self, KvPair, RawClient, Value};
 // TODO: consider caching
 // stacks_and_tables: HashMap<StackID, Vec<TableName>>,
 #[derive(Clone)]
-pub struct Db {
+pub struct DbImpl {
     inner: tikv_client::RawClient,
-    tikv_runner: Box<dyn TikvRunner>,
+    tikv_runner: Option<Box<dyn TikvRunner>>,
 }
 
-impl Db {
-    pub async fn new(
-        node_address: NodeAddress,
-        known_node_config: Vec<KnownNodeConfig>,
-        config: TikvRunnerConfig,
-    ) -> Result<Self> {
-        Ok(Self {
-            inner: RawClient::new(vec![config.pd.client_url.to_string()]).await?,
-            tikv_runner: start(node_address, known_node_config, config).await?,
-        })
-    }
-
+// stop cluster
+impl DbImpl {
     fn atomic_or_not(&self, is_atomic: bool) -> Self {
         if is_atomic {
             Self {
@@ -47,7 +37,38 @@ impl Db {
 }
 
 #[async_trait]
-impl DatabaseManager for Db {
+impl DbNewWithEmbedCluster for DbImpl {
+    async fn new_with_embed_cluster(
+        node_address: NodeAddress,
+        known_node_config: Vec<KnownNodeConfig>,
+        config: TikvRunnerConfig,
+    ) -> Result<Self> {
+        Ok(Self {
+            inner: RawClient::new(vec![config.pd.client_url.clone()]).await?,
+            tikv_runner: Some(start(node_address, known_node_config, config).await?),
+        })
+    }
+
+    async fn stop_embed_cluster(&self) -> Result<()> {
+        match &self.tikv_runner {
+            Some(r) => r.stop().await,
+            None => Ok(()),
+        }
+    }
+}
+
+#[async_trait]
+impl DbNewWithoutEmbedCluster for DbImpl {
+    async fn new_without_embed_cluster(endpoints: Vec<IpAndPort>) -> Result<Self> {
+        Ok(Self {
+            inner: RawClient::new(endpoints).await?,
+            tikv_runner: None,
+        })
+    }
+}
+
+#[async_trait]
+impl Db for DbImpl {
     async fn put_stack_manifest(
         &self,
         stack_id: StackID,
@@ -130,11 +151,11 @@ impl DatabaseManager for Db {
     ) -> Result<Vec<TableName>> {
         let scan = match table_name_prefix {
             Some(prefix) => TableListScan::ByAbCPrefix(
-                StringKeyPart::from(TABLE_LIST),
+                StringKeysPart::from(TABLE_LIST),
                 stack_id,
-                StringKeyPart::from(prefix),
+                StringKeysPart::from(prefix),
             ),
-            None => TableListScan::ByAb(StringKeyPart::from(TABLE_LIST), stack_id),
+            None => TableListScan::ByAb(StringKeysPart::from(TABLE_LIST), stack_id),
         };
         Ok(self
             .inner
@@ -231,7 +252,7 @@ impl DatabaseManager for Db {
 
 fn make_table_list_key(stack_id: StackID, table_name: TableName) -> TableListKey {
     TableListKey {
-        a: StringKeyPart::from(TABLE_LIST),
+        a: StringKeysPart::from(TABLE_LIST),
         b: stack_id,
         c: table_name,
     }
@@ -240,26 +261,4 @@ fn make_table_list_key(stack_id: StackID, table_name: TableName) -> TableListKey
 /// Just use it for Key or AbcKey<StackID, TableName, Blob> otherwise maybe panic
 fn kvpair_to_tuple(kv: KvPair) -> (Key, Value) {
     (kv.key().clone().try_into().unwrap(), kv.into_value())
-}
-
-#[derive(Clone)]
-pub struct DummyTikvRunner;
-#[async_trait]
-impl TikvRunner for DummyTikvRunner {
-    async fn stop(&self) -> Result<()> {
-        Ok(())
-    }
-}
-#[async_trait]
-pub trait MudbReflection: Sized {
-    async fn new_without_embed(endpoints: Vec<String>) -> Result<Self>;
-}
-#[async_trait]
-impl MudbReflection for Db {
-    async fn new_without_embed(endpoints: Vec<String>) -> Result<Self> {
-        Ok(Self {
-            inner: RawClient::new(endpoints).await?,
-            tikv_runner: Box::new(DummyTikvRunner),
-        })
-    }
 }

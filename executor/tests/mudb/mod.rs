@@ -1,16 +1,12 @@
+//! External cluster command
+//! `tiup playground --mode tikv-slim --kv 3 --pd 3`
 //! pd endpoints: 127.0.0.1:2379, 127.0.0.1:2382, 127.0.0.1:2384
-//! command: `tiup playground --mode tikv-slim --kv 3 --pd 3`
 
 // TODO
 // use crate::infrastructure::config::*;
 use assert_matches::assert_matches;
 use futures::Future;
-use mu::mudb_tikv::{
-    db::{Db, MudbReflection},
-    embed_tikv::TikvRunner,
-    error::*,
-    types::*,
-};
+use mu::mudb_tikv::{db::DbImpl, embed_tikv::TikvRunner, error::*, types::*};
 use mu_stack::StackID;
 use rand::Rng;
 use serial_test::serial;
@@ -31,7 +27,7 @@ fn table_list() -> [TableName; 2] {
     [table_name_1(), table_name_2()]
 }
 
-async fn seed(db: &Db, keys: [Key; 4], is_atomic: bool) {
+async fn seed(db: &DbImpl, keys: [Key; 4], is_atomic: bool) {
     db.put(keys[0].clone(), values()[0].clone(), is_atomic)
         .await
         .unwrap();
@@ -81,7 +77,7 @@ fn values() -> [Vec<u8>; 4] {
 }
 
 async fn test_node<T>(
-    db: Db,
+    db: DbImpl,
     stack_id: StackID,
     table_list: [TableName; 2],
     unique_key: Vec<u8>,
@@ -140,7 +136,7 @@ async fn test_node<T>(
 }
 
 async fn predictable_scan_for_keys_test(
-    db: Db,
+    db: DbImpl,
     stack_id: StackID,
     table_list: [TableName; 2],
     keys: [Key; 4],
@@ -178,7 +174,7 @@ async fn predictable_scan_for_keys_test(
 }
 
 async fn unpredictable_scan_for_keys_test(
-    db: Db,
+    db: DbImpl,
     stack_id: StackID,
     table_list: [TableName; 2],
     keys: [Key; 4],
@@ -230,12 +226,12 @@ async fn unpredictable_scan_for_keys_test(
     assert_eq!(res, vec![(keys[0].clone(), values()[0].clone())]);
 }
 
-async fn table_list_test(db: Db, tl: Vec<TableName>) {
+async fn table_list_test(db: DbImpl, tl: Vec<TableName>) {
     let table_names = db.table_list(stack_id().clone(), None).await.unwrap();
     assert_eq!(table_names, tl);
 }
 
-async fn single_node(db: Db) {
+async fn single_node(db: DbImpl) {
     db.clear_all_data().await.unwrap();
 
     let db_clone = db.clone();
@@ -272,15 +268,18 @@ async fn single_node(db: Db) {
     // assert_eq!(table_names.len(), 0);
 }
 
+/// ##Test with external cluster,
+/// To use test start external cluster as mensioned line 1,
+/// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
 #[ignore]
 async fn test_single_node_without_embed() {
     single_node(
-        Db::new_without_embed(vec![
-            "127.0.0.1:2379".to_string(),
-            "127.0.0.1:2382".to_string(),
-            "127.0.0.1:2384".to_string(),
+        DbImpl::new_without_embed_cluster(vec![
+            "127.0.0.1:2379".try_into().unwrap(),
+            "127.0.0.1:2382".try_into().unwrap(),
+            "127.0.0.1:2384".try_into().unwrap(),
         ])
         .await
         .unwrap(),
@@ -331,7 +330,7 @@ fn rand_keys(si: StackID, tl: [TableName; 2]) -> [Key; 4] {
     ]
 }
 
-async fn n_node_with_same_stack_id_and_tables(db: Db, n: u8) {
+async fn n_node_with_same_stack_id_and_tables(db: DbImpl, n: u8) {
     db.clear_all_data().await.unwrap();
 
     let mut handles = vec![];
@@ -360,15 +359,18 @@ async fn n_node_with_same_stack_id_and_tables(db: Db, n: u8) {
     table_list_test(db, table_list().into()).await;
 }
 
+/// ##Test with external cluster,
+/// To use test start external cluster as mensioned line 1,
+/// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
 #[ignore]
 async fn test_7_node_with_same_stack_id_and_tables() {
     n_node_with_same_stack_id_and_tables(
-        Db::new_without_embed(vec![
-            "127.0.0.1:2379".to_string(),
-            "127.0.0.1:2382".to_string(),
-            "127.0.0.1:2384".to_string(),
+        DbImpl::new_without_embed_cluster(vec![
+            "127.0.0.1:2379".try_into().unwrap(),
+            "127.0.0.1:2382".try_into().unwrap(),
+            "127.0.0.1:2384".try_into().unwrap(),
         ])
         .await
         .unwrap(),
@@ -377,15 +379,18 @@ async fn test_7_node_with_same_stack_id_and_tables() {
     .await;
 }
 
+/// ##Test with external cluster,
+/// To use test start external cluster as mensioned line 1,
+/// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
 #[ignore]
 async fn test_50_node_with_same_stack_id_and_tables() {
     n_node_with_same_stack_id_and_tables(
-        Db::new_without_embed(vec![
-            "127.0.0.1:2379".to_string(),
-            "127.0.0.1:2382".to_string(),
-            "127.0.0.1:2384".to_string(),
+        DbImpl::new_without_embed_cluster(vec![
+            "127.0.0.1:2379".try_into().unwrap(),
+            "127.0.0.1:2382".try_into().unwrap(),
+            "127.0.0.1:2384".try_into().unwrap(),
         ])
         .await
         .unwrap(),
@@ -394,7 +399,7 @@ async fn test_50_node_with_same_stack_id_and_tables() {
     .await;
 }
 
-async fn n_node_with_same_stack_id(db: Db, n: u8) {
+async fn n_node_with_same_stack_id(db: DbImpl, n: u8) {
     db.clear_all_data().await.unwrap();
 
     let mut handles = vec![];
@@ -425,15 +430,18 @@ async fn n_node_with_same_stack_id(db: Db, n: u8) {
     }
 }
 
+/// ##Test with external cluster,
+/// To use test start external cluster as mensioned line 1,
+/// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
 #[ignore]
 async fn test_7_node_with_same_stack_id() {
     n_node_with_same_stack_id(
-        Db::new_without_embed(vec![
-            "127.0.0.1:2379".to_string(),
-            "127.0.0.1:2382".to_string(),
-            "127.0.0.1:2384".to_string(),
+        DbImpl::new_without_embed_cluster(vec![
+            "127.0.0.1:2379".try_into().unwrap(),
+            "127.0.0.1:2382".try_into().unwrap(),
+            "127.0.0.1:2384".try_into().unwrap(),
         ])
         .await
         .unwrap(),
@@ -442,15 +450,18 @@ async fn test_7_node_with_same_stack_id() {
     .await;
 }
 
+/// ##Test with external cluster,
+/// To use test start external cluster as mensioned line 1,
+/// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
 #[ignore]
 async fn test_50_node_with_same_stack_id() {
     n_node_with_same_stack_id(
-        Db::new_without_embed(vec![
-            "127.0.0.1:2379".to_string(),
-            "127.0.0.1:2382".to_string(),
-            "127.0.0.1:2384".to_string(),
+        DbImpl::new_without_embed_cluster(vec![
+            "127.0.0.1:2379".try_into().unwrap(),
+            "127.0.0.1:2382".try_into().unwrap(),
+            "127.0.0.1:2384".try_into().unwrap(),
         ])
         .await
         .unwrap(),
@@ -459,7 +470,7 @@ async fn test_50_node_with_same_stack_id() {
     .await;
 }
 
-async fn n_node_with_different_stack_id_and_tables(db: Db, n: u8) {
+async fn n_node_with_different_stack_id_and_tables(db: DbImpl, n: u8) {
     db.clear_all_data().await.unwrap();
 
     let mut handles = vec![];
@@ -491,15 +502,18 @@ async fn n_node_with_different_stack_id_and_tables(db: Db, n: u8) {
     }
 }
 
+/// ##Test with external cluster,
+/// To use test start external cluster as mensioned line 1,
+/// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
 #[ignore]
 async fn test_7_node_with_different_stack_id_and_tables() {
     n_node_with_different_stack_id_and_tables(
-        Db::new_without_embed(vec![
-            "127.0.0.1:2379".to_string(),
-            "127.0.0.1:2382".to_string(),
-            "127.0.0.1:2384".to_string(),
+        DbImpl::new_without_embed_cluster(vec![
+            "127.0.0.1:2379".try_into().unwrap(),
+            "127.0.0.1:2382".try_into().unwrap(),
+            "127.0.0.1:2384".try_into().unwrap(),
         ])
         .await
         .unwrap(),
@@ -508,15 +522,18 @@ async fn test_7_node_with_different_stack_id_and_tables() {
     .await;
 }
 
+/// ##Test with external cluster,
+/// To use test start external cluster as mensioned line 1,
+/// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
 #[ignore]
 async fn test_50_node_with_different_stack_id_and_tables() {
     n_node_with_different_stack_id_and_tables(
-        Db::new_without_embed(vec![
-            "127.0.0.1:2379".to_string(),
-            "127.0.0.1:2382".to_string(),
-            "127.0.0.1:2384".to_string(),
+        DbImpl::new_without_embed_cluster(vec![
+            "127.0.0.1:2379".try_into().unwrap(),
+            "127.0.0.1:2382".try_into().unwrap(),
+            "127.0.0.1:2384".try_into().unwrap(),
         ])
         .await
         .unwrap(),
@@ -525,6 +542,9 @@ async fn test_50_node_with_different_stack_id_and_tables() {
     .await;
 }
 
+/// ##Test with external cluster,
+/// To use test start external cluster as mensioned line 1,
+/// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
 #[ignore]
@@ -534,26 +554,26 @@ async fn test_multi_node_with_manual_cluster_with_diffrent_endpoint_but_same_tik
     let ks = keys(si.clone(), tl.clone());
     let vs = values();
 
-    let db = Db::new_without_embed(vec![
-        "127.0.0.1:2379".to_string(),
-        // "127.0.0.1:2382".to_string(),
-        // "127.0.0.1:2384".to_string(),
+    let db = DbImpl::new_without_embed_cluster(vec![
+        "127.0.0.1:2379".try_into().unwrap(),
+        // "127.0.0.1:2382".try_into().unwrap(),
+        // "127.0.0.1:2384".try_into().unwrap(),
     ])
     .await
     .unwrap();
 
-    let db2 = Db::new_without_embed(vec![
-        // "127.0.0.1:2379".to_string(),
-        "127.0.0.1:2382".to_string(),
-        // "127.0.0.1:2384".to_string(),
+    let db2 = DbImpl::new_without_embed_cluster(vec![
+        // "127.0.0.1:2379".try_into().unwrap(),
+        "127.0.0.1:2382".try_into().unwrap(),
+        // "127.0.0.1:2384".try_into().unwrap(),
     ])
     .await
     .unwrap();
 
-    let db3 = Db::new_without_embed(vec![
-        // "127.0.0.1:2379".to_string(),
-        // "127.0.0.1:2382".to_string(),
-        "127.0.0.1:2384".to_string(),
+    let db3 = DbImpl::new_without_embed_cluster(vec![
+        // "127.0.0.1:2379".try_into().unwrap(),
+        // "127.0.0.1:2382".try_into().unwrap(),
+        "127.0.0.1:2384".try_into().unwrap(),
     ])
     .await
     .unwrap();
