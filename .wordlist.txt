@@ -81,3 +81,9 @@ wasmu
 WebAssembly
 Whitepaper
 wordlist
+tiup
+itertools
+kvpair
+scanes
+hashset
+rbpf

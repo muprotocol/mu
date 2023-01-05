@@ -30,7 +30,7 @@ impl DbImpl {
     }
 
     /// Clear all data in tikv instant inside mudb
-    /// Usefull for test
+    /// Useful for test
     pub async fn clear_all_data(&self) -> Result<()> {
         self.inner.delete_range(..).await.map_err(Into::into)
     }
@@ -85,7 +85,7 @@ impl Db for DbImpl {
     }
 
     async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()> {
-        let k = make_table_list_key(key.stack_id.clone(), key.table_name.clone());
+        let k = make_table_list_key(key.stack_id, key.table_name.clone());
         match self.inner.get(k).await? {
             Some(_) => self
                 .atomic_or_not(is_atomic)
@@ -150,11 +150,9 @@ impl Db for DbImpl {
         table_name_prefix: Option<TableName>,
     ) -> Result<Vec<TableName>> {
         let scan = match table_name_prefix {
-            Some(prefix) => TableListScan::ByAbCPrefix(
-                StringKeysPart::from(TABLE_LIST),
-                stack_id,
-                StringKeysPart::from(prefix),
-            ),
+            Some(prefix) => {
+                TableListScan::ByAbCPrefix(StringKeysPart::from(TABLE_LIST), stack_id, prefix)
+            }
             None => TableListScan::ByAb(StringKeysPart::from(TABLE_LIST), stack_id),
         };
         Ok(self

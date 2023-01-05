@@ -269,11 +269,11 @@ async fn single_node(db: DbImpl) {
 }
 
 /// ##Test with external cluster,
-/// To use test start external cluster as mensioned line 1,
+/// To use test start external cluster as mentioned line 1,
 /// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
-#[ignore]
+// #[ignore]
 async fn test_single_node_without_embed() {
     single_node(
         DbImpl::new_without_embed_cluster(vec![
@@ -360,11 +360,11 @@ async fn n_node_with_same_stack_id_and_tables(db: DbImpl, n: u8) {
 }
 
 /// ##Test with external cluster,
-/// To use test start external cluster as mensioned line 1,
+/// To use test start external cluster as mentioned line 1,
 /// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
-#[ignore]
+// #[ignore]
 async fn test_7_node_with_same_stack_id_and_tables() {
     n_node_with_same_stack_id_and_tables(
         DbImpl::new_without_embed_cluster(vec![
@@ -380,11 +380,11 @@ async fn test_7_node_with_same_stack_id_and_tables() {
 }
 
 /// ##Test with external cluster,
-/// To use test start external cluster as mensioned line 1,
+/// To use test start external cluster as mentioned line 1,
 /// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
-#[ignore]
+// #[ignore]
 async fn test_50_node_with_same_stack_id_and_tables() {
     n_node_with_same_stack_id_and_tables(
         DbImpl::new_without_embed_cluster(vec![
@@ -431,11 +431,11 @@ async fn n_node_with_same_stack_id(db: DbImpl, n: u8) {
 }
 
 /// ##Test with external cluster,
-/// To use test start external cluster as mensioned line 1,
+/// To use test start external cluster as mentioned line 1,
 /// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
-#[ignore]
+// #[ignore]
 async fn test_7_node_with_same_stack_id() {
     n_node_with_same_stack_id(
         DbImpl::new_without_embed_cluster(vec![
@@ -451,11 +451,11 @@ async fn test_7_node_with_same_stack_id() {
 }
 
 /// ##Test with external cluster,
-/// To use test start external cluster as mensioned line 1,
+/// To use test start external cluster as mentioned line 1,
 /// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
-#[ignore]
+// #[ignore]
 async fn test_50_node_with_same_stack_id() {
     n_node_with_same_stack_id(
         DbImpl::new_without_embed_cluster(vec![
@@ -503,11 +503,11 @@ async fn n_node_with_different_stack_id_and_tables(db: DbImpl, n: u8) {
 }
 
 /// ##Test with external cluster,
-/// To use test start external cluster as mensioned line 1,
+/// To use test start external cluster as mentioned line 1,
 /// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
-#[ignore]
+// #[ignore]
 async fn test_7_node_with_different_stack_id_and_tables() {
     n_node_with_different_stack_id_and_tables(
         DbImpl::new_without_embed_cluster(vec![
@@ -523,11 +523,11 @@ async fn test_7_node_with_different_stack_id_and_tables() {
 }
 
 /// ##Test with external cluster,
-/// To use test start external cluster as mensioned line 1,
+/// To use test start external cluster as mentioned line 1,
 /// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
-#[ignore]
+// #[ignore]
 async fn test_50_node_with_different_stack_id_and_tables() {
     n_node_with_different_stack_id_and_tables(
         DbImpl::new_without_embed_cluster(vec![
@@ -543,12 +543,12 @@ async fn test_50_node_with_different_stack_id_and_tables() {
 }
 
 /// ##Test with external cluster,
-/// To use test start external cluster as mensioned line 1,
+/// To use test start external cluster as mentioned line 1,
 /// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
-#[ignore]
-async fn test_multi_node_with_manual_cluster_with_diffrent_endpoint_but_same_tikv() {
+// #[ignore]
+async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_tikv() {
     let si = stack_id();
     let tl = table_list();
     let ks = keys(si.clone(), tl.clone());

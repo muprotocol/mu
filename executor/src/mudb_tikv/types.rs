@@ -7,7 +7,7 @@ use std::ops::Deref;
 use std::{any::type_name, net::IpAddr};
 use tikv_client::{BoundRange, Value};
 
-// TODO: add constrait to Key (acually key.stack_id) to avoid this name
+// TODO: add constraint to Key (actually key.stack_id) to avoid this name
 // TODO: rename it
 pub const TABLE_LIST: &str = "__tl";
 
@@ -60,10 +60,10 @@ where
     C: KeysPart,
 {
     type Error = String;
-    fn try_from(tkey: tikv_client::Key) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: tikv_client::Key) -> std::result::Result<Self, Self::Error> {
         let e = "Insufficient blobs to convert to Key".to_string();
-        let blob: Blob = tkey.into();
-        let (a_size, r) = blob.split_first().ok_or(e.clone())?;
+        let blob: Blob = value.into();
+        let (a_size, r) = blob.split_first().ok_or_else(|| e.clone())?;
         let a_size = *a_size as usize;
         if r.len() < a_size {
             return Err(e);

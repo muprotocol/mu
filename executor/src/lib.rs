@@ -52,7 +52,7 @@ pub async fn run() -> Result<()> {
         connection_manager_config,
         gossip_config,
         mut known_nodes_config,
-        tikv_config,
+        _tikv_config,
         gateway_manager_config,
         log_config,
         runtime_config,
