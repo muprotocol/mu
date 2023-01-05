@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use musdk_common::Request;
 
 pub trait FromRequest<'a> {
@@ -18,4 +20,9 @@ impl<'a> FromRequest<'a> for BinaryBody<'a> {
     fn from_request(req: &'a Request) -> Self {
         Self { body: &req.body }
     }
+}
+
+pub struct StringBody<'a> {
+    pub body: Cow<'a, str>,
+    pub encoding: 
 }
