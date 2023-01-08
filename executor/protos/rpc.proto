@@ -49,9 +49,8 @@ message ExecuteFunctionRequest {
 
 message Response {
     int32 status = 1;
-    string content_type = 2;
-    repeated Header headers = 3;
-    bytes body = 4;
+    repeated Header headers = 2;
+    bytes body = 3;
 }
 
 message RpcRequest {

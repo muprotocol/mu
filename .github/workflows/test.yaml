@@ -20,7 +20,7 @@ jobs:
             target/
             cli/target/
             executor/target/
-            mailbox_proceessor/target/
+            mailbox_processor/target/
             marketplace/target/
             mu_stack/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}

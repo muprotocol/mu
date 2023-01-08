@@ -152,7 +152,6 @@ impl<'a> From<musdk_common::Response<'a>> for rpc::Response {
     fn from(response: musdk_common::Response<'a>) -> Self {
         Self {
             status: response.status as i32,
-            content_type: response.content_type.into_owned(),
             headers: response.headers.into_iter().map(header_to_proto).collect(),
             body: response.body.into_owned(),
             ..Default::default()
@@ -175,7 +174,6 @@ impl TryFrom<rpc::Response> for musdk_common::Response<'static> {
 
         Ok(Self {
             status,
-            content_type: Cow::Owned(response.content_type),
             headers: response
                 .headers
                 .into_iter()

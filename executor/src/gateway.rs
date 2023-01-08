@@ -1,7 +1,11 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::{borrow::Cow, collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, net::IpAddr, sync::Arc};
 
+use actix_web::{
+    body::BoxBody, dev::ServerHandle, guard, http, web, App, HttpRequest, HttpResponse, HttpServer,
+    Resource, Responder,
+};
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
@@ -9,18 +13,9 @@ use log::{debug, error, trace};
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel, RequestReplyChannel};
 use mu_stack::{Gateway, HttpMethod, StackID};
 use musdk_common::{Header, Request, Response};
-use rocket::{
-    catch, catchers, delete, get, head,
-    http::Status,
-    options, patch, post, put,
-    request::{FromParam, FromRequest},
-    routes, State,
-};
+use reqwest::StatusCode;
 use serde::Deserialize;
-use tokio::{
-    sync::{mpsc, RwLock},
-    task::JoinHandle,
-};
+use tokio::sync::{mpsc, RwLock};
 
 use crate::{
     network::{connection_manager::ConnectionManager, rpc_handler::RpcHandler, NodeConnection},
@@ -102,8 +97,7 @@ impl GatewayManager for GatewayManagerImpl {
 }
 
 struct GatewayState {
-    shutdown: Option<rocket::Shutdown>,
-    server_future: Option<JoinHandle<()>>,
+    server_handle: ServerHandle,
     gateways: HashMap<StackID, HashMap<String, Gateway>>,
 }
 
@@ -162,16 +156,13 @@ pub async fn start(
     Box<dyn GatewayManager>,
     mpsc::UnboundedReceiver<(StackID, ReplyChannel<Result<RoutingTarget>>)>,
 )> {
-    let config = rocket::Config::figment()
-        .merge(("address", config.listen_address.to_string()))
-        .merge(("port", config.listen_port))
-        .merge(("cli-colors", false))
-        .merge(("ctrlc", false));
-
     let (req_rep_channel, req_rep_receiver) = RequestReplyChannel::new();
 
+    let gateway_manager = Arc::new(RwLock::new(None));
+    let gateway_manager_clone = gateway_manager.clone();
+
     let accessor = DependencyAccessor {
-        gateway_manager: Arc::new(RwLock::new(None)),
+        gateway_manager,
         runtime,
         connection_manager,
         get_routing_target: req_rep_channel,
@@ -179,26 +170,36 @@ pub async fn start(
         usage_aggregator,
     };
 
-    let ignited = rocket::custom(config)
-        .mount("/", routes![get, head, post, put, delete, patch, options])
-        .register("/", catchers![catch])
-        .manage(accessor.clone()) // TODO: DI-like solution?
-        .ignite()
-        .await?;
+    let server = HttpServer::new(move || {
+        App::new()
+            .app_data(web::Data::new(accessor.clone()))
+            .service(
+                Resource::new("/{stack_id}/{gateway_name}/{path:.*}")
+                    .guard(
+                        guard::Any(guard::Get())
+                            .or(guard::Post())
+                            .or(guard::Put())
+                            .or(guard::Delete())
+                            .or(guard::Head())
+                            .or(guard::Options())
+                            .or(guard::Patch()),
+                    )
+                    .to(handle_request),
+            )
+            .default_service(web::to(|| async { ResponseWrapper::not_found() }))
+    })
+    .bind((config.listen_address, config.listen_port))
+    .context("Failed to bind HTTP server port")?
+    .disable_signals()
+    .shutdown_timeout(15 * 60)
+    .run();
 
-    let shutdown = ignited.shutdown();
+    let server_handle = server.handle();
 
-    let server_future = tokio::spawn(async move {
-        let result = ignited.launch().await;
-        if let Err(f) = result {
-            // TODO: notify outer layer if this happens prematurely
-            error!("Failed to run rocket server: {f:?}");
-        }
-    });
+    tokio::spawn(server);
 
     let state = GatewayState {
-        shutdown: Some(shutdown),
-        server_future: Some(server_future),
+        server_handle,
         gateways: HashMap::new(),
     };
 
@@ -206,7 +207,7 @@ pub async fn start(
 
     let result = GatewayManagerImpl { mailbox };
 
-    *accessor.gateway_manager.write().await = Some(result.clone());
+    *gateway_manager_clone.write().await = Some(result.clone());
 
     Ok((Box::new(result), req_rep_receiver))
 }
@@ -266,42 +267,9 @@ async fn step(
         }
 
         GatewayMessage::Stop() => {
-            if let Some(shutdown) = state.shutdown.take() {
-                shutdown.notify();
-            }
-            if let Some(f) = state.server_future.take() {
-                if let Err(f) = f.await {
-                    error!("Rocket failed to run to completion: {f:?}");
-                }
-            }
+            state.server_handle.stop(true).await;
             state
         }
-    }
-}
-
-struct StackIDParam(StackID);
-
-impl<'a> FromParam<'a> for StackIDParam {
-    type Error = ();
-
-    fn from_param(param: &'a str) -> Result<Self, Self::Error> {
-        param.parse().map(StackIDParam)
-    }
-}
-
-#[derive(Debug)]
-struct RequestHeaders<'a>(Vec<rocket::http::Header<'a>>);
-
-#[async_trait]
-impl<'a> FromRequest<'a> for RequestHeaders<'a> {
-    type Error = ();
-
-    async fn from_request(
-        request: &'a rocket::Request<'_>,
-    ) -> rocket::request::Outcome<Self, Self::Error> {
-        let headers = request.headers();
-        let map = headers.iter().collect();
-        rocket::request::Outcome::Success(Self(map))
     }
 }
 
@@ -322,7 +290,7 @@ fn calculate_request_size(r: &Request) -> u64 {
 }
 
 fn calculate_response_size(r: &Response) -> u64 {
-    let mut size = r.content_type.as_bytes().len() as u64;
+    let mut size = 0;
     size += r
         .headers
         .iter()
@@ -337,54 +305,58 @@ struct ResponseWrapper(Response<'static>);
 impl ResponseWrapper {
     fn bad_request(description: &str) -> Self {
         Self(Response {
-            status: Status::BadRequest.code,
-            content_type: "text/plain".into(),
-            headers: vec![],
+            status: StatusCode::BAD_REQUEST.as_u16(),
+            headers: vec![Header {
+                name: Cow::Borrowed(http::header::CONTENT_TYPE.as_str()),
+                value: Cow::Borrowed("text/plain; charset=utf-8"),
+            }],
             body: Cow::Owned(description.into()),
         })
     }
 
-    // TODO: does returning a 404 cause error catchers to run too?
     fn not_found() -> Self {
         Self(Response {
-            status: Status::BadRequest.code,
-            content_type: "text/plain".into(),
-            headers: vec![],
-            body: Cow::Owned("not found".into()),
+            status: StatusCode::NOT_FOUND.as_u16(),
+            headers: vec![Header {
+                name: Cow::Borrowed(http::header::CONTENT_TYPE.as_str()),
+                value: Cow::Borrowed("text/plain; charset=utf-8"),
+            }],
+            body: Cow::Borrowed(b"not found"),
         })
     }
 
     fn internal_error(description: &str) -> Self {
         Self(Response {
-            status: Status::InternalServerError.code,
-            content_type: "text/plain".into(),
-            headers: vec![],
+            status: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+            headers: vec![Header {
+                name: Cow::Borrowed(http::header::CONTENT_TYPE.as_str()),
+                value: Cow::Borrowed("text/plain; charset=utf-8"),
+            }],
             body: Cow::Owned(description.into()),
         })
     }
 }
 
-impl<'r, 'o: 'r> rocket::response::Responder<'r, 'o> for ResponseWrapper {
-    fn respond_to(self, _: &'r rocket::Request<'_>) -> rocket::response::Result<'o> {
-        let mut builder = rocket::Response::build();
+impl Responder for ResponseWrapper {
+    type Body = BoxBody;
 
-        builder.status(Status::new(self.0.status));
+    #[allow(clippy::only_used_in_recursion)] // not our choice to pass this param, it's in the trait
+    fn respond_to(self, req: &HttpRequest) -> actix_web::HttpResponse<Self::Body> {
+        let Ok(status) = StatusCode::from_u16(self.0.status) else {
+            return Self::internal_error("Invalid status code received from user function").respond_to(req);
+        };
+
+        let mut builder = HttpResponse::build(status);
 
         for header in self.0.headers {
-            builder.header(rocket::http::Header::new(
-                header.name.into_owned(),
-                header.value.into_owned(),
-            ));
+            builder.append_header((header.name.into_owned(), header.value.into_owned()));
         }
 
-        builder.header(rocket::http::Header::new(
-            "Content-Type",
-            self.0.content_type,
-        ));
-
-        builder.sized_body(self.0.body.len(), std::io::Cursor::new(self.0.body));
-
-        builder.ok()
+        if self.0.body.len() > 0 {
+            builder.body(self.0.body.into_owned())
+        } else {
+            builder.finish()
+        }
     }
 }
 
@@ -397,7 +369,7 @@ impl<'r, 'o: 'r> rocket::response::Responder<'r, 'o> for ResponseWrapper {
 async fn route_request<'a>(
     function_id: FunctionID,
     request: Request<'a>,
-    dependency_accessor: &State<DependencyAccessor>,
+    dependency_accessor: &web::Data<DependencyAccessor>,
 ) -> Result<ResponseWrapper> {
     trace!("Request received for {function_id}, will check deployment status");
 
@@ -475,43 +447,65 @@ fn stack_http_method_to_sdk(method: mu_stack::HttpMethod) -> musdk_common::HttpM
     }
 }
 
-async fn handle_request<'a>(
-    stack_id: StackIDParam,
-    gateway_name: &'a str,
-    method: HttpMethod,
-    path: PathBuf,
-    query: HashMap<&'a str, &'a str>,
-    headers: RequestHeaders<'a>,
-    data: Option<&'a [u8]>,
-    dependency_accessor: &State<DependencyAccessor>,
-) -> ResponseWrapper {
-    let stack_id = stack_id.0;
+fn actix_http_method_to_stack(method: &http::Method) -> mu_stack::HttpMethod {
+    if http::Method::GET == method {
+        mu_stack::HttpMethod::Get
+    } else if http::Method::POST == method {
+        mu_stack::HttpMethod::Post
+    } else if http::Method::PUT == method {
+        mu_stack::HttpMethod::Put
+    } else if http::Method::DELETE == method {
+        mu_stack::HttpMethod::Delete
+    } else if http::Method::OPTIONS == method {
+        mu_stack::HttpMethod::Options
+    } else if http::Method::PATCH == method {
+        mu_stack::HttpMethod::Patch
+    } else if http::Method::HEAD == method {
+        mu_stack::HttpMethod::Head
+    } else {
+        panic!("Unexpected HTTP method {}", method.as_str());
+    }
+}
 
-    let path = match path.to_str() {
-        Some(x) => x,
-        None => return ResponseWrapper::bad_request("Invalid UTF-8 in request path"),
+async fn handle_request<'a>(
+    request: HttpRequest,
+    payload: Option<web::Bytes>,
+    dependency_accessor: web::Data<DependencyAccessor>,
+) -> ResponseWrapper {
+    let Ok(stack_id) = request.match_info().get("stack_id").unwrap().parse() else {
+        return ResponseWrapper::not_found();
     };
 
-    let query = query
-        .into_iter()
-        .map(|(k, v)| (Cow::Borrowed(k), Cow::Borrowed(v)))
-        .collect::<HashMap<_, _>>();
+    let gateway_name = request.match_info().get("gateway_name").unwrap();
+    let path = request.match_info().get("path").unwrap();
 
-    let headers = headers
-        .0
+    let method = actix_http_method_to_stack(request.method());
+
+    let Ok(headers) = request
+        .headers()
         .iter()
-        .map(|h| Header {
-            name: Cow::Borrowed(h.name.as_str()),
-            value: Cow::Borrowed(h.value()),
-        })
-        .collect();
+        .map(|(k, v)| Ok(Header{name: Cow::Borrowed(k.as_str()), value: Cow::Borrowed(v.to_str()?)}))
+        .collect::<Result<Vec<_>>>() else {
+            return ResponseWrapper::bad_request("Invalid header values in request");
+        };
+
+    let Ok(query) =
+        web::Query::<HashMap<Cow<'_, str>, Cow<'_, str>>>::from_query(
+            request.query_string()
+        ) else {
+            return ResponseWrapper::bad_request("Invalid query string");
+        };
+    let query = query.into_inner();
 
     let request = Request {
         method: stack_http_method_to_sdk(method),
         path: Cow::Borrowed(path),
         query,
         headers,
-        body: data.map(Cow::Borrowed).unwrap_or(Cow::Owned(vec![])),
+        body: match payload.as_ref() {
+            Some(b) => Cow::Borrowed(b.as_ref()),
+            None => Cow::Owned(vec![]),
+        },
     };
 
     let mut traffic = calculate_request_size(&request);
@@ -532,7 +526,9 @@ async fn handle_request<'a>(
         .await;
 
     let (assembly_name, function_name) = match assembly_and_function {
-        Err(_) => return ResponseWrapper::internal_error("Node is shutting down"),
+        Err(_) => {
+            return ResponseWrapper::internal_error("Node is shutting down, retry this request")
+        }
         Ok(None) => return ResponseWrapper::not_found(),
         Ok(Some(x)) => x,
     };
@@ -546,7 +542,7 @@ async fn handle_request<'a>(
             function_name,
         },
         request,
-        dependency_accessor,
+        &dependency_accessor,
     )
     .await
     {
@@ -572,170 +568,4 @@ async fn handle_request<'a>(
     );
 
     response
-}
-
-#[get("/<stack_id>/<gateway_name>/<path..>?<query..>")]
-async fn get<'a>(
-    stack_id: StackIDParam,
-    gateway_name: &'a str,
-    path: PathBuf,
-    query: HashMap<&'a str, &'a str>,
-    headers: RequestHeaders<'a>,
-    dependency_accessor: &State<DependencyAccessor>,
-) -> ResponseWrapper {
-    handle_request(
-        stack_id,
-        gateway_name,
-        HttpMethod::Get,
-        path,
-        query,
-        headers,
-        None,
-        dependency_accessor,
-    )
-    .await
-}
-
-#[post("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
-async fn post<'a>(
-    stack_id: StackIDParam,
-    gateway_name: &'a str,
-    path: PathBuf,
-    query: HashMap<&'a str, &'a str>,
-    headers: RequestHeaders<'a>,
-    data: &'a [u8],
-    dependency_accessor: &State<DependencyAccessor>,
-) -> ResponseWrapper {
-    handle_request(
-        stack_id,
-        gateway_name,
-        HttpMethod::Post,
-        path,
-        query,
-        headers,
-        Some(data),
-        dependency_accessor,
-    )
-    .await
-}
-
-#[put("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
-async fn put<'a>(
-    stack_id: StackIDParam,
-    gateway_name: &'a str,
-    path: PathBuf,
-    query: HashMap<&'a str, &'a str>,
-    headers: RequestHeaders<'a>,
-    data: &'a [u8],
-    dependency_accessor: &State<DependencyAccessor>,
-) -> ResponseWrapper {
-    handle_request(
-        stack_id,
-        gateway_name,
-        HttpMethod::Put,
-        path,
-        query,
-        headers,
-        Some(data),
-        dependency_accessor,
-    )
-    .await
-}
-
-#[delete("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
-async fn delete<'a>(
-    stack_id: StackIDParam,
-    gateway_name: &'a str,
-    path: PathBuf,
-    query: HashMap<&'a str, &'a str>,
-    headers: RequestHeaders<'a>,
-    data: &'a [u8],
-    dependency_accessor: &State<DependencyAccessor>,
-) -> ResponseWrapper {
-    handle_request(
-        stack_id,
-        gateway_name,
-        HttpMethod::Delete,
-        path,
-        query,
-        headers,
-        Some(data),
-        dependency_accessor,
-    )
-    .await
-}
-
-#[head("/<stack_id>/<gateway_name>/<path..>?<query..>")]
-async fn head<'a>(
-    stack_id: StackIDParam,
-    gateway_name: &'a str,
-    path: PathBuf,
-    query: HashMap<&'a str, &'a str>,
-    headers: RequestHeaders<'a>,
-    dependency_accessor: &State<DependencyAccessor>,
-) -> ResponseWrapper {
-    handle_request(
-        stack_id,
-        gateway_name,
-        HttpMethod::Head,
-        path,
-        query,
-        headers,
-        None,
-        dependency_accessor,
-    )
-    .await
-}
-
-#[patch("/<stack_id>/<gateway_name>/<path..>?<query..>", data = "<data>")]
-async fn patch<'a>(
-    stack_id: StackIDParam,
-    gateway_name: &'a str,
-    path: PathBuf,
-    query: HashMap<&'a str, &'a str>,
-    headers: RequestHeaders<'a>,
-    data: &'a [u8],
-    dependency_accessor: &State<DependencyAccessor>,
-) -> ResponseWrapper {
-    handle_request(
-        stack_id,
-        gateway_name,
-        HttpMethod::Patch,
-        path,
-        query,
-        headers,
-        Some(data),
-        dependency_accessor,
-    )
-    .await
-}
-
-#[options("/<stack_id>/<gateway_name>/<path..>?<query..>")]
-async fn options<'a>(
-    stack_id: StackIDParam,
-    gateway_name: &'a str,
-    path: PathBuf,
-    query: HashMap<&'a str, &'a str>,
-    headers: RequestHeaders<'a>,
-    dependency_accessor: &State<DependencyAccessor>,
-) -> ResponseWrapper {
-    handle_request(
-        stack_id,
-        gateway_name,
-        HttpMethod::Options,
-        path,
-        query,
-        headers,
-        None,
-        dependency_accessor,
-    )
-    .await
-}
-
-#[catch(default)]
-fn catch(status: Status, _request: &rocket::Request) -> String {
-    match status.code {
-        404 => "Not found".into(),
-        _ => "".into(),
-    }
 }
