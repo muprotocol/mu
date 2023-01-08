@@ -69,7 +69,7 @@ pub struct PdConfig {
     // TODO: address should be same with node address (NodeAddress::address) as below has been explained,
     // * so should be remove I think.
     // * https://tikv.org/docs/dev/deploy/configure/pd-command-line/#--peer-urls
-    // * also I suggest to use a random port beacuse it's for internal communication and
+    // * also I suggest to use a random port because it's for internal communication and
     // * that's not important to user
     pub peer_url: IpAndPort,
     pub client_url: IpAndPort,
@@ -81,7 +81,7 @@ pub struct TikvConfig {
     // TODO: address should be same with node address (NodeAddress::address) as below has been explained,
     // * so should be remove I think.
     // * https://tikv.org/docs/dev/deploy/configure/pd-command-line/#--peer-urls
-    // * also I suggest to use a random port beacuse it's for internal communication and
+    // * also I suggest to use a random port because it's for internal communication and
     // * that's not important to user
     pub cluster_url: IpAndPort,
     // TODO: I suggest to make it optional and provide default data_dir
