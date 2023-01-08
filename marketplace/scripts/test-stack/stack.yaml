@@ -14,4 +14,4 @@ services:
     endpoints:
       /req:
         - method: post
-          route_to: my_function
+          route_to: my_function.greet_user

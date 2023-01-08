@@ -230,6 +230,14 @@ impl TryFrom<std::string::String> for ValueFilter {
     }
 }
 
+impl TryFrom<&str> for ValueFilter {
+    type Error = error::Error;
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        let json_v: JsonValue = serde_json::from_str(s)?;
+        Self::try_from(json_v)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

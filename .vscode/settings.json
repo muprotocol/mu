@@ -4,6 +4,7 @@
         "executor": true,
         "mailbox_processor": true,
         "cli": true,
-        "mu_stack": true
+        "mu_stack": true,
+        "sdk": true
     }
 }

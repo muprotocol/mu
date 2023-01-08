@@ -10,8 +10,9 @@ use std::{
 use ::protobuf::Message;
 use anyhow::Result;
 use base58::{FromBase58, ToBase58};
+use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::Bytes;
-use serde::{Deserialize, Serialize};
+use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
 
 pub const STACK_ID_SIZE: usize = 32;
 
@@ -166,10 +167,62 @@ impl Gateway {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GatewayEndpoint {
     pub method: HttpMethod,
-    pub route_to: String,
+    pub route_to: AssemblyAndFunction,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
+pub struct AssemblyAndFunction {
+    pub assembly: String,
+    pub function: String,
+}
+
+impl Serialize for AssemblyAndFunction {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(format!("{}.{}", self.assembly, self.function).as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for AssemblyAndFunction {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(AssemblyAndFunctionDeserializeVisitor)
+    }
+}
+
+struct AssemblyAndFunctionDeserializeVisitor;
+
+impl<'de> Visitor<'de> for AssemblyAndFunctionDeserializeVisitor {
+    type Value = AssemblyAndFunction;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            formatter,
+            "Two identifiers separated by a dot, such as `assembly_name.function_name`"
+        )
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        let Some((asm, fun)) = v.split_once('.') else {
+            return Err(E::invalid_value(serde::de::Unexpected::Str(v), &self));
+        };
+        Ok(AssemblyAndFunction {
+            assembly: asm.to_string(),
+            function: fun.to_string(),
+        })
+    }
+}
+
+#[derive(
+    Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone, Copy, PartialEq, Eq,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum HttpMethod {
     Get,
@@ -185,13 +238,13 @@ pub enum HttpMethod {
 pub struct Function {
     pub name: String,
     pub binary: String,
-    pub runtime: FunctionRuntime,
+    pub runtime: AssemblyRuntime,
     pub env: HashMap<String, String>,
     pub memory_limit: byte_unit::Byte,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
-pub enum FunctionRuntime {
+pub enum AssemblyRuntime {
     #[serde(rename = "wasi1.0")]
     Wasi1_0,
 }

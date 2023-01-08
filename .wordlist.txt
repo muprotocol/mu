@@ -1,14 +1,18 @@
 balancer
 Bincode
 bufread
+Borsh
 chrono
 clonable
 codegen
+Condvar
 cranelift
 datagram
 Datagram
 datagrams
 flate
+deque
+didnt
 funcs
 Hasher
 hashkey
@@ -30,6 +34,7 @@ mufunction
 mugateway
 MuGateway
 MuProtocol
+musdk
 muxer
 nanos
 nonblocking
@@ -48,6 +53,7 @@ rcgen
 reconnections
 recv
 refcell
+repr
 reqwest
 rngs
 runtime

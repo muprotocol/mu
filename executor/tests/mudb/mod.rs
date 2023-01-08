@@ -542,7 +542,6 @@ async fn test_3_node_with_embed_same_stack_id_then_stop() {
 
 #[tokio::test]
 #[serial]
-#[ignore]
 async fn test_3_node_with_embed_different_stack_id_and_tables_then_stop() {
     clean_data_dir();
 
