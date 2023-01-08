@@ -22,7 +22,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 [[package]]
 name = "borsh"
 version = "0.0.0"
-source = "git+https://github.com/muprotocol/borsh-rs.git?branch=feature/reader-deserialization#4ebb015a0fed2d3994549007e64a4f8c2658b4e5"
+source = "git+https://github.com/near/borsh-rs?rev=e82b47bdc14f65d464e9efa1237195a6b9770830#e82b47bdc14f65d464e9efa1237195a6b9770830"
 dependencies = [
  "borsh-derive",
  "hashbrown",
@@ -31,7 +31,7 @@ dependencies = [
 [[package]]
 name = "borsh-derive"
 version = "0.0.0"
-source = "git+https://github.com/muprotocol/borsh-rs.git?branch=feature/reader-deserialization#4ebb015a0fed2d3994549007e64a4f8c2658b4e5"
+source = "git+https://github.com/near/borsh-rs?rev=e82b47bdc14f65d464e9efa1237195a6b9770830#e82b47bdc14f65d464e9efa1237195a6b9770830"
 dependencies = [
  "borsh-derive-internal",
  "borsh-schema-derive-internal",
@@ -43,7 +43,7 @@ dependencies = [
 [[package]]
 name = "borsh-derive-internal"
 version = "0.0.0"
-source = "git+https://github.com/muprotocol/borsh-rs.git?branch=feature/reader-deserialization#4ebb015a0fed2d3994549007e64a4f8c2658b4e5"
+source = "git+https://github.com/near/borsh-rs?rev=e82b47bdc14f65d464e9efa1237195a6b9770830#e82b47bdc14f65d464e9efa1237195a6b9770830"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -53,7 +53,7 @@ dependencies = [
 [[package]]
 name = "borsh-schema-derive-internal"
 version = "0.0.0"
-source = "git+https://github.com/muprotocol/borsh-rs.git?branch=feature/reader-deserialization#4ebb015a0fed2d3994549007e64a4f8c2658b4e5"
+source = "git+https://github.com/near/borsh-rs?rev=e82b47bdc14f65d464e9efa1237195a6b9770830#e82b47bdc14f65d464e9efa1237195a6b9770830"
 dependencies = [
  "proc-macro2",
  "quote",
