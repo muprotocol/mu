@@ -10,7 +10,9 @@ pub enum Error {
     #[error("mudb_error -> stack_id or table doesn't exist -> {0:?}")]
     StackIdOrTableDoseNotExist(Key),
     #[error("mudb_error -> embedding tikv error -> {0}")]
-    EmbeddingTikvErr(String),
+    EmbedTikvErr(String),
+    #[error("mudb_error -> tikv startup timeout, {0}, so rest of the processes killed")]
+    TikvConnectionTimeout(String),
 }
 
 impl From<tikv_client::Error> for Error {

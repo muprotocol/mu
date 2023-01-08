@@ -1,15 +1,32 @@
-//! External cluster command
-//! `tiup playground --mode tikv-slim --kv 3 --pd 3`
-//! pd endpoints: 127.0.0.1:2379, 127.0.0.1:2382, 127.0.0.1:2384
-
-// TODO
-// use crate::infrastructure::config::*;
 use assert_matches::assert_matches;
 use futures::Future;
-use mu::mudb_tikv::{db::DbImpl, embed_tikv::TikvRunner, error::*, types::*};
+use mu::{
+    mudb_tikv::{
+        db::DbImpl,
+        embed_tikv::{PdConfig, TikvConfig},
+        error::*,
+        types::*,
+        TikvRunnerConfig,
+    },
+    network::{gossip::KnownNodeConfig, NodeAddress},
+};
 use mu_stack::StackID;
 use rand::Rng;
 use serial_test::serial;
+use std::fs;
+use std::net::IpAddr;
+
+// TODO: dummy import
+// * remove old.rs in future
+mod old;
+
+const TEST_DATA_DIR: &str = "tests/mudb/test_data";
+
+fn clean_data_dir() {
+    fs::remove_dir_all(TEST_DATA_DIR).unwrap_or_else(|why| {
+        println!("{} {:?}", TEST_DATA_DIR, why.kind());
+    });
+}
 
 fn stack_id() -> StackID {
     StackID::SolanaPublicKey([1; 32])
@@ -256,54 +273,47 @@ async fn single_node(db: DbImpl) {
 
     // scan table names
     table_list_test(db, table_list().into()).await;
-
-    // TODO
-    // let scan = Scan::ByTableName(stack_id.clone(), table_list[0].clone());
-    // let res = db.scan_keys(scan, 32).await.unwrap();
-    // assert_eq!(res.len(), 0);
-    // let scan = Scan::ByTableName(stack_id.clone(), table_list[1].clone());
-    // let res = db.scan_keys(scan, 32).await.unwrap();
-    // assert_eq!(res.len(), 0);
-    // let table_names = db.table_list(stack_id.clone(), None).await.unwrap();
-    // assert_eq!(table_names.len(), 0);
 }
 
-/// ##Test with external cluster,
-/// To use test start external cluster as mentioned line 1,
-/// comment #[ignore] and start testing.
-#[tokio::test]
-#[serial]
-// #[ignore]
-async fn test_single_node_without_embed() {
-    single_node(
-        DbImpl::new_without_embed_cluster(vec![
-            "127.0.0.1:2379".try_into().unwrap(),
-            "127.0.0.1:2382".try_into().unwrap(),
-            "127.0.0.1:2384".try_into().unwrap(),
-        ])
-        .await
-        .unwrap(),
-    )
-    .await;
+fn make_node_address(port: u16) -> NodeAddress {
+    NodeAddress {
+        address: "127.0.0.1".parse().unwrap(),
+        port,
+        generation: 1,
+    }
 }
-
-// TODO
-// #[tokio::test]
-// #[serial]
-// async fn test_single_node() {
-//     let conf = initialize_config();
-//     let node_address = NodeAddress {
-//         address: "127.0.0.1".parse().unwrap(),
-//         port: i,
-//         generation: 1,
-//     };
-//     let known_node_conf = conf.2.clone();
-//     let tikv_runner_conf = conf.3.clone();
-//     let db = Db::new(node_address, known_node_conf, tikv_runner_conf)
-//         .await
-//         .unwrap();
-//     single_node(db)
-// }
+fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> TikvRunnerConfig {
+    let localhost: IpAddr = "127.0.0.1".parse().unwrap();
+    TikvRunnerConfig {
+        pd: PdConfig {
+            peer_url: IpAndPort {
+                address: localhost.clone(),
+                port: peer_port,
+            },
+            client_url: IpAndPort {
+                address: localhost.clone(),
+                port: client_port,
+            },
+            data_dir: format!("{TEST_DATA_DIR}/pd_data_dir_{peer_port}"),
+            log_file: Some(format!("{TEST_DATA_DIR}/pd_log_{peer_port}")),
+        },
+        tikv: TikvConfig {
+            cluster_url: IpAndPort {
+                address: localhost.clone(),
+                port: tikv_port,
+            },
+            data_dir: format!("{TEST_DATA_DIR}/tikv_data_dir_{tikv_port}"),
+            log_file: Some(format!("{TEST_DATA_DIR}/tikv_log_{tikv_port}")),
+        },
+    }
+}
+fn make_known_node_conf(gossip_port: u16, pd_port: u16) -> KnownNodeConfig {
+    KnownNodeConfig {
+        ip: "127.0.0.1".parse().unwrap(),
+        gossip_port,
+        pd_port,
+    }
+}
 
 fn rand_keys(si: StackID, tl: [TableName; 2]) -> [Key; 4] {
     [
@@ -330,11 +340,12 @@ fn rand_keys(si: StackID, tl: [TableName; 2]) -> [Key; 4] {
     ]
 }
 
-async fn n_node_with_same_stack_id_and_tables(db: DbImpl, n: u8) {
+async fn n_node_with_same_stack_id_and_tables(dbs: Vec<DbImpl>) {
+    let db = dbs[0].clone();
     db.clear_all_data().await.unwrap();
 
     let mut handles = vec![];
-    for i in 1..n {
+    for (i, db) in dbs.into_iter().enumerate() {
         let db_clone = db.clone();
         let keys = rand_keys(stack_id(), table_list());
         let keys_clone = keys.clone();
@@ -342,7 +353,7 @@ async fn n_node_with_same_stack_id_and_tables(db: DbImpl, n: u8) {
             db.clone(),
             stack_id(),
             table_list(),
-            vec![i],
+            vec![i as u8],
             keys.clone(),
             false,
             async move {
@@ -359,58 +370,19 @@ async fn n_node_with_same_stack_id_and_tables(db: DbImpl, n: u8) {
     table_list_test(db, table_list().into()).await;
 }
 
-/// ##Test with external cluster,
-/// To use test start external cluster as mentioned line 1,
-/// comment #[ignore] and start testing.
-#[tokio::test]
-#[serial]
-// #[ignore]
-async fn test_7_node_with_same_stack_id_and_tables() {
-    n_node_with_same_stack_id_and_tables(
-        DbImpl::new_without_embed_cluster(vec![
-            "127.0.0.1:2379".try_into().unwrap(),
-            "127.0.0.1:2382".try_into().unwrap(),
-            "127.0.0.1:2384".try_into().unwrap(),
-        ])
-        .await
-        .unwrap(),
-        7,
-    )
-    .await;
-}
-
-/// ##Test with external cluster,
-/// To use test start external cluster as mentioned line 1,
-/// comment #[ignore] and start testing.
-#[tokio::test]
-#[serial]
-// #[ignore]
-async fn test_50_node_with_same_stack_id_and_tables() {
-    n_node_with_same_stack_id_and_tables(
-        DbImpl::new_without_embed_cluster(vec![
-            "127.0.0.1:2379".try_into().unwrap(),
-            "127.0.0.1:2382".try_into().unwrap(),
-            "127.0.0.1:2384".try_into().unwrap(),
-        ])
-        .await
-        .unwrap(),
-        50,
-    )
-    .await;
-}
-
-async fn n_node_with_same_stack_id(db: DbImpl, n: u8) {
+async fn n_node_with_same_stack_id(dbs: Vec<DbImpl>) {
+    let db = dbs[0].clone();
     db.clear_all_data().await.unwrap();
 
     let mut handles = vec![];
-    for i in 1..n {
+    for (i, db) in dbs.into_iter().enumerate() {
         let tl = [format!("{}", i).into(), format!("{}", 100 + i).into()];
         let db_clone = db.clone();
         let f = test_node(
             db.clone(),
             stack_id(),
             tl.clone(),
-            vec![i],
+            vec![i as u8],
             rand_keys(stack_id(), tl.clone()),
             false,
             async move {
@@ -430,51 +402,13 @@ async fn n_node_with_same_stack_id(db: DbImpl, n: u8) {
     }
 }
 
-/// ##Test with external cluster,
-/// To use test start external cluster as mentioned line 1,
-/// comment #[ignore] and start testing.
-#[tokio::test]
-#[serial]
-// #[ignore]
-async fn test_7_node_with_same_stack_id() {
-    n_node_with_same_stack_id(
-        DbImpl::new_without_embed_cluster(vec![
-            "127.0.0.1:2379".try_into().unwrap(),
-            "127.0.0.1:2382".try_into().unwrap(),
-            "127.0.0.1:2384".try_into().unwrap(),
-        ])
-        .await
-        .unwrap(),
-        7,
-    )
-    .await;
-}
-
-/// ##Test with external cluster,
-/// To use test start external cluster as mentioned line 1,
-/// comment #[ignore] and start testing.
-#[tokio::test]
-#[serial]
-// #[ignore]
-async fn test_50_node_with_same_stack_id() {
-    n_node_with_same_stack_id(
-        DbImpl::new_without_embed_cluster(vec![
-            "127.0.0.1:2379".try_into().unwrap(),
-            "127.0.0.1:2382".try_into().unwrap(),
-            "127.0.0.1:2384".try_into().unwrap(),
-        ])
-        .await
-        .unwrap(),
-        50,
-    )
-    .await;
-}
-
-async fn n_node_with_different_stack_id_and_tables(db: DbImpl, n: u8) {
+async fn n_node_with_different_stack_id_and_tables(dbs: Vec<DbImpl>) {
+    let db = dbs[0].clone();
     db.clear_all_data().await.unwrap();
 
     let mut handles = vec![];
-    for i in 1..n {
+    for (i, db) in dbs.into_iter().enumerate() {
+        let i = i as u8;
         let si = StackID::SolanaPublicKey([i; 32]);
         let tl = [format!("{}", i).into(), format!("{}", 100 + i).into()];
         let db_clone = db.clone();
@@ -502,52 +436,167 @@ async fn n_node_with_different_stack_id_and_tables(db: DbImpl, n: u8) {
     }
 }
 
-/// ##Test with external cluster,
-/// To use test start external cluster as mentioned line 1,
-/// comment #[ignore] and start testing.
-#[tokio::test]
-#[serial]
-// #[ignore]
-async fn test_7_node_with_different_stack_id_and_tables() {
-    n_node_with_different_stack_id_and_tables(
-        DbImpl::new_without_embed_cluster(vec![
-            "127.0.0.1:2379".try_into().unwrap(),
-            "127.0.0.1:2382".try_into().unwrap(),
-            "127.0.0.1:2384".try_into().unwrap(),
-        ])
-        .await
-        .unwrap(),
-        7,
-    )
-    .await;
+async fn make_db_with_external_cluster() -> DbImpl {
+    DbImpl::new_without_embed_cluster(vec![
+        "127.0.0.1:2379".try_into().unwrap(),
+        "127.0.0.1:2382".try_into().unwrap(),
+        "127.0.0.1:2384".try_into().unwrap(),
+    ])
+    .await
+    .unwrap()
 }
 
-/// ##Test with external cluster,
-/// To use test start external cluster as mentioned line 1,
-/// comment #[ignore] and start testing.
+async fn make_3_dbs() -> Vec<DbImpl> {
+    let mut handles = vec![];
+    let h = ::tokio::spawn(async move {
+        let node_address = make_node_address(2800);
+        let tikv_runner_conf = make_tikv_runner_conf(2380, 2379, 20160);
+        let known_node_conf = vec![
+            make_known_node_conf(2801, 2381),
+            make_known_node_conf(2802, 2383),
+        ];
+        DbImpl::new_with_embed_cluster(node_address, known_node_conf, tikv_runner_conf)
+            .await
+            .unwrap()
+    });
+    handles.push(h);
+
+    let h = ::tokio::spawn(async move {
+        let node_address = make_node_address(2801);
+        let tikv_runner_conf = make_tikv_runner_conf(2381, 2382, 20161);
+        let known_node_conf = vec![
+            make_known_node_conf(2800, 2380),
+            make_known_node_conf(2802, 2383),
+        ];
+        DbImpl::new_with_embed_cluster(node_address, known_node_conf, tikv_runner_conf)
+            .await
+            .unwrap()
+    });
+    handles.push(h);
+
+    let h = ::tokio::spawn(async move {
+        let node_address = make_node_address(2802);
+        let tikv_runner_conf = make_tikv_runner_conf(2383, 2384, 20162);
+        let known_node_conf = vec![
+            make_known_node_conf(2800, 2380),
+            make_known_node_conf(2801, 2381),
+        ];
+        DbImpl::new_with_embed_cluster(node_address, known_node_conf, tikv_runner_conf)
+            .await
+            .unwrap()
+    });
+    handles.push(h);
+
+    let mut dbs = vec![];
+    for h in handles {
+        let db = h.await.unwrap();
+        dbs.push(db);
+    }
+
+    dbs
+}
+
 #[tokio::test]
 #[serial]
-// #[ignore]
+async fn test_single_node_with_embed_and_stop() {
+    clean_data_dir();
+
+    let node_address = make_node_address(2803);
+    let known_node_conf = vec![];
+    let tikv_runner_conf = make_tikv_runner_conf(2385, 2386, 20163);
+    let db = DbImpl::new_with_embed_cluster(node_address, known_node_conf, tikv_runner_conf)
+        .await
+        .unwrap();
+
+    single_node(db.clone()).await;
+    db.stop_embed_cluster().await.unwrap();
+}
+
+#[tokio::test]
+#[serial]
+async fn test_3_node_with_embed_same_stack_id_same_table_then_stop() {
+    clean_data_dir();
+
+    let dbs = make_3_dbs().await;
+
+    n_node_with_same_stack_id_and_tables(dbs.clone()).await;
+
+    for db in dbs {
+        db.stop_embed_cluster().await.unwrap();
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn test_3_node_with_embed_same_stack_id_then_stop() {
+    clean_data_dir();
+
+    let dbs = make_3_dbs().await;
+
+    n_node_with_same_stack_id(dbs.clone()).await;
+
+    for db in dbs {
+        db.stop_embed_cluster().await.unwrap();
+    }
+}
+
+#[tokio::test]
+#[serial]
+#[ignore]
+async fn test_3_node_with_embed_different_stack_id_and_tables_then_stop() {
+    clean_data_dir();
+
+    let dbs = make_3_dbs().await;
+
+    n_node_with_different_stack_id_and_tables(dbs.clone()).await;
+
+    for db in dbs {
+        db.stop_embed_cluster().await.unwrap();
+    }
+}
+
+// # Test with external cluster,
+// To use test start external cluster as below then
+// comment #[ignore] and start testing.
+//
+// # External cluster command
+// `tiup playground --mode tikv-slim --kv 3 --pd 3`
+// pd endpoints: 127.0.0.1:2379, 127.0.0.1:2382, 127.0.0.1:2384
+
+#[tokio::test]
+#[serial]
+#[ignore]
+async fn test_single_node_without_embed() {
+    single_node(make_db_with_external_cluster().await).await;
+}
+
+#[tokio::test]
+#[serial]
+#[ignore]
+async fn test_50_node_with_same_stack_id_and_tables() {
+    let db = make_db_with_external_cluster().await;
+    n_node_with_same_stack_id_and_tables((0..50).map(|_| db.clone()).collect()).await;
+}
+
+#[tokio::test]
+#[serial]
+#[ignore]
+async fn test_50_node_with_same_stack_id() {
+    let db = make_db_with_external_cluster().await;
+    n_node_with_same_stack_id((0..50).map(|_| db.clone()).collect()).await;
+}
+
+#[tokio::test]
+#[serial]
+#[ignore]
 async fn test_50_node_with_different_stack_id_and_tables() {
-    n_node_with_different_stack_id_and_tables(
-        DbImpl::new_without_embed_cluster(vec![
-            "127.0.0.1:2379".try_into().unwrap(),
-            "127.0.0.1:2382".try_into().unwrap(),
-            "127.0.0.1:2384".try_into().unwrap(),
-        ])
-        .await
-        .unwrap(),
-        50,
-    )
-    .await;
+    let db = make_db_with_external_cluster().await;
+    n_node_with_different_stack_id_and_tables((0..50).map(|_| db.clone()).collect()).await;
 }
 
-/// ##Test with external cluster,
-/// To use test start external cluster as mentioned line 1,
-/// comment #[ignore] and start testing.
 #[tokio::test]
 #[serial]
-// #[ignore]
+#[ignore]
 async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_tikv() {
     let si = stack_id();
     let tl = table_list();
@@ -610,248 +659,3 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     assert_eq!(y, Some(vs[2].clone()));
     assert_eq!(z, Some(vs[2].clone()));
 }
-
-// ============== OLD ================
-
-// use mu::mudb::{service::*, Config, Result};
-// use serde_json::json;
-//
-// async fn find_and_update_again(
-//     db_service: &DatabaseManager,
-//     database_id: &DatabaseID,
-//     table_1: &str,
-// ) -> Result<()> {
-//     // find
-//     db_service
-//         .find_item(
-//             database_id.clone(),
-//             table_1.into(),
-//             KeyFilter::Prefix("".into()),
-//             json!({
-//                 "num_item": { "$lt": 5 },
-//                 "array_item": [2, 3]
-//             })
-//             .try_into()
-//             .unwrap(),
-//         )
-//         .await?;
-
-//     // update
-//     db_service
-//         .update_item(
-//             database_id.clone(),
-//             table_1.into(),
-//             KeyFilter::Exact("ex::1".into()),
-//             json!({
-//                 "num_item": 1
-//             })
-//             .try_into()
-//             .unwrap(),
-//             json!({
-//                 "$set": { "array_item.0": 10 },
-//                 "$inc": { "array_item.1": 5 },
-//             })
-//             .try_into()
-//             .unwrap(),
-//         )
-//         .await?;
-
-//     Ok(())
-// }
-
-// #[tokio::test]
-// #[serial]
-// async fn test_mudb_service() {
-//     let db_service = DatabaseManager::new().await.unwrap();
-
-//     // init db
-
-//     let database_id = DatabaseID {
-//         db_name: "test_mudb_service".into(),
-//         ..Default::default()
-//     };
-
-//     let conf = Config {
-//         database_id: database_id.clone(),
-//         ..Default::default()
-//     };
-
-//     db_service.create_db(conf).await.unwrap();
-
-//     // create table 1
-
-//     let table_1 = "table_1";
-
-//     db_service
-//         .create_table(database_id.clone(), table_1.into())
-//         .await
-//         .unwrap();
-
-//     // create table 2
-
-//     let table_2 = "table_2";
-
-//     db_service
-//         .create_table(database_id.clone(), table_2.into())
-//         .await
-//         .unwrap();
-
-//     // insert one item
-
-//     let value1 = json!({
-//         "num_item": 1,
-//         "array_item": [1, 2, 3, 4],
-//         "obj_item": {
-//             "in_1": "hello",
-//             "in_2": "world",
-//         }
-//     })
-//     .to_string();
-
-//     let res1 = db_service
-//         .insert_one_item(
-//             database_id.clone(),
-//             table_1.into(),
-//             "ex::1".into(),
-//             value1.clone(),
-//         )
-//         .await;
-
-//     assert_eq!(res1, Ok("ex::1".to_string()));
-
-//     // insert one item
-
-//     let insert_one_res = db_service
-//         .insert_one_item(
-//             database_id.clone(),
-//             table_2.into(),
-//             "ex::5".into(),
-//             json!({
-//                 "array_item": ["h", "e", "l", "l", "o"],
-//                 "obj_item": {
-//                     "a": 10,
-//                     "b": "hel",
-//                 }
-//             })
-//             .to_string(),
-//         )
-//         .await;
-
-//     dbg!(&insert_one_res);
-//     println!("Inserted key: {:?}", insert_one_res);
-
-//     // TODO
-//     // // get table names
-//     // assert_eq!(
-//     //     db._table_names(),
-//     //     Ok(vec!["table_1".to_string(), "table_2_auto_key".to_string()])
-//     // );
-
-//     // find
-
-//     let find_res = db_service
-//         .find_item(
-//             database_id.clone(),
-//             table_1.into(),
-//             KeyFilter::Prefix("".into()),
-//             json!({
-//                 "num_item": { "$lt": 5 },
-//                 "array_item": [2, 3]
-//             })
-//             .try_into()
-//             .unwrap(),
-//         )
-//         .await
-//         .unwrap();
-
-//     dbg!(&find_res);
-//     assert_eq!(find_res[0].0, "ex::1".to_string());
-//     assert_eq!(find_res[0].1, value1);
-
-//     // update
-
-//     let update_res = db_service
-//         .update_item(
-//             database_id.clone(),
-//             table_1.into(),
-//             KeyFilter::Exact("ex::1".into()),
-//             json!({
-//                 "num_item": 1
-//             })
-//             .try_into()
-//             .unwrap(),
-//             json!({
-//                 "$set": { "array_item.0": 10 },
-//                 "$inc": { "array_item.1": 5 },
-//             })
-//             .try_into()
-//             .unwrap(),
-//         )
-//         .await;
-
-//     dbg!(&update_res);
-//     assert_eq!(update_res.unwrap().len(), 1);
-
-//     // concurrent db access (find/update) test
-
-//     let mut handles = vec![];
-//     (0..10).for_each(|_| {
-//         let db_service_clone = db_service.clone();
-//         let db_id_clone = database_id.clone();
-//         let handle = ::tokio::spawn(async move {
-//             find_and_update_again(&db_service_clone, &db_id_clone, table_1).await
-//         });
-//         handles.push(handle);
-//     });
-
-//     for handle in handles {
-//         handle.await.unwrap().unwrap();
-//     }
-
-//     // delete
-
-//     let del_res = db_service
-//         .delete_item(
-//             database_id.clone(),
-//             table_2.into(),
-//             KeyFilter::Prefix("".into()),
-//             json!({
-//                 "obj_item": { "a": 10 }
-//             })
-//             .try_into()
-//             .unwrap(),
-//         )
-//         .await;
-
-//     dbg!(&del_res);
-//     assert_eq!(del_res.unwrap().len(), 1);
-
-//     // delete table 1
-
-//     let res = db_service
-//         .delete_table(database_id.clone(), table_1.into())
-//         .await;
-
-//     assert_eq!(
-//         res,
-//         Ok(Some(TableDescription {
-//             table_name: "table_1".into(),
-//         }))
-//     );
-
-//     // delete table 2
-
-//     let res = db_service
-//         .delete_table(database_id.clone(), table_2.into())
-//         .await;
-
-//     assert_eq!(
-//         res,
-//         Ok(Some(TableDescription {
-//             table_name: "table_2".into(),
-//         }))
-//     );
-
-//     // drop db
-//     db_service.drop_db(&database_id).await.unwrap();
-// }

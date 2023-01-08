@@ -34,18 +34,18 @@ fn download_and_extract_file(url: String, dest: &str, file_name: &str) -> Result
 }
 
 fn main() {
-    // println!("cargo:rerun-if-changed=assets/pd-server-6.4.0");
+    println!("cargo:rerun-if-changed=assets/pd-server-6.4.0");
     println!("cargo:rustc-env=TIKV_VERSION={TIKV_VERSION}");
-    // let pd_url = format!("http://0.0.0.0:8080/pd-v{TIKV_VERSION}-linux-amd64.tar.gz");
-    // let tikv_url = format!("http://0.0.0.0:8080/tikv-v{TIKV_VERSION}-linux-amd64.tar.gz");
-    // // let pd_url = format!("https://tiup-mirrors.pingcap.com/pd-v{TIKV_VERSION}-linux-amd64.tar.gz");
-    // // let tikv_url =
-    // //     format!("https://tiup-mirrors.pingcap.com/tikv-v{TIKV_VERSION}-linux-amd64.tar.gz");
+    let pd_url = format!("http://0.0.0.0:8080/pd-v{TIKV_VERSION}-linux-amd64.tar.gz");
+    let tikv_url = format!("http://0.0.0.0:8080/tikv-v{TIKV_VERSION}-linux-amd64.tar.gz");
+    // let pd_url = format!("https://tiup-mirrors.pingcap.com/pd-v{TIKV_VERSION}-linux-amd64.tar.gz");
+    // let tikv_url =
+    //     format!("https://tiup-mirrors.pingcap.com/tikv-v{TIKV_VERSION}-linux-amd64.tar.gz");
 
-    // download_and_extract_file(pd_url, "assets", "pd-server").unwrap();
-    // download_and_extract_file(tikv_url, "assets", "tikv-server").unwrap();
+    download_and_extract_file(pd_url, "assets", "pd-server").unwrap();
+    download_and_extract_file(tikv_url, "assets", "tikv-server").unwrap();
 
-    // println!("build script ran");
+    println!("build script ran");
     protobuf_codegen::Codegen::new()
         .protoc()
         .protoc_path(&protoc_bin_vendored::protoc_bin_path().unwrap())

@@ -7,6 +7,8 @@ use crate::network::{gossip::KnownNodeConfig, NodeAddress};
 use async_trait::async_trait;
 use mu_stack::StackID;
 use tikv_client::{self, KvPair, RawClient, Value};
+// TODO: remove this
+use tokio::time::{sleep, Duration};
 
 // TODO: consider caching
 // stacks_and_tables: HashMap<StackID, Vec<TableName>>,
@@ -16,7 +18,6 @@ pub struct DbImpl {
     tikv_runner: Option<Box<dyn TikvRunner>>,
 }
 
-// stop cluster
 impl DbImpl {
     fn atomic_or_not(&self, is_atomic: bool) -> Self {
         if is_atomic {
@@ -43,10 +44,26 @@ impl DbNewWithEmbedCluster for DbImpl {
         known_node_config: Vec<KnownNodeConfig>,
         config: TikvRunnerConfig,
     ) -> Result<Self> {
-        Ok(Self {
-            inner: RawClient::new(vec![config.pd.client_url.clone()]).await?,
-            tikv_runner: Some(start(node_address, known_node_config, config).await?),
-        })
+        let x = start(node_address, known_node_config, config.clone()).await?;
+        let mut y = RawClient::new(vec![config.pd.client_url.clone()]).await;
+        let mut i = 0;
+        while y.is_err() && i < 10 {
+            sleep(Duration::from_millis(5000)).await;
+            y = RawClient::new(vec![config.pd.client_url.clone()]).await;
+            i += 1;
+        }
+        if let Ok(yp) = y {
+            Ok(Self {
+                inner: yp,
+                tikv_runner: Some(x),
+            })
+        } else {
+            x.stop().await?;
+            Err(Error::TikvConnectionTimeout(format!(
+                "{}",
+                y.map(|_| String::default()).unwrap_err()
+            )))
+        }
     }
 
     async fn stop_embed_cluster(&self) -> Result<()> {
