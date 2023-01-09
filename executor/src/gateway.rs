@@ -12,7 +12,7 @@ use dyn_clonable::clonable;
 use log::{debug, error, trace};
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel, RequestReplyChannel};
 use mu_stack::{Gateway, HttpMethod, StackID};
-use musdk_common::{Header, Request, Response};
+use musdk_common::{status::Status, Header, Request, Response};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use tokio::sync::{mpsc, RwLock};
@@ -304,36 +304,27 @@ struct ResponseWrapper(Response<'static>);
 
 impl ResponseWrapper {
     fn bad_request(description: &str) -> Self {
-        Self(Response {
-            status: StatusCode::BAD_REQUEST.as_u16(),
-            headers: vec![Header {
-                name: Cow::Borrowed(http::header::CONTENT_TYPE.as_str()),
-                value: Cow::Borrowed("text/plain; charset=utf-8"),
-            }],
-            body: Cow::Owned(description.into()),
-        })
+        Self(
+            Response::build()
+                .status(Status::BadRequest)
+                .body_from_vec(description.as_bytes().to_vec()),
+        )
     }
 
     fn not_found() -> Self {
-        Self(Response {
-            status: StatusCode::NOT_FOUND.as_u16(),
-            headers: vec![Header {
-                name: Cow::Borrowed(http::header::CONTENT_TYPE.as_str()),
-                value: Cow::Borrowed("text/plain; charset=utf-8"),
-            }],
-            body: Cow::Borrowed(b"not found"),
-        })
+        Self(
+            Response::build()
+                .status(Status::NotFound)
+                .body_from_slice(Status::NotFound.reason().unwrap().as_bytes()),
+        )
     }
 
     fn internal_error(description: &str) -> Self {
-        Self(Response {
-            status: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
-            headers: vec![Header {
-                name: Cow::Borrowed(http::header::CONTENT_TYPE.as_str()),
-                value: Cow::Borrowed("text/plain; charset=utf-8"),
-            }],
-            body: Cow::Owned(description.into()),
-        })
+        Self(
+            Response::build()
+                .status(Status::InternalServerError)
+                .body_from_vec(description.as_bytes().to_vec()),
+        )
     }
 }
 
@@ -342,7 +333,7 @@ impl Responder for ResponseWrapper {
 
     #[allow(clippy::only_used_in_recursion)] // not our choice to pass this param, it's in the trait
     fn respond_to(self, req: &HttpRequest) -> actix_web::HttpResponse<Self::Body> {
-        let Ok(status) = StatusCode::from_u16(self.0.status) else {
+        let Ok(status) = StatusCode::from_u16(self.0.status.code) else {
             return Self::internal_error("Invalid status code received from user function").respond_to(req);
         };
 
