@@ -22,7 +22,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 [[package]]
 name = "borsh"
 version = "0.0.0"
-source = "git+https://github.com/near/borsh-rs/?rev=67448a3000926ff6ad10e6cdcaf47dadd692c78f#67448a3000926ff6ad10e6cdcaf47dadd692c78f"
+source = "git+https://github.com/near/borsh-rs?rev=e82b47bdc14f65d464e9efa1237195a6b9770830#e82b47bdc14f65d464e9efa1237195a6b9770830"
 dependencies = [
  "borsh-derive",
  "hashbrown",
@@ -31,7 +31,7 @@ dependencies = [
 [[package]]
 name = "borsh-derive"
 version = "0.0.0"
-source = "git+https://github.com/near/borsh-rs/?rev=67448a3000926ff6ad10e6cdcaf47dadd692c78f#67448a3000926ff6ad10e6cdcaf47dadd692c78f"
+source = "git+https://github.com/near/borsh-rs?rev=e82b47bdc14f65d464e9efa1237195a6b9770830#e82b47bdc14f65d464e9efa1237195a6b9770830"
 dependencies = [
  "borsh-derive-internal",
  "borsh-schema-derive-internal",
@@ -43,7 +43,7 @@ dependencies = [
 [[package]]
 name = "borsh-derive-internal"
 version = "0.0.0"
-source = "git+https://github.com/near/borsh-rs/?rev=67448a3000926ff6ad10e6cdcaf47dadd692c78f#67448a3000926ff6ad10e6cdcaf47dadd692c78f"
+source = "git+https://github.com/near/borsh-rs?rev=e82b47bdc14f65d464e9efa1237195a6b9770830#e82b47bdc14f65d464e9efa1237195a6b9770830"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -53,7 +53,7 @@ dependencies = [
 [[package]]
 name = "borsh-schema-derive-internal"
 version = "0.0.0"
-source = "git+https://github.com/near/borsh-rs/?rev=67448a3000926ff6ad10e6cdcaf47dadd692c78f#67448a3000926ff6ad10e6cdcaf47dadd692c78f"
+source = "git+https://github.com/near/borsh-rs?rev=e82b47bdc14f65d464e9efa1237195a6b9770830#e82b47bdc14f65d464e9efa1237195a6b9770830"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -142,9 +142,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.16.0"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86f0b0d4bf799edbc74508c1e8bf170ff5f41238e5f8225603ca7caaae2b7860"
+checksum = "6f61fba1741ea2b3d6a1e3178721804bb716a68a6aeba1149b5d52e3d464ea66"
 
 [[package]]
 name = "proc-macro-crate"

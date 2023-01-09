@@ -41,7 +41,6 @@ stable-hash = "0.4"
 num = "0.4"
 dyn-clone = "1.0"
 dyn-clonable = "0.9"
-rocket = "0.5.0-rc.2"
 reqwest = "0.11"
 sled = "0.34"
 assert_matches = "1.5"
@@ -59,6 +58,7 @@ spl-token = "3.5"
 chrono = "0.4"
 byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
 protobuf = "3.2"
+actix-web = "4.2"
 musdk-common = { path = "../sdk/common" }
 
 [dev-dependencies]

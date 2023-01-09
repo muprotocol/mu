@@ -55,7 +55,7 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 [[package]]
 name = "borsh"
 version = "0.0.0"
-source = "git+https://github.com/near/borsh-rs/?rev=67448a3000926ff6ad10e6cdcaf47dadd692c78f#67448a3000926ff6ad10e6cdcaf47dadd692c78f"
+source = "git+https://github.com/near/borsh-rs?rev=e82b47bdc14f65d464e9efa1237195a6b9770830#e82b47bdc14f65d464e9efa1237195a6b9770830"
 dependencies = [
  "borsh-derive",
  "hashbrown 0.11.2",
@@ -64,7 +64,7 @@ dependencies = [
 [[package]]
 name = "borsh-derive"
 version = "0.0.0"
-source = "git+https://github.com/near/borsh-rs/?rev=67448a3000926ff6ad10e6cdcaf47dadd692c78f#67448a3000926ff6ad10e6cdcaf47dadd692c78f"
+source = "git+https://github.com/near/borsh-rs?rev=e82b47bdc14f65d464e9efa1237195a6b9770830#e82b47bdc14f65d464e9efa1237195a6b9770830"
 dependencies = [
  "borsh-derive-internal",
  "borsh-schema-derive-internal",
@@ -76,7 +76,7 @@ dependencies = [
 [[package]]
 name = "borsh-derive-internal"
 version = "0.0.0"
-source = "git+https://github.com/near/borsh-rs/?rev=67448a3000926ff6ad10e6cdcaf47dadd692c78f#67448a3000926ff6ad10e6cdcaf47dadd692c78f"
+source = "git+https://github.com/near/borsh-rs?rev=e82b47bdc14f65d464e9efa1237195a6b9770830#e82b47bdc14f65d464e9efa1237195a6b9770830"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -86,7 +86,7 @@ dependencies = [
 [[package]]
 name = "borsh-schema-derive-internal"
 version = "0.0.0"
-source = "git+https://github.com/near/borsh-rs/?rev=67448a3000926ff6ad10e6cdcaf47dadd692c78f#67448a3000926ff6ad10e6cdcaf47dadd692c78f"
+source = "git+https://github.com/near/borsh-rs?rev=e82b47bdc14f65d464e9efa1237195a6b9770830#e82b47bdc14f65d464e9efa1237195a6b9770830"
 dependencies = [
  "proc-macro2",
  "quote",
