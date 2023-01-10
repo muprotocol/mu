@@ -316,7 +316,7 @@ mod test {
                 data_dir: "./pd_test_dir".into(),
                 log_file: None,
             },
-            tikv: TikvConfig {
+            node: TikvConfig {
                 cluster_url: IpAndPort {
                     address: local_host.clone(),
                     port: 20160,
