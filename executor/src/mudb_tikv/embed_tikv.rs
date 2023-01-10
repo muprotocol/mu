@@ -16,6 +16,9 @@ use std::{
 use tokio::{fs::File, io::AsyncWriteExt};
 
 use crate::network::{gossip::KnownNodeConfig, NodeAddress};
+use log::error;
+use nix::sys::signal::{self, Signal};
+use nix::unistd::Pid;
 
 #[derive(RustEmbed)]
 #[folder = "assets"]
@@ -92,7 +95,7 @@ pub struct TikvConfig {
 #[derive(Deserialize, Clone)]
 pub struct TikvRunnerConfig {
     pub pd: PdConfig,
-    pub tikv: TikvConfig,
+    pub node: TikvConfig,
 }
 
 #[async_trait]
@@ -109,14 +112,14 @@ struct TikvRunnerArgs {
 
 enum Node<'a> {
     Known(&'a KnownNodeConfig),
-    Node(&'a NodeAddress),
+    Address(&'a NodeAddress),
 }
 
 fn generate_pd_name(node: Node<'_>) -> String {
     const PD_PREFIX: &str = "pd_node_";
     match node {
-        Node::Known(n) => format!("{PD_PREFIX}{}_{}", n.ip, n.gossip_port),
-        Node::Node(n) => format!("{PD_PREFIX}{}_{}", n.address, n.port),
+        Node::Known(n) => format!("{PD_PREFIX}{}_{}", n.address, n.gossip_port),
+        Node::Address(n) => format!("{PD_PREFIX}{}_{}", n.address, n.port),
     }
 }
 
@@ -129,11 +132,11 @@ fn generate_arguments(
         .into_iter()
         .map(|node| {
             let name = generate_pd_name(Node::Known(&node));
-            format!("{name}=http://{}:{}", node.ip, node.pd_port)
+            format!("{name}=http://{}:{}", node.address, node.pd_port)
         })
         .collect::<Vec<String>>();
 
-    let pd_name = generate_pd_name(Node::Node(&node_address));
+    let pd_name = generate_pd_name(Node::Address(&node_address));
 
     initial_cluster.insert(
         0,
@@ -170,12 +173,12 @@ fn generate_arguments(
         ),
         format!(
             "--addr={}:{}",
-            config.tikv.cluster_url.address, config.tikv.cluster_url.port
+            config.node.cluster_url.address, config.node.cluster_url.port
         ),
-        format!("--data-dir={}", config.tikv.data_dir),
+        format!("--data-dir={}", config.node.data_dir),
     ];
 
-    if let Some(log_file) = config.tikv.log_file {
+    if let Some(log_file) = config.node.log_file {
         tikv_args.push(format!("--log-file={log_file}"))
     }
 
@@ -248,13 +251,27 @@ struct TikvRunnerState {
 async fn step(
     _mb: CallbackMailboxProcessor<Message>,
     msg: Message,
-    mut state: TikvRunnerState,
+    state: TikvRunnerState,
 ) -> TikvRunnerState {
     match msg {
         Message::Stop => {
-            // TODO: consider handle results
-            let _ = state.pd_process.kill();
-            let _ = state.tikv_process.kill();
+            let pd_kill = signal::kill(
+                Pid::from_raw(state.pd_process.id().try_into().unwrap()),
+                Signal::SIGTERM,
+            );
+
+            if let Err(f) = pd_kill {
+                error!("failed to kill pd_process due to: {f}")
+            }
+
+            let tikv_kill = signal::kill(
+                Pid::from_raw(state.tikv_process.id().try_into().unwrap()),
+                Signal::SIGTERM,
+            );
+
+            if let Err(f) = tikv_kill {
+                error!("failed to kill tikv_process due to: {f}")
+            }
         }
     }
     state
@@ -276,12 +293,12 @@ mod test {
         };
         let known_node_conf = vec![
             KnownNodeConfig {
-                ip: local_host.clone(),
+                address: local_host.clone(),
                 gossip_port: 2801,
                 pd_port: 2381,
             },
             KnownNodeConfig {
-                ip: local_host.clone(),
+                address: local_host.clone(),
                 gossip_port: 2802,
                 pd_port: 2383,
             },

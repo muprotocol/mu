@@ -42,17 +42,19 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("gossip.max_peers", "6"),
         ("gossip.peer_update_interval", "10s"),
         ("gossip.liveness_check_interval", "1s"),
-        ("initial_cluster.ip", "127.0.0.1"),
+        ("initial_cluster.ip", "0.0.0.0"),
         ("initial_cluster.gossip_port", "12012"),
         ("initial_cluster.pd_port", "12012"),
-        ("tikv.pd.data_dir", "pd1"),
-        ("tikv.pd.peer_url.address", "127.0.0.1"),
+        ("tikv.pd.data_dir", "/var/lib/mu-executor/pd-data/"),
+        ("tikv.pd.peer_url.address", "0.0.0.0"),
         ("tikv.pd.peer_url.port", "8000"),
-        ("tikv.pd.client_url.address", "127.0.0.1"),
+        ("tikv.pd.client_url.address", "0.0.0.0"),
         ("tikv.pd.client_url.port", "8001"),
-        ("tikv.node.cluster_url.address", "127.0.0.1"),
-        ("tikv.node.cluster_url.port", "8000"),
-        ("tikv.node.data_dir", "tikv1"),
+        ("tikv.pd.log_file", "/var/log/mu-executor/pd-server"),
+        ("tikv.node.cluster_url.address", "0.0.0.0"),
+        ("tikv.node.cluster_url.port", "8002"),
+        ("tikv.node.data_dir", "/var/lib/mu-executor/tikv-data/"),
+        ("tikv.node.log_file", "/var/log/mu-executor/tikv-server"),
         ("gateway_manager.listen_ip", "0.0.0.0"),
         ("gateway_manager.listen_port", "12012"),
         ("scheduler.tick_interval", "1s"),
@@ -110,7 +112,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
 
     let gossip_config = config.get("gossip").context("Invalid gossip config")?;
 
-    let tikv_config: TikvRunnerConfig = config.get("tikv").context("Invalid tikv_runner config")?;
+    let initial_cluster_config = config.get("tikv").context("Invalid tikv_runner config")?;
 
     let known_node_config: Vec<KnownNodeConfig> = config
         .get("initial_cluster")
@@ -140,7 +142,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
         connection_manager_config,
         gossip_config,
         known_node_config,
-        tikv_config,
+        initial_cluster_config,
         gateway_config,
         log_config,
         runtime_config,
