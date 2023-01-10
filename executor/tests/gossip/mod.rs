@@ -43,6 +43,7 @@ async fn test_node_discovery() {
                     config.clone(),
                     vec![],
                     channel,
+                    vec![1],
                 )
                 .expect("Failed to start gossip"),
                 rx,
@@ -76,6 +77,7 @@ async fn test_node_discovery() {
                         })
                         .collect(),
                     channel,
+                    vec![1],
                 )
                 .expect("Failed to start gossip"),
                 rx,

@@ -6,7 +6,7 @@ use protobuf::{EnumOrUnknown, MessageField};
 
 use crate::runtime::{self, types::AssemblyID};
 
-include!(concat!(env!("OUT_DIR"), "/protos/mod.rs"));
+include!(concat!(env!("OUT_DIR"), "/protos/rpc/mod.rs"));
 
 impl From<runtime::types::FunctionID> for rpc::FunctionID {
     fn from(id: runtime::types::FunctionID) -> Self {

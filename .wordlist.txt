@@ -16,6 +16,8 @@ funcs
 Hasher
 hashkey
 idgen
+ipaddress
+itertools
 keygen
 keypair
 keypairs
