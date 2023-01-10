@@ -7,10 +7,9 @@ use crate::network::{gossip::KnownNodeConfig, NodeAddress};
 use async_trait::async_trait;
 use mu_stack::StackID;
 use tikv_client::{self, KvPair, RawClient, Value};
-// TODO: remove this
 use tokio::time::{sleep, Duration};
 
-// TODO: consider caching
+// TODO: caching
 // stacks_and_tables: HashMap<StackID, Vec<TableName>>,
 #[derive(Clone)]
 pub struct DbImpl {
@@ -19,7 +18,48 @@ pub struct DbImpl {
 }
 
 impl DbImpl {
-    fn atomic_or_not(&self, is_atomic: bool) -> Self {
+    pub async fn new_with_embedded_cluster(
+        node_address: NodeAddress,
+        known_node_config: Vec<KnownNodeConfig>,
+        config: TikvRunnerConfig,
+    ) -> Result<Self> {
+        let x = start(node_address, known_node_config, config.clone()).await?;
+        let mut y = RawClient::new(vec![config.pd.client_url.clone()]).await;
+        let mut i = 0;
+        while y.is_err() && i < 7 {
+            sleep(Duration::from_millis((i + 1) * 1000)).await;
+            y = RawClient::new(vec![config.pd.client_url.clone()]).await;
+            i += 1;
+        }
+        if let Ok(yp) = y {
+            Ok(Self {
+                inner: yp,
+                tikv_runner: Some(x),
+            })
+        } else {
+            x.stop().await?;
+            Err(Error::TikvConnectionTimeout(format!(
+                "{}",
+                y.map(|_| String::default()).unwrap_err()
+            )))
+        }
+    }
+
+    pub async fn new_with_external_cluster(endpoints: Vec<IpAndPort>) -> Result<Self> {
+        Ok(Self {
+            inner: RawClient::new(endpoints).await?,
+            tikv_runner: None,
+        })
+    }
+
+    pub async fn stop_embed_cluster(&self) -> Result<()> {
+        match &self.tikv_runner {
+            Some(r) => r.stop().await,
+            None => Ok(()),
+        }
+    }
+
+    fn make_atomic_or_do_nothing(&self, is_atomic: bool) -> Self {
         if is_atomic {
             Self {
                 inner: self.inner.with_atomic_for_cas(),
@@ -38,63 +78,16 @@ impl DbImpl {
 }
 
 #[async_trait]
-impl DbNewWithEmbedCluster for DbImpl {
-    async fn new_with_embed_cluster(
-        node_address: NodeAddress,
-        known_node_config: Vec<KnownNodeConfig>,
-        config: TikvRunnerConfig,
-    ) -> Result<Self> {
-        let x = start(node_address, known_node_config, config.clone()).await?;
-        let mut y = RawClient::new(vec![config.pd.client_url.clone()]).await;
-        let mut i = 0;
-        while y.is_err() && i < 10 {
-            sleep(Duration::from_millis(5000)).await;
-            y = RawClient::new(vec![config.pd.client_url.clone()]).await;
-            i += 1;
-        }
-        if let Ok(yp) = y {
-            Ok(Self {
-                inner: yp,
-                tikv_runner: Some(x),
-            })
-        } else {
-            x.stop().await?;
-            Err(Error::TikvConnectionTimeout(format!(
-                "{}",
-                y.map(|_| String::default()).unwrap_err()
-            )))
-        }
-    }
-
-    async fn stop_embed_cluster(&self) -> Result<()> {
-        match &self.tikv_runner {
-            Some(r) => r.stop().await,
-            None => Ok(()),
-        }
-    }
-}
-
-#[async_trait]
-impl DbNewWithoutEmbedCluster for DbImpl {
-    async fn new_without_embed_cluster(endpoints: Vec<IpAndPort>) -> Result<Self> {
-        Ok(Self {
-            inner: RawClient::new(endpoints).await?,
-            tikv_runner: None,
-        })
-    }
-}
-
-#[async_trait]
 impl Db for DbImpl {
     async fn put_stack_manifest(
         &self,
         stack_id: StackID,
         table_list: Vec<TableName>,
     ) -> Result<()> {
-        let s = TableListScan::ByAb(TABLE_LIST.into(), stack_id);
+        let s = ScanTableList::ByStackID(stack_id);
         self.inner.delete_range(s).await?;
         let kvs = table_list.into_iter().map(|t| {
-            let k = make_table_list_key(stack_id, t);
+            let k = TableListKey::new(stack_id, t);
             let v = "";
             (k, v)
         });
@@ -102,10 +95,10 @@ impl Db for DbImpl {
     }
 
     async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()> {
-        let k = make_table_list_key(key.stack_id, key.table_name.clone());
+        let k = TableListKey::new(key.stack_id, key.table_name.clone());
         match self.inner.get(k).await? {
             Some(_) => self
-                .atomic_or_not(is_atomic)
+                .make_atomic_or_do_nothing(is_atomic)
                 .inner
                 .put(key, value)
                 .await
@@ -119,7 +112,7 @@ impl Db for DbImpl {
     }
 
     async fn delete(&self, key: Key, is_atomic: bool) -> Result<()> {
-        self.atomic_or_not(is_atomic)
+        self.make_atomic_or_do_nothing(is_atomic)
             .inner
             .delete(key)
             .await
@@ -147,7 +140,7 @@ impl Db for DbImpl {
             .scan(scan, limit)
             .await?
             .into_iter()
-            .map(kvpair_to_tuple)
+            .map(|kv| kvpair_to_tuple(kv).unwrap())
             .collect())
     }
 
@@ -167,10 +160,8 @@ impl Db for DbImpl {
         table_name_prefix: Option<TableName>,
     ) -> Result<Vec<TableName>> {
         let scan = match table_name_prefix {
-            Some(prefix) => {
-                TableListScan::ByAbCPrefix(StringKeysPart::from(TABLE_LIST), stack_id, prefix)
-            }
-            None => TableListScan::ByAb(StringKeysPart::from(TABLE_LIST), stack_id),
+            Some(prefix) => ScanTableList::ByTableNamePrefix(stack_id, prefix),
+            None => ScanTableList::ByStackID(stack_id),
         };
         Ok(self
             .inner
@@ -178,19 +169,19 @@ impl Db for DbImpl {
             .await?
             .into_iter()
             .map(|k| TableListKey::try_from(k).unwrap())
-            .map(|k| k.c)
+            .map(|k| k.table_name)
             .collect())
     }
 
     async fn stack_id_list(&self) -> Result<Vec<StackID>> {
-        let scan = TableListScan::ByA(TABLE_LIST.into());
+        let scan = ScanTableList::Whole;
         Ok(self
             .inner
             .scan_keys(scan, 32)
             .await?
             .into_iter()
             .map(|k| TableListKey::try_from(k).unwrap())
-            .map(|k| k.b)
+            .map(|k| k.stack_id)
             .collect())
     }
 
@@ -210,7 +201,7 @@ impl Db for DbImpl {
             .batch_get(keys)
             .await?
             .into_iter()
-            .map(kvpair_to_tuple)
+            .map(|kv| kvpair_to_tuple(kv).unwrap())
             .collect())
     }
 
@@ -218,7 +209,7 @@ impl Db for DbImpl {
     where
         P: IntoIterator<Item = (Key, Value)> + Send,
     {
-        self.atomic_or_not(is_atomic)
+        self.make_atomic_or_do_nothing(is_atomic)
             .inner
             .batch_put(pairs)
             .await
@@ -234,7 +225,7 @@ impl Db for DbImpl {
             .batch_scan(scanes, each_limit)
             .await?
             .into_iter()
-            .map(kvpair_to_tuple)
+            .map(|kv| kvpair_to_tuple(kv).unwrap())
             .collect())
     }
 
@@ -265,15 +256,6 @@ impl Db for DbImpl {
     }
 }
 
-fn make_table_list_key(stack_id: StackID, table_name: TableName) -> TableListKey {
-    TableListKey {
-        a: StringKeysPart::from(TABLE_LIST),
-        b: stack_id,
-        c: table_name,
-    }
-}
-
-/// Just use it for Key or AbcKey<StackID, TableName, Blob> otherwise maybe panic
-fn kvpair_to_tuple(kv: KvPair) -> (Key, Value) {
-    (kv.key().clone().try_into().unwrap(), kv.into_value())
+fn kvpair_to_tuple(kv: KvPair) -> std::result::Result<(Key, Value), String> {
+    Ok((kv.key().clone().try_into()?, kv.into_value()))
 }

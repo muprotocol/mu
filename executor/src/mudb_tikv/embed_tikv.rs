@@ -99,7 +99,6 @@ pub struct TikvRunnerConfig {
 #[clonable]
 pub trait TikvRunner: Clone + Send + Sync {
     async fn stop(&self) -> Result<()>;
-    // async fn is_tikv_ready(&self) -> Result<bool>;
 }
 
 struct TikvRunnerArgs {

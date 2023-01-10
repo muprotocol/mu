@@ -1,205 +1,130 @@
-use super::{error::Result, TikvRunnerConfig};
-use crate::network::{gossip::KnownNodeConfig, NodeAddress};
+use super::error::Result;
 use async_trait::async_trait;
 use mu_stack::StackID;
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 use std::ops::Deref;
-use std::{any::type_name, net::IpAddr};
-use tikv_client::{BoundRange, Value};
+use tikv_client::{BoundRange, Key as TikvKey, Value};
 
 // TODO: add constraint to Key (actually key.stack_id) to avoid this name
 // TODO: rename it
 pub const TABLE_LIST: &str = "__tl";
 
 pub type Blob = Vec<u8>;
-pub trait KeysPart: Into<Blob> + TryFrom<Blob> + PartialEq + Clone + Send {}
-impl<T> KeysPart for T where T: Into<Blob> + TryFrom<Blob> + PartialEq + Clone + Send {}
 
-// === Abc Key ===
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct AbcKey<A, B, C>
-where
-    A: KeysPart,
-    B: KeysPart,
-    C: KeysPart,
-{
-    pub a: A,
-    pub b: B,
-    pub c: C,
+fn tikv_key_from_3_chunk(mut first: Blob, mut second: Blob, mut third: Blob) -> TikvKey {
+    let mut x: Blob = vec![];
+    // TODO: consider 255 max size
+    x.push(first.len() as u8);
+    x.append(&mut first);
+    // TODO: consider 255 max size
+    x.push(second.len() as u8);
+    x.append(&mut second);
+    x.append(&mut third);
+    x.into()
 }
 
-// TODO : change it to TryFrom due to below consideration
-impl<A, B, C> From<AbcKey<A, B, C>> for tikv_client::Key
-where
-    A: KeysPart,
-    B: KeysPart,
-    C: KeysPart,
-{
-    fn from(key: AbcKey<A, B, C>) -> Self {
-        let mut si: Blob = key.a.into();
-        let mut tn: Blob = key.b.into();
-        let mut ik: Blob = key.c.into();
+fn three_chunk_try_from_tikv_key(
+    value: tikv_client::Key,
+) -> std::result::Result<(Blob, Blob, Blob), String> {
+    let e = "Insufficient blobs to convert to Key";
+    let blob: Blob = value.into();
+    let (a_size, r) = blob.split_first().ok_or_else(|| e.to_string())?;
+    let a_size = *a_size as usize;
+    if r.len() < a_size {
+        return Err(e.into());
+    }
+    let (a, r) = r.split_at(a_size);
+    let (b_size, r) = r.split_first().ok_or_else(|| e.to_string())?;
+    let b_size = *b_size as usize;
+    if r.len() < b_size {
+        return Err(e.into());
+    }
+    let (b, c) = r.split_at(b_size);
 
-        let mut x: Blob = vec![];
-        // TODO: consider 255 max size
-        x.push(si.len() as u8);
-        x.append(&mut si);
-        // TODO: consider 255 max size
-        x.push(tn.len() as u8);
-        x.append(&mut tn);
-        x.append(&mut ik);
-        x.into()
+    Ok((a.into(), b.into(), c.into()))
+}
+
+pub struct TableListKey {
+    table_list: String,
+    pub stack_id: StackID,
+    pub table_name: TableName,
+}
+
+impl TableListKey {
+    pub fn new(stack_id: StackID, table_name: TableName) -> Self {
+        Self {
+            table_list: TABLE_LIST.into(),
+            stack_id,
+            table_name,
+        }
+    }
+
+    pub fn table_list(&self) -> String {
+        self.table_list.clone()
     }
 }
 
-impl<A, B, C> TryFrom<tikv_client::Key> for AbcKey<A, B, C>
-where
-    A: KeysPart,
-    B: KeysPart,
-    C: KeysPart,
-{
+impl From<TableListKey> for tikv_client::Key {
+    fn from(k: TableListKey) -> Self {
+        let first = k.table_list.into();
+        let second = k.stack_id.get_bytes().clone().into();
+        let third = k.table_name.into();
+        tikv_key_from_3_chunk(first, second, third)
+    }
+}
+
+impl TryFrom<tikv_client::Key> for TableListKey {
     type Error = String;
     fn try_from(value: tikv_client::Key) -> std::result::Result<Self, Self::Error> {
-        let e = "Insufficient blobs to convert to Key".to_string();
-        let blob: Blob = value.into();
-        let (a_size, r) = blob.split_first().ok_or_else(|| e.clone())?;
-        let a_size = *a_size as usize;
-        if r.len() < a_size {
-            return Err(e);
-        }
-        let (a, r) = r.split_at(a_size);
-        let (b_size, r) = r.split_at(1);
-        let b_size = b_size[0] as usize;
-        if r.len() < b_size {
-            return Err(e);
-        }
-        let (b, c) = r.split_at(b_size);
-
+        let (a, b, c) = three_chunk_try_from_tikv_key(value)?;
         Ok(Self {
-            a: Vec::from(a)
-                .try_into()
-                .map_err(|_| format!("cant deserialize a to {}", type_name::<A>()))?,
-            b: Vec::from(b)
-                .try_into()
-                .map_err(|_| format!("cant deserialize b to {}", type_name::<B>()))?,
-            c: Vec::from(c)
-                .try_into()
-                .map_err(|_| format!("cant deserialize c to {}", type_name::<C>()))?,
+            table_list: String::from_utf8(a).map_err(|_| "cant deserialize a".to_string())?,
+            stack_id: b.try_into().map_err(|_| "cant deserialize b".to_string())?,
+            table_name: c.try_into().map_err(|_| "cant deserialize c".to_string())?,
         })
     }
 }
 
-pub type TableListKey = AbcKey<StringKeysPart, StackID, TableName>;
-
-// === Abc Scan ===
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AbcScan<A, B, C>
-where
-    A: KeysPart,
-    B: KeysPart,
-    C: KeysPart,
-{
-    ByA(A),
-    ByAb(A, B),
-    ByAbc(A, B, C),
-    ByAbCPrefix(A, B, C),
+fn prefixed_by_a_chunk_bound_range(mut chunk: Blob) -> BoundRange {
+    chunk.insert(0, chunk.len() as u8);
+    subset_range(chunk)
 }
-
-// TODO : change it to TryFrom due to below consideration
-impl<A, B, C> From<AbcScan<A, B, C>> for BoundRange
-where
-    A: KeysPart,
-    B: KeysPart,
-    C: KeysPart,
-{
-    fn from(s: AbcScan<A, B, C>) -> Self {
-        let prefixed_size = |mut x: Blob| {
-            let mut y = vec![];
-            // TODO: consider 255 max size
-            y.push(x.len() as u8);
-            y.append(&mut x);
-            y
-        };
-        match s {
-            AbcScan::ByA(a) => {
-                let from = prefixed_size(a.into());
-                subset_range(from)
-            }
-            AbcScan::ByAb(a, b) => {
-                let from = {
-                    let mut x = vec![];
-                    x.append(&mut prefixed_size(a.into()));
-                    x.append(&mut prefixed_size(b.into()));
-                    x
-                };
-                subset_range(from)
-            }
-            AbcScan::ByAbc(a, b, c) => {
-                let from = {
-                    let mut x = vec![];
-                    x.append(&mut prefixed_size(a.into()));
-                    x.append(&mut prefixed_size(b.into()));
-                    x.append(&mut c.into());
-                    x
-                };
-                single_item_range(from)
-            }
-            AbcScan::ByAbCPrefix(a, b, c) => {
-                let from = {
-                    let mut x = vec![];
-                    x.append(&mut prefixed_size(a.into()));
-                    x.append(&mut prefixed_size(b.into()));
-                    x.append(&mut c.into());
-                    x
-                };
-                subset_range(from)
-            }
-        }
-    }
+fn prefixed_by_two_chunk_bound_range(mut first: Blob, mut second: Blob) -> BoundRange {
+    first.insert(0, first.len() as u8);
+    second.insert(0, second.len() as u8);
+    first.append(&mut second);
+    subset_range(first)
 }
-
-pub type TableListScan = AbcScan<StringKeysPart, StackID, TableName>;
+fn prefixed_by_three_chunk_bound_range(
+    mut first: Blob,
+    mut second: Blob,
+    mut third: Blob,
+) -> BoundRange {
+    first.insert(0, first.len() as u8);
+    second.insert(0, second.len() as u8);
+    first.append(&mut second);
+    first.append(&mut third);
+    subset_range(first)
+}
 
 fn subset_range(from: Blob) -> BoundRange {
-    // TODO: remove old
-    // let from_p = {
-    //     let mut x = from.clone();
-    //     x.push(u8::MIN);
-    //     x
-    // };
-    // let to = {
-    //     let mut x = from;
-    //     x.push(u8::MAX);
-    //     x
-    // };
-
     if from.is_empty() {
         (..).into()
     } else {
         let to = {
-            let mut x: Blob = from
-                .clone()
-                .into_iter()
-                .rev()
-                .skip_while(|x| *x == 255)
-                .collect();
-            x.reverse();
-            if let Some(xp) = x.pop() {
-                x.push(xp + 1);
-                let mut y: Blob = from
-                    .iter()
-                    .rev()
-                    .take_while(|x| **x == 255)
-                    .map(|_| 0)
-                    .collect();
-                y.reverse();
-                x.append(&mut y);
-                Some(x)
-            } else {
-                None
+            let mut x = from.iter().rev().peekable();
+            let mut y = vec![];
+            while Some(&&u8::MAX) == x.peek() {
+                y.push(x.next().unwrap());
             }
+            x.next().map(|xp| {
+                x.rev()
+                    .map(ToOwned::to_owned)
+                    .chain([xp + 1].into_iter())
+                    .chain(y.into_iter().map(|_| 0).rev())
+                    .collect()
+            })
         };
         match to {
             Some(to) => (from..to).into(),
@@ -208,55 +133,49 @@ fn subset_range(from: Blob) -> BoundRange {
     }
 }
 
-fn single_item_range(item: Blob) -> BoundRange {
-    (item.clone()..=item).into()
-}
-
 // === TableName ===
 
+// TODO: max 255 byte, min 8 byte
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StringKeysPart(String);
+pub struct TableName(String);
 
-impl From<StringKeysPart> for String {
-    fn from(t: StringKeysPart) -> Self {
+impl From<TableName> for String {
+    fn from(t: TableName) -> Self {
         t.0
     }
 }
 
-impl From<StringKeysPart> for Blob {
-    fn from(t: StringKeysPart) -> Self {
+impl From<TableName> for Blob {
+    fn from(t: TableName) -> Self {
         t.0.into()
     }
 }
 
-impl TryFrom<Blob> for StringKeysPart {
+impl TryFrom<Blob> for TableName {
     type Error = String;
     fn try_from(blob: Blob) -> std::result::Result<Self, Self::Error> {
         Ok(Self(String::from_utf8(blob).map_err(|x| x.to_string())?))
     }
 }
 
-impl From<String> for StringKeysPart {
+impl From<String> for TableName {
     fn from(s: String) -> Self {
         Self(s)
     }
 }
 
-impl From<&str> for StringKeysPart {
+impl From<&str> for TableName {
     fn from(s: &str) -> Self {
         Self(s.into())
     }
 }
 
-impl Deref for StringKeysPart {
+impl Deref for TableName {
     type Target = String;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-
-// TODO: max 255 byte, min 8 byte
-pub type TableName = StringKeysPart;
 
 // === Key ===
 
@@ -268,61 +187,78 @@ pub struct Key {
     pub inner_key: Blob,
 }
 
-impl From<Key> for AbcKey<StackID, TableName, Blob> {
-    fn from(k: Key) -> Self {
-        Self {
-            a: k.stack_id,
-            b: k.table_name,
-            c: k.inner_key,
-        }
-    }
-}
-
-impl From<AbcKey<StackID, TableName, Blob>> for Key {
-    fn from(k: AbcKey<StackID, TableName, Blob>) -> Self {
-        Self {
-            stack_id: k.a,
-            table_name: k.b,
-            inner_key: k.c,
-        }
-    }
-}
-
 impl From<Key> for tikv_client::Key {
     fn from(k: Key) -> Self {
-        AbcKey::from(k).into()
+        let first = k.stack_id.get_bytes().clone().into();
+        let second = k.table_name.into();
+        let third = k.inner_key;
+        tikv_key_from_3_chunk(first, second, third)
     }
 }
 
 impl TryFrom<tikv_client::Key> for Key {
     type Error = String;
-    fn try_from(tik: tikv_client::Key) -> std::result::Result<Self, Self::Error> {
-        Ok(AbcKey::try_from(tik)?.into())
+    fn try_from(value: tikv_client::Key) -> std::result::Result<Self, Self::Error> {
+        let (a, b, c) = three_chunk_try_from_tikv_key(value)?;
+        Ok(Self {
+            stack_id: a
+                .try_into()
+                .map_err(|_| "cant deserialize a to stack_id".to_string())?,
+            table_name: b
+                .try_into()
+                .map_err(|_| "cant deserialize b to table_name".to_string())?,
+            inner_key: c.into(),
+        })
     }
 }
 
 // === Scan ===
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Scan {
-    ByTableName(StackID, TableName),
-    ByInnerKey(StackID, TableName, Blob),
-    ByInnerKeyPrefix(StackID, TableName, Blob),
+pub enum ScanTableList {
+    Whole,
+    ByStackID(StackID),
+    ByTableNamePrefix(StackID, TableName),
 }
 
-impl From<Scan> for AbcScan<StackID, TableName, Blob> {
-    fn from(s: Scan) -> Self {
+impl From<ScanTableList> for BoundRange {
+    fn from(s: ScanTableList) -> Self {
         match s {
-            Scan::ByTableName(a, b) => AbcScan::ByAb(a, b),
-            Scan::ByInnerKey(a, b, c) => AbcScan::ByAbc(a, b, c),
-            Scan::ByInnerKeyPrefix(a, b, c) => AbcScan::ByAbCPrefix(a, b, c),
+            ScanTableList::Whole => prefixed_by_a_chunk_bound_range(TABLE_LIST.into()),
+            ScanTableList::ByStackID(stackid) => prefixed_by_two_chunk_bound_range(
+                TABLE_LIST.into(),
+                stackid.get_bytes().to_owned().into(),
+            ),
+            ScanTableList::ByTableNamePrefix(stackid, tablename) => {
+                prefixed_by_three_chunk_bound_range(
+                    TABLE_LIST.into(),
+                    stackid.get_bytes().to_owned().into(),
+                    tablename.into(),
+                )
+            }
         }
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Scan {
+    ByTableName(StackID, TableName),
+    ByInnerKeyPrefix(StackID, TableName, Blob),
+}
+
 impl From<Scan> for BoundRange {
     fn from(s: Scan) -> Self {
-        AbcScan::from(s).into()
+        match s {
+            Scan::ByTableName(stackid, tablename) => prefixed_by_two_chunk_bound_range(
+                stackid.get_bytes().to_owned().into(),
+                tablename.into(),
+            ),
+            Scan::ByInnerKeyPrefix(stackid, tablename, key) => prefixed_by_three_chunk_bound_range(
+                stackid.get_bytes().to_owned().into(),
+                tablename.into(),
+                key,
+            ),
+        }
     }
 }
 
@@ -355,12 +291,6 @@ impl TryFrom<&str> for IpAndPort {
         }
     }
 }
-
-// impl From<String> for IpAndPort {
-//     fn from(value: String) -> Self {
-//         let (ip, port) = value.sp
-//     }
-// }
 
 #[async_trait]
 pub trait Db: Clone {
@@ -400,11 +330,11 @@ pub trait Db: Clone {
     where
         P: IntoIterator<Item = (Key, Value)> + Send;
 
-    async fn batch_scan<S>(&self, scanes: S, each_limit: u32) -> Result<Vec<(Key, Value)>>
+    async fn batch_scan<S>(&self, scans: S, each_limit: u32) -> Result<Vec<(Key, Value)>>
     where
         S: IntoIterator<Item = Scan> + Send;
 
-    async fn batch_scan_keys<S>(&self, scanes: S, each_limit: u32) -> Result<Vec<Key>>
+    async fn batch_scan_keys<S>(&self, scans: S, each_limit: u32) -> Result<Vec<Key>>
     where
         S: IntoIterator<Item = Scan> + Send;
 
@@ -414,23 +344,6 @@ pub trait Db: Clone {
         previous_value: Option<Value>,
         new_value: Value,
     ) -> Result<(Option<Value>, bool)>;
-}
-
-#[async_trait]
-pub trait DbNewWithEmbedCluster: Sized + Db {
-    async fn new_with_embed_cluster(
-        node_address: NodeAddress,
-        known_node_config: Vec<KnownNodeConfig>,
-        config: TikvRunnerConfig,
-    ) -> Result<Self>;
-
-    async fn stop_embed_cluster(&self) -> Result<()>;
-}
-
-#[async_trait]
-pub trait DbNewWithoutEmbedCluster: Sized + Db {
-    // TODO get IpAddr instead String
-    async fn new_without_embed_cluster(endpoints: Vec<IpAndPort>) -> Result<Self>;
 }
 
 #[cfg(test)]
@@ -443,9 +356,6 @@ mod test {
         let from = vec![0, 0, 0, 1];
         let res = subset_range(from.clone());
         let to = vec![0, 0, 0, 2];
-        // TODO: remove old
-        // let from = vec![0, 0, 0, 1, u8::MIN];
-        // let to = vec![0, 0, 0, 1, u8::MAX];
         assert_eq!(res.start_bound(), Bound::Included(&from.into()));
         assert_eq!(res.end_bound(), Bound::Excluded(&to.into()));
 
@@ -467,52 +377,30 @@ mod test {
     }
 
     #[test]
-    fn single_item_range_test() {
-        let item = vec![0, 0, 0, 1];
-        let res = single_item_range(item.clone());
-        assert_eq!(res.start_bound(), Bound::Included(&item.clone().into()));
-        assert_eq!(res.end_bound(), Bound::Included(&item.into()));
-    }
-
-    #[test]
-    fn scan_by_table_name_to_bound_range() {
-        let scan = AbcScan::<_, _, Blob>::ByAb(vec![0, 1], vec![12, 12, 12]);
+    fn test_prefixed_by_two_chunk_bound_range() {
+        let scan = prefixed_by_two_chunk_bound_range(vec![0, 1], vec![12, 12, 12]);
         let bound_range: BoundRange = scan.clone().into();
         assert_eq!(
             bound_range.start_bound(),
-            Bound::Included(&vec![2, 0, 1, 3, 12, 12, 12, u8::MIN].into())
+            Bound::Included(&vec![2, 0, 1, 3, 12, 12, 12].into())
         );
         assert_eq!(
             bound_range.end_bound(),
-            Bound::Included(&vec![2, 0, 1, 3, 12, 12, 12, u8::MAX].into())
+            Bound::Excluded(&vec![2, 0, 1, 3, 12, 12, 13].into())
         );
     }
 
     #[test]
-    fn scan_by_inner_key_prefix_to_bound_range() {
-        let scan = AbcScan::ByAbCPrefix(vec![0, 1], vec![12, 12, 12], vec![20, 22]);
+    fn test_prefixed_by_three_chunk_bound_range() {
+        let scan = prefixed_by_three_chunk_bound_range(vec![0, 1], vec![12, 12, 12], vec![20, 22]);
         let bound_range: BoundRange = scan.clone().into();
         assert_eq!(
             bound_range.start_bound(),
-            Bound::Included(&vec![2, 0, 1, 3, 12, 12, 12, 20, 22, u8::MIN].into())
+            Bound::Included(&vec![2, 0, 1, 3, 12, 12, 12, 20, 22].into())
         );
         assert_eq!(
             bound_range.end_bound(),
-            Bound::Included(&vec![2, 0, 1, 3, 12, 12, 12, 20, 22, u8::MAX].into())
-        );
-    }
-
-    #[test]
-    fn scan_by_inner_key_to_bound_range() {
-        let scan = AbcScan::ByAbc(vec![0, 1], vec![12, 12, 12], vec![20, 22, 23]);
-        let bound_range: BoundRange = scan.clone().into();
-        assert_eq!(
-            bound_range.start_bound(),
-            Bound::Included(&vec![2, 0, 1, 3, 12, 12, 12, 20, 22, 23].into())
-        );
-        assert_eq!(
-            bound_range.end_bound(),
-            Bound::Included(&vec![2, 0, 1, 3, 12, 12, 12, 20, 22, 23].into())
+            Bound::Excluded(&vec![2, 0, 1, 3, 12, 12, 12, 20, 23].into())
         );
     }
 }

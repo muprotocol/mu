@@ -3,22 +3,16 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("mudb_error -> tikv error -> {0}")]
-    TikvErr(tikv_client::Error),
-    #[error("mudb_error -> cant deserialize key -> {0}")]
+    #[error("muDB: TiKV client error: {0}")]
+    TikvErr(#[from] tikv_client::Error),
+    #[error("muDB: cant deserialize Key: {0}")]
     CantDeserializeKey(String),
-    #[error("mudb_error -> stack_id or table doesn't exist -> {0:?}")]
+    #[error("muDB: stack_id or table doesn't exist: {0:?}")]
     StackIdOrTableDoseNotExist(Key),
-    #[error("mudb_error -> embedding tikv error -> {0}")]
+    #[error("muDB: embedding TiKV error: {0}")]
     EmbedTikvErr(String),
-    #[error("mudb_error -> tikv startup timeout, {0}, so rest of the processes killed")]
+    #[error("muDB: TiKV startup timeout: {0}, so rest of the processes killed")]
     TikvConnectionTimeout(String),
-}
-
-impl From<tikv_client::Error> for Error {
-    fn from(te: tikv_client::Error) -> Self {
-        Self::TikvErr(te)
-    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

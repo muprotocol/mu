@@ -90,6 +90,6 @@ wordlist
 tiup
 itertools
 kvpair
-scanes
+scans
 hashset
 rbpf

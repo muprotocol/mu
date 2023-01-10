@@ -16,10 +16,6 @@ use serial_test::serial;
 use std::fs;
 use std::net::IpAddr;
 
-// TODO: dummy import
-// * remove old.rs in future
-mod old;
-
 const TEST_DATA_DIR: &str = "tests/mudb/test_data";
 
 fn clean_data_dir() {
@@ -139,17 +135,6 @@ async fn test_node<T>(
 
     // scan
     scans.await;
-
-    let scan = Scan::ByInnerKey(
-        keys[0].stack_id.clone(),
-        keys[0].table_name.clone(),
-        keys[0].inner_key.clone(),
-    );
-    let res = db.scan_keys(scan.clone(), 800).await.unwrap();
-    assert_eq!(res, vec![keys[0].clone()]);
-
-    let res = db.scan(scan, 800).await.unwrap();
-    assert_eq!(res, vec![(keys[0].clone(), values()[0].clone())]);
 }
 
 async fn predictable_scan_for_keys_test(
@@ -230,17 +215,6 @@ async fn unpredictable_scan_for_keys_test(
         .map(Clone::clone)
         .collect();
     assert!(x.into_iter().all(|xp| res.contains(&xp)));
-
-    let scan = Scan::ByInnerKey(
-        keys[0].stack_id.clone(),
-        keys[0].table_name.clone(),
-        keys[0].inner_key.clone(),
-    );
-    let res = db.scan_keys(scan.clone(), 800).await.unwrap();
-    assert_eq!(res, vec![keys[0].clone()]);
-
-    let res = db.scan(scan, 800).await.unwrap();
-    assert_eq!(res, vec![(keys[0].clone(), values()[0].clone())]);
 }
 
 async fn table_list_test(db: DbImpl, tl: Vec<TableName>) {
@@ -437,7 +411,7 @@ async fn n_node_with_different_stack_id_and_tables(dbs: Vec<DbImpl>) {
 }
 
 async fn make_db_with_external_cluster() -> DbImpl {
-    DbImpl::new_without_embed_cluster(vec![
+    DbImpl::new_with_external_cluster(vec![
         "127.0.0.1:2379".try_into().unwrap(),
         "127.0.0.1:2382".try_into().unwrap(),
         "127.0.0.1:2384".try_into().unwrap(),
@@ -455,7 +429,7 @@ async fn make_3_dbs() -> Vec<DbImpl> {
             make_known_node_conf(2801, 2381),
             make_known_node_conf(2802, 2383),
         ];
-        DbImpl::new_with_embed_cluster(node_address, known_node_conf, tikv_runner_conf)
+        DbImpl::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
             .await
             .unwrap()
     });
@@ -468,7 +442,7 @@ async fn make_3_dbs() -> Vec<DbImpl> {
             make_known_node_conf(2800, 2380),
             make_known_node_conf(2802, 2383),
         ];
-        DbImpl::new_with_embed_cluster(node_address, known_node_conf, tikv_runner_conf)
+        DbImpl::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
             .await
             .unwrap()
     });
@@ -481,7 +455,7 @@ async fn make_3_dbs() -> Vec<DbImpl> {
             make_known_node_conf(2800, 2380),
             make_known_node_conf(2801, 2381),
         ];
-        DbImpl::new_with_embed_cluster(node_address, known_node_conf, tikv_runner_conf)
+        DbImpl::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
             .await
             .unwrap()
     });
@@ -504,7 +478,7 @@ async fn test_single_node_with_embed_and_stop() {
     let node_address = make_node_address(2803);
     let known_node_conf = vec![];
     let tikv_runner_conf = make_tikv_runner_conf(2385, 2386, 20163);
-    let db = DbImpl::new_with_embed_cluster(node_address, known_node_conf, tikv_runner_conf)
+    let db = DbImpl::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
         .await
         .unwrap();
 
@@ -602,7 +576,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     let ks = keys(si.clone(), tl.clone());
     let vs = values();
 
-    let db = DbImpl::new_without_embed_cluster(vec![
+    let db = DbImpl::new_with_external_cluster(vec![
         "127.0.0.1:2379".try_into().unwrap(),
         // "127.0.0.1:2382".try_into().unwrap(),
         // "127.0.0.1:2384".try_into().unwrap(),
@@ -610,7 +584,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     .await
     .unwrap();
 
-    let db2 = DbImpl::new_without_embed_cluster(vec![
+    let db2 = DbImpl::new_with_external_cluster(vec![
         // "127.0.0.1:2379".try_into().unwrap(),
         "127.0.0.1:2382".try_into().unwrap(),
         // "127.0.0.1:2384".try_into().unwrap(),
@@ -618,7 +592,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     .await
     .unwrap();
 
-    let db3 = DbImpl::new_without_embed_cluster(vec![
+    let db3 = DbImpl::new_with_external_cluster(vec![
         // "127.0.0.1:2379".try_into().unwrap(),
         // "127.0.0.1:2382".try_into().unwrap(),
         "127.0.0.1:2384".try_into().unwrap(),
