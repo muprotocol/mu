@@ -150,6 +150,7 @@ pub async fn start(
 ) -> Result<(
     Box<dyn BlockchainMonitor>,
     UnboundedReceiver<BlockchainMonitorNotification>,
+    Vec<u8>,
 )> {
     info!("Starting blockchain monitor");
 
@@ -299,7 +300,7 @@ pub async fn start(
     tokio::spawn(async move { generate_tick(res_clone, tick_interval).await });
 
     debug!("Initialization complete");
-    Ok((Box::new(res), rx))
+    Ok((Box::new(res), rx, region_pda.to_bytes().into()))
 }
 
 async fn get_owner_states(

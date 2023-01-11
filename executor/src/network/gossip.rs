@@ -1,29 +1,26 @@
 mod node_collection;
+mod protos;
 
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
     net::IpAddr,
-    pin::Pin,
     time::Duration,
 };
 
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{bail, Context, Error, Ok, Result};
 use async_trait::async_trait;
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use dyn_clonable::clonable;
 use mailbox_processor::{
     plain::{MessageReceiver, PlainMailboxProcessor},
     ReplyChannel,
 };
 use mu_stack::StackID;
+use protobuf::Message;
 use rand::{prelude::Distribution, rngs::ThreadRng};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio::{select, time::Instant};
-use tokio_serde::{
-    formats::{Bincode, SymmetricalBincode},
-    Deserializer, Serializer,
-};
 
 use crate::{infrastructure::config::ConfigDuration, util::id::IdExt};
 
@@ -48,7 +45,7 @@ macro_rules! error {
     ($state:expr, $($arg:tt)+) => (log::error!(target: &$state.log_target, $($arg)+))
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Clone, Debug)]
 struct Heartbeat {
     node_address: NodeAddress,
     seq: u32,
@@ -57,10 +54,12 @@ struct Heartbeat {
     // TODO: add number of known nodes to heartbeats, so we can have a general idea of
     // how "connected" we are.
     deployed_stacks: Vec<StackID>,
+    // The region ID of the node that send this heartbeat. Used to make sure nodes don't
+    // form clusters with nodes from another region.
+    region_id: Vec<u8>,
 }
 
-// TODO: replace with version-tolerant solution
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Clone, Debug)]
 enum GossipProtocolMessage {
     /// Each node sends out heartbeat messages to peers at regular intervals.
     /// Peers then rebroadcast the heartbeat to their own peers.
@@ -72,6 +71,18 @@ enum GossipProtocolMessage {
     // TODO: transmit goodbye messages repeatedly for a while to
     // let more nodes get them
     Goodbye(NodeAddress),
+}
+
+impl GossipProtocolMessage {
+    fn write_to_bytes(self) -> Result<Bytes> {
+        let proto: protos::gossip::GossipMessage = self.into();
+        Ok(proto.write_to_bytes()?.into())
+    }
+
+    fn read_from_bytes(bytes: Bytes) -> Result<Self> {
+        let proto = protos::gossip::GossipMessage::parse_from_bytes(&bytes)?;
+        proto.try_into()
+    }
 }
 
 #[async_trait]
@@ -224,16 +235,24 @@ impl Gossip for GossipImpl {
     }
 }
 
-type Codec = SymmetricalBincode<GossipProtocolMessage>;
-
 pub fn start(
     my_address: NodeAddress,
     config: GossipConfig,
     known_nodes: KnownNodes,
     notification_channel: NotificationChannel,
+    region_id: Vec<u8>,
 ) -> Result<Box<dyn Gossip>> {
     let mailbox = PlainMailboxProcessor::start(
-        move |_mb, r| body(r, my_address, config, known_nodes, notification_channel),
+        move |_mb, r| {
+            body(
+                r,
+                my_address,
+                config,
+                known_nodes,
+                notification_channel,
+                region_id,
+            )
+        },
         10000,
     );
 
@@ -248,7 +267,7 @@ struct GossipState {
     my_address: NodeAddress,
     my_heartbeat: u32,
     deployed_stacks: HashSet<StackID>,
-    codec: Codec,
+    region_id: Vec<u8>,
 
     // maintenance-related fields
     next_heartbeat: Instant,
@@ -278,6 +297,7 @@ async fn body(
     config: GossipConfig,
     known_nodes: KnownNodes,
     notification_channel: NotificationChannel,
+    region_id: Vec<u8>,
 ) {
     let now = Instant::now();
 
@@ -288,7 +308,7 @@ async fn body(
         my_address,
         my_heartbeat: 0,
         deployed_stacks: HashSet::new(),
-        codec: Bincode::default(),
+        region_id,
         next_heartbeat: now,
         next_peer_update: now + *config.peer_update_interval,
         next_liveness_check: now + *config.liveness_check_interval,
@@ -401,6 +421,7 @@ fn send_heartbeat(state: &mut GossipState) -> Result<()> {
         seq: state.my_heartbeat,
         distance: 1,
         deployed_stacks: state.deployed_stacks.iter().cloned().collect(),
+        region_id: state.region_id.clone(),
     });
 
     send_protocol_message(message, state, vec![])
@@ -424,13 +445,13 @@ fn send_protocol_message(
         "Sending protocol message {message:?} to all except {excluded_peers:?}"
     );
 
-    let message_bytes = Pin::new(&mut state.codec)
-        .serialize(&message)
+    let message_bytes = message
+        .write_to_bytes()
         .context("Failed to serialize protocol message")?;
 
     for (hash, peer) in state.node_collection.get_peers_and_hashes() {
         if !excluded_peers.contains(hash) {
-            debug!(state, "Sending protocol message {message:?} to {hash}");
+            debug!(state, "Sending protocol message to {hash}");
             state
                 .notification_channel
                 .send(GossipNotification::SendMessage(
@@ -448,15 +469,22 @@ fn receive_message(
     bytes: Bytes,
     state: &mut GossipState,
 ) -> Result<()> {
-    // TODO: why does deserialize take a BytesMut? Is there a way to deserialize from Bytes directly?
-    let buf: &[u8] = &bytes;
-    let bytes_mut: BytesMut = buf.into();
-    let message = Pin::new(&mut state.codec)
-        .deserialize(&bytes_mut)
-        .context("Failed to deserialize message")?;
+    let message =
+        GossipProtocolMessage::read_from_bytes(bytes).context("Failed to deserialize message")?;
     debug!(state, "Received protocol message: {message:?}");
     match message {
         GossipProtocolMessage::Heartbeat(heartbeat) => {
+            if heartbeat.region_id != state.region_id {
+                warn!(state,
+                    "Received heartbeat from {}:{} which is on another region {:?}, I am on region {:?}",
+                    heartbeat.node_address.address,
+                    heartbeat.node_address.port,
+                    heartbeat.region_id,
+                    state.region_id
+                );
+                return Ok(());
+            }
+
             let mut seen = false;
             let hash = heartbeat.node_address.get_hash();
 
@@ -821,7 +849,7 @@ fn promote_random_to_permanent_peer(state: &mut GossipState, rng: &mut ThreadRng
             .filter(|n| is_promotion_candidate(n))
             .map(|n| n.info().distance + 1),
     ) {
-        Ok(d) => d,
+        Result::Ok(d) => d,
         Err(_) => {
             // This happens when we give WeightedIndex zero weights to work with
             debug!(state, "No nodes to promote");
