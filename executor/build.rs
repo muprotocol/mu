@@ -1,4 +1,15 @@
+use std::{env, path::PathBuf};
+
 fn main() {
+    let cargo_out_dir = env::var("OUT_DIR").expect("OUT_DIR env var not set");
+    let mut path = PathBuf::from(cargo_out_dir);
+    path.push("protos");
+    path.push("rpc");
+    std::fs::create_dir_all(&path).unwrap();
+    path.pop();
+    path.push("gossip");
+    std::fs::create_dir_all(&path).unwrap();
+
     protobuf_codegen::Codegen::new()
         .protoc()
         .protoc_path(&protoc_bin_vendored::protoc_bin_path().unwrap())
