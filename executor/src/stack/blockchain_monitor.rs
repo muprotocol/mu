@@ -24,7 +24,7 @@ use solana_account_decoder::{UiAccount, UiAccountEncoding};
 use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
     rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
-    rpc_filter::{Memcmp, MemcmpEncodedBytes, MemcmpEncoding, RpcFilterType},
+    rpc_filter::{Memcmp, RpcFilterType},
     rpc_response::{Response, RpcKeyedAccount},
 };
 use solana_sdk::account::ReadableAccount;
@@ -189,16 +189,11 @@ pub async fn start(
     debug!("Setting up stack subscription");
     let get_stacks_config = RpcProgramAccountsConfig {
         filters: Some(vec![
-            RpcFilterType::Memcmp(Memcmp {
-                offset: 8,
-                bytes: MemcmpEncodedBytes::Bytes(vec![5u8]),
-                encoding: Some(MemcmpEncoding::Binary),
-            }),
-            RpcFilterType::Memcmp(Memcmp {
-                offset: 8 + 1 + 32,
-                bytes: MemcmpEncodedBytes::Bytes(region_pda.to_bytes().to_vec()),
-                encoding: Some(MemcmpEncoding::Binary),
-            }),
+            RpcFilterType::Memcmp(Memcmp::new_raw_bytes(8, vec![5u8])),
+            RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+                8 + 1 + 32,
+                region_pda.to_bytes().to_vec(),
+            )),
         ]),
         account_config: RpcAccountInfoConfig {
             encoding: Some(UiAccountEncoding::Base64Zstd),

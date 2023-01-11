@@ -495,7 +495,7 @@ async fn handle_request<'a>(
         ) else {
             return ResponseWrapper::bad_request("Invalid query string");
         };
-    let query = query.0;
+    let query = query.into_inner();
 
     let request = Request {
         method: stack_http_method_to_sdk(method),

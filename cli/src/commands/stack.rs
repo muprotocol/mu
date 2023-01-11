@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf};
 use anchor_client::{
     solana_client::{
         rpc_config::RpcSendTransactionConfig,
-        rpc_filter::{Memcmp, MemcmpEncodedBytes, MemcmpEncoding, RpcFilterType},
+        rpc_filter::{Memcmp, RpcFilterType},
     },
     solana_sdk::{pubkey::Pubkey, system_program},
 };
@@ -60,32 +60,28 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
     let user_wallet = config.get_signer()?;
 
     let mut filters = vec![
-        RpcFilterType::Memcmp(Memcmp {
-            offset: 8,
-            bytes: MemcmpEncodedBytes::Bytes(vec![marketplace::MuAccountType::Stack as u8]),
-            encoding: Some(MemcmpEncoding::Binary),
-        }),
-        RpcFilterType::Memcmp(Memcmp {
-            offset: 8 + 1,
-            bytes: MemcmpEncodedBytes::Bytes(user_wallet.pubkey().to_bytes().to_vec()),
-            encoding: Some(MemcmpEncoding::Binary),
-        }),
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            8,
+            vec![marketplace::MuAccountType::Stack as u8],
+        )),
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            8 + 1,
+            user_wallet.pubkey().to_bytes().to_vec(),
+        )),
     ];
 
     if let Some(region) = cmd.region {
-        filters.push(RpcFilterType::Memcmp(Memcmp {
-            offset: 8 + 1 + 32,
-            bytes: MemcmpEncodedBytes::Bytes(region.to_bytes().to_vec()),
-            encoding: Some(MemcmpEncoding::Binary),
-        }));
+        filters.push(RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            8 + 1 + 32,
+            region.to_bytes().to_vec(),
+        )));
     }
 
     if let Some(name_prefix) = cmd.name_prefix {
-        filters.push(RpcFilterType::Memcmp(Memcmp {
-            offset: 8 + 1 + 32 + 32 + 8 + 4 + 1 + 4,
-            bytes: MemcmpEncodedBytes::Bytes(name_prefix.as_bytes().to_vec()),
-            encoding: Some(MemcmpEncoding::Binary),
-        }))
+        filters.push(RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            8 + 1 + 32 + 32 + 8 + 4 + 1 + 4,
+            name_prefix.as_bytes().to_vec(),
+        )))
     }
 
     let stacks = client

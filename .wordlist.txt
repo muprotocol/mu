@@ -3,6 +3,7 @@ balancer
 Bincode
 Borsh
 chrono
+clippy
 clonable
 codegen
 Condvar
@@ -23,6 +24,8 @@ keypair
 keypairs
 Kubernetes
 LAMPORTS
+libclang
+libudev
 Localnet
 MacOS
 middlewares
@@ -60,6 +63,7 @@ rngs
 runtime
 Runtime
 rustc
+rustfmt
 rustls
 rustup
 scts
