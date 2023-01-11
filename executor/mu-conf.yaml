@@ -22,7 +22,7 @@ gossip:
   liveness_check_interval: 1s
 initial_cluster:
   # TODO: allow hostnames
-  - address: 0.0.0.0
+  - address: 127.0.0.1
     gossip_port: 12012
     pd_port: 2380
 runtime:

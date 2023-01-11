@@ -93,6 +93,12 @@ pub struct TikvConfig {
 }
 
 #[derive(Deserialize, Clone)]
+pub enum DbConfig {
+    External(Vec<IpAndPort>),
+    Internal(TikvRunnerConfig),
+}
+
+#[derive(Deserialize, Clone)]
 pub struct TikvRunnerConfig {
     pub pd: PdConfig,
     pub node: TikvConfig,
