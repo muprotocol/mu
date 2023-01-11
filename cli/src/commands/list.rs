@@ -1,5 +1,5 @@
 use anchor_client::{
-    solana_client::rpc_filter::{Memcmp, MemcmpEncodedBytes, MemcmpEncoding, RpcFilterType},
+    solana_client::rpc_filter::{Memcmp, RpcFilterType},
     solana_sdk::pubkey::Pubkey,
 };
 use anyhow::Result;
@@ -41,18 +41,16 @@ pub struct ListRegionCommand {
 pub fn execute_list_provider(config: Config, cmd: ListProviderCommand) -> Result<()> {
     let client = config.build_marketplace_client()?;
 
-    let mut filters = vec![RpcFilterType::Memcmp(Memcmp {
-        offset: 8,
-        bytes: MemcmpEncodedBytes::Bytes(vec![marketplace::MuAccountType::Provider as u8]),
-        encoding: Some(MemcmpEncoding::Binary),
-    })];
+    let mut filters = vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+        8,
+        vec![marketplace::MuAccountType::Provider as u8],
+    ))];
 
     if let Some(name_prefix) = cmd.name_prefix {
-        filters.push(RpcFilterType::Memcmp(Memcmp {
-            offset: 8 + 1 + 32 + 4, // 4 more bytes for the prefix length
-            bytes: MemcmpEncodedBytes::Bytes(name_prefix.as_bytes().to_vec()),
-            encoding: Some(MemcmpEncoding::Binary),
-        }));
+        filters.push(RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            8 + 1 + 32 + 4, // 4 more bytes for the prefix length
+            name_prefix.as_bytes().to_vec(),
+        )));
     }
 
     let accounts = client.program.accounts::<marketplace::Provider>(filters)?;
@@ -68,18 +66,14 @@ pub fn execute_list_region(config: Config, cmd: ListRegionCommand) -> Result<()>
     let client = config.build_marketplace_client()?;
 
     let filters = vec![
-        RpcFilterType::Memcmp(Memcmp {
-            offset: 8,
-            bytes: MemcmpEncodedBytes::Bytes(vec![
-                marketplace::MuAccountType::ProviderRegion as u8,
-            ]),
-            encoding: Some(MemcmpEncoding::Binary),
-        }),
-        RpcFilterType::Memcmp(Memcmp {
-            offset: 8 + 1,
-            bytes: MemcmpEncodedBytes::Bytes(cmd.provider.to_bytes().to_vec()),
-            encoding: Some(MemcmpEncoding::Binary),
-        }),
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            8,
+            vec![marketplace::MuAccountType::ProviderRegion as u8],
+        )),
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            8 + 1,
+            cmd.provider.to_bytes().to_vec(),
+        )),
     ];
 
     let mut accounts = client
