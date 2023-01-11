@@ -132,6 +132,7 @@ pub mod marketplace {
         usage: ServiceUsage,
     ) -> Result<()> {
         let usage_tokens = calc_usage(&ctx.accounts.region.rates, &usage);
+        msg!("Calculated price: {}", usage_tokens);
         let transfer = Transfer {
             from: ctx.accounts.escrow_account.to_account_info(),
             to: ctx.accounts.token_account.to_account_info(),
