@@ -24,7 +24,7 @@ initial_cluster:
   # TODO: allow hostnames
   - address: 0.0.0.0
     gossip_port: 12012
-    pd_port: 2379
+    pd_port: 2380
 runtime:
   cache_path: runtime-cache
   include_function_logs: false
@@ -46,14 +46,14 @@ tikv:
     data_dir: /var/lib/mu-executor/pd-data/
     peer_url:
       address: 0.0.0.0
-      port: 8000
+      port: 2380
     client_url:
       address: 0.0.0.0
-      port: 8001
+      port: 2379
     log_file: /var/log/mu-executor/pd-server
   node:
     cluster_url:
       address: 0.0.0.0
-      port: 8002
+      port: 20160
     data_dir: /var/lib/mu-executor/tikv-data/
     log_file: /var/log/mu-executor/tikv-server

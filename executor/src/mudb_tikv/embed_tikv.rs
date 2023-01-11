@@ -11,7 +11,7 @@ use std::{
     env,
     os::unix::prelude::PermissionsExt,
     path::{Path, PathBuf},
-    process::Child,
+    process,
 };
 use tokio::{fs::File, io::AsyncWriteExt};
 
@@ -212,7 +212,7 @@ pub async fn start(
     let pd_process = std::process::Command::new(pd_exe)
         .args(args.pd_args)
         .spawn()
-        .map_err(|_| EmbedTikvErr("Failed to spawn process pd!!".into()))?;
+        .map_err(|_| EmbedTikvErr("Failed to spawn process pd".into()))?;
 
     let tikv_process = std::process::Command::new(tikv_exe)
         .args(args.tikv_args)
@@ -244,8 +244,8 @@ impl TikvRunner for TikvRunnerImpl {
 }
 
 struct TikvRunnerState {
-    pub pd_process: Child,
-    pub tikv_process: Child,
+    pub pd_process: process::Child,
+    pub tikv_process: process::Child,
 }
 
 async fn step(
