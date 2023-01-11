@@ -1,15 +1,17 @@
 import { AnchorProvider, BN } from "@project-serum/anchor";
-import { createAuthorizedUsageSigner, createProvider, createRegion, getMu, readMintFromStaticKeypair, ServiceRates } from "./anchor-utils";
+import { createAuthorizedUsageSigner, loadProviderFromStaticKeypair, createRegion, getMu, readMintFromStaticKeypair, ServiceRates } from "./anchor-utils";
 import util from "./util"
 
 util.asyncMain(async () => {
+    let regionNum = parseInt(process.argv[2]);
+    if (Number.isNaN(regionNum))
+        regionNum = 1;
+
     let anchorProvider = AnchorProvider.local();
     let mint = readMintFromStaticKeypair();
     let mu = getMu(anchorProvider, mint);
 
-    console.log("Creating provider");
-    let provider = await createProvider(mu, "IB", true);
-    console.log(`Provider pubkey: ${provider.pda.toBase58()}`);
+    let provider = await loadProviderFromStaticKeypair(mu, "IB");
 
     console.log("Creating region and usage signer");
     let serviceRates: ServiceRates = {
@@ -20,9 +22,7 @@ util.asyncMain(async () => {
         millionDbReads: new BN(500),
         millionDbWrites: new BN(2000),
     };
-    let region = await createRegion(mu, provider, "MiddleEarth", 1, serviceRates, 1);
+    let region = await createRegion(mu, provider, `MiddleEarth-${regionNum}`, regionNum, serviceRates, 1);
     console.log(`Region pubkey: ${region.pda.toBase58()}`);
-
-    let usageSigner = await createAuthorizedUsageSigner(mu, provider, region, "usage_signer");
-    console.log(`Usage signer pubkey: ${usageSigner.pda.toBase58()}`);
 });
+
