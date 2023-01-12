@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use anyhow::{anyhow, bail, Result};
 use mu_stack::StackID;
-use musdk_common::status::Status;
+use musdk_common::Status;
 use protobuf::{EnumOrUnknown, MessageField};
 
 use crate::runtime::{self, types::AssemblyID};

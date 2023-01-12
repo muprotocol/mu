@@ -12,7 +12,7 @@ use dyn_clonable::clonable;
 use log::{debug, error, trace};
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel, RequestReplyChannel};
 use mu_stack::{Gateway, HttpMethod, StackID};
-use musdk_common::{status::Status, Header, Request, Response};
+use musdk_common::{Header, Request, Response, Status};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use tokio::sync::{mpsc, RwLock};

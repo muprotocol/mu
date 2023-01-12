@@ -1,4 +1,6 @@
-use musdk_common::{status::Status, Response};
+use std::borrow::Cow;
+
+use musdk_common::{Response, Status};
 
 pub trait IntoResponse<'a> {
     fn into_response(self) -> Response<'a>;
@@ -43,13 +45,17 @@ where
 
 impl<'a> IntoResponse<'a> for &'a [u8] {
     fn into_response(self) -> Response<'a> {
-        Response::build().body_from_slice(self)
+        Response::build()
+            .content_type(Cow::Borrowed("application/octet-stream"))
+            .body_from_slice(self)
     }
 }
 
 impl<'a> IntoResponse<'a> for Vec<u8> {
     fn into_response(self) -> Response<'a> {
-        Response::build().body_from_vec(self)
+        Response::build()
+            .content_type(Cow::Borrowed("application/octet-stream"))
+            .body_from_vec(self)
     }
 }
 

@@ -61,6 +61,9 @@ impl MuContext {
     }
 
     pub fn log(&mut self, message: &str, level: LogLevel) -> Result<()> {
+        // TODO: set log level, check against given level, skip if necessary
+        // TODO: make macros so the message doesn't have to be evaluated if its
+        //       level is skipped
         let message = OutgoingMessage::Log(Log {
             body: Cow::Borrowed(message),
             level,

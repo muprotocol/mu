@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use musdk_common::{status::Status, Request, Response};
+use musdk_common::{Request, Response, Status};
 use serde::{Deserialize, Serialize};
 
 use crate::{FromRequest, IntoResponse};

@@ -1,11 +1,12 @@
 pub mod incoming_message;
 pub mod outgoing_message;
-pub mod status;
+mod status;
+
+pub use status::Status;
 
 use std::{borrow::Cow, collections::HashMap};
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use status::Status;
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub enum HttpMethod {
