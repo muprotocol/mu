@@ -107,7 +107,7 @@ pub struct GossipConfig {
 
 #[derive(Deserialize)]
 pub struct KnownNodeConfig {
-    pub ip: IpAddr,
+    pub address: IpAddr,
     pub gossip_port: u16,
     pub pd_port: u16,
 }

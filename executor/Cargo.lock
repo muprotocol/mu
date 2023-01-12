@@ -1872,6 +1872,7 @@ dependencies = [
  "marketplace",
  "mu_stack",
  "musdk-common",
+ "nix 0.26.1",
  "num 0.4.0",
  "pin-project",
  "protobuf 3.2.0",
@@ -3209,6 +3210,8 @@ dependencies = [
  "bitflags",
  "cfg-if 1.0.0",
  "libc",
+ "memoffset 0.7.1",
+ "pin-utils",
  "static_assertions",
 ]
 

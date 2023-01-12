@@ -265,7 +265,7 @@ fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> Ti
             data_dir: format!("{TEST_DATA_DIR}/pd_data_dir_{peer_port}"),
             log_file: Some(format!("{TEST_DATA_DIR}/pd_log_{peer_port}")),
         },
-        tikv: TikvConfig {
+        node: TikvConfig {
             cluster_url: IpAndPort {
                 address: localhost.clone(),
                 port: tikv_port,
@@ -277,7 +277,7 @@ fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> Ti
 }
 fn make_known_node_conf(gossip_port: u16, pd_port: u16) -> KnownNodeConfig {
     KnownNodeConfig {
-        ip: "127.0.0.1".parse().unwrap(),
+        address: "127.0.0.1".parse().unwrap(),
         gossip_port,
         pd_port,
     }

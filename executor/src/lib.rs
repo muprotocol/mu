@@ -101,10 +101,13 @@ pub async fn run() -> Result<()> {
     info!("Establishing connection to seeds");
 
     for node in known_nodes_config {
-        match connection_manager.connect(node.ip, node.gossip_port).await {
+        match connection_manager
+            .connect(node.address, node.gossip_port)
+            .await
+        {
             Ok(connection_id) => known_nodes.push((
                 NodeAddress {
-                    address: node.ip,
+                    address: node.address,
                     port: node.gossip_port,
                     generation: 0,
                 },
@@ -113,7 +116,7 @@ pub async fn run() -> Result<()> {
 
             Err(f) => warn!(
                 "Failed to connect to seed {}:{}, will ignore this seed. Error is {f}",
-                node.ip, node.gossip_port
+                node.address, node.gossip_port
             ),
         }
 
@@ -268,7 +271,7 @@ pub async fn run() -> Result<()> {
 }
 
 fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
-    node.gossip_port == me.port && (node.ip == me.address || node.ip.is_loopback())
+    node.gossip_port == me.port && (node.address == me.address || node.address.is_loopback())
 }
 
 #[derive(Clone)]

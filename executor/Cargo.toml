@@ -63,6 +63,7 @@ rust-embed = "6.4.2"
 http = "0.2"
 protobuf = "3.2"
 musdk-common = { path = "../sdk/common" }
+nix = "0.26.1"
 
 [dev-dependencies]
 serial_test = "0.8"
