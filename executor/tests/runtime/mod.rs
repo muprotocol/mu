@@ -403,7 +403,7 @@ async fn json_body_request_and_response() {
         pub password: String,
     }
 
-    #[derive(Deserialize, PartialEq, Debug)]
+    #[derive(Deserialize, PartialEq, Eq, Debug)]
     pub struct Response {
         pub token: String,
         pub ttl: u64,
