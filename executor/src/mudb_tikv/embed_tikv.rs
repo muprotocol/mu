@@ -208,12 +208,12 @@ pub async fn start(
     let pd_process = std::process::Command::new(pd_exe)
         .args(args.pd_args)
         .spawn()
-        .map_err(|_| EmbedTikvErr("Failed to spawn process pd!!".into()))?;
+        .map_err(|e| EmbedTikvErr(format!("Failed to spawn process pd {e}")))?;
 
     let tikv_process = std::process::Command::new(tikv_exe)
         .args(args.tikv_args)
         .spawn()
-        .map_err(|_| EmbedTikvErr("Failed to spawn process tikv!!".into()))?;
+        .map_err(|e| EmbedTikvErr(format!("Failed to spawn process tikv {e}")))?;
 
     let mailbox = CallbackMailboxProcessor::start(
         step,
@@ -316,9 +316,9 @@ mod test {
         assert_eq!(
             res.pd_args[4],
             "--initial-cluster=\
+                pd_node_127.0.0.1_2800=http://127.0.0.1:2380,\
                 pd_node_127.0.0.1_2801=http://127.0.0.1:2381,\
-                pd_node_127.0.0.1_2802=http://127.0.0.1:2383,\
-                pd_node_127.0.0.1_2800=http://127.0.0.1:2380"
+                pd_node_127.0.0.1_2802=http://127.0.0.1:2383"
         );
 
         assert_eq!(res.tikv_args[0], "--pd-endpoints=http://127.0.0.1:2379");

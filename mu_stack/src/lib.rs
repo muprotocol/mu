@@ -7,6 +7,7 @@ use std::{
     str::FromStr,
 };
 
+#[rustfmt::skip]
 use ::protobuf::Message;
 use anyhow::Result;
 use base58::{FromBase58, ToBase58};
@@ -70,14 +71,7 @@ impl FromStr for StackID {
     }
 }
 
-impl From<StackID> for Vec<u8> {
-    fn from(si: StackID) -> Self {
-        match si {
-            StackID::SolanaPublicKey(key) => key.into(),
-        }
-    }
-}
-
+// TODO: disclimiantor byte
 impl TryFrom<Vec<u8>> for StackID {
     type Error = ();
     fn try_from(blob: Vec<u8>) -> Result<Self, Self::Error> {

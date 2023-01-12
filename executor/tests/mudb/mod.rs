@@ -1,13 +1,7 @@
 use assert_matches::assert_matches;
 use futures::Future;
 use mu::{
-    mudb_tikv::{
-        db::DbImpl,
-        embed_tikv::{PdConfig, TikvConfig},
-        error::*,
-        types::*,
-        TikvRunnerConfig,
-    },
+    mudb_tikv::{db::DbImpl, error::*, types::*, PdConfig, TikvConfig, TikvRunnerConfig},
     network::{gossip::KnownNodeConfig, NodeAddress},
 };
 use mu_stack::StackID;
@@ -29,11 +23,11 @@ fn stack_id() -> StackID {
 }
 
 fn table_name_1() -> TableName {
-    "a::a::a".into()
+    "a::a::a".try_into().unwrap()
 }
 
 fn table_name_2() -> TableName {
-    "a::a::b".into()
+    "a::a::b".try_into().unwrap()
 }
 
 fn table_list() -> [TableName; 2] {
@@ -125,7 +119,7 @@ async fn test_node<T>(
     // error table name dose not exist
     let err_key = Key {
         stack_id: stack_id.clone(),
-        table_name: "no_existed_table".into(),
+        table_name: "no_existed_table".try_into().unwrap(),
         inner_key: vec![],
     };
     let res = db.put(err_key.clone(), vec![], false).await;
@@ -350,7 +344,10 @@ async fn n_node_with_same_stack_id(dbs: Vec<DbImpl>) {
 
     let mut handles = vec![];
     for (i, db) in dbs.into_iter().enumerate() {
-        let tl = [format!("{}", i).into(), format!("{}", 100 + i).into()];
+        let tl = [
+            format!("{}", i).try_into().unwrap(),
+            format!("{}", 100 + i).try_into().unwrap(),
+        ];
         let db_clone = db.clone();
         let f = test_node(
             db.clone(),
@@ -384,7 +381,10 @@ async fn n_node_with_different_stack_id_and_tables(dbs: Vec<DbImpl>) {
     for (i, db) in dbs.into_iter().enumerate() {
         let i = i as u8;
         let si = StackID::SolanaPublicKey([i; 32]);
-        let tl = [format!("{}", i).into(), format!("{}", 100 + i).into()];
+        let tl = [
+            format!("{}", i).try_into().unwrap(),
+            format!("{}", 100 + i).try_into().unwrap(),
+        ];
         let db_clone = db.clone();
         let f = test_node(
             db.clone(),

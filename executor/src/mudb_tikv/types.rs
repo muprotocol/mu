@@ -1,5 +1,6 @@
 use super::error::Result;
 use async_trait::async_trait;
+use bytes::BufMut;
 use mu_stack::StackID;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
@@ -8,19 +9,19 @@ use tikv_client::{BoundRange, Key as TikvKey, Value};
 
 // TODO: add constraint to Key (actually key.stack_id) to avoid this name
 // TODO: rename it
-pub const TABLE_LIST: &str = "__tl";
+const TABLE_LIST: &str = "__tl";
 
 pub type Blob = Vec<u8>;
 
-fn tikv_key_from_3_chunk(mut first: Blob, mut second: Blob, mut third: Blob) -> TikvKey {
-    let mut x: Blob = vec![];
-    // TODO: consider 255 max size
+fn tikv_key_from_3_chunk(first: &[u8], second: &[u8], third: &[u8]) -> TikvKey {
+    let mut x: Blob = Vec::with_capacity(first.len() + second.len() + third.len() + 2);
+    assert!(first.len() <= u8::MAX as usize);
     x.push(first.len() as u8);
-    x.append(&mut first);
-    // TODO: consider 255 max size
+    x.put_slice(first);
+    assert!(second.len() <= u8::MAX as usize);
     x.push(second.len() as u8);
-    x.append(&mut second);
-    x.append(&mut third);
+    x.put_slice(second);
+    x.put_slice(third);
     x.into()
 }
 
@@ -28,25 +29,51 @@ fn three_chunk_try_from_tikv_key(
     value: tikv_client::Key,
 ) -> std::result::Result<(Blob, Blob, Blob), String> {
     let e = "Insufficient blobs to convert to Key";
-    let blob: Blob = value.into();
-    let (a_size, r) = blob.split_first().ok_or_else(|| e.to_string())?;
-    let a_size = *a_size as usize;
-    if r.len() < a_size {
-        return Err(e.into());
-    }
-    let (a, r) = r.split_at(a_size);
-    let (b_size, r) = r.split_first().ok_or_else(|| e.to_string())?;
-    let b_size = *b_size as usize;
-    if r.len() < b_size {
-        return Err(e.into());
-    }
-    let (b, c) = r.split_at(b_size);
+    let split_first = |mut x: Vec<u8>| {
+        if x.len() < 1 {
+            Err(e.to_string())
+        } else {
+            let y = x.split_off(x.len() - 1);
+            let x = x.pop().unwrap();
+            Ok((x, y))
+        }
+    };
+    let split_at = |mut x: Vec<u8>, y| {
+        if x.len() < y {
+            Err(e.to_string())
+        } else {
+            let z = x.split_off(x.len() - y);
+            Ok((x, z))
+        }
+    };
+
+    let x: Blob = value.into();
+
+    let (a_size, x) = split_first(x)?;
+    let (a, x) = split_at(x, a_size as usize)?;
+    let (b_size, x) = split_first(x)?;
+    let (b, c) = split_at(x, b_size as usize)?;
 
     Ok((a.into(), b.into(), c.into()))
+
+    // TODO: remove old
+    // let (a_size, r) = x.split_first().ok_or_else(|| e.to_string())?;
+    // let a_size = *a_size as usize;
+    // if r.len() < a_size {
+    //     return Err(e.into());
+    // }
+    // let (a, r) = r.split_at(a_size);
+    // let (b_size, r) = r.split_first().ok_or_else(|| e.to_string())?;
+    // let b_size = *b_size as usize;
+    // if r.len() < b_size {
+    //     return Err(e.into());
+    // }
+    // let (b, c) = r.split_at(b_size);
+
+    // Ok((a.into(), b.into(), c.into()))
 }
 
 pub struct TableListKey {
-    table_list: String,
     pub stack_id: StackID,
     pub table_name: TableName,
 }
@@ -54,22 +81,18 @@ pub struct TableListKey {
 impl TableListKey {
     pub fn new(stack_id: StackID, table_name: TableName) -> Self {
         Self {
-            table_list: TABLE_LIST.into(),
             stack_id,
             table_name,
         }
-    }
-
-    pub fn table_list(&self) -> String {
-        self.table_list.clone()
     }
 }
 
 impl From<TableListKey> for tikv_client::Key {
     fn from(k: TableListKey) -> Self {
-        let first = k.table_list.into();
-        let second = k.stack_id.get_bytes().clone().into();
-        let third = k.table_name.into();
+        let first = TABLE_LIST.as_bytes();
+        // TODO
+        let second = k.stack_id.get_bytes();
+        let third = k.table_name.as_bytes();
         tikv_key_from_3_chunk(first, second, third)
     }
 }
@@ -78,11 +101,23 @@ impl TryFrom<tikv_client::Key> for TableListKey {
     type Error = String;
     fn try_from(value: tikv_client::Key) -> std::result::Result<Self, Self::Error> {
         let (a, b, c) = three_chunk_try_from_tikv_key(value)?;
-        Ok(Self {
-            table_list: String::from_utf8(a).map_err(|_| "cant deserialize a".to_string())?,
-            stack_id: b.try_into().map_err(|_| "cant deserialize b".to_string())?,
-            table_name: c.try_into().map_err(|_| "cant deserialize c".to_string())?,
-        })
+        if TABLE_LIST
+            != &String::from_utf8(a)
+                .map_err(|e| format!("cant deserialize {TABLE_LIST} cause: {e}"))?
+        {
+            Err(format!(
+                "cant deserialize TableListKey cause it's not TableListKey"
+            ))
+        } else {
+            Ok(Self {
+                stack_id: b
+                    .try_into()
+                    .map_err(|_| "cant deserialize stack_id".to_string())?,
+                table_name: c
+                    .try_into()
+                    .map_err(|_| "cant deserialize table_name".to_string())?,
+            })
+        }
     }
 }
 
@@ -154,19 +189,25 @@ impl From<TableName> for Blob {
 impl TryFrom<Blob> for TableName {
     type Error = String;
     fn try_from(blob: Blob) -> std::result::Result<Self, Self::Error> {
-        Ok(Self(String::from_utf8(blob).map_err(|x| x.to_string())?))
+        Self::try_from(String::from_utf8(blob).map_err(|x| x.to_string())?)
     }
 }
 
-impl From<String> for TableName {
-    fn from(s: String) -> Self {
-        Self(s)
+impl TryFrom<String> for TableName {
+    type Error = String;
+    fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+        if value.as_bytes().len() > u8::MAX as usize {
+            Err("table name can't exceed 255 bytes".into())
+        } else {
+            Ok(Self(value))
+        }
     }
 }
 
-impl From<&str> for TableName {
-    fn from(s: &str) -> Self {
-        Self(s.into())
+impl TryFrom<&str> for TableName {
+    type Error = String;
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        Self::try_from(String::from(value))
     }
 }
 
@@ -189,9 +230,10 @@ pub struct Key {
 
 impl From<Key> for tikv_client::Key {
     fn from(k: Key) -> Self {
-        let first = k.stack_id.get_bytes().clone().into();
-        let second = k.table_name.into();
-        let third = k.inner_key;
+        // TODO: bytes disclimiantor
+        let first = k.stack_id.get_bytes();
+        let second = k.table_name.as_bytes();
+        let third = &k.inner_key;
         tikv_key_from_3_chunk(first, second, third)
     }
 }
