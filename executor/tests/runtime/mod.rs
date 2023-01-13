@@ -548,7 +548,7 @@ async fn can_access_path_params() {
         .sorted_by(|i, j| i.0.cmp(j.0))
         .map(|(k, v)| format!("{k}:{v}"))
         .reduce(|i, j| format!("{i},{j}"))
-        .unwrap_or("".into());
+        .unwrap_or_else(|| "".into());
 
     runtime
         .invoke_function(projects[0].function_id(0).unwrap(), request)
