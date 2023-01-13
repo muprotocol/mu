@@ -46,14 +46,16 @@ type GatewayName = String;
 type RequestPath = String;
 type AssemblyName = String;
 type FunctionName = String;
+//TODO: use Cow<'a, str> to avoid allocating again
+type PathParams = HashMap<String, String>;
 
 enum GatewayMessage {
-    GetAssemblyAndFunction(
+    GetAssemblyAndFunctionWithPathParams(
         StackID,
         GatewayName,
         HttpMethod,
         RequestPath,
-        ReplyChannel<Option<(AssemblyName, FunctionName)>>,
+        ReplyChannel<Option<(AssemblyName, FunctionName, PathParams)>>,
     ),
     GetDeployedGatewayNames(StackID, ReplyChannel<Option<Vec<GatewayName>>>),
     DeployGateways(StackID, Vec<Gateway>),
@@ -218,7 +220,7 @@ async fn step(
     mut state: GatewayState,
 ) -> GatewayState {
     match msg {
-        GatewayMessage::GetAssemblyAndFunction(
+        GatewayMessage::GetAssemblyAndFunctionWithPathParams(
             stack_id,
             gateway_name,
             method,
@@ -227,11 +229,22 @@ async fn step(
         ) => {
             rep.reply(state.gateways.get(&stack_id).and_then(|gateways| {
                 gateways.get(&gateway_name).and_then(|gateway| {
-                    gateway.endpoints.get(&request_path).and_then(|eps| {
-                        eps.iter()
-                            .find(|ep| ep.method == method)
-                            .map(|ep| (ep.route_to.assembly.clone(), ep.route_to.function.clone()))
-                    })
+                    gateway
+                        .endpoints
+                        .iter()
+                        .find_map(|(path, eps)| {
+                            match_path_and_extract_path_params(&request_path, path)
+                                .map(|path_params| (path_params, eps))
+                        })
+                        .and_then(|(path_params, eps)| {
+                            eps.iter().find(|ep| ep.method == method).map(|ep| {
+                                (
+                                    ep.route_to.assembly.clone(),
+                                    ep.route_to.function.clone(),
+                                    path_params,
+                                )
+                            })
+                        })
                 })
             }));
             state
@@ -276,7 +289,7 @@ async fn step(
 fn calculate_request_size(r: &Request) -> u64 {
     let mut size = r.path.as_bytes().len() as u64;
     size += r
-        .query
+        .query_params
         .iter()
         .map(|x| x.0.as_bytes().len() as u64 + x.1.as_bytes().len() as u64)
         .sum::<u64>();
@@ -298,6 +311,39 @@ fn calculate_response_size(r: &Response) -> u64 {
         .sum::<u64>();
     size += r.body.len() as u64;
     size
+}
+fn match_path_and_extract_path_params(
+    request_path: &str,
+    endpoint_path: &str,
+) -> Option<HashMap<String, String>> {
+    let mut request_path_segments = request_path
+        .trim_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty());
+    let mut endpoint_path_segments = endpoint_path
+        .trim_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty());
+
+    let mut path_params = HashMap::new();
+
+    loop {
+        match (request_path_segments.next(), endpoint_path_segments.next()) {
+            (Some(req_segment), Some(ep_segment)) => {
+                //TODO: Check for cases like `/get/{a}{b}/` which is invalid, since there
+                //is two variables in one segment.
+                if ep_segment.starts_with('{') && ep_segment.ends_with('}') {
+                    path_params.insert(
+                        ep_segment[1..ep_segment.len() - 1].to_string(),
+                        req_segment.to_string(),
+                    );
+                }
+            }
+
+            (None, None) => return Some(path_params),
+            (None, Some(_)) | (Some(_), None) => return None,
+        }
+    }
 }
 
 struct ResponseWrapper(Response<'static>);
@@ -480,49 +526,50 @@ async fn handle_request<'a>(
             return ResponseWrapper::bad_request("Invalid header values in request");
         };
 
-    let Ok(query) =
+    let Ok(query_params) =
         web::Query::<HashMap<Cow<'_, str>, Cow<'_, str>>>::from_query(
             request.query_string()
         ) else {
             return ResponseWrapper::bad_request("Invalid query string");
         };
-    let query = query.into_inner();
+    let query_params = query_params.into_inner();
 
-    let request = Request {
-        method: stack_http_method_to_sdk(method),
-        path: Cow::Borrowed(path),
-        query,
-        headers,
-        body: match payload.as_ref() {
-            Some(b) => Cow::Borrowed(b.as_ref()),
-            None => Cow::Owned(vec![]),
-        },
-    };
-
-    let mut traffic = calculate_request_size(&request);
-
-    let assembly_and_function = dependency_accessor
+    let assembly_and_function_and_path_params = dependency_accessor
         .get_gateway_manager()
         .await
         .mailbox
         .post_and_reply(|r| {
-            GatewayMessage::GetAssemblyAndFunction(
+            GatewayMessage::GetAssemblyAndFunctionWithPathParams(
                 stack_id,
                 gateway_name.into(),
                 method,
-                (*request.path).to_owned(),
+                (path).to_owned(),
                 r,
             )
         })
         .await;
 
-    let (assembly_name, function_name) = match assembly_and_function {
+    let (assembly_name, function_name, path_params) = match assembly_and_function_and_path_params {
         Err(_) => {
             return ResponseWrapper::internal_error("Node is shutting down, retry this request")
         }
         Ok(None) => return ResponseWrapper::not_found(),
         Ok(Some(x)) => x,
     };
+
+    let request = Request {
+        method: stack_http_method_to_sdk(method),
+        path: Cow::Borrowed(path),
+        path_params: path_params
+            .into_iter()
+            .map(|(k, v)| (Cow::Owned(k), Cow::Owned(v)))
+            .collect(),
+        query_params,
+        headers,
+        body: Cow::Borrowed(payload.as_ref().map(AsRef::as_ref).unwrap_or(&[])),
+    };
+
+    let mut traffic = calculate_request_size(&request);
 
     let response = match route_request(
         FunctionID {
@@ -559,4 +606,109 @@ async fn handle_request<'a>(
     );
 
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::match_path_and_extract_path_params;
+    use std::collections::HashMap;
+
+    #[test]
+    fn simple_request_path_will_match() {
+        let request_path = "/get/users/";
+        let endpoint_path = "/get/users/";
+
+        assert_eq!(
+            Some(HashMap::new()),
+            match_path_and_extract_path_params(request_path, endpoint_path)
+        );
+    }
+
+    #[test]
+    fn prefix_and_postfix_slashed_do_not_affect() {
+        assert_eq!(
+            Some(HashMap::new()),
+            match_path_and_extract_path_params("/get/users/", "/get/users/")
+        );
+
+        assert_eq!(
+            Some(HashMap::new()),
+            match_path_and_extract_path_params("/get/users", "/get/users/")
+        );
+
+        assert_eq!(
+            Some(HashMap::new()),
+            match_path_and_extract_path_params("/get/users", "/get/users")
+        );
+
+        assert_eq!(
+            Some(HashMap::new()),
+            match_path_and_extract_path_params("get/users", "/get/users")
+        );
+
+        assert_eq!(
+            Some(HashMap::new()),
+            match_path_and_extract_path_params("/get/users", "get/users")
+        );
+    }
+
+    #[test]
+    fn can_extract_single_path_param() {
+        assert_eq!(
+            Some([("id".into(), "12".into())].into()),
+            match_path_and_extract_path_params("/get/user/12", "get/user/{id}")
+        );
+    }
+
+    #[test]
+    fn can_extract_multi_path_param() {
+        assert_eq!(
+            Some([("type".into(), "user".into()), ("id".into(), "12".into())].into()),
+            match_path_and_extract_path_params("/get/user/12", "get/{type}/{id}/")
+        );
+    }
+
+    #[test]
+    fn can_not_extract_path_params_from_empty_segments() {
+        assert_eq!(
+            None,
+            match_path_and_extract_path_params("/get//12", "get/{type}/{id}/")
+        );
+    }
+
+    #[test]
+    fn incorrect_paths_wont_match() {
+        assert_eq!(
+            None,
+            match_path_and_extract_path_params("/get/user/", "get/{type}/{id}/")
+        );
+
+        assert_eq!(
+            None,
+            match_path_and_extract_path_params("/get/user", "get/{type}/{id}/")
+        );
+
+        assert_eq!(
+            None,
+            match_path_and_extract_path_params("/get/", "get/{type}/{id}/")
+        );
+
+        assert_eq!(
+            None,
+            match_path_and_extract_path_params("/get///", "get/{type}/{id}/")
+        );
+
+        assert_eq!(
+            None,
+            match_path_and_extract_path_params("/", "get/{type}/{id}/")
+        );
+    }
+
+    #[test]
+    fn paths_with_more_segments_wont_match() {
+        assert_eq!(
+            None,
+            match_path_and_extract_path_params("/get/user/12/45", "get/{type}/{id}/")
+        );
+    }
 }
