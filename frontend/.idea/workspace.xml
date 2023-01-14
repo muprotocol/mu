@@ -4,13 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="91147a9b-9247-43a3-afe8-078fc77a2739" name="Changes" comment="feat(tailwind): installed tailwindcss">
-      <change afterPath="$PROJECT_DIR$/jest.config.js" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/pages/index.test.tsx" afterDir="false" />
+    <list default="true" id="91147a9b-9247-43a3-afe8-078fc77a2739" name="Changes" comment="feat(jest): installed jest testing library">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pages/index.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/pages/index.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -40,6 +36,7 @@
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "SHARE_PROJECT_CONFIGURATION_FILES": "true",
     "WebServerToolWindowFactoryState": "false",
+    "deletionFromPopupRequiresConfirmation": "false",
     "last_opened_file_path": "/home/anon/projects/mu/frontend",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
@@ -52,51 +49,12 @@
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
-  <component name="RunManager" selected="Jest.Home (2)">
-    <configuration name="Home (2)" type="JavaScriptTestRunnerJest" temporary="true" nameIsGenerated="true">
-      <node-interpreter value="project" />
-      <node-options value="" />
-      <jest-package value="$PROJECT_DIR$/node_modules/jest" />
-      <working-dir value="$PROJECT_DIR$" />
-      <envs />
-      <scope-kind value="SUITE" />
-      <test-file value="$PROJECT_DIR$/pages/index.test.tsx" />
-      <test-names>
-        <test-name value="Home" />
-      </test-names>
-      <method v="2" />
-    </configuration>
-    <configuration name="Home" type="JavaScriptTestRunnerJest" temporary="true" nameIsGenerated="true">
-      <node-interpreter value="project" />
-      <node-options value="" />
-      <jest-package value="$PROJECT_DIR$/node_modules/jest" />
-      <working-dir value="$PROJECT_DIR$" />
-      <envs />
-      <scope-kind value="SUITE" />
-      <test-file value="$PROJECT_DIR$/__tests__/index.test.ts" />
-      <test-names>
-        <test-name value="Home" />
-      </test-names>
-      <method v="2" />
-    </configuration>
-    <configuration name="Homew" type="JavaScriptTestRunnerJest" temporary="true" nameIsGenerated="true">
-      <node-interpreter value="project" />
-      <node-options value="" />
-      <jest-package value="$PROJECT_DIR$/node_modules/jest" />
-      <working-dir value="$PROJECT_DIR$" />
-      <envs />
-      <scope-kind value="SUITE" />
-      <test-file value="$PROJECT_DIR$/pages/index.test.ts" />
-      <test-names>
-        <test-name value="Homew" />
-      </test-names>
-      <method v="2" />
-    </configuration>
-    <configuration name="test" type="js.build_tools.npm" temporary="true" nameIsGenerated="true">
+  <component name="RunManager">
+    <configuration name="dev" type="js.build_tools.npm" temporary="true" nameIsGenerated="true">
       <package-json value="$PROJECT_DIR$/package.json" />
       <command value="run" />
       <scripts>
-        <script value="test" />
+        <script value="dev" />
       </scripts>
       <node-interpreter value="project" />
       <envs />
@@ -104,10 +62,7 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Jest.Home (2)" />
-        <item itemvalue="npm.test" />
-        <item itemvalue="Jest.Homew" />
-        <item itemvalue="Jest.Home" />
+        <item itemvalue="npm.dev" />
       </list>
     </recent_temporary>
   </component>
@@ -119,7 +74,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1673701570685</updated>
-      <workItem from="1673701571715" duration="5147000" />
+      <workItem from="1673701571715" duration="7573000" />
     </task>
     <task id="LOCAL-00001" summary="feat(global): created the next project and updated README.Md">
       <created>1673702555596</created>
@@ -142,7 +97,14 @@
       <option name="project" value="LOCAL" />
       <updated>1673703194170</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="feat(jest): installed jest testing library">
+      <created>1673711658163</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1673711658163</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -155,6 +117,7 @@
     <MESSAGE value="feat(global): created the next project and updated README.Md" />
     <MESSAGE value="feat(index): removed unused code from create next app" />
     <MESSAGE value="feat(tailwind): installed tailwindcss" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat(tailwind): installed tailwindcss" />
+    <MESSAGE value="feat(jest): installed jest testing library" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat(jest): installed jest testing library" />
   </component>
 </project>
