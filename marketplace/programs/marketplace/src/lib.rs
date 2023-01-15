@@ -231,7 +231,6 @@ pub struct Initialize<'info> {
 
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
-    pub rent: Sysvar<'info, Rent>, // TODO: needed?
 }
 
 #[account]
@@ -260,7 +259,7 @@ pub struct CreateProviderAuthorizer<'info> {
     )]
     pub provider_authorizer: Account<'info, ProviderAuthorizer>,
 
-    #[account(mut)] // TODO: why mut?
+    #[account(mut)]
     pub authority: Signer<'info>,
 
     // Require a signature from the authorizer as well to ensure its private key
@@ -268,7 +267,6 @@ pub struct CreateProviderAuthorizer<'info> {
     pub authorizer: Signer<'info>,
 
     pub system_program: Program<'info, System>,
-    pub rent: Sysvar<'info, Rent>, // TODO: needed?
 }
 
 #[account]
