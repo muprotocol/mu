@@ -254,7 +254,7 @@ pub struct CreateProviderAuthorizer<'info> {
     #[account(
         init,
         payer = authority,
-        seeds = [b"authorizer"],
+        seeds = [b"authorizer", authorizer.key().as_ref()],
         space = 8 + 1 + 32 + 1,
         bump,
     )]
