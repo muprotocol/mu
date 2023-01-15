@@ -16,7 +16,6 @@ tokio-util = { version = "0.7", features = ["codec"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
-tokio-serde = { version = "0.8", features = ["bincode"] }
 futures = "0.3"
 pin-project = "1.0"
 rand = "0.8"
@@ -28,7 +27,7 @@ log = { version = "0.4", features = [
     "release_max_level_debug",
     "max_level_trace",
 ] }
-env_logger = "0.10.0"
+env_logger = "0.10"
 config = { version = "0.13", features = ["yaml"], default-features = false }
 async-trait = "0.1"
 bytes = "1.2"
@@ -41,7 +40,6 @@ stable-hash = "0.4"
 num = "0.4"
 dyn-clone = "1.0"
 dyn-clonable = "0.9"
-rocket = "0.5.0-rc.2"
 reqwest = "0.11"
 sled = "0.34"
 assert_matches = "1.5"
@@ -51,17 +49,18 @@ mu_stack = { path = "../mu_stack" }
 marketplace = { path = "../marketplace/programs/marketplace" }
 base64 = "0.13"
 base58 = "0.2"
-anchor-client = "0.25.0"
+anchor-client = "0.26"
 solana-account-decoder = "1.10"
-solana-client = "1.10"
-solana-sdk = "1.10"
 tikv-client = "0.1.0"
-spl-token = "3.3"
+solana-client = "1.14"
+solana-sdk = "1.13"
+spl-token = "3.5"
 chrono = "0.4"
 byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
 rust-embed = "6.4.2"
 http = "0.2"
 protobuf = "3.2"
+actix-web = "4.2"
 musdk-common = { path = "../sdk/common" }
 nix = "0.26.1"
 

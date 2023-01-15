@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-borsh = { git = "https://github.com/muprotocol/borsh-rs.git", branch = "feature/reader-deserialization" }
-num-derive = "0.3.3"
-num-traits = "0.2.15"
+borsh = { git = "https://github.com/near/borsh-rs", rev = "e82b47bdc14f65d464e9efa1237195a6b9770830" }
+num-derive = "0.3"
+num-traits = "0.2"
 
 [lib]
 name = "musdk_common"

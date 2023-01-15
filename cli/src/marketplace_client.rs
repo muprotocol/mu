@@ -151,7 +151,7 @@ mod utils {
         solana_client::{
             client_error::ClientErrorKind,
             rpc_client::RpcClient,
-            rpc_filter::{Memcmp, MemcmpEncodedBytes, MemcmpEncoding, RpcFilterType},
+            rpc_filter::{Memcmp, RpcFilterType},
             rpc_request::RpcError,
         },
         solana_sdk::pubkey::Pubkey,
@@ -188,16 +188,14 @@ mod utils {
             .map_err(|e| anyhow!("provider name too long: {e}"))?;
 
         let filters = vec![
-            RpcFilterType::Memcmp(Memcmp {
-                offset: 8,
-                bytes: MemcmpEncodedBytes::Bytes(vec![marketplace::MuAccountType::Provider as u8]),
-                encoding: Some(MemcmpEncoding::Binary),
-            }),
-            RpcFilterType::Memcmp(Memcmp {
-                offset: 8 + 1 + 32 + 4, // 4 more bytes for the prefix length
-                bytes: MemcmpEncodedBytes::Bytes(name.as_bytes().to_vec()),
-                encoding: Some(MemcmpEncoding::Binary),
-            }),
+            RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+                8,
+                vec![marketplace::MuAccountType::Provider as u8],
+            )),
+            RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+                8 + 1 + 32 + 4, // 4 more bytes for the prefix length
+                name.as_bytes().to_vec(),
+            )),
             RpcFilterType::DataSize(
                 // Account type and etc
                 8 + 1 + 32

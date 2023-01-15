@@ -1,8 +1,10 @@
+actix
 balancer
 Bincode
 bufread
 Borsh
 chrono
+clippy
 clonable
 codegen
 Condvar
@@ -18,11 +20,15 @@ Hasher
 hashkey
 hostnames
 idgen
+ipaddress
+itertools
 keygen
 keypair
 keypairs
 Kubernetes
 LAMPORTS
+libclang
+libudev
 Localnet
 MacOS
 middlewares
@@ -49,6 +55,7 @@ protos
 pubkey
 QUIC
 quinn
+rbpf
 rcgen
 reconnections
 recv
@@ -59,6 +66,7 @@ rngs
 runtime
 Runtime
 rustc
+rustfmt
 rustls
 rustup
 scts

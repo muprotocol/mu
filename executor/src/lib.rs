@@ -129,15 +129,21 @@ pub async fn run() -> Result<()> {
         bail!("Failed to connect to any seeds and this node is not a seed, aborting");
     }
 
+    let usage_aggregator = stack::usage_aggregator::start();
+
+    let (blockchain_monitor, mut blockchain_monitor_notification_receiver, region_id) =
+        blockchain_monitor::start(blockchain_monitor_config, usage_aggregator.clone())
+            .await
+            .context("Failed to start blockchain monitor")?;
+
     let gossip = gossip::start(
         my_node,
         gossip_config,
         known_nodes,
         gossip_notification_channel,
+        region_id,
     )
     .context("Failed to start gossip")?;
-
-    let usage_aggregator = stack::usage_aggregator::start();
 
     let function_provider = runtime::providers::DefaultAssemblyProvider::new();
     let database_manager =
@@ -182,11 +188,6 @@ pub async fn run() -> Result<()> {
         gateway_manager.clone(),
         database_manager.clone(),
     );
-
-    let (blockchain_monitor, mut blockchain_monitor_notification_receiver) =
-        blockchain_monitor::start(blockchain_monitor_config, usage_aggregator.clone())
-            .await
-            .context("Failed to start blockchain monitor")?;
 
     // TODO: create a `Module`/`Subsystem`/`NotificationSource` trait to batch modules with their notification receivers?
     let scheduler_clone = scheduler.clone();
