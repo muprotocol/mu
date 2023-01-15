@@ -12,7 +12,11 @@ fn download_and_extract_file(url: String, dest: &str, file_name: &str) -> Result
     if new_path.exists() {
         return Ok(());
     }
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(3600))
+        .build()
+        .unwrap();
+
     let req = client.get(url);
     let bytes = req
         .send()
@@ -36,9 +40,6 @@ fn download_and_extract_file(url: String, dest: &str, file_name: &str) -> Result
 fn main() {
     println!("cargo:rerun-if-changed=assets/pd-server-6.4.0");
     println!("cargo:rustc-env=TIKV_VERSION={TIKV_VERSION}");
-    // TODO
-    // let pd_url = format!("http://0.0.0.0:8080/pd-v{TIKV_VERSION}-linux-amd64.tar.gz");
-    // let tikv_url = format!("http://0.0.0.0:8080/tikv-v{TIKV_VERSION}-linux-amd64.tar.gz");
     let pd_url = format!("https://tiup-mirrors.pingcap.com/pd-v{TIKV_VERSION}-linux-amd64.tar.gz");
     let tikv_url =
         format!("https://tiup-mirrors.pingcap.com/tikv-v{TIKV_VERSION}-linux-amd64.tar.gz");

@@ -10,60 +10,24 @@ use tikv_client::{self, KvPair, RawClient, Value};
 use tokio::time::{sleep, Duration};
 
 // TODO: caching
-// stacks_and_tables: HashMap<StackID, Vec<TableName>>,
+// * stacks_and_tables: HashMap<StackID, Vec<TableName>>,
 #[derive(Clone)]
-pub struct DbImpl {
+pub struct DbClientImpl {
     inner: tikv_client::RawClient,
-    tikv_runner: Option<Box<dyn TikvRunner>>,
+    // tikv_runner: Option<Box<dyn TikvRunner>>,
 }
 
-impl DbImpl {
-    pub async fn new_with_embedded_cluster(
-        node_address: NodeAddress,
-        known_node_config: Vec<KnownNodeConfig>,
-        config: TikvRunnerConfig,
-    ) -> Result<Self> {
-        let x = start(node_address, known_node_config, config.clone()).await?;
-        let mut y = RawClient::new(vec![config.pd.client_url.clone()]).await;
-        let mut i = 0;
-        while y.is_err() && i < 7 {
-            sleep(Duration::from_millis((i + 1) * 1000)).await;
-            y = RawClient::new(vec![config.pd.client_url.clone()]).await;
-            i += 1;
-        }
-        if let Ok(yp) = y {
-            Ok(Self {
-                inner: yp,
-                tikv_runner: Some(x),
-            })
-        } else {
-            x.stop().await?;
-            Err(Error::TikvConnectionTimeout(format!(
-                "{}",
-                y.map(|_| String::default()).unwrap_err()
-            )))
-        }
-    }
-
-    pub async fn new_with_external_cluster(endpoints: Vec<IpAndPort>) -> Result<Self> {
+impl DbClientImpl {
+    pub async fn new(endpoints: Vec<IpAndPort>) -> Result<Self> {
         Ok(Self {
             inner: RawClient::new(endpoints).await?,
-            tikv_runner: None,
         })
-    }
-
-    pub async fn stop_embed_cluster(&self) -> Result<()> {
-        match &self.tikv_runner {
-            Some(r) => r.stop().await,
-            None => Ok(()),
-        }
     }
 
     fn make_atomic_or_do_nothing(&self, is_atomic: bool) -> Self {
         if is_atomic {
             Self {
                 inner: self.inner.with_atomic_for_cas(),
-                tikv_runner: self.tikv_runner.clone(),
             }
         } else {
             self.clone()
@@ -78,7 +42,7 @@ impl DbImpl {
 }
 
 #[async_trait]
-impl Db for DbImpl {
+impl DbClient for DbClientImpl {
     async fn put_stack_manifest(
         &self,
         stack_id: StackID,
@@ -253,6 +217,51 @@ impl Db for DbImpl {
             .compare_and_swap(key, previous_value, new_value)
             .await
             .map_err(Into::into)
+    }
+}
+
+#[derive(Clone)]
+pub struct DbManagerImpl {
+    inner: Option<Box<dyn TikvRunner>>,
+    endpoints: Vec<IpAndPort>,
+}
+
+impl DbManagerImpl {
+    pub async fn new_with_embedded_cluster(
+        node_address: NodeAddress,
+        known_node_config: Vec<KnownNodeConfig>,
+        config: TikvRunnerConfig,
+    ) -> anyhow::Result<Self> {
+        let endpoints = vec![config.pd.client_url.clone()];
+        let inner = Some(start(node_address, known_node_config, config).await?);
+        Ok(Self { inner, endpoints })
+    }
+
+    pub async fn new_with_external_cluster(endpoints: Vec<IpAndPort>) -> Self {
+        Self {
+            inner: None,
+            endpoints,
+        }
+    }
+}
+
+#[async_trait]
+impl DbManager<DbClientImpl> for DbManagerImpl {
+    async fn make_client(&self) -> anyhow::Result<DbClientImpl> {
+        let mut x = DbClientImpl::new(self.endpoints.clone()).await;
+        let mut i = 0;
+        while x.is_err() && i < 5 {
+            sleep(Duration::from_millis((i + 1) * 1000)).await;
+            x = DbClientImpl::new(self.endpoints.clone()).await;
+            i += 1;
+        }
+        Ok(x?)
+    }
+    async fn stop_embedded_cluster(&self) -> anyhow::Result<()> {
+        match &self.inner {
+            Some(r) => r.stop().await,
+            None => Ok(()),
+        }
     }
 }
 

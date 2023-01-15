@@ -8,8 +8,7 @@ use std::ops::Deref;
 use tikv_client::{BoundRange, Key as TikvKey, Value};
 
 // TODO: add constraint to Key (actually key.stack_id) to avoid this name
-// TODO: rename it
-const TABLE_LIST: &str = "__tl";
+const TABLE_LIST_METADATA: &str = "__tlm";
 
 pub type Blob = Vec<u8>;
 
@@ -28,24 +27,16 @@ fn tikv_key_from_3_chunk(first: &[u8], second: &[u8], third: &[u8]) -> TikvKey {
 fn three_chunk_try_from_tikv_key(
     value: tikv_client::Key,
 ) -> std::result::Result<(Blob, Blob, Blob), String> {
-    let e = "Insufficient blobs to convert to Key";
-    let split_first = |mut x: Vec<u8>| {
-        if x.len() < 1 {
-            Err(e.to_string())
-        } else {
-            let y = x.split_off(x.len() - 1);
-            let x = x.pop().unwrap();
-            Ok((x, y))
-        }
-    };
+    const E: &str = "Insufficient blobs to convert to Key";
     let split_at = |mut x: Vec<u8>, y| {
         if x.len() < y {
-            Err(e.to_string())
+            Err(E.to_string())
         } else {
-            let z = x.split_off(x.len() - y);
+            let z = x.split_off(y);
             Ok((x, z))
         }
     };
+    let split_first = |x: Vec<u8>| split_at(x, 1).map(|(mut x, y)| (x.pop().unwrap(), y));
 
     let x: Blob = value.into();
 
@@ -54,23 +45,7 @@ fn three_chunk_try_from_tikv_key(
     let (b_size, x) = split_first(x)?;
     let (b, c) = split_at(x, b_size as usize)?;
 
-    Ok((a.into(), b.into(), c.into()))
-
-    // TODO: remove old
-    // let (a_size, r) = x.split_first().ok_or_else(|| e.to_string())?;
-    // let a_size = *a_size as usize;
-    // if r.len() < a_size {
-    //     return Err(e.into());
-    // }
-    // let (a, r) = r.split_at(a_size);
-    // let (b_size, r) = r.split_first().ok_or_else(|| e.to_string())?;
-    // let b_size = *b_size as usize;
-    // if r.len() < b_size {
-    //     return Err(e.into());
-    // }
-    // let (b, c) = r.split_at(b_size);
-
-    // Ok((a.into(), b.into(), c.into()))
+    Ok((a, b, c))
 }
 
 pub struct TableListKey {
@@ -89,8 +64,8 @@ impl TableListKey {
 
 impl From<TableListKey> for tikv_client::Key {
     fn from(k: TableListKey) -> Self {
-        let first = TABLE_LIST.as_bytes();
-        // TODO
+        let first = TABLE_LIST_METADATA.as_bytes();
+        // TODO: stack_id disclimiantor byte
         let second = k.stack_id.get_bytes();
         let third = k.table_name.as_bytes();
         tikv_key_from_3_chunk(first, second, third)
@@ -101,9 +76,9 @@ impl TryFrom<tikv_client::Key> for TableListKey {
     type Error = String;
     fn try_from(value: tikv_client::Key) -> std::result::Result<Self, Self::Error> {
         let (a, b, c) = three_chunk_try_from_tikv_key(value)?;
-        if TABLE_LIST
+        if TABLE_LIST_METADATA
             != &String::from_utf8(a)
-                .map_err(|e| format!("cant deserialize {TABLE_LIST} cause: {e}"))?
+                .map_err(|e| format!("cant deserialize {TABLE_LIST_METADATA} cause: {e}"))?
         {
             Err(format!(
                 "cant deserialize TableListKey cause it's not TableListKey"
@@ -170,7 +145,6 @@ fn subset_range(from: Blob) -> BoundRange {
 
 // === TableName ===
 
-// TODO: max 255 byte, min 8 byte
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TableName(String);
 
@@ -266,14 +240,14 @@ pub enum ScanTableList {
 impl From<ScanTableList> for BoundRange {
     fn from(s: ScanTableList) -> Self {
         match s {
-            ScanTableList::Whole => prefixed_by_a_chunk_bound_range(TABLE_LIST.into()),
+            ScanTableList::Whole => prefixed_by_a_chunk_bound_range(TABLE_LIST_METADATA.into()),
             ScanTableList::ByStackID(stackid) => prefixed_by_two_chunk_bound_range(
-                TABLE_LIST.into(),
+                TABLE_LIST_METADATA.into(),
                 stackid.get_bytes().to_owned().into(),
             ),
             ScanTableList::ByTableNamePrefix(stackid, tablename) => {
                 prefixed_by_three_chunk_bound_range(
-                    TABLE_LIST.into(),
+                    TABLE_LIST_METADATA.into(),
                     stackid.get_bytes().to_owned().into(),
                     tablename.into(),
                 )
@@ -335,7 +309,7 @@ impl TryFrom<&str> for IpAndPort {
 }
 
 #[async_trait]
-pub trait Db: Clone {
+pub trait DbClient: Clone {
     async fn put_stack_manifest(&self, stack_id: StackID, tables: Vec<TableName>) -> Result<()>;
     async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()>;
     async fn get(&self, key: Key) -> Result<Option<Value>>;
@@ -386,6 +360,12 @@ pub trait Db: Clone {
         previous_value: Option<Value>,
         new_value: Value,
     ) -> Result<(Option<Value>, bool)>;
+}
+
+#[async_trait]
+pub trait DbManager<T: DbClient> {
+    async fn make_client(&self) -> anyhow::Result<T>;
+    async fn stop_embedded_cluster(&self) -> anyhow::Result<()>;
 }
 
 #[cfg(test)]

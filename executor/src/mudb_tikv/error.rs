@@ -9,8 +9,6 @@ pub enum Error {
     CantDeserializeKey(String),
     #[error("muDB: stack_id or table doesn't exist: {0:?}")]
     StackIdOrTableDoseNotExist(Key),
-    #[error("muDB: embedding TiKV error: {0}")]
-    EmbedTikvErr(String),
     #[error("muDB: TiKV startup timeout: {0}, so rest of the processes killed")]
     TikvConnectionTimeout(String),
 }

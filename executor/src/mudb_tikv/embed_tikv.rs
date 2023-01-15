@@ -1,7 +1,6 @@
-use super::{
-    error::{Error::EmbedTikvErr, Result},
-    types::IpAndPort,
-};
+use super::types::IpAndPort;
+
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use mailbox_processor::callback::CallbackMailboxProcessor;
@@ -32,8 +31,7 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
         return Ok(temp_address);
     }
 
-    let tool = <Assets as RustEmbed>::get(name)
-        .ok_or(EmbedTikvErr("Failed to get embedded asset".into()))?;
+    let tool = <Assets as RustEmbed>::get(name).context("Failed to get embedded asset")?;
 
     let tool_bytes = tool.data;
 
@@ -41,27 +39,25 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
 
     let mut file = File::create(temp_address_ref)
         .await
-        .map_err(|_| EmbedTikvErr("Failed to create temp file".into()))?;
+        .context("Failed to create temp file")?;
 
     file.write_all(&tool_bytes)
         .await
-        .map_err(|_| EmbedTikvErr("Failed to write embedded resource to temp file".into()))?;
+        .context("Failed to write embedded resource to temp file")?;
 
-    file.flush()
-        .await
-        .map_err(|_| EmbedTikvErr("Failed to flush temp file".into()))?;
+    file.flush().await.context("Failed to flush temp file")?;
 
     let mut perms = file
         .metadata()
         .await
-        .map_err(|_| EmbedTikvErr("Failed to get temp file metadata".into()))?
+        .context("Failed to get temp file metadata")?
         .permissions();
 
-    perms.set_mode(0o744);
+    perms.set_mode(0o500);
 
     file.set_permissions(perms)
         .await
-        .map_err(|_| EmbedTikvErr("Failed to set executable permission on temp file".into()))?;
+        .context("Failed to set executable permission on temp file")?;
 
     Ok(temp_address)
 }
@@ -69,11 +65,6 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
 #[derive(Deserialize, Clone)]
 pub struct PdConfig {
     pub data_dir: String,
-    // TODO: address should be same with node address (NodeAddress::address) as below has been explained,
-    // * so should be remove I think.
-    // * https://tikv.org/docs/dev/deploy/configure/pd-command-line/#--peer-urls
-    // * also I suggest to use a random port because it's for internal communication and
-    // * that's not important to user
     pub peer_url: IpAndPort,
     pub client_url: IpAndPort,
     pub log_file: Option<String>,
@@ -81,13 +72,7 @@ pub struct PdConfig {
 
 #[derive(Deserialize, Clone)]
 pub struct TikvConfig {
-    // TODO: address should be same with node address (NodeAddress::address) as below has been explained,
-    // * so should be remove I think.
-    // * https://tikv.org/docs/dev/deploy/configure/pd-command-line/#--peer-urls
-    // * also I suggest to use a random port because it's for internal communication and
-    // * that's not important to user
     pub cluster_url: IpAndPort,
-    // TODO: I suggest to make it optional and provide default data_dir
     pub data_dir: String,
     pub log_file: Option<String>,
 }
@@ -207,22 +192,22 @@ pub async fn start(
     let tikv_version = env!("TIKV_VERSION");
     let pd_exe = check_and_extract_embedded_executable(&format!("pd-server-{tikv_version}"))
         .await
-        .map_err(|_| EmbedTikvErr("Failed to create pd-exe".into()))?;
+        .context("Failed to create pd-exe")?;
     let tikv_exe = check_and_extract_embedded_executable(&format!("tikv-server-{tikv_version}"))
         .await
-        .map_err(|_| EmbedTikvErr("Failed to create tikv-exe".into()))?;
+        .context("Failed to create tikv-exe")?;
 
     let args = generate_arguments(node_address, known_node_config, config);
 
     let pd_process = std::process::Command::new(pd_exe)
         .args(args.pd_args)
         .spawn()
-        .map_err(|e| EmbedTikvErr(format!("Failed to spawn process pd {e}")))?;
+        .context("Failed to spawn process pd")?;
 
     let tikv_process = std::process::Command::new(tikv_exe)
         .args(args.tikv_args)
         .spawn()
-        .map_err(|e| EmbedTikvErr(format!("Failed to spawn process tikv {e}")))?;
+        .context("Failed to spawn process tikv")?;
 
     let mailbox = CallbackMailboxProcessor::start(
         step,
@@ -241,10 +226,7 @@ pub async fn start(
 #[async_trait]
 impl TikvRunner for TikvRunnerImpl {
     async fn stop(&self) -> Result<()> {
-        self.mailbox
-            .post(Message::Stop)
-            .await
-            .map_err(|e| EmbedTikvErr(format!("{e}")))
+        Ok(self.mailbox.post(Message::Stop).await?)
     }
 }
 
@@ -256,26 +238,30 @@ struct TikvRunnerState {
 async fn step(
     _mb: CallbackMailboxProcessor<Message>,
     msg: Message,
-    state: TikvRunnerState,
+    mut state: TikvRunnerState,
 ) -> TikvRunnerState {
     match msg {
         Message::Stop => {
-            let pd_kill = signal::kill(
-                Pid::from_raw(state.pd_process.id().try_into().unwrap()),
-                Signal::SIGTERM,
-            );
-
-            if let Err(f) = pd_kill {
-                error!("failed to kill pd_process due to: {f}")
+            if let Err(f) = signal::kill(
+                Pid::from_raw(state.tikv_process.id().try_into().unwrap()),
+                Signal::SIGINT,
+            ) {
+                error!("failed to kill tikv_process due to: {f:?}")
             }
 
-            let tikv_kill = signal::kill(
-                Pid::from_raw(state.tikv_process.id().try_into().unwrap()),
-                Signal::SIGTERM,
-            );
+            if let Err(e) = state.tikv_process.wait() {
+                error!("failed to wait for tikv to exit {e:?}")
+            }
 
-            if let Err(f) = tikv_kill {
-                error!("failed to kill tikv_process due to: {f}")
+            if let Err(f) = signal::kill(
+                Pid::from_raw(state.pd_process.id().try_into().unwrap()),
+                Signal::SIGINT,
+            ) {
+                error!("failed to kill pd_process due to: {f:?}")
+            }
+
+            if let Err(e) = state.pd_process.wait() {
+                error!("failed to wait for pd to exit {e:?}")
             }
         }
     }
