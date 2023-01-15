@@ -41,10 +41,13 @@ pub struct ListRegionCommand {
 pub fn execute_list_provider(config: Config, cmd: ListProviderCommand) -> Result<()> {
     let client = config.build_marketplace_client()?;
 
-    let mut filters = vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-        8,
-        vec![marketplace::MuAccountType::Provider as u8],
-    ))];
+    let mut filters = vec![
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            8,
+            vec![marketplace::MuAccountType::Provider as u8],
+        )),
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(8 + 1 + 32, vec![1])),
+    ];
 
     if let Some(name_prefix) = cmd.name_prefix {
         filters.push(RpcFilterType::Memcmp(Memcmp::new_raw_bytes(

@@ -122,9 +122,14 @@ pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
     let user_wallet = config.get_signer()?;
 
     let stack_pda = client.get_stack_pda(user_wallet.pubkey(), cmd.region, cmd.seed);
+    let region = client
+        .program
+        .account::<marketplace::ProviderRegion>(cmd.region)
+        .context("Failed to fetch region from Solana")?;
 
     let accounts = marketplace::accounts::CreateStack {
         region: cmd.region,
+        provider: region.provider,
         stack: stack_pda,
         user: user_wallet.pubkey(),
         system_program: system_program::id(),

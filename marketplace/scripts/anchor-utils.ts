@@ -1,15 +1,15 @@
 import * as anchor from "@project-serum/anchor";
-import {BN, Program} from "@project-serum/anchor";
-import {publicKey} from "@project-serum/anchor/dist/cjs/utils";
-import {Marketplace} from "../target/types/marketplace";
-import {Keypair, LAMPORTS_PER_SOL, Transaction, SystemProgram, PublicKey} from '@solana/web3.js'
+import { BN, Program } from "@project-serum/anchor";
+import { publicKey } from "@project-serum/anchor/dist/cjs/utils";
+import { Marketplace } from "../target/types/marketplace";
+import { Keypair, LAMPORTS_PER_SOL, Transaction, SystemProgram, PublicKey } from '@solana/web3.js'
 import * as spl from '@solana/spl-token';
 import path from "path";
-import {existsSync, readFileSync, writeFileSync} from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import promptSync from "prompt-sync";
-import {sleep, waitUntilPortUsed} from "./util";
-import {env} from "process";
-import {homedir} from "os";
+import { sleep, waitUntilPortUsed } from "./util";
+import { env, memoryUsage } from "process";
+import { homedir } from "os";
 
 export const canConnectToLocalValidator = async () => {
     try {
@@ -257,7 +257,7 @@ export const createProvider = async (mu: MuProgram, name: string, useStaticKeypa
         depositToken: mu.depositPda,
     }).signers([wallet]).rpc();
 
-    return {wallet, pda, tokenAccount};
+    return { wallet, pda, tokenAccount };
 }
 
 export const loadProviderFromStaticKeypair = async (mu: MuProgram, name: string): Promise<MuProviderInfo> => {
@@ -271,8 +271,52 @@ export const loadProviderFromStaticKeypair = async (mu: MuProgram, name: string)
         mu.program.programId
     );
 
-    return {wallet, pda, tokenAccount};
+    return { wallet, pda, tokenAccount };
 }
+
+export interface MuProviderAuthorizer {
+    keypair: Keypair,
+    pda: PublicKey,
+}
+
+export const readProviderAuthorizer = (mu: MuProgram, name?: string): MuProviderAuthorizer => {
+    let keypair = readOrCreateKeypair(name === undefined ? undefined : `authorizer-${name}`);
+
+    const [authorizerPda, _] = publicKey.findProgramAddressSync(
+        [
+            anchor.utils.bytes.utf8.encode("authorizer"),
+            keypair.publicKey.toBytes(),
+        ],
+        mu.program.programId,
+    );
+
+    return {
+        keypair,
+        pda: authorizerPda
+    }
+}
+
+export const createProviderAuthorizer = async (mu: MuProgram, name?: string): Promise<MuProviderAuthorizer> => {
+    let authorizer = readProviderAuthorizer(mu, name);
+
+    await mu.program.methods.createProviderAuthorizer().accounts({
+        state: mu.statePda,
+        providerAuthorizer: authorizer.pda,
+        authority: mu.anchorProvider.wallet.publicKey,
+        authorizer: authorizer.keypair.publicKey,
+    }).signers([authorizer.keypair]).rpc();
+
+    return authorizer;
+}
+
+export const authorizeProvider = async (mu: MuProgram, provider: MuProviderInfo, authorizer: MuProviderAuthorizer) => {
+    await mu.program.methods.authorizeProvider().accounts({
+        authorizer: authorizer.keypair.publicKey,
+        providerAuthorizer: authorizer.pda,
+        owner: provider.wallet.publicKey,
+        provider: provider.pda,
+    }).signers([authorizer.keypair]).rpc();
+};
 
 export interface MuRegionInfo {
     pda: PublicKey
@@ -288,7 +332,7 @@ export const getRegion = (mu: MuProgram, provider: MuProviderInfo, regionNum: nu
         mu.program.programId
     )[0];
 
-    return {pda};
+    return { pda };
 }
 
 export const createRegion = async (
@@ -352,7 +396,7 @@ export const createAuthorizedUsageSigner = async (
             owner: provider.wallet.publicKey,
         }).signers([provider.wallet]).rpc();
 
-    return {wallet, pda};
+    return { wallet, pda };
 }
 
 export interface UserWallet {
@@ -362,12 +406,12 @@ export interface UserWallet {
 
 export const readOrCreateWallet = async (mu: MuProgram, name?: string): Promise<UserWallet> => {
     let [keypair, tokenAccount] = await createAndFundWallet(mu.anchorProvider, mu.mint, name);
-    return {keypair, tokenAccount};
+    return { keypair, tokenAccount };
 }
 
 export const readOrCreateUserWallet = async (mu: MuProgram, userIndex?: number): Promise<UserWallet> => {
     let [keypair, tokenAccount] = await createAndFundWallet(mu.anchorProvider, mu.mint, userIndex === undefined ? undefined : `user_${userIndex}`);
-    return {keypair, tokenAccount};
+    return { keypair, tokenAccount };
 }
 
 export interface MuEscrowAccountInfo {
@@ -399,7 +443,7 @@ export const createEscrowAccount = async (
         state: mu.statePda,
     }).signers([userWallet]).rpc();
 
-    return {pda, bump};
+    return { pda, bump };
 }
 
 export const getEscrowAccount = (
@@ -418,7 +462,7 @@ export const getEscrowAccount = (
         mu.program.programId
     );
 
-    return {pda, bump};
+    return { pda, bump };
 }
 
 export interface MuStackInfo {
@@ -428,6 +472,7 @@ export interface MuStackInfo {
 export const deployStack = async (
     mu: MuProgram,
     userWallet: Keypair,
+    provider: MuProviderInfo,
     region: MuRegionInfo,
     stack: Buffer,
     stackSeed: number,
@@ -452,9 +497,11 @@ export const deployStack = async (
             user: userWallet.publicKey,
             stack: pda,
             region: region.pda,
+            provider: provider.pda,
+
         }).signers([userWallet]).rpc();
 
-    return {pda};
+    return { pda };
 }
 
 export interface MuStackUsageUpdateInfo {
@@ -500,5 +547,5 @@ export const updateStackUsage = async (
         signer: authSigner.wallet.publicKey,
     }).signers([authSigner.wallet]).rpc();
 
-    return {pda, bump};
+    return { pda, bump };
 }

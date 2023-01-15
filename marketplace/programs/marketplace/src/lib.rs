@@ -25,6 +25,13 @@ pub enum MuAccountType {
     UsageUpdate = 3,
     AuthorizedUsageSigner = 4,
     Stack = 5,
+    ProviderAuthorizer = 6,
+}
+
+#[error_code]
+pub enum Error {
+    #[msg("Provider is not authorized")]
+    ProviderNotAuthorized,
 }
 
 #[program]
@@ -43,6 +50,18 @@ pub mod marketplace {
         Ok(())
     }
 
+    pub fn create_provider_authorizer(ctx: Context<CreateProviderAuthorizer>) -> Result<()> {
+        ctx.accounts
+            .provider_authorizer
+            .set_inner(ProviderAuthorizer {
+                account_type: MuAccountType::ProviderAuthorizer as u8,
+                authorizer: ctx.accounts.authorizer.key(),
+                bump: *ctx.bumps.get("provider_authorizer").unwrap(),
+            });
+
+        Ok(())
+    }
+
     pub fn create_provider(ctx: Context<CreateProvider>, name: String) -> Result<()> {
         let transfer = Transfer {
             from: ctx.accounts.owner_token.to_account_info(),
@@ -55,8 +74,38 @@ pub mod marketplace {
         ctx.accounts.provider.set_inner(Provider {
             account_type: MuAccountType::Provider as u8,
             name,
+            authorized: false,
             owner: ctx.accounts.owner.key(),
             bump: *ctx.bumps.get("provider").unwrap(),
+        });
+
+        Ok(())
+    }
+
+    pub fn authorize_provider(ctx: Context<AuthorizeProvider>) -> Result<()> {
+        ctx.accounts.provider.authorized = true;
+        Ok(())
+    }
+
+    pub fn create_region(
+        ctx: Context<CreateRegion>,
+        region_num: u32,
+        name: String,
+        zones: u8,
+        rates: ServiceRates,
+    ) -> Result<()> {
+        if !ctx.accounts.provider.authorized {
+            return Err(Error::ProviderNotAuthorized.into());
+        }
+
+        ctx.accounts.region.set_inner(ProviderRegion {
+            account_type: MuAccountType::ProviderRegion as u8,
+            name,
+            zones,
+            region_num,
+            rates,
+            provider: ctx.accounts.provider.key(),
+            bump: *ctx.bumps.get("region").unwrap(),
         });
 
         Ok(())
@@ -68,6 +117,10 @@ pub mod marketplace {
         stack_data: Vec<u8>,
         name: String,
     ) -> Result<()> {
+        if !ctx.accounts.provider.authorized {
+            return Err(Error::ProviderNotAuthorized.into());
+        }
+
         ctx.accounts.stack.set_inner(Stack {
             account_type: MuAccountType::Stack as u8,
             stack: stack_data,
@@ -77,26 +130,6 @@ pub mod marketplace {
             revision: 1,
             bump: *ctx.bumps.get("stack").unwrap(),
             name,
-        });
-
-        Ok(())
-    }
-
-    pub fn create_region(
-        ctx: Context<CreateRegion>,
-        region_num: u32,
-        name: String,
-        zones: u8,
-        rates: ServiceRates,
-    ) -> Result<()> {
-        ctx.accounts.region.set_inner(ProviderRegion {
-            account_type: MuAccountType::ProviderRegion as u8,
-            name,
-            zones,
-            region_num,
-            rates,
-            provider: ctx.accounts.provider.key(),
-            bump: *ctx.bumps.get("region").unwrap(),
         });
 
         Ok(())
@@ -198,13 +231,49 @@ pub struct Initialize<'info> {
 
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
-    pub rent: Sysvar<'info, Rent>,
+}
+
+#[account]
+#[derive(Default)]
+pub struct ProviderAuthorizer {
+    pub account_type: u8,
+    pub authorizer: Pubkey,
+    pub bump: u8,
+}
+
+#[derive(Accounts)]
+pub struct CreateProviderAuthorizer<'info> {
+    #[account(
+        seeds = [b"state"],
+        bump = state.bump,
+        has_one = authority
+    )]
+    state: Account<'info, MuState>,
+
+    #[account(
+        init,
+        payer = authority,
+        seeds = [b"authorizer", authorizer.key().as_ref()],
+        space = 8 + 1 + 32 + 1,
+        bump,
+    )]
+    pub provider_authorizer: Account<'info, ProviderAuthorizer>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    // Require a signature from the authorizer as well to ensure its private key
+    // is available somewhere.
+    pub authorizer: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
 }
 
 #[account]
 pub struct Provider {
     pub account_type: u8, // See MuAccountType
     pub owner: Pubkey,
+    pub authorized: bool,
     pub name: String,
     pub bump: u8,
 }
@@ -222,7 +291,7 @@ pub struct CreateProvider<'info> {
     #[account(
         init,
         payer = owner,
-        space = 8 + 1 + 4 + name.as_bytes().len() + 32 + 1,
+        space = 8 + 1 + 32 + 1 + 4 + name.as_bytes().len() + 1,
         seeds = [b"provider", owner.key().as_ref()],
         bump
     )]
@@ -240,6 +309,28 @@ pub struct CreateProvider<'info> {
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct AuthorizeProvider<'info> {
+    #[account(
+        seeds = [b"authorizer", authorizer.key().as_ref()],
+        bump = provider_authorizer.bump,
+        has_one = authorizer
+    )]
+    provider_authorizer: Account<'info, ProviderAuthorizer>,
+
+    pub authorizer: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"provider", owner.key().as_ref()],
+        bump = provider.bump
+    )]
+    pub provider: Account<'info, Provider>,
+
+    /// CHECK: The provider's wallet, used only to validate the provider account's PDA
+    pub owner: AccountInfo<'info>,
 }
 
 // This is essentially the same data as in ServiceUsage, but with
@@ -344,6 +435,9 @@ pub struct Stack {
 #[derive(Accounts)]
 #[instruction(stack_seed: u64, stack_data: Vec<u8>, name: String)]
 pub struct CreateStack<'info> {
+    pub provider: Account<'info, Provider>,
+
+    #[account(has_one = provider)]
     pub region: Account<'info, ProviderRegion>,
 
     #[account(
