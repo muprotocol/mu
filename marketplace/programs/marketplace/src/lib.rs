@@ -327,7 +327,7 @@ pub struct AuthorizeProvider<'info> {
     #[account(
         mut,
         seeds = [b"provider", owner.key().as_ref()],
-        bump
+        bump = provider.bump
     )]
     pub provider: Account<'info, Provider>,
 
