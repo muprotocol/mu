@@ -29,6 +29,7 @@
 8. Run local test-validator and deploy smart contract:
    - `anchor run deploy-test-stack -- -y`
 
+9. For using `@project-serum/anchor` package you must set the `ANCHOR_WALLET` variable to `/home/$USER/.config/solana/id.json`
 
 ## CLI commands:
 Go to cli folder
