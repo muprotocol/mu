@@ -191,9 +191,10 @@ export interface MuProgram {
     program: anchor.Program<Marketplace>;
     statePda: anchor.web3.PublicKey;
     depositPda: anchor.web3.PublicKey;
+    commissionPda: anchor.web3.PublicKey;
 }
 
-export const getMu = (anchorProvider: anchor.AnchorProvider, mint: Keypair) => {
+export const getMu = (anchorProvider: anchor.AnchorProvider, mint: Keypair): MuProgram => {
     anchor.setProvider(anchorProvider);
 
     const program = anchor.workspace.Marketplace as Program<Marketplace>;
@@ -208,23 +209,30 @@ export const getMu = (anchorProvider: anchor.AnchorProvider, mint: Keypair) => {
         program.programId
     )[0];
 
+    const commissionPda = publicKey.findProgramAddressSync(
+        [anchor.utils.bytes.utf8.encode("commission")],
+        program.programId
+    )[0];
+
     return {
         anchorProvider,
         mint,
         program,
         statePda,
-        depositPda
+        depositPda,
+        commissionPda,
     };
 
 }
 
-export const initializeMu = async (anchorProvider: anchor.AnchorProvider, mint: Keypair): Promise<MuProgram> => {
+export const initializeMu = async (anchorProvider: anchor.AnchorProvider, mint: Keypair, commission_rate_micros: number): Promise<MuProgram> => {
     let mu = getMu(anchorProvider, mint);
 
-    await mu.program.methods.initialize().accounts({
+    await mu.program.methods.initialize(commission_rate_micros).accounts({
         authority: anchorProvider.wallet.publicKey,
         state: mu.statePda,
         depositToken: mu.depositPda,
+        commissionToken: mu.commissionPda,
         mint: mint.publicKey,
     }).rpc();
 
@@ -538,6 +546,7 @@ export const updateStackUsage = async (
         usage,
     ).accounts({
         state: mu.statePda,
+        commissionToken: mu.commissionPda,
         authorizedSigner: authSigner.pda,
         region: region.pda,
         tokenAccount: provider.tokenAccount,
