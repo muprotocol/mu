@@ -619,6 +619,7 @@ async fn report_usages<'a>(state: &mut State<'a>, config: &BlockchainMonitorConf
             .as_slice(),
     )
     .unwrap();
+    let commission_pda = Pubkey::find_program_address(&[b"commission"], &marketplace::id()).0;
 
     debug!("Will report {} usages", usages.len());
 
@@ -687,6 +688,7 @@ async fn report_usages<'a>(state: &mut State<'a>, config: &BlockchainMonitorConf
 
             if let Err(e) = report_usage(
                 &program,
+                commission_pda,
                 payer.clone(),
                 solana_stack_id,
                 auth_signer.token_account,
@@ -709,6 +711,7 @@ async fn report_usages<'a>(state: &mut State<'a>, config: &BlockchainMonitorConf
 #[allow(clippy::too_many_arguments)]
 fn report_usage(
     program: &Program,
+    commission_account: Pubkey,
     payer: Rc<dyn Signer>,
     stack_id: Pubkey,
     token_account: Pubkey,
@@ -748,6 +751,7 @@ fn report_usage(
         signer: payer.pubkey(),
         stack: stack_id,
         state: state_pda,
+        commission_token: commission_account,
         token_program: spl_token::id(),
         system_program: system_program::id(),
         token_account,

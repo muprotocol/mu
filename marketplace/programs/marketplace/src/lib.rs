@@ -31,18 +31,27 @@ pub enum MuAccountType {
 pub enum Error {
     #[msg("Provider is not authorized")]
     ProviderNotAuthorized,
+
+    #[msg("Commission rate is out of bounds")]
+    CommissionRateOutOfBounds,
 }
 
 #[program]
 pub mod marketplace {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+    pub fn initialize(ctx: Context<Initialize>, commission_rate_micros: u32) -> Result<()> {
+        if commission_rate_micros > 1_000_000 {
+            return Err(Error::CommissionRateOutOfBounds.into());
+        }
+
         ctx.accounts.state.set_inner(MuState {
             account_type: MuAccountType::MuState as u8,
             authority: ctx.accounts.authority.key(),
             mint: ctx.accounts.mint.key(),
             deposit_token: ctx.accounts.deposit_token.key(),
+            commission_token: ctx.accounts.commission_token.key(),
+            commission_rate_micros,
             bump: *ctx.bumps.get("state").unwrap(),
         });
 
@@ -164,21 +173,43 @@ pub mod marketplace {
         usage: ServiceUsage,
     ) -> Result<()> {
         let usage_tokens = calc_usage(&ctx.accounts.region.rates, &usage);
-        msg!("Calculated price: {}", usage_tokens);
+        let commission_tokens =
+            usage_tokens * ctx.accounts.state.commission_rate_micros as u64 / 1_000_000;
+        let provider_tokens = usage_tokens - commission_tokens;
+        msg!(
+            "Calculated price: {}, commission: {}, provider's share: {}",
+            usage_tokens,
+            commission_tokens,
+            provider_tokens,
+        );
+
+        let bump = ctx.accounts.state.bump.to_le_bytes();
+        let signer_seeds = vec![b"state".as_ref(), bump.as_ref()];
+        let signer_seeds_wrapper = vec![signer_seeds.as_slice()];
+
         let transfer = Transfer {
             from: ctx.accounts.escrow_account.to_account_info(),
             to: ctx.accounts.token_account.to_account_info(),
             authority: ctx.accounts.state.to_account_info(),
         };
-        let bump = ctx.accounts.state.bump.to_le_bytes();
-        let seeds = vec![b"state".as_ref(), bump.as_ref()];
-        let seeds_wrapper = vec![seeds.as_slice()];
         let transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             transfer,
-            seeds_wrapper.as_slice(),
+            signer_seeds_wrapper.as_slice(),
         );
-        anchor_spl::token::transfer(transfer_ctx, usage_tokens)?;
+        anchor_spl::token::transfer(transfer_ctx, provider_tokens)?;
+
+        let transfer = Transfer {
+            from: ctx.accounts.escrow_account.to_account_info(),
+            to: ctx.accounts.commission_token.to_account_info(),
+            authority: ctx.accounts.state.to_account_info(),
+        };
+        let transfer_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            transfer,
+            signer_seeds_wrapper.as_slice(),
+        );
+        anchor_spl::token::transfer(transfer_ctx, commission_tokens)?;
 
         ctx.accounts.usage_update.set_inner(UsageUpdate {
             account_type: MuAccountType::UsageUpdate as u8,
@@ -199,6 +230,8 @@ pub struct MuState {
     pub authority: Pubkey,
     pub mint: Pubkey,
     pub deposit_token: Pubkey,
+    pub commission_token: Pubkey,
+    pub commission_rate_micros: u32,
     pub bump: u8,
 }
 
@@ -208,7 +241,7 @@ pub struct Initialize<'info> {
         init,
         payer = authority,
         seeds = [b"state"],
-        space = 8 + 1 + 32 + 32 + 32 + 1,
+        space = 8 + 1 + 32 + 32 + 32 + 32 + 4 + 1,
         bump
     )]
     state: Account<'info, MuState>,
@@ -224,6 +257,16 @@ pub struct Initialize<'info> {
         bump
     )]
     pub deposit_token: Account<'info, TokenAccount>,
+
+    #[account(
+        init,
+        payer = authority,
+        token::mint = mint,
+        token::authority = state,
+        seeds = [b"commission"],
+        bump
+    )]
+    pub commission_token: Account<'info, TokenAccount>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -501,9 +544,14 @@ pub struct UsageUpdate {
 pub struct UpdateUsage<'info> {
     #[account(
         seeds = [b"state"],
-        bump = state.bump
+        bump = state.bump,
+        has_one = commission_token
     )]
     pub state: Account<'info, MuState>,
+
+    /// CHECK: The commission token account as verified by has_one on state
+    #[account(mut)]
+    commission_token: AccountInfo<'info>,
 
     #[account(
         has_one = signer,
