@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use musdk_common::{Response, Status};
 
 pub trait IntoResponse<'a> {
@@ -14,7 +12,7 @@ impl<'a> IntoResponse<'a> for Response<'a> {
 
 impl<'a> IntoResponse<'a> for () {
     fn into_response(self) -> Response<'a> {
-        Response::build().body_from_slice(&[])
+        Response::builder().body_from_slice(&[])
     }
 }
 
@@ -45,36 +43,32 @@ where
 
 impl<'a> IntoResponse<'a> for &'a [u8] {
     fn into_response(self) -> Response<'a> {
-        Response::build()
-            .content_type(Cow::Borrowed("application/octet-stream"))
-            .body_from_slice(self)
+        Response::builder().body_from_slice(self)
     }
 }
 
 impl<'a> IntoResponse<'a> for Vec<u8> {
     fn into_response(self) -> Response<'a> {
-        Response::build()
-            .content_type(Cow::Borrowed("application/octet-stream"))
-            .body_from_vec(self)
+        Response::builder().body_from_vec(self)
     }
 }
 
 impl<'a> IntoResponse<'a> for &'a str {
     fn into_response(self) -> Response<'a> {
-        Response::build().body_from_slice(self.as_bytes())
+        Response::builder().body_from_str(self)
     }
 }
 
 impl<'a> IntoResponse<'a> for String {
     fn into_response(self) -> Response<'a> {
-        Response::build().body_from_vec(self.into_bytes())
+        Response::builder().body_from_string(self)
     }
 }
 
 impl<'a> IntoResponse<'a> for Status {
     fn into_response(self) -> Response<'a> {
-        Response::build()
+        Response::builder()
             .status(self)
-            .body_from_slice(self.reason().unwrap_or("").as_bytes())
+            .body_from_str(self.reason().unwrap_or(""))
     }
 }

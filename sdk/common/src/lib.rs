@@ -1,3 +1,4 @@
+mod error;
 pub mod incoming_message;
 pub mod outgoing_message;
 mod response_builder;
@@ -6,7 +7,7 @@ mod status;
 pub use response_builder::ResponseBuilder;
 pub use status::Status;
 
-use std::{borrow::Cow, collections::HashMap, hash::Hash};
+use std::{borrow::Cow, collections::HashMap};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
@@ -25,21 +26,6 @@ pub enum HttpMethod {
 pub struct Header<'a> {
     pub name: Cow<'a, str>,
     pub value: Cow<'a, str>,
-}
-
-// We only compare header names !!
-impl<'a> PartialEq for Header<'a> {
-    fn eq(&self, other: &Self) -> bool {
-        self.name.eq(&other.name)
-    }
-}
-
-impl<'a> Eq for Header<'a> {}
-
-impl<'a> Hash for Header<'a> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.name.hash(state)
-    }
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -72,7 +58,7 @@ pub struct Response<'a> {
 
 impl<'a> Response<'a> {
     /// Create a [`ResponseBuilder`]
-    pub fn build() -> ResponseBuilder<'a> {
+    pub fn builder() -> ResponseBuilder<'a> {
         ResponseBuilder::default()
     }
 }

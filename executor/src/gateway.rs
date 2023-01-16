@@ -305,25 +305,25 @@ struct ResponseWrapper(Response<'static>);
 impl ResponseWrapper {
     fn bad_request(description: &str) -> Self {
         Self(
-            Response::build()
+            Response::builder()
                 .status(Status::BadRequest)
-                .body_from_vec(description.as_bytes().to_vec()),
+                .body_from_string(description.to_string()),
         )
     }
 
     fn not_found() -> Self {
         Self(
-            Response::build()
+            Response::builder()
                 .status(Status::NotFound)
-                .body_from_slice(Status::NotFound.reason().unwrap().as_bytes()),
+                .body_from_str(Status::NotFound.reason().unwrap()),
         )
     }
 
     fn internal_error(description: &str) -> Self {
         Self(
-            Response::build()
+            Response::builder()
                 .status(Status::InternalServerError)
-                .body_from_vec(description.as_bytes().to_vec()),
+                .body_from_string(description.to_string()),
         )
     }
 }

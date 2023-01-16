@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use mu_stack::StackID;
 use musdk_common::Status;
 use protobuf::{EnumOrUnknown, MessageField};
@@ -164,19 +164,14 @@ impl TryFrom<rpc::Response> for musdk_common::Response<'static> {
     type Error = anyhow::Error;
 
     fn try_from(response: rpc::Response) -> Result<Self, Self::Error> {
-        if response.status.is_negative() {
-            bail!("HTTP status code can not be negative")
+        let status_code: u16 = response.status.try_into().context("status_code")?;
+
+        if status_code < 100 && status_code > 600 {
+            bail!("{} is out of range for HTTP response status", status_code)
         }
 
-        let Some(status) = Status::from_code(response.status as u16) else {
-            bail!(
-                "{} is out of range for HTTP response status",
-                response.status
-            )
-        };
-
         Ok(Self {
-            status,
+            status: Status::new(status_code),
             headers: response
                 .headers
                 .into_iter()

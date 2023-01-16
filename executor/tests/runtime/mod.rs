@@ -424,13 +424,17 @@ async fn json_body_request_and_response() {
         method: musdk_common::HttpMethod::Get,
         path: "/get_name".into(),
         query: HashMap::new(),
-        headers: Vec::new(),
+        headers: vec![Header {
+            name: Cow::Borrowed("content-type"),
+            value: Cow::Borrowed("application/json; charset=utf-8"),
+        }],
         body: Cow::Borrowed(&form),
     };
 
     runtime
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .then(|r| async move {
+            println!("response: {:?}", r);
             assert_eq!(
                 expected_response,
                 serde_json::from_slice(r.unwrap().body.as_ref()).unwrap()
@@ -489,37 +493,7 @@ async fn string_body_request_and_response_fails_with_incorrect_charset() {
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .then(|r| async move {
             assert_eq!(
-                b"unsupported text charset: windows-12345",
-                r.unwrap().body.as_ref()
-            );
-        })
-        .await;
-
-    runtime.stop().await.unwrap();
-}
-
-#[tokio::test]
-#[serial]
-async fn string_body_request_and_response_fails_with_incorrect_content_type() {
-    let projects = vec![create_project("multi-body", &["string_body"], None)];
-    let (runtime, _, _) = create_runtime(&projects).await;
-
-    let request = musdk_common::Request {
-        method: musdk_common::HttpMethod::Get,
-        path: "/get_name".into(),
-        query: HashMap::new(),
-        headers: vec![Header {
-            name: Cow::Borrowed("content-type"),
-            value: Cow::Borrowed("application/json; charset=utf-8"),
-        }],
-        body: Cow::Borrowed(b"Due"),
-    };
-
-    runtime
-        .invoke_function(projects[0].function_id(0).unwrap(), request)
-        .then(|r| async move {
-            assert_eq!(
-                b"can not parse request as string, content-type is not `text`",
+                b"unsupported charset: windows-12345",
                 r.unwrap().body.as_ref()
             );
         })

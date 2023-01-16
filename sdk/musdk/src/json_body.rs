@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{content_type, FromRequest, IntoResponse};
 
-const JSON_CONTENT_TYPE: &str = "application/json; charset=utf-8";
+const JSON_CONTENT_TYPE: &str = "application/json";
+const UTF8_CHARSET: &str = "charset=utf-8";
 
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -48,8 +49,8 @@ impl<'a, T: Deserialize<'a>> FromRequest<'a> for Json<T> {
 impl<'a, T: Serialize> IntoResponse<'a> for Json<T> {
     fn into_response(self) -> Response<'a> {
         match serde_json::to_vec(&self.0) {
-            Ok(vec) => Response::build()
-                .content_type(Cow::Borrowed("application/json; charset=utf-8"))
+            Ok(vec) => Response::builder()
+                .content_type(Cow::Borrowed(JSON_CONTENT_TYPE))
                 .body_from_vec(vec),
 
             //TODO: log the error back to runtime
