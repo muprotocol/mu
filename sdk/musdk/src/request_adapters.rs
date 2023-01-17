@@ -1,3 +1,5 @@
+use std::{borrow::Cow, collections::HashMap};
+
 use musdk_common::{Request, Status};
 
 use crate::{content_type, IntoResponse};
@@ -57,5 +59,36 @@ impl<'a> FromRequest<'a> for String {
 
     fn from_request(req: &'a Request) -> Result<Self, Self::Error> {
         <&'a str as FromRequest<'a>>::from_request(req).map(ToString::to_string)
+    }
+}
+
+pub struct PathParams<'a>(HashMap<Cow<'a, str>, Cow<'a, str>>);
+pub struct QueryParams<'a>(HashMap<Cow<'a, str>, Cow<'a, str>>);
+
+impl<'a> FromRequest<'a> for PathParams<'a> {
+    type Error = ();
+
+    fn from_request(req: &'a Request) -> Result<Self, Self::Error> {
+        let map = req
+            .path_params
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        Ok(Self(map))
+    }
+}
+
+impl<'a> FromRequest<'a> for QueryParams<'a> {
+    type Error = ();
+
+    fn from_request(req: &'a Request) -> Result<Self, Self::Error> {
+        let map = req
+            .query_params
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        Ok(Self(map))
     }
 }
