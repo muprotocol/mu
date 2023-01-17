@@ -50,13 +50,6 @@ type FunctionName = String;
 type PathParams = HashMap<String, String>;
 
 enum GatewayMessage {
-    GetAssemblyAndFunctionWithPathParams(
-        StackID,
-        GatewayName,
-        HttpMethod,
-        RequestPath,
-        ReplyChannel<Option<(AssemblyName, FunctionName, PathParams)>>,
-    ),
     GetDeployedGatewayNames(StackID, ReplyChannel<Option<Vec<GatewayName>>>),
     DeployGateways(StackID, Vec<Gateway>),
     DeleteGateways(StackID, Vec<GatewayName>),
@@ -312,6 +305,7 @@ fn calculate_response_size(r: &Response) -> u64 {
     size += r.body.len() as u64;
     size
 }
+
 fn match_path_and_extract_path_params(
     request_path: &str,
     endpoint_path: &str,

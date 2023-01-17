@@ -49,17 +49,17 @@ impl TryFrom<rpc::FunctionID> for runtime::types::FunctionID {
     }
 }
 
-fn header_to_proto(h: musdk_common::Header<'_>) -> rpc::Header {
-    rpc::Header {
-        name: h.name.into_owned(),
+fn header_to_proto(h: musdk_common::Header<'_>) -> rpc::KeyValuePair {
+    rpc::KeyValuePair {
+        key: h.name.into_owned(),
         value: h.value.into_owned(),
         ..Default::default()
     }
 }
 
-fn header_from_proto(h: rpc::Header) -> musdk_common::Header<'static> {
+fn header_from_proto(h: rpc::KeyValuePair) -> musdk_common::Header<'static> {
     musdk_common::Header {
-        name: Cow::Owned(h.name),
+        name: Cow::Owned(h.key),
         value: Cow::Owned(h.value),
     }
 }
@@ -94,7 +94,7 @@ impl<'a> From<musdk_common::Request<'a>> for rpc::Request {
 
         Self {
             method: convert_http_method(request.method),
-            path: request.path.into_owned(),
+            path: request.path.to_string(),
             path_params: request
                 .path_params
                 .into_iter()
@@ -137,9 +137,9 @@ impl TryFrom<rpc::Request> for musdk_common::Request<'static> {
             (Cow::Owned(p.key), Cow::Owned(p.value))
         }
 
-        fn header_from_proto(h: rpc::Header) -> musdk_common::Header<'static> {
+        fn header_from_proto(h: rpc::KeyValuePair) -> musdk_common::Header<'static> {
             musdk_common::Header {
-                name: Cow::Owned(h.name),
+                name: Cow::Owned(h.key),
                 value: Cow::Owned(h.value),
             }
         }
