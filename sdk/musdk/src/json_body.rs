@@ -34,7 +34,7 @@ impl<'a, T: Deserialize<'a>> FromRequest<'a> for Json<T> {
                             //TODO: Log error back to runtime
                             ("invalid json", Status::BadRequest)
                         }),
-                    _ => Err(("invaid charset, expecting `utf-8`", Status::BadRequest)),
+                    _ => Err(("invalid charset, expecting `utf-8`", Status::BadRequest)),
                 }
             }
             _ => Err((
