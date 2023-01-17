@@ -52,6 +52,14 @@ impl<'a> ResponseBuilder<'a> {
         headers.into_iter().fold(self, Self::header)
     }
 
+    pub fn no_body(self) -> Response<'a> {
+        Response {
+            status: self.status,
+            headers: self.headers.into_values().collect(),
+            body: Cow::Borrowed(&[]),
+        }
+    }
+
     pub fn body_from_slice(mut self, slice: &'a [u8]) -> Response<'a> {
         if !self.has_content_type() {
             self = self.content_type(Cow::Borrowed(BINARY_CONTENT_TYPE));

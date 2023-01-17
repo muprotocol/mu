@@ -67,8 +67,6 @@ impl<'a> IntoResponse<'a> for String {
 
 impl<'a> IntoResponse<'a> for Status {
     fn into_response(self) -> Response<'a> {
-        Response::builder()
-            .status(self)
-            .body_from_str(self.reason().unwrap_or(""))
+        Response::builder().status(self).no_body()
     }
 }

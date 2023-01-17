@@ -5,8 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{content_type, FromRequest, IntoResponse};
 
-const JSON_CONTENT_TYPE: &str = "application/json";
-
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Json<T>(pub T);
@@ -23,12 +21,14 @@ impl<'a, T: Deserialize<'a>> FromRequest<'a> for Json<T> {
     type Error = (&'static str, Status);
 
     fn from_request(req: &'a Request) -> Result<Self, Self::Error> {
-        match req
-            .content_type()
-            .as_ref()
-            .and_then(|s| content_type::parse(s).0)
-        {
-            Some(mime) if mime.to_lowercase() == JSON_CONTENT_TYPE => {
+        let Some(content_type) = req.content_type() else {
+            return Err(("content-type is missing", Status::BadRequest));
+        };
+
+        match content_type::parse(&content_type) {
+            (Some(content_type), Some(charset))
+                if content_type == "application/json" && charset.to_lowercase() == "utf-8" =>
+            {
                 serde_json::from_slice::<T>(&req.body)
                     .map(Self)
                     .map_err(|_| {
@@ -36,11 +36,10 @@ impl<'a, T: Deserialize<'a>> FromRequest<'a> for Json<T> {
                         ("invalid json", Status::BadRequest)
                     })
             }
-            Some(_) => Err((
-                "content-type should be application/json",
+            _ => Err((
+                "invalid content-type, expecting `application/json; charset=utf-8`",
                 Status::BadRequest,
             )),
-            None => Err(("content-type is missing", Status::BadRequest)),
         }
     }
 }
@@ -49,7 +48,7 @@ impl<'a, T: Serialize> IntoResponse<'a> for Json<T> {
     fn into_response(self) -> Response<'a> {
         match serde_json::to_vec(&self.0) {
             Ok(vec) => Response::builder()
-                .content_type(Cow::Borrowed(JSON_CONTENT_TYPE))
+                .content_type(Cow::Borrowed("application/json; charset=utf-8"))
                 .body_from_vec(vec),
 
             //TODO: log the error back to runtime
