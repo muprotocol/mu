@@ -6,7 +6,7 @@ export default function App({Component, pageProps}: AppProps) {
     console.log("called")
     return (
         <>
-            <Header></Header>
+            <Header />
             <Component {...pageProps} />
         </>
     )

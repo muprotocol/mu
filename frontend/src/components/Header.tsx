@@ -1,7 +1,7 @@
-import * as process from "process";
+import endpoint from "@/src/constants/endpoint/endpoint";
 
 export default function Header() {
-    console.log(process.env.NEXT_PUBLIC_API)
+    console.log(endpoint())
     return (
         <header className="container mx-auto p-5 flex justify-between">
             <div>logo</div>
