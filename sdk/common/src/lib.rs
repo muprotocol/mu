@@ -1,4 +1,3 @@
-mod error;
 pub mod incoming_message;
 pub mod outgoing_message;
 mod response_builder;

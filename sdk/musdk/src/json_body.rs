@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use crate::{content_type, FromRequest, IntoResponse};
 
 const JSON_CONTENT_TYPE: &str = "application/json";
-const UTF8_CHARSET: &str = "charset=utf-8";
 
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
