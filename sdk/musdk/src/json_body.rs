@@ -26,15 +26,16 @@ impl<'a, T: Deserialize<'a>> FromRequest<'a> for Json<T> {
         };
 
         match content_type::parse(&content_type) {
-            (Some(content_type), Some(charset))
-                if content_type == "application/json" && charset.to_lowercase() == "utf-8" =>
-            {
-                serde_json::from_slice::<T>(&req.body)
-                    .map(Self)
-                    .map_err(|_| {
-                        //TODO: Log error back to runtime
-                        ("invalid json", Status::BadRequest)
-                    })
+            (Some(content_type), Some(charset)) if content_type == "application/json" => {
+                match charset.to_lowercase().as_str() {
+                    "utf-8" | "us-ascii" => serde_json::from_slice::<T>(&req.body)
+                        .map(Self)
+                        .map_err(|_| {
+                            //TODO: Log error back to runtime
+                            ("invalid json", Status::BadRequest)
+                        }),
+                    _ => Err(("invaid charset, expecting `utf-8`", Status::BadRequest)),
+                }
             }
             _ => Err((
                 "invalid content-type, expecting `application/json; charset=utf-8`",
