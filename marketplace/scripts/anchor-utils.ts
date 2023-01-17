@@ -80,25 +80,35 @@ export interface ServiceUsage {
     gatewayTrafficBytes: BN,
 }
 
+export const readKeypair = (path: string): Keypair | undefined => {
+    if (existsSync(path)) {
+        try {
+            let content: Uint8Array = readFileSync(path);
+            let text = Buffer.from(content).toString();
+            let json = JSON.parse(text);
+            let bytes = Uint8Array.from(json);
+            return Keypair.fromSecretKey(bytes);
+        } catch (e) {
+            return undefined;
+        }
+    } else {
+        return undefined;
+    }
+}
+
 export const readOrCreateKeypair = (name?: string): Keypair => {
     if (!name) {
         return Keypair.generate();
     }
 
     let walletPath = path.join(__dirname, "test-wallets", name + ".json");
-    if (existsSync(walletPath)) {
-        try {
-            let content: Uint8Array = readFileSync(walletPath);
-            let text = Buffer.from(content).toString();
-            let json = JSON.parse(text);
-            let bytes = Uint8Array.from(json);
-            return Keypair.fromSecretKey(bytes);
-        } catch (e) {
-            console.error(`Failed to read ${walletPath}, will create new wallet instead`, e);
-        }
+    let keypair = readKeypair(walletPath);
+
+    if (keypair) {
+        return keypair;
     }
 
-    let keypair = Keypair.generate(); // anchor.Wallet has no constructor
+    keypair = Keypair.generate(); // anchor.Wallet has no constructor
     console.log(`Generated keypair ${name}, public key is:`, keypair.publicKey.toBase58());
     let secretkey = Array.from(keypair.secretKey);
     writeFileSync(walletPath, JSON.stringify(secretkey));
@@ -168,10 +178,14 @@ const createAndFundWallet = async (provider: anchor.AnchorProvider, mint: Keypai
     return [wallet, tokenAccount.address];
 };
 
-export const loadWallet = async (provider: anchor.AnchorProvider, name: string, mint: Keypair): Promise<[Keypair, PublicKey]> => {
-    let wallet = readOrCreateKeypair(name);
+export const walletFromKeypair = async (wallet: Keypair, mint: Keypair): Promise<[Keypair, PublicKey]> => {
     let tokenAccount = await spl.getAssociatedTokenAddress(mint.publicKey, wallet.publicKey);
     return [wallet, tokenAccount];
+}
+
+export const loadWallet = async (name: string, mint: Keypair): Promise<[Keypair, PublicKey]> => {
+    let wallet = readOrCreateKeypair(name);
+    return walletFromKeypair(wallet, mint);
 }
 
 export const mintToAccount = async (provider: anchor.AnchorProvider, account: PublicKey, mint: Keypair, amount: number) => {
@@ -268,9 +282,7 @@ export const createProvider = async (mu: MuProgram, name: string, useStaticKeypa
     return { wallet, pda, tokenAccount };
 }
 
-export const loadProviderFromStaticKeypair = async (mu: MuProgram, name: string): Promise<MuProviderInfo> => {
-    let [wallet, tokenAccount] = await loadWallet(mu.anchorProvider, `provider_${name}`, mu.mint);
-
+function getProviderPda(mu: MuProgram, wallet: Keypair) {
     const [pda, _] = publicKey.findProgramAddressSync(
         [
             anchor.utils.bytes.utf8.encode("provider"),
@@ -278,6 +290,22 @@ export const loadProviderFromStaticKeypair = async (mu: MuProgram, name: string)
         ],
         mu.program.programId
     );
+
+    return pda;
+}
+
+export const loadProviderFromKeypair = async (mu: MuProgram, keypair: Keypair): Promise<MuProviderInfo> => {
+    let [wallet, tokenAccount] = await walletFromKeypair(keypair, mu.mint);
+
+    const pda = getProviderPda(mu, wallet);
+
+    return { wallet, pda, tokenAccount };
+}
+
+export const loadProviderFromStaticKeypair = async (mu: MuProgram, name: string): Promise<MuProviderInfo> => {
+    let [wallet, tokenAccount] = await loadWallet(`provider_${name}`, mu.mint);
+
+    const pda = getProviderPda(mu, wallet);
 
     return { wallet, pda, tokenAccount };
 }
@@ -349,12 +377,12 @@ export const createRegion = async (
     name: string,
     regionNum: number,
     rates: ServiceRates,
-    zones: number,
+    minEscrowBalance: BN,
 ): Promise<MuRegionInfo> => {
     let region = getRegion(mu, provider, regionNum);
 
     await mu.program.methods
-        .createRegion(regionNum, name, zones, rates)
+        .createRegion(regionNum, name, rates, minEscrowBalance)
         .accounts({
             provider: provider.pda,
             region: region.pda,

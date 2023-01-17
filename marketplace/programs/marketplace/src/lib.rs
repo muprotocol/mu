@@ -100,8 +100,8 @@ pub mod marketplace {
         ctx: Context<CreateRegion>,
         region_num: u32,
         name: String,
-        zones: u8,
         rates: ServiceRates,
+        min_escrow_balance: u64,
     ) -> Result<()> {
         if !ctx.accounts.provider.authorized {
             return Err(Error::ProviderNotAuthorized.into());
@@ -110,9 +110,9 @@ pub mod marketplace {
         ctx.accounts.region.set_inner(ProviderRegion {
             account_type: MuAccountType::ProviderRegion as u8,
             name,
-            zones,
             region_num,
             rates,
+            min_escrow_balance,
             provider: ctx.accounts.provider.key(),
             bump: *ctx.bumps.get("region").unwrap(),
         });
@@ -405,9 +405,9 @@ pub struct ServiceUsage {
 pub struct ProviderRegion {
     pub account_type: u8, // See MuAccountType
     pub provider: Pubkey,
-    pub zones: u8,
     pub region_num: u32,
     pub rates: ServiceRates,
+    pub min_escrow_balance: u64,
     pub bump: u8,
     pub name: String,
 }
@@ -420,7 +420,7 @@ pub struct CreateRegion<'info> {
 
     #[account(
         init,
-        space = 8 + 1 + 32 + 1 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 1 + 4 + name.as_bytes().len(),
+        space = 8 + 1 + 32 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 8 + 1 + 4 + name.as_bytes().len(),
         payer = owner,
         seeds = [b"region", owner.key().as_ref(), region_num.to_le_bytes().as_ref()],
         bump
