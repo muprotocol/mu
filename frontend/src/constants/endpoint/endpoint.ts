@@ -1,3 +1,3 @@
-export default function endpoint() {
-    return process.env.NEXT_PUBLIC_API;
+export default function endpoint(): string {
+    return process.env.NEXT_PUBLIC_API as string;
 }
