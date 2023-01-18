@@ -1,5 +1,4 @@
-import Home from './index'
-import '@testing-library/jest-dom'
+import Home from './index';
 import {render, screen} from '@testing-library/react'
 
 describe('Home', () => {
