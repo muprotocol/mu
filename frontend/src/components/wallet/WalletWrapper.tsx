@@ -1,7 +1,7 @@
 import {ReactNode} from "react";
 import {ConnectionProvider, WalletProvider} from "@solana/wallet-adapter-react";
 import {WalletModalProvider} from "@solana/wallet-adapter-react-ui";
-import useWallet from "@/src/components/wallet/useWallet";
+import useWallets from "@/src/components/wallet/useWallet/useWallets";
 import endpoint from "@/src/constants/endpoint/endpoint";
 import '@solana/wallet-adapter-react-ui/styles.css'
 
@@ -10,7 +10,7 @@ export type WalletWrapperProps = {
 }
 
 export default function WalletWrapper({children}: WalletWrapperProps) {
-    const wallets = useWallet();
+    const wallets = useWallets();
 
     return (
         <ConnectionProvider endpoint={endpoint()}>

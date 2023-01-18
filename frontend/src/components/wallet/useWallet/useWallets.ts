@@ -5,7 +5,7 @@ import {SlopeWalletAdapter} from "@solana/wallet-adapter-slope";
 import {TorusWalletAdapter} from "@solana/wallet-adapter-torus";
 import {Adapter} from "@solana/wallet-adapter-base";
 
-export default function useWallet(): Adapter[] {
+export default function useWallets(): Adapter[] {
     return useMemo(
         () => [
             new PhantomWalletAdapter(),
