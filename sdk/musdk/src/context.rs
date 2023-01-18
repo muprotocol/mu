@@ -13,8 +13,7 @@ use musdk_common::{
 
 use crate::error::{Error, Result};
 
-pub type MuFunction =
-    Rc<dyn for<'a> Fn(&'a mut MuContext, &'a Request) -> Result<Response<'static>>>;
+pub type MuFunction = Rc<dyn for<'a> Fn(&'a mut MuContext, &'a Request) -> Response<'static>>;
 
 pub struct MuContext {
     stdin: Stdin,
@@ -50,8 +49,7 @@ impl MuContext {
                 .ok_or_else(|| Error::UnknownFunction(execute_function.function.into_owned()))?
                 .clone();
 
-            // TODO: handle user errors differently
-            let response = (*function)(ctx, &execute_function.request)?;
+            let response = (*function)(ctx, &execute_function.request);
             let message = OutgoingMessage::FunctionResult(FunctionResult { response });
             ctx.write_message(message)?;
             Ok(())

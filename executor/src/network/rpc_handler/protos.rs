@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use mu_stack::StackID;
+use musdk_common::Status;
 use protobuf::{EnumOrUnknown, MessageField};
 
 use crate::runtime::{self, types::AssemblyID};
@@ -151,7 +152,7 @@ impl TryFrom<rpc::Request> for musdk_common::Request<'static> {
 impl<'a> From<musdk_common::Response<'a>> for rpc::Response {
     fn from(response: musdk_common::Response<'a>) -> Self {
         Self {
-            status: response.status as i32,
+            status: response.status.code as i32,
             headers: response.headers.into_iter().map(header_to_proto).collect(),
             body: response.body.into_owned(),
             ..Default::default()
@@ -163,17 +164,14 @@ impl TryFrom<rpc::Response> for musdk_common::Response<'static> {
     type Error = anyhow::Error;
 
     fn try_from(response: rpc::Response) -> Result<Self, Self::Error> {
-        let status = if response.status >= 100 && response.status < 600 {
-            response.status as u16
-        } else {
-            bail!(
-                "{} is out of range for HTTP response status",
-                response.status
-            )
-        };
+        let status_code: u16 = response.status.try_into().context("status_code")?;
+
+        if status_code < 100 && status_code > 600 {
+            bail!("{} is out of range for HTTP response status", status_code)
+        }
 
         Ok(Self {
-            status,
+            status: Status::new(status_code),
             headers: response
                 .headers
                 .into_iter()

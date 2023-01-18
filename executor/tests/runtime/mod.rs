@@ -1,6 +1,7 @@
 use futures::FutureExt;
 use mu::{runtime::types::AssemblyID, stack::usage_aggregator::UsageCategory};
 use mu_stack::{self, StackID};
+use musdk_common::Header;
 use serial_test::serial;
 use std::{borrow::Cow, collections::HashMap, path::Path};
 
@@ -52,7 +53,7 @@ async fn test_simple_func() {
 
     assert_eq!(
         "Hello Chappy, welcome to MuRuntime".as_bytes(),
-        resp.body.into_owned()
+        resp.body.as_ref()
     );
 
     runtime.stop().await.unwrap();
@@ -143,26 +144,22 @@ async fn can_run_multiple_instance_of_the_same_function() {
 async fn can_run_instances_of_different_functions() {
     let projects = vec![
         create_project("hello-wasm", &["say_hello"], None),
-        create_project(
-            "memory-heavy",
-            &["say_hello"],
-            Some(byte_unit::Byte::from_unit(120.0, byte_unit::ByteUnit::MB).unwrap()),
-        ),
+        create_project("calc-func", &["add_one"], None),
     ];
     let (runtime, ..) = create_runtime(&projects).await;
 
-    let make_request = |name| musdk_common::Request {
+    let make_request = |body| musdk_common::Request {
         method: musdk_common::HttpMethod::Get,
         path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        body: Cow::Borrowed(name),
+        body,
     };
 
     let instance_1 = runtime
         .invoke_function(
             projects[0].function_id(0).unwrap(),
-            make_request("Mathew".as_bytes()),
+            make_request(Cow::Borrowed("Mathew".as_bytes())),
         )
         .then(|r| async move {
             assert_eq!(
@@ -171,15 +168,17 @@ async fn can_run_instances_of_different_functions() {
             )
         });
 
+    let number = 2023u32;
     let instance_2 = runtime
         .invoke_function(
-            projects[0].function_id(0).unwrap(),
-            make_request("Dream".as_bytes()),
+            projects[1].function_id(0).unwrap(),
+            make_request(Cow::Owned(number.to_be_bytes().to_vec())),
         )
         .then(|r| async move {
+            let bytes = r.unwrap().body;
             assert_eq!(
-                "Hello Dream, welcome to MuRuntime".as_bytes(),
-                r.unwrap().body.as_ref()
+                number + 2,
+                u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
             )
         });
 
@@ -220,8 +219,8 @@ async fn functions_with_limited_memory_wont_run() {
     use mu::runtime::error::*;
 
     let projects = vec![create_project(
-        "memory-heavy",
-        &["say_hello"],
+        "hello-wasm",
+        &["memory_heavy"],
         Some(byte_unit::Byte::from_unit(1.0, byte_unit::ByteUnit::MB).unwrap()),
     )];
     let (runtime, ..) = create_runtime(&projects).await;
@@ -231,7 +230,7 @@ async fn functions_with_limited_memory_wont_run() {
         path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        body: Cow::Borrowed(&[]),
+        body: Cow::Borrowed(b"Fred"),
     };
 
     let result = runtime
@@ -250,8 +249,8 @@ async fn functions_with_limited_memory_wont_run() {
 #[serial]
 async fn functions_with_limited_memory_will_run_with_enough_memory() {
     let projects = vec![create_project(
-        "memory-heavy",
-        &["say_hello"],
+        "hello-wasm",
+        &["memory_heavy"],
         Some(byte_unit::Byte::from_unit(120.0, byte_unit::ByteUnit::MB).unwrap()),
     )];
     let (runtime, ..) = create_runtime(&projects).await;
@@ -261,17 +260,12 @@ async fn functions_with_limited_memory_will_run_with_enough_memory() {
         path: Cow::Borrowed("/get_name"),
         query: HashMap::new(),
         headers: Vec::new(),
-        body: Cow::Borrowed("Fred".as_bytes()),
+        body: Cow::Borrowed(b"Fred"),
     };
 
     runtime
         .invoke_function(projects[0].function_id(0).unwrap(), request)
-        .then(|r| async move {
-            assert_eq!(
-                "Hello Fred, welcome to MuRuntime".as_bytes(),
-                r.unwrap().body.as_ref()
-            )
-        })
+        .then(|r| async move { assert_eq!(b"Fred", r.unwrap().body.as_ref()) })
         .await;
 
     runtime.stop().await.unwrap();
@@ -372,7 +366,7 @@ async fn function_usage_is_reported_correctly_1() {
 #[serial]
 async fn failing_function_should_not_hang() {
     use mu::runtime::error::*;
-    let projects = vec![create_project("failing", &["say_hello"], None)];
+    let projects = vec![create_project("hello-wasm", &["failing"], None)];
     let (runtime, _, _) = create_runtime(&projects).await;
 
     let request = musdk_common::Request {
@@ -391,6 +385,119 @@ async fn failing_function_should_not_hang() {
         Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(_)) => (),
         _ => panic!("function should have been exited early!"),
     }
+
+    runtime.stop().await.unwrap();
+}
+
+#[tokio::test]
+#[serial]
+async fn json_body_request_and_response() {
+    use serde::{Deserialize, Serialize};
+
+    let projects = vec![create_project("multi-body", &["json_body"], None)];
+    let (runtime, _, _) = create_runtime(&projects).await;
+
+    #[derive(Serialize)]
+    pub struct Form {
+        pub username: String,
+        pub password: String,
+    }
+
+    #[derive(Deserialize, PartialEq, Eq, Debug)]
+    pub struct Response {
+        pub token: String,
+        pub ttl: u64,
+    }
+
+    let form = serde_json::to_vec(&Form {
+        username: "John".into(),
+        password: "12345".into(),
+    })
+    .unwrap();
+
+    let expected_response = Response {
+        token: "token_for_John_12345".into(),
+        ttl: 14011018,
+    };
+
+    let request = musdk_common::Request {
+        method: musdk_common::HttpMethod::Get,
+        path: "/get_name".into(),
+        query: HashMap::new(),
+        headers: vec![Header {
+            name: Cow::Borrowed("content-type"),
+            value: Cow::Borrowed("application/json; charset=utf-8"),
+        }],
+        body: Cow::Borrowed(&form),
+    };
+
+    runtime
+        .invoke_function(projects[0].function_id(0).unwrap(), request)
+        .then(|r| async move {
+            println!("response: {:?}", r);
+            assert_eq!(
+                expected_response,
+                serde_json::from_slice(r.unwrap().body.as_ref()).unwrap()
+            )
+        })
+        .await;
+
+    runtime.stop().await.unwrap();
+}
+
+#[tokio::test]
+#[serial]
+async fn string_body_request_and_response() {
+    let projects = vec![create_project("multi-body", &["string_body"], None)];
+    let (runtime, _, _) = create_runtime(&projects).await;
+
+    let request = musdk_common::Request {
+        method: musdk_common::HttpMethod::Get,
+        path: "/get_name".into(),
+        query: HashMap::new(),
+        headers: vec![Header {
+            name: Cow::Borrowed("content-type"),
+            value: Cow::Borrowed("text/plain; charset=utf-8"),
+        }],
+        body: Cow::Borrowed(b"Due"),
+    };
+
+    runtime
+        .invoke_function(projects[0].function_id(0).unwrap(), request)
+        .then(|r| async move {
+            assert_eq!(b"Hello Due, got your message", r.unwrap().body.as_ref());
+        })
+        .await;
+
+    runtime.stop().await.unwrap();
+}
+
+#[tokio::test]
+#[serial]
+async fn string_body_request_and_response_fails_with_incorrect_charset() {
+    let projects = vec![create_project("multi-body", &["string_body"], None)];
+    let (runtime, _, _) = create_runtime(&projects).await;
+
+    let request = musdk_common::Request {
+        method: musdk_common::HttpMethod::Get,
+        path: "/get_name".into(),
+        query: HashMap::new(),
+        headers: vec![Header {
+            name: Cow::Borrowed("content-type"),
+            value: Cow::Borrowed("text/plain; charset=windows-12345"),
+        }],
+        body: Cow::Borrowed(b"Due"),
+    };
+
+    runtime
+        .invoke_function(projects[0].function_id(0).unwrap(), request)
+        .then(|r| async move {
+            assert_eq!(
+                b"unsupported charset: windows-12345",
+                r.unwrap().body.as_ref()
+            );
+        })
+        .await;
 
     runtime.stop().await.unwrap();
 }

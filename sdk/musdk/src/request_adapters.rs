@@ -1,21 +1,61 @@
-use musdk_common::Request;
+use musdk_common::{Request, Status};
 
-pub trait FromRequest<'a> {
-    fn from_request(req: &'a Request) -> Self;
+use crate::{content_type, IntoResponse};
+
+pub trait FromRequest<'a>: Sized {
+    type Error: IntoResponse<'static>;
+
+    fn from_request(req: &'a Request) -> Result<Self, Self::Error>;
 }
 
 impl<'a> FromRequest<'a> for &'a Request<'a> {
-    fn from_request(req: &'a Request) -> Self {
-        req
+    type Error = ();
+
+    fn from_request(req: &'a Request) -> Result<Self, Self::Error> {
+        Ok(req)
     }
 }
 
-pub struct BinaryBody<'a> {
-    pub body: &'a [u8],
+impl<'a> FromRequest<'a> for &'a [u8] {
+    type Error = ();
+
+    fn from_request(req: &'a Request) -> Result<Self, ()> {
+        Ok(&req.body)
+    }
 }
 
-impl<'a> FromRequest<'a> for BinaryBody<'a> {
-    fn from_request(req: &'a Request) -> Self {
-        Self { body: &req.body }
+impl<'a> FromRequest<'a> for Vec<u8> {
+    type Error = ();
+
+    fn from_request(req: &'a Request) -> Result<Self, ()> {
+        Ok(req.body.to_vec())
+    }
+}
+
+impl<'a> FromRequest<'a> for &'a str {
+    //TODO: concrete error type
+    type Error = (String, Status);
+
+    fn from_request(req: &'a Request) -> Result<Self, Self::Error> {
+        let content_type = req.content_type();
+        let charset = content_type
+            .as_ref()
+            .and_then(|s| content_type::parse(s).1)
+            .unwrap_or("us-ascii");
+
+        match charset.to_lowercase().as_str() {
+            "utf-8" | "us-ascii" => {
+                core::str::from_utf8(&req.body).map_err(|e| (e.to_string(), Status::BadRequest))
+            }
+            ch => Err((format!("unsupported charset: {ch}"), Status::BadRequest)),
+        }
+    }
+}
+
+impl<'a> FromRequest<'a> for String {
+    type Error = <&'a str as FromRequest<'a>>::Error;
+
+    fn from_request(req: &'a Request) -> Result<Self, Self::Error> {
+        <&'a str as FromRequest<'a>>::from_request(req).map(ToString::to_string)
     }
 }

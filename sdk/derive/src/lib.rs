@@ -189,7 +189,7 @@ fn generate_invokers(r#mod: &FunctionsMod) -> Vec<TokenStream2> {
             }
         };
 
-        let mut input_args = vec![];
+        let mut input_arg = vec![];
         let mut input_where = vec![];
 
         for input in f.sig.inputs.iter().skip(1) {
@@ -201,7 +201,16 @@ fn generate_invokers(r#mod: &FunctionsMod) -> Vec<TokenStream2> {
             };
             let typ = pat_type.ty.as_ref();
 
-            input_args.push(quote!(<#typ as ::musdk::FromRequest>::from_request(request)));
+            input_arg.push(quote!(
+                match <#typ as ::musdk::FromRequest<#context_lifetime>>::from_request(request) {
+                    Ok(arg) => arg,
+                    Err(err) =>
+                        return
+                            <<#typ as ::musdk::FromRequest<#context_lifetime>>::Error
+                                as ::musdk::IntoResponse<'static>>::into_response(err),
+                }
+            ));
+
             input_where.push(quote!(#typ: ::musdk::FromRequest<#context_lifetime>));
         }
 
@@ -214,12 +223,12 @@ fn generate_invokers(r#mod: &FunctionsMod) -> Vec<TokenStream2> {
             fn #invoker_name #generics(
                 ctx: &#context_lifetime mut ::musdk::MuContext,
                 request: &#context_lifetime ::musdk::Request,
-            ) -> ::musdk::Result<::musdk::Response<'static>>
+            ) -> ::musdk::Response<'static>
             where
                 #(#input_where,)*
-                #return_type: ::musdk::TryIntoResponse<'static>,
+                #return_type: ::musdk::IntoResponse<'static>,
             {
-                <#return_type as ::musdk::TryIntoResponse<'static>>::try_into_response(#name(ctx, #(#input_args),*))
+                <#return_type as ::musdk::IntoResponse<'static>>::into_response(#name(ctx, #(#input_arg,)*))
             }
         ))
     }
