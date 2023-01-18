@@ -586,3 +586,24 @@ export const updateStackUsage = async (
 
     return { pda, bump };
 }
+
+export const withdrawEscrowBalance = async (
+    mu: MuProgram,
+    escrowAccount: MuEscrowAccountInfo,
+    userWallet: Keypair,
+    provider: MuProviderInfo,
+    withdrawTo: PublicKey,
+    amount: BN
+) => {
+    await mu.program.methods
+        .withdrawEscrowBalance(amount)
+        .accounts({
+            state: mu.statePda,
+            escrowAccount: escrowAccount.pda,
+            provider: provider.pda,
+            user: userWallet.publicKey,
+            withdrawTo
+        })
+        .signers([userWallet])
+        .rpc();
+}

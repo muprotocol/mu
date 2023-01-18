@@ -167,6 +167,26 @@ pub mod marketplace {
         Ok(())
     }
 
+    pub fn withdraw_escrow_balance(ctx: Context<WithdrawEscrow>, amount: u64) -> Result<()> {
+        let bump = ctx.accounts.state.bump.to_le_bytes();
+        let signer_seeds = vec![b"state".as_ref(), bump.as_ref()];
+        let signer_seeds_wrapper = vec![signer_seeds.as_slice()];
+
+        let transfer = Transfer {
+            from: ctx.accounts.escrow_account.to_account_info(),
+            to: ctx.accounts.withdraw_to.to_account_info(),
+            authority: ctx.accounts.state.to_account_info(),
+        };
+        let transfer_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            transfer,
+            signer_seeds_wrapper.as_slice(),
+        );
+        anchor_spl::token::transfer(transfer_ctx, amount)?;
+
+        Ok(())
+    }
+
     pub fn update_usage(
         ctx: Context<UpdateUsage>,
         update_seed: u128,
@@ -461,6 +481,31 @@ pub struct CreateProviderEscrowAccount<'info> {
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawEscrow<'info> {
+    #[account(
+        seeds = [b"state"],
+        bump = state.bump,
+    )]
+    pub state: Account<'info, MuState>,
+
+    #[account(
+        seeds = [b"escrow", user.key().as_ref(), provider.key().as_ref()],
+        bump,
+        mut
+    )]
+    pub escrow_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub withdraw_to: Account<'info, TokenAccount>,
+
+    pub provider: Account<'info, Provider>,
+
+    pub user: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
 }
 
 #[account]
