@@ -1,4 +1,8 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+};
 
 use musdk_common::{Request, Status};
 
@@ -62,6 +66,7 @@ impl<'a> FromRequest<'a> for String {
     }
 }
 
+//TODO: Deserialize into the concrete struct, like `PathParam<Request>`
 pub struct PathParams<'a>(HashMap<Cow<'a, str>, Cow<'a, str>>);
 pub struct QueryParams<'a>(HashMap<Cow<'a, str>, Cow<'a, str>>);
 
@@ -90,5 +95,33 @@ impl<'a> FromRequest<'a> for QueryParams<'a> {
             .collect();
 
         Ok(Self(map))
+    }
+}
+
+impl<'a> Deref for PathParams<'a> {
+    type Target = HashMap<Cow<'a, str>, Cow<'a, str>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a> DerefMut for PathParams<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<'a> Deref for QueryParams<'a> {
+    type Target = HashMap<Cow<'a, str>, Cow<'a, str>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a> DerefMut for QueryParams<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }

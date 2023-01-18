@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::{debug, error, trace};
 use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel, RequestReplyChannel};
-use mu_stack::{Gateway, HttpMethod, StackID};
+use mu_stack::{Gateway, StackID};
 use musdk_common::{Header, Request, Response, Status};
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -43,11 +43,7 @@ pub struct GatewayManagerConfig {
 }
 
 type GatewayName = String;
-type RequestPath = String;
-type AssemblyName = String;
-type FunctionName = String;
-//TODO: use Cow<'a, str> to avoid allocating again
-type PathParams = HashMap<String, String>;
+type PathParams<'a> = HashMap<Cow<'a, str>, Cow<'a, str>>;
 
 enum GatewayMessage {
     GetDeployedGatewayNames(StackID, ReplyChannel<Option<Vec<GatewayName>>>),
@@ -91,15 +87,16 @@ impl GatewayManager for GatewayManagerImpl {
     }
 }
 
+type Gateways = HashMap<StackID, HashMap<String, Gateway>>;
+
 struct GatewayState {
     server_handle: ServerHandle,
-    gateways: HashMap<StackID, HashMap<String, Gateway>>,
+    gateways: Arc<RwLock<Gateways>>,
 }
 
 // Used to access the gateway manager from within request handlers
 struct DependencyAccessor {
-    // TODO: break gateway manager's function management logic into new type to avoid
-    // dependency cycle and remove need for Arc<RwLock>
+    gateways: Arc<RwLock<Gateways>>,
     gateway_manager: Arc<RwLock<Option<GatewayManagerImpl>>>,
     runtime: Box<dyn Runtime>,
     connection_manager: Box<dyn ConnectionManager>,
@@ -124,6 +121,7 @@ struct DependencyAccessor {
 impl Clone for DependencyAccessor {
     fn clone(&self) -> Self {
         Self {
+            gateways: self.gateways.clone(),
             gateway_manager: self.gateway_manager.clone(),
             runtime: self.runtime.clone(),
             connection_manager: self.connection_manager.clone(),
@@ -134,12 +132,45 @@ impl Clone for DependencyAccessor {
     }
 }
 
-impl<'a> DependencyAccessor {
-    async fn get_gateway_manager(&'a self) -> GatewayManagerImpl {
-        self.gateway_manager.read().await.as_ref().unwrap().clone()
+fn match_path_and_extract_path_params<'a>(
+    request_path: &'a str,
+    endpoint_path: &'a str,
+) -> Option<PathParams<'a>> {
+    //TODO: Cache `endpoint_path` path segments for future matches
+    let mut request_path_segments = request_path
+        .trim_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty());
+    let mut endpoint_path_segments = endpoint_path
+        .trim_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty());
+
+    let mut path_params = HashMap::new();
+
+    loop {
+        match (request_path_segments.next(), endpoint_path_segments.next()) {
+            (Some(req_segment), Some(ep_segment)) => {
+                //TODO: Check for cases like `/get/{a}{b}/` which is invalid, since there
+                //is two variables in one segment.
+
+                if req_segment == ep_segment {
+                    continue;
+                } else if ep_segment.starts_with('{') && ep_segment.ends_with('}') {
+                    path_params.insert(
+                        Cow::Borrowed(&ep_segment[1..ep_segment.len() - 1]),
+                        Cow::Borrowed(req_segment),
+                    );
+                } else {
+                    return None;
+                }
+            }
+
+            (None, None) => return Some(path_params),
+            (None, Some(_)) | (Some(_), None) => return None,
+        }
     }
 }
-
 // TODO: route requests through outer layer to enable passing to other nodes
 pub async fn start(
     config: GatewayManagerConfig,
@@ -153,16 +184,21 @@ pub async fn start(
 )> {
     let (req_rep_channel, req_rep_receiver) = RequestReplyChannel::new();
 
+    let gateways = Arc::new(RwLock::new(HashMap::new()));
     let gateway_manager = Arc::new(RwLock::new(None));
-    let gateway_manager_clone = gateway_manager.clone();
 
-    let accessor = DependencyAccessor {
-        gateway_manager,
-        runtime,
-        connection_manager,
-        get_routing_target: req_rep_channel,
-        rpc_handler,
-        usage_aggregator,
+    let accessor = {
+        let gateways = gateways.clone();
+        let gateway_manager = gateway_manager.clone();
+        DependencyAccessor {
+            gateways,
+            gateway_manager,
+            runtime,
+            connection_manager,
+            rpc_handler,
+            usage_aggregator,
+            get_routing_target: req_rep_channel,
+        }
     };
 
     let server = HttpServer::new(move || {
@@ -195,58 +231,30 @@ pub async fn start(
 
     let state = GatewayState {
         server_handle,
-        gateways: HashMap::new(),
+        gateways,
     };
 
     let mailbox = CallbackMailboxProcessor::start(step, state, 10000);
 
-    let result = GatewayManagerImpl { mailbox };
+    let gateway_manager_impl = GatewayManagerImpl { mailbox };
 
-    *gateway_manager_clone.write().await = Some(result.clone());
+    *gateway_manager.write().await = Some(gateway_manager_impl.clone());
 
-    Ok((Box::new(result), req_rep_receiver))
+    Ok((Box::new(gateway_manager_impl), req_rep_receiver))
 }
 
 async fn step(
     _mailbox: CallbackMailboxProcessor<GatewayMessage>,
     msg: GatewayMessage,
-    mut state: GatewayState,
+    state: GatewayState,
 ) -> GatewayState {
     match msg {
-        GatewayMessage::GetAssemblyAndFunctionWithPathParams(
-            stack_id,
-            gateway_name,
-            method,
-            request_path,
-            rep,
-        ) => {
-            rep.reply(state.gateways.get(&stack_id).and_then(|gateways| {
-                gateways.get(&gateway_name).and_then(|gateway| {
-                    gateway
-                        .endpoints
-                        .iter()
-                        .find_map(|(path, eps)| {
-                            match_path_and_extract_path_params(&request_path, path)
-                                .map(|path_params| (path_params, eps))
-                        })
-                        .and_then(|(path_params, eps)| {
-                            eps.iter().find(|ep| ep.method == method).map(|ep| {
-                                (
-                                    ep.route_to.assembly.clone(),
-                                    ep.route_to.function.clone(),
-                                    path_params,
-                                )
-                            })
-                        })
-                })
-            }));
-            state
-        }
-
         GatewayMessage::GetDeployedGatewayNames(stack_id, rep) => {
             rep.reply(
                 state
                     .gateways
+                    .read()
+                    .await
                     .get(&stack_id)
                     .map(|gateways| gateways.keys().cloned().collect()),
             );
@@ -254,17 +262,20 @@ async fn step(
         }
 
         GatewayMessage::DeployGateways(stack_id, incoming_gateways) => {
-            let gateways = state.gateways.entry(stack_id).or_insert_with(HashMap::new);
+            {
+                let mut gateways = state.gateways.write().await;
+                let entry = gateways.entry(stack_id).or_insert_with(HashMap::new);
 
-            for incoming in incoming_gateways {
-                gateways.insert(incoming.name.clone(), incoming);
+                for incoming in incoming_gateways {
+                    entry.insert(incoming.name.clone(), incoming);
+                }
             }
 
             state
         }
 
         GatewayMessage::DeleteGateways(stack_id, gateway_names) => {
-            if let Some(gateways) = state.gateways.get_mut(&stack_id) {
+            if let Some(gateways) = state.gateways.write().await.get_mut(&stack_id) {
                 for name in gateway_names {
                     gateways.remove(&name);
                 }
@@ -304,40 +315,6 @@ fn calculate_response_size(r: &Response) -> u64 {
         .sum::<u64>();
     size += r.body.len() as u64;
     size
-}
-
-fn match_path_and_extract_path_params(
-    request_path: &str,
-    endpoint_path: &str,
-) -> Option<HashMap<String, String>> {
-    let mut request_path_segments = request_path
-        .trim_matches('/')
-        .split('/')
-        .filter(|s| !s.is_empty());
-    let mut endpoint_path_segments = endpoint_path
-        .trim_matches('/')
-        .split('/')
-        .filter(|s| !s.is_empty());
-
-    let mut path_params = HashMap::new();
-
-    loop {
-        match (request_path_segments.next(), endpoint_path_segments.next()) {
-            (Some(req_segment), Some(ep_segment)) => {
-                //TODO: Check for cases like `/get/{a}{b}/` which is invalid, since there
-                //is two variables in one segment.
-                if ep_segment.starts_with('{') && ep_segment.ends_with('}') {
-                    path_params.insert(
-                        ep_segment[1..ep_segment.len() - 1].to_string(),
-                        req_segment.to_string(),
-                    );
-                }
-            }
-
-            (None, None) => return Some(path_params),
-            (None, Some(_)) | (Some(_), None) => return None,
-        }
-    }
 }
 
 struct ResponseWrapper(Response<'static>);
@@ -508,7 +485,7 @@ async fn handle_request<'a>(
     };
 
     let gateway_name = request.match_info().get("gateway_name").unwrap();
-    let path = request.match_info().get("path").unwrap();
+    let request_path = request.match_info().get("path").unwrap();
 
     let method = actix_http_method_to_stack(request.method());
 
@@ -528,36 +505,40 @@ async fn handle_request<'a>(
         };
     let query_params = query_params.into_inner();
 
-    let assembly_and_function_and_path_params = dependency_accessor
-        .get_gateway_manager()
-        .await
-        .mailbox
-        .post_and_reply(|r| {
-            GatewayMessage::GetAssemblyAndFunctionWithPathParams(
-                stack_id,
-                gateway_name.into(),
-                method,
-                (path).to_owned(),
-                r,
-            )
-        })
-        .await;
+    let gateways = dependency_accessor.gateways.read().await;
+    let gateway = gateways
+        .get(&stack_id)
+        .and_then(|s| s.get(gateway_name).map(|g| g.endpoints.clone())); //TODO: Is this a good idea?
+    drop(gateways);
 
-    let (assembly_name, function_name, path_params) = match assembly_and_function_and_path_params {
-        Err(_) => {
-            return ResponseWrapper::internal_error("Node is shutting down, retry this request")
-        }
-        Ok(None) => return ResponseWrapper::not_found(),
-        Ok(Some(x)) => x,
+    let Some(gateway) = gateway else {
+        return ResponseWrapper::not_found();
+    };
+
+    let path_match_result = gateway
+        .iter()
+        .find_map(|(path, eps)| {
+            match_path_and_extract_path_params(request_path, path)
+                .map(|path_params| (path_params, eps))
+        })
+        .and_then(|(path_params, eps)| {
+            eps.iter().find(|ep| ep.method == method).map(|ep| {
+                (
+                    ep.route_to.assembly.clone(),
+                    ep.route_to.function.clone(),
+                    path_params,
+                )
+            })
+        });
+
+    let Some((assembly_name, function_name, path_params)) = path_match_result else {
+        return ResponseWrapper::not_found();
     };
 
     let request = Request {
         method: stack_http_method_to_sdk(method),
-        path: Cow::Borrowed(path),
-        path_params: path_params
-            .into_iter()
-            .map(|(k, v)| (Cow::Owned(k), Cow::Owned(v)))
-            .collect(),
+        path: Cow::Borrowed(request_path),
+        path_params,
         query_params,
         headers,
         body: Cow::Borrowed(payload.as_ref().map(AsRef::as_ref).unwrap_or(&[])),
