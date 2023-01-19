@@ -10,7 +10,7 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::{debug, error, trace};
-use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel, RequestReplyChannel};
+use mailbox_processor::{ReplyChannel, RequestReplyChannel};
 use mu_stack::{Gateway, StackID};
 use musdk_common::{Header, Request, Response, Status};
 use reqwest::StatusCode;
@@ -42,62 +42,58 @@ pub struct GatewayManagerConfig {
     pub listen_port: u16,
 }
 
-type GatewayName = String;
 type PathParams<'a> = HashMap<Cow<'a, str>, Cow<'a, str>>;
-
-enum GatewayMessage {
-    GetDeployedGatewayNames(StackID, ReplyChannel<Option<Vec<GatewayName>>>),
-    DeployGateways(StackID, Vec<Gateway>),
-    DeleteGateways(StackID, Vec<GatewayName>),
-    Stop(),
-}
+type Gateways = HashMap<StackID, HashMap<String, Gateway>>;
 
 #[derive(Clone)]
 struct GatewayManagerImpl {
-    mailbox: CallbackMailboxProcessor<GatewayMessage>,
+    server_handle: ServerHandle,
+    gateways: Arc<RwLock<Gateways>>,
 }
 
 #[async_trait]
 impl GatewayManager for GatewayManagerImpl {
     async fn get_deployed_gateway_names(&self, stack_id: StackID) -> Result<Option<Vec<String>>> {
-        self.mailbox
-            .post_and_reply(|r| GatewayMessage::GetDeployedGatewayNames(stack_id, r))
+        Ok(self
+            .gateways
+            .read()
             .await
-            .map_err(Into::into)
+            .get(&stack_id)
+            .map(|gateways| gateways.keys().cloned().collect()))
     }
 
-    async fn deploy_gateways(&self, stack_id: StackID, gateways: Vec<Gateway>) -> Result<()> {
-        self.mailbox
-            .post(GatewayMessage::DeployGateways(stack_id, gateways))
-            .await
-            .map_err(Into::into)
+    async fn deploy_gateways(
+        &self,
+        stack_id: StackID,
+        incoming_gateways: Vec<Gateway>,
+    ) -> Result<()> {
+        let mut gateways = self.gateways.write().await;
+        let entry = gateways.entry(stack_id).or_insert_with(HashMap::new);
+
+        for incoming in incoming_gateways {
+            entry.insert(incoming.name.clone(), incoming);
+        }
+        Ok(())
     }
 
-    async fn delete_gateways(&self, stack_id: StackID, gateways: Vec<String>) -> Result<()> {
-        self.mailbox
-            .post(GatewayMessage::DeleteGateways(stack_id, gateways))
-            .await
-            .map_err(Into::into)
+    async fn delete_gateways(&self, stack_id: StackID, gateway_names: Vec<String>) -> Result<()> {
+        if let Some(gateways) = self.gateways.write().await.get_mut(&stack_id) {
+            for name in gateway_names {
+                gateways.remove(&name);
+            }
+        }
+        Ok(())
     }
 
     async fn stop(&self) -> Result<()> {
-        self.mailbox.post(GatewayMessage::Stop()).await?;
-        self.mailbox.clone().stop().await;
+        self.server_handle.stop(true).await;
         Ok(())
     }
-}
-
-type Gateways = HashMap<StackID, HashMap<String, Gateway>>;
-
-struct GatewayState {
-    server_handle: ServerHandle,
-    gateways: Arc<RwLock<Gateways>>,
 }
 
 // Used to access the gateway manager from within request handlers
 struct DependencyAccessor {
     gateways: Arc<RwLock<Gateways>>,
-    gateway_manager: Arc<RwLock<Option<GatewayManagerImpl>>>,
     runtime: Box<dyn Runtime>,
     connection_manager: Box<dyn ConnectionManager>,
     rpc_handler: Box<dyn RpcHandler>,
@@ -122,7 +118,6 @@ impl Clone for DependencyAccessor {
     fn clone(&self) -> Self {
         Self {
             gateways: self.gateways.clone(),
-            gateway_manager: self.gateway_manager.clone(),
             runtime: self.runtime.clone(),
             connection_manager: self.connection_manager.clone(),
             rpc_handler: self.rpc_handler.clone(),
@@ -179,14 +174,11 @@ pub async fn start(
     let (req_rep_channel, req_rep_receiver) = RequestReplyChannel::new();
 
     let gateways = Arc::new(RwLock::new(HashMap::new()));
-    let gateway_manager = Arc::new(RwLock::new(None));
 
     let accessor = {
         let gateways = gateways.clone();
-        let gateway_manager = gateway_manager.clone();
         DependencyAccessor {
             gateways,
-            gateway_manager,
             runtime,
             connection_manager,
             rpc_handler,
@@ -223,67 +215,13 @@ pub async fn start(
 
     tokio::spawn(server);
 
-    let state = GatewayState {
+    let gateway_manager_impl = GatewayManagerImpl {
         server_handle,
         gateways,
     };
 
-    let mailbox = CallbackMailboxProcessor::start(step, state, 10000);
-
-    let gateway_manager_impl = GatewayManagerImpl { mailbox };
-
-    *gateway_manager.write().await = Some(gateway_manager_impl.clone());
-
     Ok((Box::new(gateway_manager_impl), req_rep_receiver))
 }
-
-async fn step(
-    _mailbox: CallbackMailboxProcessor<GatewayMessage>,
-    msg: GatewayMessage,
-    state: GatewayState,
-) -> GatewayState {
-    match msg {
-        GatewayMessage::GetDeployedGatewayNames(stack_id, rep) => {
-            rep.reply(
-                state
-                    .gateways
-                    .read()
-                    .await
-                    .get(&stack_id)
-                    .map(|gateways| gateways.keys().cloned().collect()),
-            );
-            state
-        }
-
-        GatewayMessage::DeployGateways(stack_id, incoming_gateways) => {
-            {
-                let mut gateways = state.gateways.write().await;
-                let entry = gateways.entry(stack_id).or_insert_with(HashMap::new);
-
-                for incoming in incoming_gateways {
-                    entry.insert(incoming.name.clone(), incoming);
-                }
-            }
-
-            state
-        }
-
-        GatewayMessage::DeleteGateways(stack_id, gateway_names) => {
-            if let Some(gateways) = state.gateways.write().await.get_mut(&stack_id) {
-                for name in gateway_names {
-                    gateways.remove(&name);
-                }
-            }
-            state
-        }
-
-        GatewayMessage::Stop() => {
-            state.server_handle.stop(true).await;
-            state
-        }
-    }
-}
-
 fn calculate_request_size(r: &Request) -> u64 {
     //let mut size = r.path.as_bytes().len() as u64; //TODO: check if we can calculate this
     let mut size = r
