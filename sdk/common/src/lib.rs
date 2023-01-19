@@ -30,7 +30,6 @@ pub struct Header<'a> {
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct Request<'a> {
     pub method: HttpMethod,
-    pub path: Cow<'a, str>,
     pub path_params: HashMap<Cow<'a, str>, Cow<'a, str>>,
     pub query_params: HashMap<Cow<'a, str>, Cow<'a, str>>,
     pub headers: Vec<Header<'a>>,

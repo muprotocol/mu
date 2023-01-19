@@ -19,7 +19,6 @@ message KeyValuePair {
 
 message Request {
     HttpMethod method = 1;
-    string path = 2;
     repeated KeyValuePair path_params = 3;
     repeated KeyValuePair query_params = 4;
     repeated KeyValuePair headers = 5;

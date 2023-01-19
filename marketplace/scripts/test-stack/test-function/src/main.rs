@@ -2,7 +2,7 @@ use musdk::*;
 
 #[mu_functions]
 mod functions {
-    use musdk::{LogLevel, MuContext, PathParams, Status};
+    use musdk::{LogLevel, MuContext, PathParams};
 
     #[mu_function]
     fn greet_user<'a>(ctx: &'a mut MuContext, data: &'a [u8]) -> Vec<u8> {
@@ -12,15 +12,12 @@ mod functions {
     }
 
     #[mu_function]
-    fn greet_path_user<'a>(
-        ctx: &'a mut MuContext,
-        path: PathParams<'a>,
-    ) -> Result<Vec<u8>, (&'static str, Status)> {
+    fn greet_path_user<'a>(ctx: &'a mut MuContext, path: PathParams<'a>) -> Vec<u8> {
         let Some(name) = path.get("name") else {
-            return Err(("Name not provided in path", Status::BadRequest));
+            unreachable!();
         };
 
         let _ = ctx.log(&format!("Received request from {name}"), LogLevel::Info);
-        Ok(format!("Hello, {name}!").into_bytes())
+        format!("Hello, {name}!").into_bytes()
     }
 }

@@ -137,14 +137,8 @@ fn match_path_and_extract_path_params<'a>(
     endpoint_path: &'a str,
 ) -> Option<PathParams<'a>> {
     //TODO: Cache `endpoint_path` path segments for future matches
-    let mut request_path_segments = request_path
-        .trim_matches('/')
-        .split('/')
-        .filter(|s| !s.is_empty());
-    let mut endpoint_path_segments = endpoint_path
-        .trim_matches('/')
-        .split('/')
-        .filter(|s| !s.is_empty());
+    let mut request_path_segments = request_path.split('/').filter(|s| !s.is_empty());
+    let mut endpoint_path_segments = endpoint_path.split('/').filter(|s| !s.is_empty());
 
     let mut path_params = HashMap::new();
 
@@ -291,8 +285,8 @@ async fn step(
 }
 
 fn calculate_request_size(r: &Request) -> u64 {
-    let mut size = r.path.as_bytes().len() as u64;
-    size += r
+    //let mut size = r.path.as_bytes().len() as u64; //TODO: check if we can calculate this
+    let mut size = r
         .query_params
         .iter()
         .map(|x| x.0.as_bytes().len() as u64 + x.1.as_bytes().len() as u64)
@@ -506,16 +500,12 @@ async fn handle_request<'a>(
     let query_params = query_params.into_inner();
 
     let gateways = dependency_accessor.gateways.read().await;
-    let gateway = gateways
-        .get(&stack_id)
-        .and_then(|s| s.get(gateway_name).map(|g| g.endpoints.clone())); //TODO: Is this a good idea?
-    drop(gateways);
-
-    let Some(gateway) = gateway else {
+    let Some(gateway) = gateways.get(&stack_id).and_then(|s| s.get(gateway_name)) else {
         return ResponseWrapper::not_found();
     };
 
     let path_match_result = gateway
+        .endpoints
         .iter()
         .find_map(|(path, eps)| {
             match_path_and_extract_path_params(request_path, path)
@@ -526,10 +516,16 @@ async fn handle_request<'a>(
                 (
                     ep.route_to.assembly.clone(),
                     ep.route_to.function.clone(),
-                    path_params,
+                    path_params
+                        .into_iter()
+                        .map(|(k, v)| (Cow::Owned(k.to_string()), Cow::Owned(v.to_string())))
+                        .collect(),
                 )
             })
         });
+
+    drop(gateway);
+    drop(gateways);
 
     let Some((assembly_name, function_name, path_params)) = path_match_result else {
         return ResponseWrapper::not_found();
@@ -537,7 +533,6 @@ async fn handle_request<'a>(
 
     let request = Request {
         method: stack_http_method_to_sdk(method),
-        path: Cow::Borrowed(request_path),
         path_params,
         query_params,
         headers,

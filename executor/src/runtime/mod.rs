@@ -216,7 +216,6 @@ impl Runtime for RuntimeImpl {
             function: Cow::Owned(function_id.function_name),
             request: Request {
                 method: request.method,
-                path: Cow::Owned(request.path.into_owned()),
                 path_params: request
                     .path_params
                     .into_iter()

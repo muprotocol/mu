@@ -94,7 +94,6 @@ impl<'a> From<musdk_common::Request<'a>> for rpc::Request {
 
         Self {
             method: convert_http_method(request.method),
-            path: request.path.to_string(),
             path_params: request
                 .path_params
                 .into_iter()
@@ -146,7 +145,6 @@ impl TryFrom<rpc::Request> for musdk_common::Request<'static> {
 
         Ok(Self {
             method: convert_http_method(request.method)?,
-            path: Cow::Owned(request.path),
             path_params: request
                 .path_params
                 .into_iter()
