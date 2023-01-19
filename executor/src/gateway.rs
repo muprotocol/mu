@@ -524,7 +524,6 @@ async fn handle_request<'a>(
             })
         });
 
-    drop(gateway);
     drop(gateways);
 
     let Some((assembly_name, function_name, path_params)) = path_match_result else {

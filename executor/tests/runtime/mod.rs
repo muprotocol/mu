@@ -434,6 +434,7 @@ async fn json_body_request_and_response() {
     runtime
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .then(|r| async move {
+            let r = r.unwrap();
             assert_eq!(Status::Ok, r.status);
             assert_eq!(
                 expected_response,
@@ -491,7 +492,7 @@ async fn string_body_request_and_response_fails_with_incorrect_charset() {
         .then(|r| async move {
             let r = r.unwrap();
             assert_eq!(Status::BadRequest, r.status);
-            assert_eq!(b"unsupported text charset: windows-12345", r.body.as_ref());
+            assert_eq!(b"unsupported charset: windows-12345", r.body.as_ref());
         })
         .await;
 
@@ -500,7 +501,7 @@ async fn string_body_request_and_response_fails_with_incorrect_charset() {
 
 #[tokio::test]
 #[serial]
-async fn string_body_request_and_response_fails_with_incorrect_content_type() {
+async fn string_body_request_and_response_do_not_care_for_content_type() {
     let projects = vec![create_project("multi-body", &["string_body"], None)];
     let (runtime, _, _) = create_runtime(&projects).await;
 
@@ -508,7 +509,7 @@ async fn string_body_request_and_response_fails_with_incorrect_content_type() {
         Cow::Borrowed(b"Due"),
         vec![Header {
             name: Cow::Borrowed("content-type"),
-            value: Cow::Borrowed("application/json; charset=windows-12345"),
+            value: Cow::Borrowed("application/json; charset=utf-8"),
         }],
         HashMap::new(),
         HashMap::new(),
@@ -518,11 +519,8 @@ async fn string_body_request_and_response_fails_with_incorrect_content_type() {
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .then(|r| async move {
             let r = r.unwrap();
-            assert_eq!(Status::BadRequest, r.status);
-            assert_eq!(
-                b"can not parse request as string, content-type is not `text`",
-                r.body.as_ref()
-            );
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(b"Hello Due, got your message", r.body.as_ref());
         })
         .await;
 
