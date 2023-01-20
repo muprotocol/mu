@@ -8,9 +8,9 @@ import {Adapter} from "@solana/wallet-adapter-base";
 export default function useWallets(): Adapter[] {
     return useMemo(
         () => [
-            new PhantomWalletAdapter(),
             new GlowWalletAdapter(),
             new SlopeWalletAdapter(),
-            new TorusWalletAdapter()
+            new PhantomWalletAdapter(),
+            new TorusWalletAdapter(),
         ], []);
 }
