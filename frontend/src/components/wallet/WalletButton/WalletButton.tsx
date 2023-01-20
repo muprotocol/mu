@@ -11,8 +11,6 @@ export default function WalletButton() {
     );
 
     return (
-        <WalletMultiButtonDynamic className="bg-purple-800">
-            <p data-testid="WalletMultiButton" className="capitalize">select wallet</p>
-        </WalletMultiButtonDynamic>
+        <WalletMultiButtonDynamic className="bg-purple-800" />
     )
 }
