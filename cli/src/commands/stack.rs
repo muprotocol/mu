@@ -12,9 +12,20 @@ use crate::{config::Config, marketplace_client};
 
 #[derive(Debug, Parser)]
 pub enum Command {
+    Init(InitStackCommand),
     List(ListStacksCommand),
     Deploy(DeployStackCommand),
     Delete(DeleteStackCommand),
+}
+
+#[derive(Debug, Args)]
+pub struct InitStackCommand {
+    /// Initialize a new mu project.
+    name: String,
+
+    #[arg(short, long)]
+    /// Template to use for new project.
+    template: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -70,10 +81,15 @@ pub struct DeleteStackCommand {
 
 pub fn execute(config: Config, cmd: Command) -> Result<()> {
     match cmd {
+        Command::Init(sub_command) => execute_init(config, sub_command),
         Command::List(sub_command) => execute_list(config, sub_command),
         Command::Deploy(sub_command) => execute_deploy(config, sub_command),
         Command::Delete(sub_command) => execute_delete(config, sub_command),
     }
+}
+
+pub fn execute_init(config: Config, cmd: InitStackCommand) -> Result<()> {
+    Ok(())
 }
 
 pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
