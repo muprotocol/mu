@@ -1,4 +1,8 @@
-use std::{fs, path::PathBuf};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anchor_client::{
     solana_client::rpc_filter::{Memcmp, RpcFilterType},
@@ -8,7 +12,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser};
 use marketplace::StackState;
 
-use crate::{config::Config, marketplace_client};
+use crate::{config::Config, marketplace_client, template::read_templates};
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -23,9 +27,12 @@ pub struct InitStackCommand {
     /// Initialize a new mu project.
     name: String,
 
+    /// The directory to create new project in. If not provided, creates in current directory.
+    destination: Option<String>,
+
     #[arg(short, long)]
     /// Template to use for new project.
-    template: Option<String>,
+    template: String,
 }
 
 #[derive(Debug, Args)]
@@ -88,7 +95,29 @@ pub fn execute(config: Config, cmd: Command) -> Result<()> {
     }
 }
 
-pub fn execute_init(config: Config, cmd: InitStackCommand) -> Result<()> {
+pub fn execute_init(_config: Config, cmd: InitStackCommand) -> Result<()> {
+    let templates = read_templates()?;
+
+    match templates.iter().find(|t| t.name == cmd.template) {
+        None => {
+            println!(
+                "Template {} not found, select one of these templates",
+                cmd.template
+            );
+
+            for template in templates {
+                println!("- {}\t{}", template.name, template.lang);
+            }
+        }
+        Some(template) => {
+            let mut args = HashMap::new();
+            args.insert("name".to_string(), cmd.name);
+            let destination = cmd.destination.unwrap_or("./".to_string());
+            let destination = Path::new(&destination);
+
+            template.build(destination, args)?;
+        }
+    }
     Ok(())
 }
 

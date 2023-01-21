@@ -1,14 +1,18 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use serde_yaml;
 
 #[derive(Deserialize)]
-struct Template {
-    name: String,
-    lang: String,
+pub struct Template {
+    pub name: String,
+    pub lang: String,
     files: Vec<File>,
+    //TODO: Check if order of commands is preserved or not.
     commands: Vec<Command>,
 }
 
@@ -42,14 +46,21 @@ impl Command {
     pub fn is_postfix(&self) -> bool {
         !self.is_prefix()
     }
+
+    pub fn command(&self) -> &str {
+        match self {
+            Command::Prefix(ref s) => s,
+            Command::Postfix(ref s) => s,
+        }
+    }
 }
 
 impl Template {
-    pub fn build(&self, destination: &Path) -> Result<()> {
+    pub fn build<'a>(&self, destination: &Path, args: HashMap<String, String>) -> Result<()> {
         std::fs::create_dir_all(destination)?;
 
-        for command in self.commands.iter().filter(|c| c.is_prefix()) {
-            std::process::Command::new(command).spawn()?;
+        for cmd in self.commands.iter().filter(|c| c.is_prefix()) {
+            std::process::Command::new(cmd.command()).spawn()?;
         }
 
         for file in self.files.iter() {
@@ -58,11 +69,26 @@ impl Template {
                 std::fs::create_dir_all(parent)?;
             }
 
-            match file.contents {
-                FileContents::String(ref s) => std::fs::write(path, s)?,
+            let mut contents = match file.contents {
+                FileContents::String(ref s) => s.clone(),
                 FileContents::File(_) => unimplemented!(),
+            };
+
+            for arg in &file.args {
+                let Some(value) = args.get(arg) else {
+                    bail!("template argument `{arg}` was not found in provided arguments") 
+                };
+
+                contents = contents.replace(&format!("{{{{{arg}}}}}"), value);
             }
+
+            std::fs::write(path, contents)?;
         }
+
+        for cmd in self.commands.iter().filter(|c| c.is_postfix()) {
+            std::process::Command::new(cmd.command()).spawn()?;
+        }
+
         Ok(())
     }
 }
