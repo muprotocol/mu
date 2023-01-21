@@ -4,8 +4,15 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
+use rust_embed::RustEmbed;
 use serde::Deserialize;
-use serde_yaml;
+
+//TODO: Currently we embed the `templates` folder in our binary, but it's good to be able to read
+//other templates from user local system.
+
+#[derive(RustEmbed)]
+#[folder = "templates"]
+struct Templates;
 
 #[derive(Deserialize)]
 pub struct Template {
@@ -17,20 +24,20 @@ pub struct Template {
 }
 
 #[derive(Deserialize)]
-struct File {
-    path: PathBuf,
-    contents: FileContents,
-    args: Vec<String>,
+pub struct File {
+    pub path: PathBuf,
+    pub contents: FileContent,
+    pub args: Vec<String>,
 }
 
 #[derive(Deserialize)]
-enum FileContents {
+pub enum FileContent {
     String(String),
     File(PathBuf),
 }
 
 #[derive(Deserialize)]
-enum Command {
+pub enum Command {
     Prefix(String),
     Postfix(String),
 }
@@ -64,14 +71,14 @@ impl Template {
         }
 
         for file in self.files.iter() {
-            let path = destination.join(&file.path);
+            let path = destination.join(&file.path); //TODO: replace args in path too
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
 
             let mut contents = match file.contents {
-                FileContents::String(ref s) => s.clone(),
-                FileContents::File(_) => unimplemented!(),
+                FileContent::String(ref s) => s.clone(),
+                FileContent::File(_) => unimplemented!(),
             };
 
             for arg in &file.args {
@@ -94,19 +101,13 @@ impl Template {
 }
 
 pub fn read_templates() -> Result<Vec<Template>> {
-    let dir_entries = std::fs::read_dir("./template")?;
     let mut templates = vec![];
+    let template_files = Templates::iter().filter_map(|i| Templates::get(&i));
 
-    for item in dir_entries {
-        match item {
-            Ok(i) if i.file_type()?.is_file() => {
-                let file = std::fs::File::open(i.path()).context("template file")?;
-                let template: Template = serde_yaml::from_reader(file)?;
-                templates.push(template);
-            }
-            Ok(_) => continue,
-            Err(e) => bail!("failed to ready template directory contents: {e:?}"),
-        }
+    for template in template_files {
+        let template = serde_yaml::from_slice(&template.data).context("reading template")?;
+        templates.push(template);
     }
+
     Ok(templates)
 }

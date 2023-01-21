@@ -23,6 +23,7 @@ dirs = "4"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1"
+rust-embed = "6.4"
 
 anchor-client = "0.26"
 spl-token = "3"

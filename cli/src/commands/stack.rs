@@ -33,6 +33,10 @@ pub struct InitStackCommand {
     #[arg(short, long)]
     /// Template to use for new project.
     template: String,
+
+    #[arg(short, long)]
+    /// Language.
+    language: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -98,15 +102,26 @@ pub fn execute(config: Config, cmd: Command) -> Result<()> {
 pub fn execute_init(_config: Config, cmd: InitStackCommand) -> Result<()> {
     let templates = read_templates()?;
 
-    match templates.iter().find(|t| t.name == cmd.template) {
+    match templates.iter().find(|t| {
+        t.name == cmd.template && {
+            match &cmd.language {
+                Some(lang) => &t.lang == lang,
+                None => true,
+            }
+        }
+    }) {
         None => {
             println!(
-                "Template {} not found, select one of these templates",
+                "Template `{}` not found, select one of these templates:",
                 cmd.template
             );
 
+            if !templates.is_empty() {
+                println!("- Name,  Lang");
+                println!("===================");
+            }
             for template in templates {
-                println!("- {}\t{}", template.name, template.lang);
+                println!("- {},  {}", template.name, template.lang);
             }
         }
         Some(template) => {
