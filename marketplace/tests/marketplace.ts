@@ -40,7 +40,7 @@ describe("marketplace", () => {
     it("Initializes", async () => {
         let provider = AnchorProvider.env();
         let mint = await createMint(provider);
-        mu = await initializeMu(provider, mint);
+        mu = await initializeMu(provider, mint, 100_000);
     });
 
     it("Creates a provider authorizer", async () => {
@@ -130,17 +130,27 @@ describe("marketplace", () => {
 
         await updateStackUsage(mu, region, stack, authSigner, provider, escrow, 100, usage);
 
+        let usage_price = 1029044n;
+        let commission = usage_price * 100_000n / 1_000_000n;
+        expect(commission).to.equals(102904n);
+        let provider_share = usage_price - commission;
+        expect(provider_share).to.equals(926140n);
+
         const providerAccount = await spl.getAccount(
             mu.anchorProvider.connection, provider.tokenAccount
         );
+        // 9900 $MU and 6 digits of decimal places left after paying deposit
+        expect(providerAccount.amount).to.equals(9900_000_000n + provider_share);
 
-        // 9900 $MU and 6 digits of decimal places left after paying deposit, 1029044 usage price
-        expect(providerAccount.amount).to.equals(9900_000_000n + 1029044n);
+        const commissionAccount = await spl.getAccount(
+            mu.anchorProvider.connection, mu.commissionPda
+        );
+        expect(commissionAccount.amount).to.equals(commission);
 
         const escrowAccount = await spl.getAccount(
             mu.anchorProvider.connection,
             escrow.pda
         );
-        expect(escrowAccount.amount).to.equals(8970956n); // 10_000_000 initial balance - 1029044 used
+        expect(escrowAccount.amount).to.equals(10_000_000n - usage_price);
     });
 });
