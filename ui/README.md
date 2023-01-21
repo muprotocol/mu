@@ -1,6 +1,6 @@
-# Mu - Frontend
+# Mu - UI
 
-## Docs
+## Library Docs
 - Json RPC method to get accounts information: https://docs.solana.com/developing/clients/jsonrpc-api#getaccountinfo
 - JS Solana-web3 library: https://docs.solana.com/developing/clients/javascript-api
 
