@@ -127,13 +127,13 @@ impl Clone for DependencyAccessor {
     }
 }
 
-fn match_path_and_extract_path_params<'a>(
+fn match_path_and_extract_path_params<'a, 'ep>(
     request_path: &'a str,
-    endpoint_path: &'a str,
+    endpoint_path: &'ep str,
 ) -> Option<PathParams<'a>> {
     //TODO: Cache `endpoint_path` path segments for future matches
-    let mut request_path_segments = request_path.split('/').filter(|s| !s.is_empty());
-    let mut endpoint_path_segments = endpoint_path.split('/').filter(|s| !s.is_empty());
+    let mut request_path_segments = request_path.split('/');
+    let mut endpoint_path_segments = endpoint_path.split('/');
 
     let mut path_params = HashMap::new();
 
@@ -147,7 +147,7 @@ fn match_path_and_extract_path_params<'a>(
                     continue;
                 } else if ep_segment.starts_with('{') && ep_segment.ends_with('}') {
                     path_params.insert(
-                        Cow::Borrowed(&ep_segment[1..ep_segment.len() - 1]),
+                        Cow::Owned(ep_segment[1..ep_segment.len() - 1].to_string()),
                         Cow::Borrowed(req_segment),
                     );
                 } else {
@@ -454,10 +454,7 @@ async fn handle_request<'a>(
                 (
                     ep.route_to.assembly.clone(),
                     ep.route_to.function.clone(),
-                    path_params
-                        .into_iter()
-                        .map(|(k, v)| (Cow::Owned(k.to_string()), Cow::Owned(v.to_string())))
-                        .collect(),
+                    path_params,
                 )
             })
         });
