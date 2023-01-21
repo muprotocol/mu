@@ -10,8 +10,8 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::{debug, error, trace};
-use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel, RequestReplyChannel};
-use mu_stack::{Gateway, HttpMethod, StackID};
+use mailbox_processor::{ReplyChannel, RequestReplyChannel};
+use mu_stack::{Gateway, StackID};
 use musdk_common::{Header, Request, Response, Status};
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -42,70 +42,58 @@ pub struct GatewayManagerConfig {
     pub listen_port: u16,
 }
 
-type GatewayName = String;
-type RequestPath = String;
-type AssemblyName = String;
-type FunctionName = String;
-
-enum GatewayMessage {
-    GetAssemblyAndFunction(
-        StackID,
-        GatewayName,
-        HttpMethod,
-        RequestPath,
-        ReplyChannel<Option<(AssemblyName, FunctionName)>>,
-    ),
-    GetDeployedGatewayNames(StackID, ReplyChannel<Option<Vec<GatewayName>>>),
-    DeployGateways(StackID, Vec<Gateway>),
-    DeleteGateways(StackID, Vec<GatewayName>),
-    Stop(),
-}
+type PathParams<'a> = HashMap<Cow<'a, str>, Cow<'a, str>>;
+type Gateways = HashMap<StackID, HashMap<String, Gateway>>;
 
 #[derive(Clone)]
 struct GatewayManagerImpl {
-    mailbox: CallbackMailboxProcessor<GatewayMessage>,
+    server_handle: ServerHandle,
+    gateways: Arc<RwLock<Gateways>>,
 }
 
 #[async_trait]
 impl GatewayManager for GatewayManagerImpl {
     async fn get_deployed_gateway_names(&self, stack_id: StackID) -> Result<Option<Vec<String>>> {
-        self.mailbox
-            .post_and_reply(|r| GatewayMessage::GetDeployedGatewayNames(stack_id, r))
+        Ok(self
+            .gateways
+            .read()
             .await
-            .map_err(Into::into)
+            .get(&stack_id)
+            .map(|gateways| gateways.keys().cloned().collect()))
     }
 
-    async fn deploy_gateways(&self, stack_id: StackID, gateways: Vec<Gateway>) -> Result<()> {
-        self.mailbox
-            .post(GatewayMessage::DeployGateways(stack_id, gateways))
-            .await
-            .map_err(Into::into)
+    async fn deploy_gateways(
+        &self,
+        stack_id: StackID,
+        incoming_gateways: Vec<Gateway>,
+    ) -> Result<()> {
+        let mut gateways = self.gateways.write().await;
+        let entry = gateways.entry(stack_id).or_insert_with(HashMap::new);
+
+        for incoming in incoming_gateways {
+            entry.insert(incoming.name.clone(), incoming);
+        }
+        Ok(())
     }
 
-    async fn delete_gateways(&self, stack_id: StackID, gateways: Vec<String>) -> Result<()> {
-        self.mailbox
-            .post(GatewayMessage::DeleteGateways(stack_id, gateways))
-            .await
-            .map_err(Into::into)
+    async fn delete_gateways(&self, stack_id: StackID, gateway_names: Vec<String>) -> Result<()> {
+        if let Some(gateways) = self.gateways.write().await.get_mut(&stack_id) {
+            for name in gateway_names {
+                gateways.remove(&name);
+            }
+        }
+        Ok(())
     }
 
     async fn stop(&self) -> Result<()> {
-        self.mailbox.post(GatewayMessage::Stop()).await?;
-        self.mailbox.clone().stop().await;
+        self.server_handle.stop(true).await;
         Ok(())
     }
 }
 
-struct GatewayState {
-    server_handle: ServerHandle,
-    gateways: HashMap<StackID, HashMap<String, Gateway>>,
-}
-
 // Used to access the gateway manager from within request handlers
 struct DependencyAccessor {
-    // TODO: break gateway manager's function management logic into new type to avoid
-    // dependency cycle and remove need for Arc<RwLock>
-    gateway_manager: Arc<RwLock<Option<GatewayManagerImpl>>>,
+    gateways: Arc<RwLock<Gateways>>,
     runtime: Box<dyn Runtime>,
     connection_manager: Box<dyn ConnectionManager>,
     rpc_handler: Box<dyn RpcHandler>,
@@ -129,7 +117,7 @@ struct DependencyAccessor {
 impl Clone for DependencyAccessor {
     fn clone(&self) -> Self {
         Self {
-            gateway_manager: self.gateway_manager.clone(),
+            gateways: self.gateways.clone(),
             runtime: self.runtime.clone(),
             connection_manager: self.connection_manager.clone(),
             rpc_handler: self.rpc_handler.clone(),
@@ -139,12 +127,39 @@ impl Clone for DependencyAccessor {
     }
 }
 
-impl<'a> DependencyAccessor {
-    async fn get_gateway_manager(&'a self) -> GatewayManagerImpl {
-        self.gateway_manager.read().await.as_ref().unwrap().clone()
+fn match_path_and_extract_path_params<'a, 'ep>(
+    request_path: &'a str,
+    endpoint_path: &'ep str,
+) -> Option<PathParams<'a>> {
+    //TODO: Cache `endpoint_path` path segments for future matches
+    let mut request_path_segments = request_path.split('/');
+    let mut endpoint_path_segments = endpoint_path.split('/');
+
+    let mut path_params = HashMap::new();
+
+    loop {
+        match (request_path_segments.next(), endpoint_path_segments.next()) {
+            (Some(req_segment), Some(ep_segment)) => {
+                //TODO: Check for cases like `/get/{a}{b}/` which is invalid, since there
+                //is two variables in one segment.
+
+                if req_segment == ep_segment {
+                    continue;
+                } else if ep_segment.starts_with('{') && ep_segment.ends_with('}') {
+                    path_params.insert(
+                        Cow::Owned(ep_segment[1..ep_segment.len() - 1].to_string()),
+                        Cow::Borrowed(req_segment),
+                    );
+                } else {
+                    return None;
+                }
+            }
+
+            (None, None) => return Some(path_params),
+            (None, Some(_)) | (Some(_), None) => return None,
+        }
     }
 }
-
 // TODO: route requests through outer layer to enable passing to other nodes
 pub async fn start(
     config: GatewayManagerConfig,
@@ -158,16 +173,18 @@ pub async fn start(
 )> {
     let (req_rep_channel, req_rep_receiver) = RequestReplyChannel::new();
 
-    let gateway_manager = Arc::new(RwLock::new(None));
-    let gateway_manager_clone = gateway_manager.clone();
+    let gateways = Arc::new(RwLock::new(HashMap::new()));
 
-    let accessor = DependencyAccessor {
-        gateway_manager,
-        runtime,
-        connection_manager,
-        get_routing_target: req_rep_channel,
-        rpc_handler,
-        usage_aggregator,
+    let accessor = {
+        let gateways = gateways.clone();
+        DependencyAccessor {
+            gateways,
+            runtime,
+            connection_manager,
+            rpc_handler,
+            usage_aggregator,
+            get_routing_target: req_rep_channel,
+        }
     };
 
     let server = HttpServer::new(move || {
@@ -198,85 +215,17 @@ pub async fn start(
 
     tokio::spawn(server);
 
-    let state = GatewayState {
+    let gateway_manager_impl = GatewayManagerImpl {
         server_handle,
-        gateways: HashMap::new(),
+        gateways,
     };
 
-    let mailbox = CallbackMailboxProcessor::start(step, state, 10000);
-
-    let result = GatewayManagerImpl { mailbox };
-
-    *gateway_manager_clone.write().await = Some(result.clone());
-
-    Ok((Box::new(result), req_rep_receiver))
+    Ok((Box::new(gateway_manager_impl), req_rep_receiver))
 }
-
-async fn step(
-    _mailbox: CallbackMailboxProcessor<GatewayMessage>,
-    msg: GatewayMessage,
-    mut state: GatewayState,
-) -> GatewayState {
-    match msg {
-        GatewayMessage::GetAssemblyAndFunction(
-            stack_id,
-            gateway_name,
-            method,
-            request_path,
-            rep,
-        ) => {
-            rep.reply(state.gateways.get(&stack_id).and_then(|gateways| {
-                gateways.get(&gateway_name).and_then(|gateway| {
-                    gateway.endpoints.get(&request_path).and_then(|eps| {
-                        eps.iter()
-                            .find(|ep| ep.method == method)
-                            .map(|ep| (ep.route_to.assembly.clone(), ep.route_to.function.clone()))
-                    })
-                })
-            }));
-            state
-        }
-
-        GatewayMessage::GetDeployedGatewayNames(stack_id, rep) => {
-            rep.reply(
-                state
-                    .gateways
-                    .get(&stack_id)
-                    .map(|gateways| gateways.keys().cloned().collect()),
-            );
-            state
-        }
-
-        GatewayMessage::DeployGateways(stack_id, incoming_gateways) => {
-            let gateways = state.gateways.entry(stack_id).or_insert_with(HashMap::new);
-
-            for incoming in incoming_gateways {
-                gateways.insert(incoming.name.clone(), incoming);
-            }
-
-            state
-        }
-
-        GatewayMessage::DeleteGateways(stack_id, gateway_names) => {
-            if let Some(gateways) = state.gateways.get_mut(&stack_id) {
-                for name in gateway_names {
-                    gateways.remove(&name);
-                }
-            }
-            state
-        }
-
-        GatewayMessage::Stop() => {
-            state.server_handle.stop(true).await;
-            state
-        }
-    }
-}
-
 fn calculate_request_size(r: &Request) -> u64 {
-    let mut size = r.path.as_bytes().len() as u64;
-    size += r
-        .query
+    //let mut size = r.path.as_bytes().len() as u64; //TODO: check if we can calculate this
+    let mut size = r
+        .query_params
         .iter()
         .map(|x| x.0.as_bytes().len() as u64 + x.1.as_bytes().len() as u64)
         .sum::<u64>();
@@ -468,7 +417,7 @@ async fn handle_request<'a>(
     };
 
     let gateway_name = request.match_info().get("gateway_name").unwrap();
-    let path = request.match_info().get("path").unwrap();
+    let request_path = request.match_info().get("path").unwrap();
 
     let method = actix_http_method_to_stack(request.method());
 
@@ -480,49 +429,51 @@ async fn handle_request<'a>(
             return ResponseWrapper::bad_request("Invalid header values in request");
         };
 
-    let Ok(query) =
+    let Ok(query_params) =
         web::Query::<HashMap<Cow<'_, str>, Cow<'_, str>>>::from_query(
             request.query_string()
         ) else {
             return ResponseWrapper::bad_request("Invalid query string");
         };
-    let query = query.into_inner();
+    let query_params = query_params.into_inner();
+
+    let gateways = dependency_accessor.gateways.read().await;
+    let Some(gateway) = gateways.get(&stack_id).and_then(|s| s.get(gateway_name)) else {
+        return ResponseWrapper::not_found();
+    };
+
+    let path_match_result = gateway
+        .endpoints
+        .iter()
+        .find_map(|(path, eps)| {
+            match_path_and_extract_path_params(request_path, path)
+                .map(|path_params| (path_params, eps))
+        })
+        .and_then(|(path_params, eps)| {
+            eps.iter().find(|ep| ep.method == method).map(|ep| {
+                (
+                    ep.route_to.assembly.clone(),
+                    ep.route_to.function.clone(),
+                    path_params,
+                )
+            })
+        });
+
+    drop(gateways);
+
+    let Some((assembly_name, function_name, path_params)) = path_match_result else {
+        return ResponseWrapper::not_found();
+    };
 
     let request = Request {
         method: stack_http_method_to_sdk(method),
-        path: Cow::Borrowed(path),
-        query,
+        path_params,
+        query_params,
         headers,
-        body: match payload.as_ref() {
-            Some(b) => Cow::Borrowed(b.as_ref()),
-            None => Cow::Owned(vec![]),
-        },
+        body: Cow::Borrowed(payload.as_ref().map(AsRef::as_ref).unwrap_or(&[])),
     };
 
     let mut traffic = calculate_request_size(&request);
-
-    let assembly_and_function = dependency_accessor
-        .get_gateway_manager()
-        .await
-        .mailbox
-        .post_and_reply(|r| {
-            GatewayMessage::GetAssemblyAndFunction(
-                stack_id,
-                gateway_name.into(),
-                method,
-                (*request.path).to_owned(),
-                r,
-            )
-        })
-        .await;
-
-    let (assembly_name, function_name) = match assembly_and_function {
-        Err(_) => {
-            return ResponseWrapper::internal_error("Node is shutting down, retry this request")
-        }
-        Ok(None) => return ResponseWrapper::not_found(),
-        Ok(Some(x)) => x,
-    };
 
     let response = match route_request(
         FunctionID {
@@ -559,4 +510,81 @@ async fn handle_request<'a>(
     );
 
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::match_path_and_extract_path_params;
+    use std::collections::HashMap;
+
+    #[test]
+    fn simple_request_path_will_match() {
+        let request_path = "/get/users/";
+        let endpoint_path = "/get/users/";
+
+        assert_eq!(
+            Some(HashMap::new()),
+            match_path_and_extract_path_params(request_path, endpoint_path)
+        );
+    }
+
+    #[test]
+    fn can_extract_single_path_param() {
+        assert_eq!(
+            Some([("id".into(), "12".into())].into()),
+            match_path_and_extract_path_params("/get/user/12", "/get/user/{id}")
+        );
+    }
+
+    #[test]
+    fn can_extract_multi_path_param() {
+        assert_eq!(
+            Some([("type".into(), "user".into()), ("id".into(), "12".into())].into()),
+            match_path_and_extract_path_params("/get/user/12", "/get/{type}/{id}")
+        );
+    }
+
+    #[test]
+    fn can_not_extract_path_params_from_empty_segments() {
+        assert_eq!(
+            None,
+            match_path_and_extract_path_params("/get//12", "get/{type}/{id}/")
+        );
+    }
+
+    #[test]
+    fn incorrect_paths_wont_match() {
+        assert_eq!(
+            None,
+            match_path_and_extract_path_params("/get/user/", "get/{type}/{id}/")
+        );
+
+        assert_eq!(
+            None,
+            match_path_and_extract_path_params("/get/user", "get/{type}/{id}/")
+        );
+
+        assert_eq!(
+            None,
+            match_path_and_extract_path_params("/get/", "get/{type}/{id}/")
+        );
+
+        assert_eq!(
+            None,
+            match_path_and_extract_path_params("/get///", "get/{type}/{id}/")
+        );
+
+        assert_eq!(
+            None,
+            match_path_and_extract_path_params("/", "get/{type}/{id}/")
+        );
+    }
+
+    #[test]
+    fn paths_with_more_segments_wont_match() {
+        assert_eq!(
+            None,
+            match_path_and_extract_path_params("/get/user/12/45", "get/{type}/{id}/")
+        );
+    }
 }

@@ -15,3 +15,6 @@ services:
       /req:
         - method: post
           route_to: my_function.greet_user
+      /req/{name}:
+        - method: get
+          route_to: my_function.greet_path_user

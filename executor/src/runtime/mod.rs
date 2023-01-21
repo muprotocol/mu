@@ -216,9 +216,13 @@ impl Runtime for RuntimeImpl {
             function: Cow::Owned(function_id.function_name),
             request: Request {
                 method: request.method,
-                path: Cow::Owned(request.path.into_owned()),
-                query: request
-                    .query
+                path_params: request
+                    .path_params
+                    .into_iter()
+                    .map(|(k, v)| (Cow::Owned(k.into_owned()), Cow::Owned(v.into_owned())))
+                    .collect(),
+                query_params: request
+                    .query_params
                     .into_iter()
                     .map(|(k, v)| (Cow::Owned(k.into_owned()), Cow::Owned(v.into_owned())))
                     .collect(),

@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use musdk::*;
 
 #[mu_functions]
@@ -19,5 +20,15 @@ mod hello_wasm {
     #[mu_function]
     fn failing<'a>(_ctx: &'a MuContext) {
         panic!("Let me get out of here!");
+    }
+
+    #[mu_function]
+    fn path_params<'a>(_ctx: &'a MuContext, req: &'a Request<'a>) -> String {
+        req.path_params
+            .iter()
+            .sorted_by(|i, j| i.0.cmp(j.0))
+            .map(|(k, v)| format!("{k}:{v}"))
+            .reduce(|i, j| format!("{i},{j}"))
+            .unwrap_or("".into())
     }
 }
