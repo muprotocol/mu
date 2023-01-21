@@ -19,10 +19,10 @@ message KeyValuePair {
 
 message Request {
     HttpMethod method = 1;
-    repeated KeyValuePair path_params = 3;
-    repeated KeyValuePair query_params = 4;
-    repeated KeyValuePair headers = 5;
-    bytes body = 6;
+    repeated KeyValuePair path_params = 2;
+    repeated KeyValuePair query_params = 3;
+    repeated KeyValuePair headers = 4;
+    bytes body = 5;
 }
 
 message StackID {

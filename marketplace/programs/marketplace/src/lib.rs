@@ -11,11 +11,10 @@ fn calc_usage(rates: &ServiceRates, usage: &ServiceUsage) -> u64 {
         / 1_000_000_000) as u64
         + (rates.db_gigabyte_months as u128 * usage.db_bytes_seconds
             / (1024 * 1024 * 1024 * 60 * 60 * 24 * 30)) as u64
-        + (rates.million_db_reads as u64 * usage.db_reads / 1_000_000)
-        + (rates.million_db_writes as u64 * usage.db_writes / 1_000_000)
-        + (rates.million_gateway_requests as u64 * usage.gateway_requests / 1_000_000)
-        + (rates.gigabytes_gateway_traffic as u64 * usage.gateway_traffic_bytes
-            / (1024 * 1024 * 1024))
+        + (rates.million_db_reads * usage.db_reads / 1_000_000)
+        + (rates.million_db_writes * usage.db_writes / 1_000_000)
+        + (rates.million_gateway_requests * usage.gateway_requests / 1_000_000)
+        + (rates.gigabytes_gateway_traffic * usage.gateway_traffic_bytes / (1024 * 1024 * 1024))
 }
 
 pub enum MuAccountType {
