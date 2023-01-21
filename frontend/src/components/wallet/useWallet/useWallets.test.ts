@@ -7,6 +7,14 @@ import includesType from "@/utils/includesType/includesType";
 
 
 describe("useWallets", () => {
+    test("it should NOT be an empty array", () => {
+        const {result} = renderHook(() => useWallets());
+        const wallets: Adapter[] = result.current;
+
+        expect(wallets).toBeDefined();
+        expect(wallets).not.toEqual([]);
+    })
+
     test("it should include an instance of #PhantomWalletAdapter", () => {
         const {result} = renderHook(() => useWallets());
         const wallets: Adapter[] = result.current;
