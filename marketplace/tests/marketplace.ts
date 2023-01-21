@@ -20,8 +20,10 @@ import {
     MuRegionInfo,
     MuStackInfo,
     readOrCreateUserWallet,
+    readOrCreateWallet,
     ServiceRates, ServiceUsage,
-    updateStackUsage
+    updateStackUsage,
+    withdrawEscrowBalance
 } from "../scripts/anchor-utils";
 import { AnchorError, AnchorProvider, BN } from '@project-serum/anchor';
 
@@ -36,6 +38,8 @@ describe("marketplace", () => {
     let userWallet: Keypair;
     let escrow: MuEscrowAccountInfo;
     let stack: MuStackInfo;
+
+    let usagePrice = 1029044n;
 
     it("Initializes", async () => {
         let provider = AnchorProvider.env();
@@ -67,7 +71,7 @@ describe("marketplace", () => {
         };
 
         try {
-            let _ = await createRegion(mu, provider, "Region", 1, rates, 3);
+            let _ = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000));
             throw new Error("Region creation succeeded when it should have failed");
         } catch (e) {
             let anchorError = e as AnchorError;
@@ -89,7 +93,7 @@ describe("marketplace", () => {
             millionGatewayRequests: new BN(50)
         };
 
-        region = await createRegion(mu, provider, "Region", 1, rates, 3);
+        region = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000));
     });
 
     it("Creates an Authorized Usage Signer", async () => {
@@ -130,17 +134,16 @@ describe("marketplace", () => {
 
         await updateStackUsage(mu, region, stack, authSigner, provider, escrow, 100, usage);
 
-        let usage_price = 1029044n;
-        let commission = usage_price * 100_000n / 1_000_000n;
+        let commission = usagePrice * 100_000n / 1_000_000n;
         expect(commission).to.equals(102904n);
-        let provider_share = usage_price - commission;
-        expect(provider_share).to.equals(926140n);
+        let providerShare = usagePrice - commission;
+        expect(providerShare).to.equals(926140n);
 
         const providerAccount = await spl.getAccount(
             mu.anchorProvider.connection, provider.tokenAccount
         );
         // 9900 $MU and 6 digits of decimal places left after paying deposit
-        expect(providerAccount.amount).to.equals(9900_000_000n + provider_share);
+        expect(providerAccount.amount).to.equals(9900_000_000n + providerShare);
 
         const commissionAccount = await spl.getAccount(
             mu.anchorProvider.connection, mu.commissionPda
@@ -151,6 +154,18 @@ describe("marketplace", () => {
             mu.anchorProvider.connection,
             escrow.pda
         );
-        expect(escrowAccount.amount).to.equals(10_000_000n - usage_price);
+        expect(escrowAccount.amount).to.equals(10_000_000n - usagePrice);
     });
+
+    it("Withdraws escrow balance", async () => {
+        let tempWallet = await readOrCreateWallet(mu);
+
+        await withdrawEscrowBalance(mu, escrow, userWallet, provider, tempWallet.tokenAccount, new BN(5_000_000));
+
+        let tempWalletAccount = await spl.getAccount(mu.anchorProvider.connection, tempWallet.tokenAccount);
+        expect(tempWalletAccount.amount).to.equals(10_000_000_000n + 5_000_000n); // 10G initial balance
+
+        let escrowAccount = await spl.getAccount(mu.anchorProvider.connection, escrow.pda);
+        expect(escrowAccount.amount).to.equals(5_000_000n - usagePrice); // 10M initial balance - 5M withdrawn - usage price
+    })
 });

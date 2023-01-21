@@ -99,8 +99,8 @@ pub mod marketplace {
         ctx: Context<CreateRegion>,
         region_num: u32,
         name: String,
-        zones: u8,
         rates: ServiceRates,
+        min_escrow_balance: u64,
     ) -> Result<()> {
         if !ctx.accounts.provider.authorized {
             return Err(Error::ProviderNotAuthorized.into());
@@ -109,9 +109,9 @@ pub mod marketplace {
         ctx.accounts.region.set_inner(ProviderRegion {
             account_type: MuAccountType::ProviderRegion as u8,
             name,
-            zones,
             region_num,
             rates,
+            min_escrow_balance,
             provider: ctx.accounts.provider.key(),
             bump: *ctx.bumps.get("region").unwrap(),
         });
@@ -163,6 +163,26 @@ pub mod marketplace {
     pub fn create_provider_escrow_account(
         _ctx: Context<CreateProviderEscrowAccount>,
     ) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn withdraw_escrow_balance(ctx: Context<WithdrawEscrow>, amount: u64) -> Result<()> {
+        let bump = ctx.accounts.state.bump.to_le_bytes();
+        let signer_seeds = vec![b"state".as_ref(), bump.as_ref()];
+        let signer_seeds_wrapper = vec![signer_seeds.as_slice()];
+
+        let transfer = Transfer {
+            from: ctx.accounts.escrow_account.to_account_info(),
+            to: ctx.accounts.withdraw_to.to_account_info(),
+            authority: ctx.accounts.state.to_account_info(),
+        };
+        let transfer_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            transfer,
+            signer_seeds_wrapper.as_slice(),
+        );
+        anchor_spl::token::transfer(transfer_ctx, amount)?;
+
         Ok(())
     }
 
@@ -404,9 +424,9 @@ pub struct ServiceUsage {
 pub struct ProviderRegion {
     pub account_type: u8, // See MuAccountType
     pub provider: Pubkey,
-    pub zones: u8,
     pub region_num: u32,
     pub rates: ServiceRates,
+    pub min_escrow_balance: u64,
     pub bump: u8,
     pub name: String,
 }
@@ -419,7 +439,7 @@ pub struct CreateRegion<'info> {
 
     #[account(
         init,
-        space = 8 + 1 + 32 + 1 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 1 + 4 + name.as_bytes().len(),
+        space = 8 + 1 + 32 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 8 + 1 + 4 + name.as_bytes().len(),
         payer = owner,
         seeds = [b"region", owner.key().as_ref(), region_num.to_le_bytes().as_ref()],
         bump
@@ -460,6 +480,31 @@ pub struct CreateProviderEscrowAccount<'info> {
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawEscrow<'info> {
+    #[account(
+        seeds = [b"state"],
+        bump = state.bump,
+    )]
+    pub state: Account<'info, MuState>,
+
+    #[account(
+        seeds = [b"escrow", user.key().as_ref(), provider.key().as_ref()],
+        bump,
+        mut
+    )]
+    pub escrow_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub withdraw_to: Account<'info, TokenAccount>,
+
+    pub provider: Account<'info, Provider>,
+
+    pub user: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
 }
 
 #[account]
