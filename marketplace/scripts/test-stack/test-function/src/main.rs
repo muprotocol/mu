@@ -13,7 +13,7 @@ mod functions {
 
     #[mu_function]
     fn greet_path_user<'a>(ctx: &'a mut MuContext, path: PathParams<'a>) -> Vec<u8> {
-        let Some(name) = path.get("name").expect("Expected to have name path param");
+        let name = path.get("name").expect("Expected to have name path param");
 
         let _ = ctx.log(&format!("Received request from {name}"), LogLevel::Info);
         format!("Hello, {name}!").into_bytes()

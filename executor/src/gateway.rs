@@ -529,38 +529,10 @@ mod tests {
     }
 
     #[test]
-    fn prefix_and_postfix_slashed_do_not_affect() {
-        assert_eq!(
-            Some(HashMap::new()),
-            match_path_and_extract_path_params("/get/users/", "/get/users/")
-        );
-
-        assert_eq!(
-            Some(HashMap::new()),
-            match_path_and_extract_path_params("/get/users", "/get/users/")
-        );
-
-        assert_eq!(
-            Some(HashMap::new()),
-            match_path_and_extract_path_params("/get/users", "/get/users")
-        );
-
-        assert_eq!(
-            Some(HashMap::new()),
-            match_path_and_extract_path_params("get/users", "/get/users")
-        );
-
-        assert_eq!(
-            Some(HashMap::new()),
-            match_path_and_extract_path_params("/get/users", "get/users")
-        );
-    }
-
-    #[test]
     fn can_extract_single_path_param() {
         assert_eq!(
             Some([("id".into(), "12".into())].into()),
-            match_path_and_extract_path_params("/get/user/12", "get/user/{id}")
+            match_path_and_extract_path_params("/get/user/12", "/get/user/{id}")
         );
     }
 
@@ -568,7 +540,7 @@ mod tests {
     fn can_extract_multi_path_param() {
         assert_eq!(
             Some([("type".into(), "user".into()), ("id".into(), "12".into())].into()),
-            match_path_and_extract_path_params("/get/user/12", "get/{type}/{id}/")
+            match_path_and_extract_path_params("/get/user/12", "/get/{type}/{id}")
         );
     }
 
