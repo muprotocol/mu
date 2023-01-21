@@ -4,7 +4,6 @@ use std::{collections::HashSet, process::exit};
 use anchor_client::{
     solana_client::{
         client_error::{ClientError, ClientErrorKind},
-        rpc_config::RpcSendTransactionConfig,
         rpc_filter::{Memcmp, RpcFilterType},
         rpc_request::RpcError,
     },
@@ -107,11 +106,7 @@ pub fn execute_create(config: Config, cmd: CreateEscrowCommand) -> Result<()> {
         .accounts(accounts)
         .args(marketplace::instruction::CreateProviderEscrowAccount {})
         .signer(user_wallet.as_ref())
-        .send_with_spinner_and_config(RpcSendTransactionConfig {
-            // TODO: what's preflight and what's a preflight commitment?
-            skip_preflight: cfg!(debug_assertions),
-            ..Default::default()
-        })
+        .send_with_spinner_and_config(Default::default())
         .context("Failed to send escrow account creation transaction")?;
 
     println!("Escrow account created, account key is: {}", escrow_pda);
@@ -145,11 +140,7 @@ pub fn execute_recharge(config: Config, cmd: RechargeEscrowCommand) -> Result<()
             recharge_amount,
         )?)
         .signer(user_wallet.as_ref())
-        .send_with_spinner_and_config(RpcSendTransactionConfig {
-            // TODO: what's preflight and what's a preflight commitment?
-            skip_preflight: cfg!(debug_assertions),
-            ..Default::default()
-        })
+        .send_with_spinner_and_config(Default::default())
         .context("Failed to send token transfer transaction")?;
 
     let account = client
@@ -243,11 +234,7 @@ pub fn execute_withdraw(config: Config, cmd: WithdrawEscrowCommand) -> Result<()
             amount: withdraw_amount,
         })
         .signer(user_wallet.as_ref())
-        .send_with_spinner_and_config(RpcSendTransactionConfig {
-            // TODO: what's preflight and what's a preflight commitment?
-            skip_preflight: cfg!(debug_assertions),
-            ..Default::default()
-        })
+        .send_with_spinner_and_config(Default::default())
         .context("Failed to send escrow withdraw transaction")?;
 
     Ok(())

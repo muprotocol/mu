@@ -1,10 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use anchor_client::{
-    solana_client::{
-        rpc_config::RpcSendTransactionConfig,
-        rpc_filter::{Memcmp, RpcFilterType},
-    },
+    solana_client::rpc_filter::{Memcmp, RpcFilterType},
     solana_sdk::{pubkey::Pubkey, system_program},
 };
 use anyhow::{Context, Result};
@@ -145,11 +142,7 @@ pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
             name,
         })
         .signer(user_wallet.as_ref())
-        .send_with_spinner_and_config(RpcSendTransactionConfig {
-            // TODO: what's preflight and what's a preflight commitment?
-            skip_preflight: cfg!(debug_assertions),
-            ..Default::default()
-        })
+        .send_with_spinner_and_config(Default::default())
         .context("Failed to send stack creation transaction")?;
 
     println!("Stack deployed successfully with key: {stack_pda}");

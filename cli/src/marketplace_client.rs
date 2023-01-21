@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
 use anchor_client::{
-    solana_client::rpc_config::RpcSendTransactionConfig,
     solana_sdk::{program_pack::Pack, pubkey::Pubkey, signer::Signer, system_program, sysvar},
     Program,
 };
@@ -148,11 +147,8 @@ impl MarketplaceClient {
                 name: provider_name,
             })
             .signer(provider_keypair.as_ref())
-            .send_with_spinner_and_config(RpcSendTransactionConfig {
-                // TODO: what's preflight and what's a preflight commitment?
-                skip_preflight: cfg!(debug_assertions),
-                ..Default::default()
-            })?;
+            .send_with_spinner_and_config(Default::default())
+            .context("Failed to send provider creation transaction")?;
         Ok(())
     }
 }

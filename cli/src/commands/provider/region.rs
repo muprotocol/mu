@@ -1,6 +1,6 @@
 use anchor_client::{
     anchor_lang::AccountDeserialize,
-    solana_client::{rpc_client::RpcClient, rpc_config::RpcSendTransactionConfig},
+    solana_client::rpc_client::RpcClient,
     solana_sdk::{account::ReadableAccount, pubkey::Pubkey, system_program},
 };
 use anyhow::{bail, Context, Result};
@@ -100,11 +100,7 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
             rates,
         })
         .signer(provider_keypair.as_ref())
-        .send_with_spinner_and_config(RpcSendTransactionConfig {
-            // TODO: what's preflight and what's a preflight commitment?
-            skip_preflight: cfg!(debug_assertions),
-            ..Default::default()
-        })
+        .send_with_spinner_and_config(Default::default())
         .context("Failed to send region creation transaction")?;
 
     Ok(())
