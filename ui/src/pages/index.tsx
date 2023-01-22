@@ -1,7 +1,12 @@
 import Head from 'next/head'
 import React from "react";
+import dynamic from "next/dynamic";
 
 export default function Home() {
+    const ProviderList = dynamic(() => import('@/components/providers/ProviderList'), {
+        ssr: false
+    })
+
     return (
         <>
             <Head>
@@ -11,6 +16,7 @@ export default function Home() {
                 <link rel="icon" href="/favicon.ico"/>
             </Head>
             <main data-testid="content">
+                <ProviderList />
             </main>
         </>
     )
