@@ -1,11 +1,14 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
+    fmt::Display,
     path::{Path, PathBuf},
+    process::Stdio,
 };
 
 use anyhow::{bail, Context, Result};
 use rust_embed::RustEmbed;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 //TODO: Currently we embed the `templates` folder in our binary, but it's good to be able to read
 //other templates from user local system.
@@ -14,10 +17,24 @@ use serde::Deserialize;
 #[folder = "templates"]
 struct Templates;
 
+#[derive(Deserialize, Serialize, Clone, Copy)]
+pub enum Language {
+    Rust,
+}
+
+impl Display for Language {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Language::Rust => "Rust",
+        };
+        std::fmt::Display::fmt(s, f)
+    }
+}
+
 #[derive(Deserialize)]
 pub struct Template {
     pub name: String,
-    pub lang: String,
+    pub lang: Language,
     files: Vec<File>,
     //TODO: Check if order of commands is preserved or not.
     commands: Vec<Command>,
@@ -63,15 +80,20 @@ impl Command {
 }
 
 impl Template {
-    pub fn build<'a>(&self, destination: &Path, args: HashMap<String, String>) -> Result<()> {
-        std::fs::create_dir_all(destination)?;
+    pub fn create<'a>(&self, path: &Path, args: HashMap<String, String>) -> Result<()> {
+        //TODO: check for a valid rust/other-langs project name.
+        let Some(project_name) = args.get("name") else {
+            bail!("project name was not given in arguments, `name`");
+        };
+
+        std::fs::create_dir(path)?;
 
         for cmd in self.commands.iter().filter(|c| c.is_prefix()) {
             std::process::Command::new(cmd.command()).spawn()?;
         }
 
         for file in self.files.iter() {
-            let path = destination.join(&file.path); //TODO: replace args in path too
+            let path = path.join(&file.path); //TODO: replace args in path too
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
@@ -96,7 +118,19 @@ impl Template {
             std::process::Command::new(cmd.command()).spawn()?;
         }
 
-        Ok(())
+        //TODO: create .gitignore file
+        let git_result = std::process::Command::new("git")
+            .arg("init")
+            .current_dir(path)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .output()
+            .map_err(|e| anyhow::format_err!("git init failed: {}", e.to_string()))?;
+        if !git_result.status.success() {
+            eprintln!("Failed to automatically initialize a new git repository");
+        }
+
+        MUManifest::new(project_name.clone(), self.lang).cretae(path)
     }
 }
 
@@ -110,4 +144,81 @@ pub fn read_templates() -> Result<Vec<Template>> {
     }
 
     Ok(templates)
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MUManifest {
+    pub name: String,
+    pub lang: Language,
+}
+
+impl MUManifest {
+    pub fn new(name: String, lang: Language) -> Self {
+        MUManifest { name, lang }
+    }
+
+    pub fn cretae(&self, path: &Path) -> Result<()> {
+        let file = std::fs::File::options()
+            .write(true)
+            .create_new(true)
+            .open(path.join("Mu.yaml"))?;
+
+        serde_yaml::to_writer(file, &self)?;
+        Ok(())
+    }
+
+    pub fn read_file(path: Option<&Path>) -> Result<Self> {
+        let path = match path {
+            Some(p) => Cow::Borrowed(p),
+            None => Cow::Owned(std::env::current_dir()?),
+        }
+        .join("Mu.yaml");
+
+        if !path.try_exists()? {
+            bail!("Not in a mu project, Mu.yaml not found.");
+        }
+
+        let file = std::fs::File::open(path)?;
+        serde_yaml::from_reader(file).map_err(Into::into)
+    }
+
+    pub fn build_project(&self) -> Result<()> {
+        let create_cmd = |cmd, args: &[&str]| {
+            let mut cmd = std::process::Command::new(cmd);
+            for arg in args {
+                cmd.arg(arg);
+            }
+            cmd
+        };
+
+        let (mut pre_build, mut build, _wasm_module) = match self.lang {
+            Language::Rust => (
+                create_cmd("rustup", &["target", "add", "wasm32-wasi"]),
+                create_cmd("cargo", &["build", "--release", "--target", "wasm32-wasi"]),
+                format!("target/wasm32-wasi/release/{}.wasm", self.name),
+            ),
+        };
+
+        let exit = pre_build
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .output()
+            .map_err(|e| anyhow::format_err!("{}", e.to_string()))?;
+
+        if !exit.status.success() {
+            eprintln!("pre-build command failed");
+        }
+
+        let exit = build
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .output()
+            .map_err(|e| anyhow::format_err!("{}", e.to_string()))?;
+
+        if !exit.status.success() {
+            eprintln!("build command failed");
+        }
+
+        Ok(())
+    }
 }

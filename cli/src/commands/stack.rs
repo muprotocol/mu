@@ -12,11 +12,16 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser};
 use marketplace::StackState;
 
-use crate::{config::Config, marketplace_client, template::read_templates};
+use crate::{
+    config::Config,
+    marketplace_client,
+    template::{read_templates, MUManifest},
+};
 
 #[derive(Debug, Parser)]
 pub enum Command {
     Init(InitStackCommand),
+    Build,
     List(ListStacksCommand),
     Deploy(DeployStackCommand),
     Delete(DeleteStackCommand),
@@ -27,8 +32,8 @@ pub struct InitStackCommand {
     /// Initialize a new mu project.
     name: String,
 
-    /// The directory to create new project in. If not provided, creates in current directory.
-    destination: Option<String>,
+    /// The directory to create new project in.
+    path: Option<String>,
 
     #[arg(short, long)]
     /// Template to use for new project.
@@ -93,6 +98,7 @@ pub struct DeleteStackCommand {
 pub fn execute(config: Config, cmd: Command) -> Result<()> {
     match cmd {
         Command::Init(sub_command) => execute_init(config, sub_command),
+        Command::Build => execute_build(config),
         Command::List(sub_command) => execute_list(config, sub_command),
         Command::Deploy(sub_command) => execute_deploy(config, sub_command),
         Command::Delete(sub_command) => execute_delete(config, sub_command),
@@ -105,7 +111,7 @@ pub fn execute_init(_config: Config, cmd: InitStackCommand) -> Result<()> {
     match templates.iter().find(|t| {
         t.name == cmd.template && {
             match &cmd.language {
-                Some(lang) => &t.lang == lang,
+                Some(lang) => &t.lang.to_string().to_lowercase() == &lang.to_lowercase(),
                 None => true,
             }
         }
@@ -126,14 +132,18 @@ pub fn execute_init(_config: Config, cmd: InitStackCommand) -> Result<()> {
         }
         Some(template) => {
             let mut args = HashMap::new();
-            args.insert("name".to_string(), cmd.name);
-            let destination = cmd.destination.unwrap_or("./".to_string());
-            let destination = Path::new(&destination);
+            args.insert("name".to_string(), cmd.name.clone());
+            let path = cmd.path.unwrap_or(format!("./{}", cmd.name));
+            let path = Path::new(&path);
 
-            template.build(destination, args)?;
+            template.create(path, args)?;
         }
     }
     Ok(())
+}
+
+pub fn execute_build(_config: Config) -> Result<()> {
+    MUManifest::read_file(None)?.build_project()
 }
 
 pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {

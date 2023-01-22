@@ -1,5 +1,5 @@
 name: empty
-lang: rust
+lang: Rust
 files:
   - path: Cargo.toml
     #TODO: replace `musdk` path with published one on Crates.io
