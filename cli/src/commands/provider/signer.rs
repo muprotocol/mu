@@ -1,25 +1,27 @@
-use std::path::PathBuf;
-
-use anchor_client::solana_sdk::{
-    pubkey::Pubkey, signature::read_keypair_file, signer::Signer, system_program,
-};
-use anyhow::{anyhow, Context, Result};
+use anchor_client::solana_sdk::{pubkey::Pubkey, system_program};
+use anyhow::{Context, Result};
 use clap::{Args, Parser};
 
 use crate::config::Config;
 
 #[derive(Debug, Parser)]
 pub enum Command {
-    /// Create a new agent
+    /// Create a new authorized signer
     Create(CreateArgs),
 }
 
 #[derive(Args, Debug)]
 pub struct CreateArgs {
-    #[arg(long, help = "Agent keypair")]
-    signer_keypair: PathBuf,
+    #[arg(long, help = "Keypair URL of the authorized signer wallet")]
+    signer_keypair: String,
 
-    #[arg(long, help = "Region number")]
+    #[arg(long)]
+    signer_skip_seed_phrase_validation: bool,
+
+    #[arg(long)]
+    signer_confirm_key: bool,
+
+    #[arg(long, help = "Region number for which to create the authorized signer")]
     region_num: u32,
 }
 
@@ -41,10 +43,12 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
 
     let provider_pda = client.get_provider_pda(provider_keypair.pubkey());
 
-    // TODO: I feel we can support all types of keypairs (not just files) if we're smart here.
-    // TODO: read solana cli sources to see how they handle the keypair URL.
-    let signer_keypair = read_keypair_file(args.signer_keypair)
-        .map_err(|e| anyhow!("Can't read keypair: {}", e.to_string()))?;
+    let (signer_keypair, wallet_manager) = Config::read_keypair_from_url(
+        Some(&args.signer_keypair),
+        args.signer_skip_seed_phrase_validation,
+        args.signer_confirm_key,
+    )
+    .context("Failed to read signer keypair")?;
 
     let region_pda = client.get_region_pda(&provider_keypair.pubkey(), args.region_num);
 
@@ -72,6 +76,8 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
         .signer(provider_keypair.as_ref())
         .send_with_spinner_and_config(Default::default())
         .context("Failed to send authorized signer creation transaction")?;
+
+    drop(wallet_manager);
 
     Ok(())
 }
