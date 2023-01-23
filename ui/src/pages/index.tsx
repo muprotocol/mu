@@ -1,6 +1,7 @@
 import Head from 'next/head'
 import React from "react";
 import dynamic from "next/dynamic";
+import {Button} from "@mui/material";
 
 export default function Home() {
     const ProviderList = dynamic(() => import('@/components/providers/ProviderList'), {
@@ -16,7 +17,9 @@ export default function Home() {
                 <link rel="icon" href="/favicon.ico"/>
             </Head>
             <main data-testid="content">
+                <Button variant="contained">lol</Button>
                 <ProviderList />
+
             </main>
         </>
     )
