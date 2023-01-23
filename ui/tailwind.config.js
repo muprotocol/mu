@@ -4,14 +4,14 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        green: {
-          mu: "#19e4cc",
+        mu: {
+          primary: "#19e4cc",
         },
       },
     },
   },
   corePlugins: {
-    preflight: false
+    preflight: false,
   },
   plugins: [],
 };
