@@ -1,7 +1,5 @@
-use anchor_client::{
-    solana_client::rpc_config::RpcSendTransactionConfig, solana_sdk::system_program,
-};
-use anyhow::{Context, Result};
+use anchor_client::solana_sdk::system_program;
+use anyhow::Result;
 use clap::{Args, Parser};
 
 use crate::config::Config;
@@ -57,8 +55,6 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
 
     let provider_pda = client.get_provider_pda(provider_keypair.pubkey());
 
-    // TODO: validation
-
     let region_pda = client.get_region_pda(&provider_keypair.pubkey(), args.region_num);
 
     let accounts = marketplace::accounts::CreateRegion {
@@ -77,23 +73,14 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
         gigabytes_gateway_traffic: args.gigabytes_gateway_traffic,
     };
 
-    client
-        .program
-        .request()
-        .accounts(accounts)
-        .args(marketplace::instruction::CreateRegion {
-            region_num: args.region_num,
-            name: args.name,
-            zones: 1,
-            rates,
-        })
-        .signer(provider_keypair.as_ref())
-        .send_with_spinner_and_config(RpcSendTransactionConfig {
-            // TODO: what's preflight and what's a preflight commitment?
-            skip_preflight: cfg!(debug_assertions),
-            ..Default::default()
-        })
-        .context("Failed to send region creation transaction")?;
+    let instruction = marketplace::instruction::CreateRegion {
+        region_num: args.region_num,
+        name: args.name,
+        zones: 1,
+        rates,
+    };
+
+    client.create_region(accounts, instruction, provider_keypair)?;
 
     Ok(())
 }
