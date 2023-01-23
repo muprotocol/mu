@@ -1,7 +1,6 @@
 import { ReactNode } from "react";
 
 import { CssBaseline, ThemeProvider } from "@mui/material";
-import { StyledEngineProvider } from "@mui/material/styles";
 
 import { lightTheme } from "./lightTheme";
 
