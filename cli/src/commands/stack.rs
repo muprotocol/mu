@@ -111,7 +111,7 @@ pub fn execute_init(_config: Config, cmd: InitStackCommand) -> Result<()> {
     match templates.iter().find(|t| {
         t.name == cmd.template && {
             match &cmd.language {
-                Some(lang) => &t.lang.to_string().to_lowercase() == &lang.to_lowercase(),
+                Some(lang) => t.lang.to_string().to_lowercase() == lang.to_lowercase(),
                 None => true,
             }
         }
@@ -123,7 +123,7 @@ pub fn execute_init(_config: Config, cmd: InitStackCommand) -> Result<()> {
             );
 
             if !templates.is_empty() {
-                println!("- Name,  Lang");
+                println!("- Name, Lang");
                 println!("===================");
             }
             for template in templates {

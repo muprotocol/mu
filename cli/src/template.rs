@@ -80,7 +80,7 @@ impl Command {
 }
 
 impl Template {
-    pub fn create<'a>(&self, path: &Path, args: HashMap<String, String>) -> Result<()> {
+    pub fn create(&self, path: &Path, args: HashMap<String, String>) -> Result<()> {
         //TODO: check for a valid rust/other-langs project name.
         let Some(project_name) = args.get("name") else {
             bail!("project name was not given in arguments, `name`");
@@ -130,7 +130,7 @@ impl Template {
             eprintln!("Failed to automatically initialize a new git repository");
         }
 
-        MUManifest::new(project_name.clone(), self.lang).cretae(path)
+        MUManifest::new(project_name.clone(), self.lang).create(path)
     }
 }
 
@@ -157,7 +157,7 @@ impl MUManifest {
         MUManifest { name, lang }
     }
 
-    pub fn cretae(&self, path: &Path) -> Result<()> {
+    pub fn create(&self, path: &Path) -> Result<()> {
         let file = std::fs::File::options()
             .write(true)
             .create_new(true)
