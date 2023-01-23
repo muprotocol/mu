@@ -143,6 +143,23 @@ pub mod marketplace {
         Ok(())
     }
 
+    pub fn update_stack(
+        ctx: Context<UpdateStack>,
+        _stack_seed: u64,
+        stack_data: Vec<u8>,
+        name: String,
+    ) -> Result<()> {
+        ctx.accounts.stack.name = name;
+        ctx.accounts.stack.stack = stack_data;
+        ctx.accounts.stack.revision += 1;
+
+        Ok(())
+    }
+
+    pub fn delete_stack(_ctx: Context<DeleteStack>, _stack_seed: u64) -> Result<()> {
+        Ok(())
+    }
+
     pub fn create_authorized_usage_signer(
         ctx: Context<CreateAuthorizedUsageSigner>,
         // TODO: why aren't these in the Accounts struct?
@@ -539,6 +556,45 @@ pub struct CreateStack<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(stack_seed: u64, stack_data: Vec<u8>, name: String)]
+pub struct UpdateStack<'info> {
+    pub region: Account<'info, ProviderRegion>,
+
+    #[account(
+        mut,
+        realloc = 8 + 1 + 32 + 32 + 8 + 4 + 1 + 4 + name.len() + 4 + stack_data.len(),
+        realloc::payer = user,
+        realloc::zero = false,
+        seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_le_bytes().as_ref()],
+        has_one = user,
+        bump = stack.bump,
+    )]
+    pub stack: Account<'info, Stack>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(stack_seed: u64)]
+pub struct DeleteStack<'info> {
+    pub region: Account<'info, ProviderRegion>,
+
+    #[account(
+        mut, 
+        seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_le_bytes().as_ref()],
+        has_one = user,
+        close = user,
+        bump = stack.bump,
+    )]
+    pub stack: Account<'info, Stack>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
 }
 
 #[account]

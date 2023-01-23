@@ -1,6 +1,7 @@
 import { Keypair, PublicKey } from '@solana/web3.js'
 import * as spl from '@solana/spl-token';
-import { expect } from "chai";
+import chai, { expect } from 'chai';
+import chaiAsPromised from 'chai-as-promised';
 import {
     authorizeProvider,
     createAuthorizedUsageSigner,
@@ -9,6 +10,7 @@ import {
     createProvider,
     createProviderAuthorizer,
     createRegion,
+    deleteStack,
     deployStack,
     initializeMu,
     mintToAccount,
@@ -22,10 +24,13 @@ import {
     readOrCreateUserWallet,
     readOrCreateWallet,
     ServiceRates, ServiceUsage,
+    updateStack,
     updateStackUsage,
     withdrawEscrowBalance
 } from "../scripts/anchor-utils";
 import { AnchorError, AnchorProvider, BN } from '@project-serum/anchor';
+
+chai.use(chaiAsPromised);
 
 describe("marketplace", () => {
     let mu: MuProgram;
@@ -109,15 +114,55 @@ describe("marketplace", () => {
     });
 
     it("Creates a stack", async () => {
+        const stackData = Buffer.from([0, 1, 2, 3, 4, 5, 6, 7, 8]);
         stack = await deployStack(
             mu,
             userWallet,
             provider,
             region,
-            Buffer.from([0, 1, 2, 3, 4, 5, 6, 7, 8]),
+            stackData,
             100,
             "my stack"
         );
+
+        let stackAccount = await mu.program.account.stack.fetch(stack.pda);
+        expect(stackAccount.name).to.equals("my stack");
+        expect(stackAccount.stack).to.satisfies(bufferEqual(stackData));
+        expect(stackAccount.revision).to.equals(1);
+    });
+
+    it("Updates a stack with bigger data", async () => {
+        const stackData = Buffer.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+        await updateStack(
+            mu,
+            userWallet,
+            region,
+            stackData,
+            100,
+            "my stack now has a bigger name"
+        );
+
+        let stackAccount = await mu.program.account.stack.fetch(stack.pda);
+        expect(stackAccount.name).to.equals("my stack now has a bigger name");
+        expect(stackAccount.stack).to.satisfies(bufferEqual(stackData));
+        expect(stackAccount.revision).to.equals(2);
+    });
+
+    it("Updates a stack with smaller data", async () => {
+        const stackData = Buffer.from([0, 1, 2, 3, 4, 5]);
+        await updateStack(
+            mu,
+            userWallet,
+            region,
+            stackData,
+            100,
+            "my s"
+        );
+
+        let stackAccount = await mu.program.account.stack.fetch(stack.pda);
+        expect(stackAccount.name).to.equals("my s");
+        expect(stackAccount.stack).to.satisfies(bufferEqual(stackData));
+        expect(stackAccount.revision).to.equals(3);
     });
 
     it("Updates usage on a stack", async () => {
@@ -157,6 +202,30 @@ describe("marketplace", () => {
         expect(escrowAccount.amount).to.equals(10_000_000n - usagePrice);
     });
 
+    it("Deletes a stack", async () => {
+        await deleteStack(mu, userWallet, region, 100);
+
+        await expect(mu.program.account.stack.fetch(stack.pda)).to.be.rejectedWith("Account does not exist");
+    });
+
+    // TODO: this is actually a security flaw, as the user could create a stack,
+    // do lots of computation with it, and delete it before usage is reported.
+    // Usage report schedules are easy to monitor on the blockchain, too.
+    it("Can't report usage on a deleted stack", async () => {
+        const usage: ServiceUsage = {
+            functionMbInstructions: new BN(2000 * 1000000000 * 512),
+            dbBytesSeconds: new BN(500 * 1024 * 1024 * 60 * 60 * 24 * 15),
+            dbReads: new BN(5000000),
+            dbWrites: new BN(800000),
+            gatewayRequests: new BN(4000000),
+            gatewayTrafficBytes: new BN(5 * 1024 * 1024 * 1024)
+        };
+
+        await expect(
+            updateStackUsage(mu, region, stack, authSigner, provider, escrow, 100, usage)
+        ).to.be.rejectedWith("AccountNotInitialized");
+    })
+
     it("Withdraws escrow balance", async () => {
         let tempWallet = await readOrCreateWallet(mu);
 
@@ -169,3 +238,11 @@ describe("marketplace", () => {
         expect(escrowAccount.amount).to.equals(5_000_000n - usagePrice); // 10M initial balance - 5M withdrawn - usage price
     })
 });
+
+const bufferEqual = (b1: Buffer) => (b2: Buffer) => {
+    expect(b1.length).to.equals(b2.length);
+    for (let i = 0; i < b1.length; ++i) {
+        expect(b1[i]).to.equals(b2[i]);
+    }
+    return true;
+}

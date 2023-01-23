@@ -55,6 +55,7 @@ QUIC
 quinn
 rbpf
 rcgen
+realloc
 reconnections
 recv
 refcell
