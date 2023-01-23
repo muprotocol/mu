@@ -8,8 +8,7 @@ use config::{Config, Environment, File, FileFormat};
 use crate::{
     gateway::GatewayManagerConfig,
     log_setup::LogConfig,
-    mudb::DBManagerConfig,
-    mudb_tikv::TikvRunnerConfig,
+    mudb::TikvRunnerConfig,
     network::{
         connection_manager::ConnectionManagerConfig,
         gossip::{GossipConfig, KnownNodeConfig},
@@ -28,7 +27,6 @@ pub struct SystemConfig(
     pub RuntimeConfig,
     pub SchedulerConfig,
     pub BlockchainMonitorConfig,
-    pub DBManagerConfig,
 );
 
 pub fn initialize_config() -> Result<SystemConfig> {
@@ -134,10 +132,6 @@ pub fn initialize_config() -> Result<SystemConfig> {
         .get("blockchain_monitor")
         .context("Invalid blockchain monitor config")?;
 
-    let db_manager_config = config
-        .get("db_manager")
-        .context("Invalid db manager config")?;
-
     Ok(SystemConfig(
         connection_manager_config,
         gossip_config,
@@ -148,6 +142,5 @@ pub fn initialize_config() -> Result<SystemConfig> {
         runtime_config,
         scheduler_config,
         blockchain_monitor_config,
-        db_manager_config,
     ))
 }

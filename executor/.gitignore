@@ -1,6 +1,7 @@
 /target
 /tests/runtime/funcs/*/target
-/mudb
+/db
 /runtime-cache
 /assets
 /tests/mudb/test_data
+/tests/runtime/test_data

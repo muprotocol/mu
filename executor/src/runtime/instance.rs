@@ -8,10 +8,7 @@ use super::{
         AssemblyID, ExecuteFunctionRequest, ExecuteFunctionResponse, FunctionHandle, InstanceID,
     },
 };
-use crate::{
-    mudb::service::DatabaseManager, runtime::error::FunctionRuntimeError,
-    stack::usage_aggregator::Usage,
-};
+use crate::{mudb::DbClient, runtime::error::FunctionRuntimeError, stack::usage_aggregator::Usage};
 
 use anyhow::anyhow;
 use log::{error, log, trace, Level};
@@ -96,7 +93,7 @@ impl InstanceState for Running {}
 pub struct Instance<S: InstanceState> {
     id: InstanceID,
     state: S,
-    database_service: DatabaseManager,
+    database_service: Box<dyn DbClient>,
     memory_limit: byte_unit::Byte,
     include_logs: bool,
 }
@@ -109,7 +106,7 @@ impl Instance<Loaded> {
         envs: HashMap<String, String>,
         store: Store,
         module: Module,
-        database_service: DatabaseManager,
+        database_service: Box<dyn DbClient>,
         memory_limit: byte_unit::Byte,
         include_logs: bool,
     ) -> Self {

@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use mu::{
-    mudb::{service::DatabaseManager, DBManagerConfig},
+    mudb::{DbManager, DbManagerImpl, IpAndPort, PdConfig, TikvConfig, TikvRunnerConfig},
+    network::NodeAddress,
     runtime::{
         start,
         types::{AssemblyDefinition, AssemblyID, FunctionID, RuntimeConfig},
@@ -11,16 +12,24 @@ use mu::{
 use mu_stack::AssemblyRuntime;
 use std::{
     collections::HashMap,
-    env,
+    env, fs,
+    net::IpAddr,
     path::{Path, PathBuf},
     str::FromStr,
-    time::Duration,
 };
 use tokio::process::Command;
 
 use crate::common::HashMapUsageAggregator;
 
 use super::providers::MapAssemblyProvider;
+
+const TEST_DATA_DIR: &str = "tests/runtime/test_data";
+
+fn clean_data_dir() {
+    fs::remove_dir_all(TEST_DATA_DIR).unwrap_or_else(|why| {
+        println!("{} {:?}", TEST_DATA_DIR, why.kind());
+    });
+}
 
 fn ensure_project_dir(project_dir: &Path) -> Result<PathBuf> {
     let project_dir = env::current_dir()?.join(project_dir);
@@ -70,20 +79,6 @@ pub async fn clean_wasm_project(project_dir: &Path) -> Result<()> {
 
     Ok(())
 }
-
-// pub async fn create_db_if_not_exist(
-//     db_service: DatabaseManager,
-//     database_id: DatabaseID,
-// ) -> Result<()> {
-//     let conf = mudb::Config {
-//         database_id,
-//         ..Default::default()
-//     };
-
-//     db_service.create_db_if_not_exist(conf).await?;
-
-//     Ok(())
-// }
 
 pub struct Project<'a> {
     pub id: AssemblyID,
@@ -153,9 +148,47 @@ async fn create_map_function_provider<'a>(
     Ok((functions, MapAssemblyProvider::new()))
 }
 
+fn make_node_address(port: u16) -> NodeAddress {
+    NodeAddress {
+        address: "127.0.0.1".parse().unwrap(),
+        port,
+        generation: 1,
+    }
+}
+fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> TikvRunnerConfig {
+    let localhost: IpAddr = "127.0.0.1".parse().unwrap();
+    TikvRunnerConfig {
+        pd: PdConfig {
+            peer_url: IpAndPort {
+                address: localhost.clone(),
+                port: peer_port,
+            },
+            client_url: IpAndPort {
+                address: localhost.clone(),
+                port: client_port,
+            },
+            data_dir: format!("{TEST_DATA_DIR}/pd_data_dir_{peer_port}"),
+            log_file: Some(format!("{TEST_DATA_DIR}/pd_log_{peer_port}")),
+        },
+        node: TikvConfig {
+            cluster_url: IpAndPort {
+                address: localhost.clone(),
+                port: tikv_port,
+            },
+            data_dir: format!("{TEST_DATA_DIR}/tikv_data_dir_{tikv_port}"),
+            log_file: Some(format!("{TEST_DATA_DIR}/tikv_log_{tikv_port}")),
+        },
+    }
+}
+
 pub async fn create_runtime<'a>(
     projects: &'a [Project<'a>],
-) -> (Box<dyn Runtime>, DatabaseManager, Box<dyn UsageAggregator>) {
+) -> (
+    Box<dyn Runtime>,
+    Box<dyn DbManager>,
+    Box<dyn UsageAggregator>,
+) {
+    clean_data_dir();
     let config = RuntimeConfig {
         cache_path: PathBuf::from_str("runtime-cache").unwrap(),
         include_function_logs: true,
@@ -163,17 +196,17 @@ pub async fn create_runtime<'a>(
 
     let (functions, provider) = create_map_function_provider(projects).await.unwrap();
     let usage_aggregator = HashMapUsageAggregator::new_boxed();
-    let db_manager_config = DBManagerConfig {
-        usage_report_duration: Duration::from_secs(1).into(),
-    };
+    let node_address = make_node_address(2803);
+    let tikv_config = make_tikv_runner_conf(2385, 2386, 20163);
 
-    let db_service = DatabaseManager::new(usage_aggregator.clone(), db_manager_config)
+    let db_manager = DbManagerImpl::new_with_embedded_cluster(node_address, vec![], tikv_config)
         .await
         .unwrap();
+
     let runtime = start(
         Box::new(provider),
         config,
-        db_service.clone(),
+        Box::new(db_manager.clone()),
         usage_aggregator.clone(),
     )
     .await
@@ -184,5 +217,5 @@ pub async fn create_runtime<'a>(
         .await
         .unwrap();
 
-    (runtime, db_service, usage_aggregator)
+    (runtime, Box::new(db_manager), usage_aggregator)
 }

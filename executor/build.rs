@@ -39,14 +39,19 @@ fn download_and_extract_file(url: String, dest: &str, file_name: &str) -> Result
 }
 
 fn main() {
-    println!("cargo:rerun-if-changed=assets/pd-server-6.4.0");
+    println!("cargo:rerun-if-changed=assets");
+    println!("cargo:rerun-if-changed=protos");
+    println!("cargo:rerun-if-changed=build.rs");
+
     println!("cargo:rustc-env=TIKV_VERSION={TIKV_VERSION}");
+
     let pd_url = format!("https://tiup-mirrors.pingcap.com/pd-v{TIKV_VERSION}-linux-amd64.tar.gz");
     let tikv_url =
         format!("https://tiup-mirrors.pingcap.com/tikv-v{TIKV_VERSION}-linux-amd64.tar.gz");
 
     download_and_extract_file(pd_url, "assets", "pd-server").unwrap();
     download_and_extract_file(tikv_url, "assets", "tikv-server").unwrap();
+
     let cargo_out_dir = env::var("OUT_DIR").expect("OUT_DIR env var not set");
     let mut path = PathBuf::from(cargo_out_dir);
     path.push("protos");

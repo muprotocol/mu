@@ -29,7 +29,7 @@ use self::{
     },
 };
 use crate::{
-    mudb::service::DatabaseManager, runtime::error::FunctionLoadingError,
+    mudb::DbManager, runtime::error::FunctionLoadingError,
     stack::usage_aggregator::UsageAggregator, util::id::IdExt,
 };
 
@@ -74,7 +74,7 @@ struct RuntimeState {
     assembly_provider: Box<dyn AssemblyProvider>,
     hashkey_dict: HashMap<AssemblyID, CacheHashAndMemoryLimit>,
     cache: FileSystemCache,
-    database_service: DatabaseManager,
+    database_service: Box<dyn DbManager>,
     usage_aggregator: Box<dyn UsageAggregator>,
     next_instance_id: u64,
 }
@@ -83,7 +83,7 @@ impl RuntimeState {
     pub async fn new(
         assembly_provider: Box<dyn AssemblyProvider>,
         config: RuntimeConfig,
-        database_service: DatabaseManager,
+        database_service: Box<dyn DbManager>,
         usage_aggregator: Box<dyn UsageAggregator>,
     ) -> Result<Self> {
         let hashkey_dict = HashMap::new();
@@ -189,13 +189,14 @@ impl RuntimeState {
 
         trace!("loading function {}", function_id);
         let (store, module) = self.load_module(&function_id)?;
+        let db_client = self.database_service.make_client().await?;
         Ok(Instance::new(
             function_id,
             self.next_instance_id.get_and_increment(),
             definition.envs,
             store,
             module,
-            self.database_service.clone(),
+            db_client,
             definition.memory_limit,
             self.config.include_function_logs,
         ))
@@ -282,7 +283,7 @@ impl Runtime for RuntimeImpl {
 pub async fn start(
     assembly_provider: Box<dyn AssemblyProvider>,
     config: RuntimeConfig,
-    db_service: DatabaseManager,
+    db_service: Box<dyn DbManager>,
     usage_aggregator: Box<dyn UsageAggregator>,
 ) -> Result<Box<dyn Runtime>> {
     let state = RuntimeState::new(assembly_provider, config, db_service, usage_aggregator).await?;

@@ -1,7 +1,6 @@
 pub mod gateway;
 pub mod infrastructure;
 pub mod mudb;
-pub mod mudb_tikv;
 pub mod network;
 mod request_routing;
 pub mod runtime;
@@ -27,6 +26,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     infrastructure::{config, log_setup},
+    mudb::DbManagerImpl,
     network::{
         connection_manager::{self, ConnectionManager, ConnectionManagerNotification},
         gossip::{self, Gossip, GossipNotification, KnownNodeConfig},
@@ -37,7 +37,7 @@ use crate::{
         scheduler::{self, Scheduler, SchedulerNotification},
     },
 };
-use mudb::service::DatabaseManager;
+use mudb::DbManager;
 
 pub async fn run() -> Result<()> {
     // TODO handle failures in components
@@ -52,13 +52,12 @@ pub async fn run() -> Result<()> {
         connection_manager_config,
         gossip_config,
         mut known_nodes_config,
-        _tikv_config,
+        tikv_config,
         gateway_manager_config,
         log_config,
         runtime_config,
         scheduler_config,
         blockchain_monitor_config,
-        db_manager_config,
     ) = config::initialize_config()?;
 
     let my_node = NodeAddress {
@@ -100,7 +99,7 @@ pub async fn run() -> Result<()> {
 
     info!("Establishing connection to seeds");
 
-    for node in known_nodes_config {
+    for node in &known_nodes_config {
         match connection_manager
             .connect(node.address, node.gossip_port)
             .await
@@ -137,7 +136,7 @@ pub async fn run() -> Result<()> {
             .context("Failed to start blockchain monitor")?;
 
     let gossip = gossip::start(
-        my_node,
+        my_node.clone(),
         gossip_config,
         known_nodes,
         gossip_notification_channel,
@@ -147,11 +146,11 @@ pub async fn run() -> Result<()> {
 
     let function_provider = runtime::providers::DefaultAssemblyProvider::new();
     let database_manager =
-        DatabaseManager::new(usage_aggregator.clone(), db_manager_config).await?;
+        DbManagerImpl::new_with_embedded_cluster(my_node, known_nodes_config, tikv_config).await?;
     let runtime = runtime::start(
         Box::new(function_provider),
         runtime_config,
-        database_manager.clone(),
+        Box::new(database_manager.clone()),
         usage_aggregator.clone(),
     )
     .await
@@ -186,7 +185,7 @@ pub async fn run() -> Result<()> {
         scheduler_notification_channel,
         runtime.clone(),
         gateway_manager.clone(),
-        database_manager.clone(),
+        Box::new(database_manager.clone()),
     );
 
     // TODO: create a `Module`/`Subsystem`/`NotificationSource` trait to batch modules with their notification receivers?
@@ -248,7 +247,7 @@ pub async fn run() -> Result<()> {
         runtime.stop().await.context("Failed to stop runtime")?;
 
         database_manager
-            .stop()
+            .stop_embedded_cluster()
             .await
             .context("Failed to stop runtime")?;
 

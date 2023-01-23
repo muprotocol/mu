@@ -1,231 +1,251 @@
 use super::{
-    config::ConfigInner,
+    embed_tikv::*,
     error::{Error, Result},
-    table::Table,
     types::*,
-    ValueFilter,
 };
+use crate::network::{gossip::KnownNodeConfig, NodeAddress};
+use async_trait::async_trait;
+use mu_stack::StackID;
+use std::fmt::Debug;
+use tikv_client::{self, KvPair, RawClient, Value};
+use tokio::time::{sleep, Duration};
 
-#[derive(Debug, Clone)]
-pub struct Db {
-    inner: sled::Db,
-    pub id: String,
-    pub conf: ConfigInner,
-    // table_descriptions_table
-    tdt: Table,
+// TODO: caching
+// * stacks_and_tables: HashMap<StackID, Vec<TableName>>,
+#[derive(Clone)]
+pub struct DbClientImpl {
+    inner: tikv_client::RawClient,
+    inner_atomic: tikv_client::RawClient,
 }
 
-impl Db {
-    /// Open new or existed Db
-    pub fn open(conf: ConfigInner) -> Result<Self> {
-        let inner: sled::Config = conf.clone().into();
-        let inner: sled::Db = inner.open()?;
-        // TODO: consider syncing tdt with sled::Db::tree_names
-        let tdt = Table::new(inner.open_tree(TABLE_DESCRIPTIONS_TABLE)?);
-        let id = conf.database_id.clone();
-        Ok(Db {
-            inner,
-            tdt,
-            id,
-            conf,
+impl Debug for DbClientImpl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DbClientImpl").finish()
+    }
+}
+
+impl DbClientImpl {
+    pub async fn new(endpoints: Vec<IpAndPort>) -> Result<Self> {
+        let new = RawClient::new(endpoints).await?;
+        Ok(Self {
+            inner: new.clone(),
+            inner_atomic: new.with_atomic_for_cas(),
         })
     }
 
-    /// Create new table otherwise return err table already exists
-    pub fn create_table(&self, table_name: TableNameInput) -> Result<(Table, TableDescription)> {
-        // create table if not exist otherwise just open it.
-        let table = Table::new(self.inner.open_tree(table_name.clone())?);
-
-        let td = TableDescription {
-            table_name: table_name.to_string(),
-        };
-
-        // save schema
-        // check and if table_schema was sets before,
-        // return err `TableAlreadyExist`
-        if self.is_table_exists(table_name.clone())? {
-            Err(Error::TableAlreadyExist(table_name.to_string()))
+    fn get_inner(&self, atomic: bool) -> &RawClient {
+        if atomic {
+            &self.inner_atomic
         } else {
-            self.tdt
-                .insert_one(table_name.into(), td.clone().into())
-                .map(|_| (table, td))
+            &self.inner
         }
-    }
-
-    pub fn get_table(&self, table_name: TableNameInput) -> Result<Table> {
-        if !self.is_table_exists(table_name.clone())? {
-            return Err(Error::TableDoseNotExist(table_name.into()));
-        }
-        let tree = self.inner.open_tree(table_name)?;
-        Ok(Table::new(tree))
-    }
-
-    /// Delete table `TableDescription` if existed or `None` if not.
-    pub fn delete_table(&self, table_name: TableNameInput) -> Result<Option<TableDescription>> {
-        let is_table_exists = self.is_table_exists(table_name.clone())?;
-        let is_dropped_success = self.inner.drop_tree(table_name.clone())?;
-
-        if is_table_exists && is_dropped_success {
-            self.tdt
-                .delete(KeyFilter::Exact(table_name.into()), ValueFilter::none())
-                .map(|vec| Some(vec[0].1.clone().try_into().unwrap()))
-                .map_err(Into::into)
-        } else {
-            Ok(None)
-        }
-    }
-
-    // TODO: maybe remove
-    pub fn _table_names(&self) -> Result<Vec<String>> {
-        Ok(self
-            .tdt
-            .find_by_key_filter(KeyFilter::Prefix("".into()))?
-            .into_iter()
-            .map(|(k, _)| k.into())
-            .collect())
-    }
-
-    fn is_table_exists(&self, table_name: TableNameInput) -> Result<bool> {
-        self.tdt.contains_key(table_name.into()).map_err(Into::into)
-    }
-
-    /// Returns the on-disk size of the storage files for this database.
-    pub fn size_on_disk(&self) -> Result<u64> {
-        self.inner.size_on_disk().map_err(Into::into)
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use assert_matches::assert_matches;
-    use serial_test::serial;
-    use std::ops::Deref;
+#[async_trait]
+impl DbClient for DbClientImpl {
+    async fn set_stack_manifest(
+        &self,
+        stack_id: StackID,
+        table_list: Vec<TableName>,
+    ) -> Result<()> {
+        let s = ScanTableList::ByStackID(stack_id);
+        self.inner.delete_range(s).await?;
+        let kvs = table_list.into_iter().map(|t| {
+            let k = TableListKey::new(stack_id, t);
+            let v = "";
+            (k, v)
+        });
+        self.inner.batch_put(kvs).await.map_err(Into::into)
+    }
 
-    const TEST_TABLE: &str = "test_table";
-
-    struct TestDb(Db);
-
-    impl Deref for TestDb {
-        type Target = Db;
-        fn deref(&self) -> &Self::Target {
-            &self.0
+    async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()> {
+        let k = TableListKey::new(key.stack_id, key.table_name.clone());
+        match self.inner.get(k).await? {
+            Some(_) => self
+                .get_inner(is_atomic)
+                .put(key, value)
+                .await
+                .map_err(Into::into),
+            None => Err(Error::StackIdOrTableDoseNotExist(key)),
         }
     }
 
-    impl Drop for TestDb {
-        // clear tables
-        fn drop(&mut self) {
-            let list = self._table_names().unwrap();
+    async fn get(&self, key: Key) -> Result<Option<Value>> {
+        self.inner.get(key).await.map_err(Into::into)
+    }
 
-            for name in list {
-                self.delete_table(name.to_string().try_into().unwrap())
-                    .unwrap();
-            }
+    async fn delete(&self, key: Key, is_atomic: bool) -> Result<()> {
+        self.get_inner(is_atomic)
+            .delete(key)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn delete_by_prefix(
+        &self,
+        stack_id: StackID,
+        table_name: TableName,
+        prefix_inner_key: Blob,
+    ) -> Result<()> {
+        let scan = Scan::ByInnerKeyPrefix(stack_id, table_name, prefix_inner_key);
+        self.inner.delete_range(scan).await.map_err(Into::into)
+    }
+
+    async fn clear_table(&self, stack_id: StackID, table_name: TableName) -> Result<()> {
+        let scan = Scan::ByTableName(stack_id, table_name);
+        self.inner.delete_range(scan).await.map_err(Into::into)
+    }
+
+    async fn scan(&self, scan: Scan, limit: u32) -> Result<Vec<(Key, Value)>> {
+        Ok(self
+            .inner
+            .scan(scan, limit)
+            .await?
+            .into_iter()
+            .map(|kv| kvpair_to_tuple(kv).unwrap())
+            .collect())
+    }
+
+    async fn scan_keys(&self, scan: Scan, limit: u32) -> Result<Vec<Key>> {
+        Ok(self
+            .inner
+            .scan_keys(scan, limit)
+            .await?
+            .into_iter()
+            .map(|k| k.try_into().unwrap())
+            .collect())
+    }
+
+    async fn table_list(
+        &self,
+        stack_id: StackID,
+        table_name_prefix: Option<TableName>,
+    ) -> Result<Vec<TableName>> {
+        let scan = match table_name_prefix {
+            Some(prefix) => ScanTableList::ByTableNamePrefix(stack_id, prefix),
+            None => ScanTableList::ByStackID(stack_id),
+        };
+        Ok(self
+            .inner
+            .scan_keys(scan, 128)
+            .await?
+            .into_iter()
+            .map(|k| TableListKey::try_from(k).unwrap())
+            .map(|k| k.table_name)
+            .collect())
+    }
+
+    async fn stack_id_list(&self) -> Result<Vec<StackID>> {
+        let scan = ScanTableList::Whole;
+        Ok(self
+            .inner
+            .scan_keys(scan, 32)
+            .await?
+            .into_iter()
+            .map(|k| TableListKey::try_from(k).unwrap())
+            .map(|k| k.stack_id)
+            .collect())
+    }
+
+    async fn batch_delete(&self, keys: Vec<Key>) -> Result<()> {
+        self.inner.batch_delete(keys).await.map_err(Into::into)
+    }
+
+    async fn batch_get(&self, keys: Vec<Key>) -> Result<Vec<(Key, Value)>> {
+        Ok(self
+            .inner
+            .batch_get(keys)
+            .await?
+            .into_iter()
+            .map(|kv| kvpair_to_tuple(kv).unwrap())
+            .collect())
+    }
+
+    async fn batch_put(&self, pairs: Vec<(Key, Value)>, is_atomic: bool) -> Result<()> {
+        self.get_inner(is_atomic)
+            .batch_put(pairs)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn batch_scan(&self, scanes: Vec<Scan>, each_limit: u32) -> Result<Vec<(Key, Value)>> {
+        Ok(self
+            .inner
+            .batch_scan(scanes, each_limit)
+            .await?
+            .into_iter()
+            .map(|kv| kvpair_to_tuple(kv).unwrap())
+            .collect())
+    }
+
+    async fn batch_scan_keys(&self, scanes: Vec<Scan>, each_limit: u32) -> Result<Vec<Key>> {
+        Ok(self
+            .inner
+            .batch_scan_keys(scanes, each_limit)
+            .await?
+            .into_iter()
+            .map(|k| k.try_into().unwrap())
+            .collect())
+    }
+
+    async fn compare_and_swap(
+        &self,
+        key: Key,
+        previous_value: Option<Value>,
+        new_value: Value,
+    ) -> Result<(Option<Value>, bool)> {
+        self.inner
+            .with_atomic_for_cas()
+            .compare_and_swap(key, previous_value, new_value)
+            .await
+            .map_err(Into::into)
+    }
+}
+
+#[derive(Clone)]
+pub struct DbManagerImpl {
+    inner: Option<Box<dyn TikvRunner>>,
+    endpoints: Vec<IpAndPort>,
+}
+
+impl DbManagerImpl {
+    pub async fn new_with_embedded_cluster(
+        node_address: NodeAddress,
+        known_node_config: Vec<KnownNodeConfig>,
+        config: TikvRunnerConfig,
+    ) -> anyhow::Result<Self> {
+        let endpoints = vec![config.pd.advertise_client_url()];
+        let inner = Some(start(node_address, known_node_config, config).await?);
+
+        // wait 10 secs to ensure cluster bootstraping
+        sleep(Duration::from_secs(10)).await;
+
+        Ok(Self { inner, endpoints })
+    }
+
+    pub async fn new_with_external_cluster(endpoints: Vec<IpAndPort>) -> Self {
+        Self {
+            inner: None,
+            endpoints,
         }
     }
+}
 
-    impl TestDb {
-        fn init() -> Self {
-            let conf = ConfigInner {
-                database_id: "test_db".into(),
-                ..Default::default()
-            };
-
-            Self(Db::open(conf).unwrap())
-        }
-
-        fn init_and_seed() -> Self {
-            let td = TestDb::init();
-            td.create_table(TEST_TABLE.try_into().unwrap()).unwrap();
-            td
+#[async_trait]
+impl DbManager for DbManagerImpl {
+    async fn make_client(&self) -> anyhow::Result<Box<dyn DbClient>> {
+        let x = DbClientImpl::new(self.endpoints.clone()).await?;
+        Ok(Box::new(x))
+    }
+    async fn stop_embedded_cluster(&self) -> anyhow::Result<()> {
+        match &self.inner {
+            Some(r) => r.stop().await,
+            None => Ok(()),
         }
     }
+}
 
-    // TableNameInput
-
-    #[test]
-    #[serial]
-    fn table_name_input_err() {
-        let res = TableNameInput::try_from(TABLE_DESCRIPTIONS_TABLE);
-        assert_matches!(res, Err(Error::InvalidTableName(_, _)))
-    }
-
-    #[test]
-    #[serial]
-    fn table_name_input_ok() {
-        let res = TableNameInput::try_from("a_name");
-        assert_matches!(res, Ok(_))
-    }
-
-    // create_table
-
-    #[test]
-    #[serial]
-    fn create_table_r_ok_table_description() {
-        let db = TestDb::init();
-
-        let name = "create_table_test";
-        let res = db.create_table(name.try_into().unwrap()).unwrap();
-        assert_eq!(
-            res.1,
-            TableDescription {
-                table_name: name.into()
-            }
-        );
-    }
-
-    #[test]
-    #[serial]
-    fn create_table_r_err_already_exist() {
-        let db = TestDb::init_and_seed();
-
-        let res = db.create_table(TEST_TABLE.try_into().unwrap());
-        assert_eq!(res.err(), Some(Error::TableAlreadyExist(TEST_TABLE.into())));
-    }
-
-    // get_table
-
-    #[test]
-    #[serial]
-    fn get_table_r_ok_table() {
-        let db = TestDb::init_and_seed();
-
-        let res = db.get_table(TEST_TABLE.try_into().unwrap());
-        assert_matches!(res, Ok(Table { .. }));
-    }
-
-    #[test]
-    #[serial]
-    fn get_table_r_err_dose_not_exist() {
-        let db = TestDb::init();
-
-        let res = db.get_table(TEST_TABLE.try_into().unwrap());
-        assert_eq!(res.err(), Some(Error::TableDoseNotExist(TEST_TABLE.into())));
-    }
-
-    // delete_table
-
-    #[test]
-    #[serial]
-    fn delete_table_r_table_description() {
-        let db = TestDb::init_and_seed();
-
-        let res = db.delete_table(TEST_TABLE.try_into().unwrap());
-        assert_eq!(
-            res,
-            Ok(Some(TableDescription {
-                table_name: TEST_TABLE.into(),
-            }))
-        );
-    }
-
-    #[test]
-    #[serial]
-    fn delete_table_r_none() {
-        let db = TestDb::init();
-
-        let res = db.delete_table(TEST_TABLE.try_into().unwrap());
-        assert_eq!(res, Ok(None))
-    }
+fn kvpair_to_tuple(kv: KvPair) -> std::result::Result<(Key, Value), String> {
+    Ok((kv.key().clone().try_into()?, kv.into_value()))
 }

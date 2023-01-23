@@ -35,7 +35,7 @@ async fn test_simple_func() {
     env_logger::init();
 
     let projects = vec![create_project("hello-wasm", &["say_hello"], None)];
-    let (runtime, _, _) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let request = musdk_common::Request {
         method: musdk_common::HttpMethod::Get,
@@ -56,6 +56,7 @@ async fn test_simple_func() {
     );
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 // #[tokio::test]
@@ -94,7 +95,7 @@ async fn test_simple_func() {
 #[serial]
 async fn can_run_multiple_instance_of_the_same_function() {
     let projects = vec![create_project("hello-wasm", &["say_hello"], None)];
-    let (runtime, _, _) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let make_request = |name| musdk_common::Request {
         method: musdk_common::HttpMethod::Get,
@@ -136,6 +137,7 @@ async fn can_run_multiple_instance_of_the_same_function() {
     tokio::join!(instance_1, instance_2, instance_3);
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
@@ -149,7 +151,7 @@ async fn can_run_instances_of_different_functions() {
             Some(byte_unit::Byte::from_unit(120.0, byte_unit::ByteUnit::MB).unwrap()),
         ),
     ];
-    let (runtime, ..) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let make_request = |name| musdk_common::Request {
         method: musdk_common::HttpMethod::Get,
@@ -186,13 +188,14 @@ async fn can_run_instances_of_different_functions() {
     tokio::join!(instance_1, instance_2);
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
 #[serial]
 async fn unclean_termination_is_handled() {
     let projects = vec![create_project("unclean-termination", &["say_hello"], None)];
-    let (runtime, _, _) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let request = musdk_common::Request {
         method: musdk_common::HttpMethod::Get,
@@ -212,6 +215,7 @@ async fn unclean_termination_is_handled() {
     }
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
@@ -224,7 +228,7 @@ async fn functions_with_limited_memory_wont_run() {
         &["say_hello"],
         Some(byte_unit::Byte::from_unit(1.0, byte_unit::ByteUnit::MB).unwrap()),
     )];
-    let (runtime, ..) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let request = musdk_common::Request {
         method: musdk_common::HttpMethod::Get,
@@ -244,6 +248,7 @@ async fn functions_with_limited_memory_wont_run() {
     }
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
@@ -254,7 +259,7 @@ async fn functions_with_limited_memory_will_run_with_enough_memory() {
         &["say_hello"],
         Some(byte_unit::Byte::from_unit(120.0, byte_unit::ByteUnit::MB).unwrap()),
     )];
-    let (runtime, ..) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let request = musdk_common::Request {
         method: musdk_common::HttpMethod::Get,
@@ -275,13 +280,14 @@ async fn functions_with_limited_memory_will_run_with_enough_memory() {
         .await;
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
 #[serial]
 async fn function_usage_is_reported_correctly_1() {
     let projects = vec![create_project("hello-wasm", &["say_hello"], None)];
-    let (runtime, _, usage_aggregator) = create_runtime(&projects).await;
+    let (runtime, db_manager, usage_aggregator) = create_runtime(&projects).await;
 
     let request = musdk_common::Request {
         method: musdk_common::HttpMethod::Get,
@@ -319,6 +325,7 @@ async fn function_usage_is_reported_correctly_1() {
     );
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 //#[tokio::test]
@@ -373,7 +380,7 @@ async fn function_usage_is_reported_correctly_1() {
 async fn failing_function_should_not_hang() {
     use mu::runtime::error::*;
     let projects = vec![create_project("failing", &["say_hello"], None)];
-    let (runtime, _, _) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let request = musdk_common::Request {
         method: musdk_common::HttpMethod::Get,
@@ -393,4 +400,5 @@ async fn failing_function_should_not_hang() {
     }
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }

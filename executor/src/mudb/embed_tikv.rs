@@ -8,6 +8,7 @@ use rust_embed::RustEmbed;
 use serde::Deserialize;
 use std::{
     env,
+    net::{IpAddr, Ipv4Addr},
     os::unix::prelude::PermissionsExt,
     path::{Path, PathBuf},
     process,
@@ -15,7 +16,7 @@ use std::{
 use tokio::{fs::File, io::AsyncWriteExt};
 
 use crate::network::{gossip::KnownNodeConfig, NodeAddress};
-use log::error;
+use log::{error, warn};
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
 
@@ -70,11 +71,37 @@ pub struct PdConfig {
     pub log_file: Option<String>,
 }
 
+fn unspecified_to_localhost(x: &IpAndPort) -> IpAndPort {
+    IpAndPort {
+        address: match x.address {
+            xp if xp.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
+            xp => xp,
+        },
+        port: x.port,
+    }
+}
+
+impl PdConfig {
+    pub fn advertise_client_url(&self) -> IpAndPort {
+        unspecified_to_localhost(&self.client_url)
+    }
+
+    pub fn advertise_peer_url(&self) -> IpAndPort {
+        unspecified_to_localhost(&self.peer_url)
+    }
+}
+
 #[derive(Deserialize, Clone)]
 pub struct TikvConfig {
     pub cluster_url: IpAndPort,
     pub data_dir: String,
     pub log_file: Option<String>,
+}
+
+impl TikvConfig {
+    pub fn advertise_cluster_url(&self) -> IpAndPort {
+        unspecified_to_localhost(&self.cluster_url)
+    }
 }
 
 #[derive(Deserialize, Clone)]
@@ -118,6 +145,24 @@ fn generate_arguments(
     known_node_config: Vec<KnownNodeConfig>,
     config: TikvRunnerConfig,
 ) -> TikvRunnerArgs {
+    let warn = |x| {
+        warn!(
+            "{x} listen address is 0.0.0.0, \
+            which will listen on all IP's, even those connected to the internet. \
+            This is very dangerous, continue only if you are completely certain \
+            you know what you're doing."
+        )
+    };
+    if config.pd.peer_url.address.is_unspecified() {
+        warn("PD peer");
+    }
+    if config.pd.client_url.address.is_unspecified() {
+        warn("PD client");
+    }
+    if config.node.cluster_url.address.is_unspecified() {
+        warn("TiKV");
+    }
+
     let mut initial_cluster = known_node_config
         .into_iter()
         .map(|node| {
@@ -132,7 +177,8 @@ fn generate_arguments(
         0,
         format!(
             "{pd_name}=http://{}:{}",
-            node_address.address, config.pd.peer_url.port
+            config.pd.advertise_peer_url().address,
+            config.pd.advertise_peer_url().port
         ),
     );
 
@@ -146,24 +192,40 @@ fn generate_arguments(
             config.pd.client_url.address, config.pd.client_url.port
         ),
         format!(
+            "--advertise-client-urls=http://{}:{}",
+            config.pd.advertise_client_url().address,
+            config.pd.advertise_client_url().port
+        ),
+        format!(
             "--peer-urls=http://{}:{}",
             config.pd.peer_url.address, config.pd.peer_url.port
+        ),
+        format!(
+            "--advertise-peer-urls=http://{}:{}",
+            config.pd.advertise_peer_url().address,
+            config.pd.advertise_peer_url().port
         ),
         format!("--initial-cluster={initial_cluster}"),
     ];
 
-    if let Some(log_file) = config.pd.log_file {
+    if let Some(log_file) = config.pd.log_file.as_ref() {
         pd_args.push(format!("--log-file={log_file}"))
     }
 
     let mut tikv_args = vec![
         format!(
             "--pd-endpoints=http://{}:{}",
-            config.pd.client_url.address, config.pd.client_url.port
+            config.pd.advertise_client_url().address,
+            config.pd.advertise_client_url().port
         ),
         format!(
             "--addr={}:{}",
             config.node.cluster_url.address, config.node.cluster_url.port
+        ),
+        format!(
+            "--advertise-addr={}:{}",
+            config.node.advertise_cluster_url().address,
+            config.node.advertise_cluster_url().port
         ),
         format!("--data-dir={}", config.node.data_dir),
     ];
@@ -318,12 +380,21 @@ mod test {
         };
 
         let res = generate_arguments(node_address, known_node_conf, tikv_runner_conf);
+
         assert_eq!(res.pd_args[0], "--name=pd_node_127.0.0.1_2800");
         assert_eq!(res.pd_args[1], "--data-dir=./pd_test_dir");
         assert_eq!(res.pd_args[2], "--client-urls=http://127.0.0.1:2379");
-        assert_eq!(res.pd_args[3], "--peer-urls=http://127.0.0.1:2380");
         assert_eq!(
-            res.pd_args[4],
+            res.pd_args[3],
+            "--advertise-client-urls=http://127.0.0.1:2379"
+        );
+        assert_eq!(res.pd_args[4], "--peer-urls=http://127.0.0.1:2380");
+        assert_eq!(
+            res.pd_args[5],
+            "--advertise-peer-urls=http://127.0.0.1:2380"
+        );
+        assert_eq!(
+            res.pd_args[6],
             "--initial-cluster=\
                 pd_node_127.0.0.1_2800=http://127.0.0.1:2380,\
                 pd_node_127.0.0.1_2801=http://127.0.0.1:2381,\
@@ -332,6 +403,7 @@ mod test {
 
         assert_eq!(res.tikv_args[0], "--pd-endpoints=http://127.0.0.1:2379");
         assert_eq!(res.tikv_args[1], "--addr=127.0.0.1:20160");
-        assert_eq!(res.tikv_args[2], "--data-dir=./tikv_test_dir");
+        assert_eq!(res.tikv_args[2], "--advertise-addr=127.0.0.1:20160");
+        assert_eq!(res.tikv_args[3], "--data-dir=./tikv_test_dir");
     }
 }
