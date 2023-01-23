@@ -1,13 +1,8 @@
+import { Button } from '@mui/material';
 import Head from 'next/head'
 import React from "react";
-import dynamic from "next/dynamic";
-import {Button} from "@mui/material";
 
 export default function Home() {
-    const ProviderList = dynamic(() => import('@/components/providers/ProviderList'), {
-        ssr: false
-    })
-
     return (
         <>
             <Head>
@@ -18,8 +13,6 @@ export default function Home() {
             </Head>
             <main data-testid="content">
                 <Button variant="contained">lol</Button>
-                <ProviderList />
-
             </main>
         </>
     )
