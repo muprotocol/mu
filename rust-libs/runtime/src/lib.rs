@@ -21,9 +21,9 @@ use wasmer_cache::{Cache, FileSystemCache};
 
 use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel, ReplyChannel};
 use mu_common::id::IdExt;
+use mu_db::DbManager;
 use mu_stack::{AssemblyID, FunctionID, StackID};
 use musdk_common::{Header, Request, Response};
-use mu_db::DbManager;
 
 use instance::create_store;
 
@@ -339,12 +339,8 @@ pub async fn start(
     db_manager: Box<dyn DbManager>,
     config: RuntimeConfig,
 ) -> Result<(Box<dyn Runtime>, mpsc::UnboundedReceiver<Notification>)> {
-<<<<<<< HEAD
     let (state, notification_receiver) =
         RuntimeState::new(assembly_provider, db_manager, config).await?;
-=======
-    let (state, notification_receiver) = RuntimeState::new(assembly_provider, config).await?;
->>>>>>> 084af0c (Move runtime to separate crate)
     let mailbox = CallbackMailboxProcessor::start(mailbox_step, state, 10000);
     Ok((Box::new(RuntimeImpl { mailbox }), notification_receiver))
 }

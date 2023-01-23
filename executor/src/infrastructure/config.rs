@@ -4,7 +4,9 @@ pub use serde_support::{ConfigDuration, ConfigLogLevelFilter, ConfigUri};
 
 use anyhow::{Context, Result};
 use config::{Config, Environment, File, FileFormat};
-use mu_db::DbConfig;
+
+use mu_db::TikvRunnerConfig;
+
 use mu_gateway::GatewayManagerConfig;
 use mu_runtime::RuntimeConfig;
 
@@ -51,7 +53,6 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("blockchain_monitor.solana_provider_public_key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
         ("blockchain_monitor.solana_region_number", "1"),
         ("blockchain_monitor.solana_usage_signer_private_key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
-        ("db_manager.usage_report_duration", "15m"),
         ("runtime.include_function_logs", "false"),
     ];
 

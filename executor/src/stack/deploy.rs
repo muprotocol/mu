@@ -1,9 +1,9 @@
-use mu_gateway::GatewayManager;
-use mu_runtime::{AssemblyDefinition, Runtime};
 use reqwest::Url;
 use thiserror::Error;
 
 use mu_db::DbManager;
+use mu_gateway::GatewayManager;
+use mu_runtime::{AssemblyDefinition, Runtime};
 use mu_stack::{AssemblyID, HttpMethod, Stack, StackID};
 
 #[derive(Error, Debug)]
