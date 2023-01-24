@@ -19,6 +19,7 @@ funcs
 Hasher
 hashkey
 hostnames
+hashset
 idgen
 ipaddress
 itertools

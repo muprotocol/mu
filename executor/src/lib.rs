@@ -1,27 +1,29 @@
-pub mod gateway;
 pub mod infrastructure;
 pub mod mudb;
 pub mod network;
 mod request_routing;
-pub mod runtime;
 pub mod stack;
-pub mod util;
 
 use std::{
     process,
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use log::*;
-use mailbox_processor::{NotificationChannel, ReplyChannel};
-use mu_stack::StackID;
+use mailbox_processor::NotificationChannel;
+use mu_runtime::Runtime;
 use network::rpc_handler::{self, RpcHandler, RpcRequestHandler};
-use request_routing::RoutingTarget;
-use runtime::Runtime;
-use stack::blockchain_monitor::{BlockchainMonitor, BlockchainMonitorNotification};
-use tokio::{select, sync::mpsc};
+use stack::{
+    blockchain_monitor::{BlockchainMonitor, BlockchainMonitorNotification},
+    usage_aggregator::{Usage, UsageAggregator},
+};
+use tokio::{
+    select,
+    sync::{mpsc, RwLock},
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -144,17 +146,13 @@ pub async fn run() -> Result<()> {
     )
     .context("Failed to start gossip")?;
 
-    let function_provider = runtime::providers::DefaultAssemblyProvider::new();
+    let function_provider = mu_runtime::providers::DefaultAssemblyProvider::new();
     let database_manager =
         DbManagerImpl::new_with_embedded_cluster(my_node, known_nodes_config, tikv_config).await?;
-    let runtime = runtime::start(
-        Box::new(function_provider),
-        runtime_config,
-        Box::new(database_manager.clone()),
-        usage_aggregator.clone(),
-    )
-    .await
-    .context("Failed to initiate runtime")?;
+    let (runtime, mut runtime_notification_receiver) =
+        mu_runtime::start(Box::new(function_provider), runtime_config)
+            .await
+            .context("Failed to initiate runtime")?;
 
     let rpc_handler = rpc_handler::new(
         connection_manager.clone(),
@@ -164,15 +162,27 @@ pub async fn run() -> Result<()> {
     );
 
     // TODO: no notification channel for now, requests are sent straight to runtime
-    let (gateway_manager, mut route_request_receiver) = gateway::start(
-        gateway_manager_config,
-        runtime.clone(),
-        connection_manager.clone(),
-        rpc_handler.clone(),
-        usage_aggregator.clone(),
-    )
-    .await
-    .context("Failed to start gateway manager")?;
+    let connection_manager_clone = connection_manager.clone();
+    let gossip_clone = gossip.clone();
+    let rpc_handler_clone = rpc_handler.clone();
+    let runtime_clone = runtime.clone();
+
+    let scheduler_ref = Arc::new(RwLock::new(None));
+    let scheduler_ref_clone = scheduler_ref.clone();
+    let (gateway_manager, mut gateway_notification_receiver) =
+        mu_gateway::start(gateway_manager_config, move |f, r| {
+            Box::pin(request_routing::route_request(
+                f,
+                r,
+                connection_manager_clone.clone(),
+                gossip_clone.clone(),
+                scheduler_ref_clone.clone(),
+                rpc_handler_clone.clone(),
+                runtime_clone.clone(),
+            ))
+        })
+        .await
+        .context("Failed to start gateway manager")?;
 
     // TODO: fetch stacks from blockchain before starting scheduler
     let (scheduler_notification_channel, mut scheduler_notification_receiver) =
@@ -188,6 +198,8 @@ pub async fn run() -> Result<()> {
         Box::new(database_manager.clone()),
     );
 
+    *scheduler_ref.write().await = Some(scheduler.clone());
+
     // TODO: create a `Module`/`Subsystem`/`NotificationSource` trait to batch modules with their notification receivers?
     let scheduler_clone = scheduler.clone();
     let glue_task = tokio::spawn(async move {
@@ -202,28 +214,44 @@ pub async fn run() -> Result<()> {
             blockchain_monitor.as_ref(),
             &mut blockchain_monitor_notification_receiver,
             rpc_handler.as_ref(),
-            &mut route_request_receiver,
+            usage_aggregator.as_ref(),
+            &mut gateway_notification_receiver,
+            &mut runtime_notification_receiver,
         )
         .await;
 
+        trace!("Stopping blockchain monitor");
         blockchain_monitor
             .stop()
             .await
             .context("Failed to stop blockchain monitor")?;
 
+        trace!("Stopping scheduler");
         scheduler.stop().await.context("Failed to stop scheduler")?;
 
-        // Stop gateway manager first. This waits for rocket to shut down, essentially
+        trace!("Stopping runtime");
+        runtime.stop().await.context("Failed to stop runtime")?;
+
+        trace!("Stopping database manager");
+        database_manager
+            .stop_embedded_cluster()
+            .await
+            .context("Failed to stop runtime")?;
+
+        // Stop gateway manager first. This waits for actix-web to shut down, essentially
         // running all requests to completion or cancelling them safely before shutting
         // the rest of the system down.
+        trace!("Stopping gateway manager");
         gateway_manager
             .stop()
             .await
             .context("Failed to stop gateway manager")?;
 
+        trace!("Stopping gossip");
         gossip.stop().await.context("Failed to stop gossip")?;
 
         // The glue loop shouldn't stop as soon as it receives a ctrl+C
+        trace!("Draining gossip notifications");
         loop {
             match gossip_notification_receiver.recv().await {
                 None => break,
@@ -239,17 +267,11 @@ pub async fn run() -> Result<()> {
             }
         }
 
+        trace!("Stopping connection manager");
         connection_manager
             .stop()
             .await
             .context("Failed to stop connection manager")?;
-
-        runtime.stop().await.context("Failed to stop runtime")?;
-
-        database_manager
-            .stop_embedded_cluster()
-            .await
-            .context("Failed to stop runtime")?;
 
         Result::<()>::Ok(())
     });
@@ -315,10 +337,9 @@ async fn glue_modules(
         BlockchainMonitorNotification,
     >,
     rpc_handler: &dyn RpcHandler,
-    route_request_receiver: &mut mpsc::UnboundedReceiver<(
-        StackID,
-        ReplyChannel<Result<RoutingTarget>>,
-    )>,
+    usage_aggregator: &dyn UsageAggregator,
+    gateway_notification_receiver: &mut mpsc::UnboundedReceiver<mu_gateway::Notification>,
+    runtime_notification_receiver: &mut mpsc::UnboundedReceiver<mu_runtime::Notification>,
 ) {
     loop {
         select! {
@@ -343,23 +364,15 @@ async fn glue_modules(
                 process_blockchain_monitor_notification(notification, scheduler).await;
             }
 
-            request = route_request_receiver.recv() => {
-                handle_route_request(request, gossip, scheduler).await;
+            notification = gateway_notification_receiver.recv() => {
+                handle_gateway_notification(notification, usage_aggregator);
+            }
+
+            notification = runtime_notification_receiver.recv() => {
+                handle_runtime_notification(notification, usage_aggregator);
             }
         }
     }
-}
-
-async fn handle_route_request(
-    request: Option<(StackID, ReplyChannel<Result<RoutingTarget>>)>,
-    gossip: &dyn Gossip,
-    scheduler: &dyn Scheduler,
-) {
-    let Some((stack_id, reply_channel)) = request else {
-        return;
-    };
-    let route = request_routing::get_route(stack_id, scheduler, gossip).await;
-    reply_channel.reply(route);
 }
 
 async fn process_connection_manager_notification(
@@ -484,4 +497,50 @@ async fn process_blockchain_monitor_notification(
                 .unwrap();
         }
     }
+}
+
+fn handle_gateway_notification(
+    notification: Option<mu_gateway::Notification>,
+    usage_aggregator: &dyn UsageAggregator,
+) {
+    let mu_gateway::Notification::ReportUsage {
+        stack_id,
+        traffic,
+        requests,
+    } = notification.unwrap();
+
+    usage_aggregator.register_usage(
+        stack_id,
+        vec![
+            Usage::GatewayRequests { count: requests },
+            Usage::GatewayTraffic {
+                size_bytes: traffic,
+            },
+        ],
+    );
+}
+
+fn handle_runtime_notification(
+    notification: Option<mu_runtime::Notification>,
+    usage_aggregator: &dyn UsageAggregator,
+) {
+    let mu_runtime::Notification::ReportUsage(stack_id, usage) = notification.unwrap();
+
+    usage_aggregator.register_usage(
+        stack_id,
+        vec![
+            Usage::DBRead {
+                weak_reads: usage.db_weak_reads,
+                strong_reads: usage.db_strong_reads,
+            },
+            Usage::DBWrite {
+                weak_writes: usage.db_weak_writes,
+                strong_writes: usage.db_strong_writes,
+            },
+            Usage::FunctionMBInstructions {
+                memory_megabytes: usage.memory_megabytes,
+                instructions: usage.function_instructions,
+            },
+        ],
+    );
 }

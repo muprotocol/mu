@@ -4,16 +4,16 @@ pub use serde_support::{ConfigDuration, ConfigLogLevelFilter, ConfigUri};
 
 use anyhow::{Context, Result};
 use config::{Config, Environment, File, FileFormat};
+use mu_gateway::GatewayManagerConfig;
+use mu_runtime::types::RuntimeConfig;
 
 use crate::{
-    gateway::GatewayManagerConfig,
     log_setup::LogConfig,
     mudb::TikvRunnerConfig,
     network::{
         connection_manager::ConnectionManagerConfig,
         gossip::{GossipConfig, KnownNodeConfig},
     },
-    runtime::types::RuntimeConfig,
     stack::{blockchain_monitor::BlockchainMonitorConfig, scheduler::SchedulerConfig},
 };
 

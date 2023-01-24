@@ -8,16 +8,25 @@
 			"path": "cli"
 		},
 		{
+			"path": "rust-libs/common"
+		},
+		{
 			"path": "executor"
 		},
 		{
-			"path": "mailbox_processor"
+			"path": "rust-libs/gateway"
+		},
+		{
+			"path": "rust-libs/mailbox_processor"
 		},
 		{
 			"path": "marketplace"
 		},
 		{
-			"path": "mu_stack"
+			"path": "rust-libs/mu_stack"
+		},
+		{
+			"path": "rust-libs/runtime"
 		},
 		{
 			"path": "sdk"

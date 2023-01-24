@@ -16,13 +16,14 @@ use mailbox_processor::{
     plain::{MessageReceiver, PlainMailboxProcessor},
     ReplyChannel,
 };
+use mu_common::id::IdExt;
 use mu_stack::StackID;
 use protobuf::Message;
 use rand::{prelude::Distribution, rngs::ThreadRng};
 use serde::Deserialize;
 use tokio::{select, time::Instant};
 
-use crate::{infrastructure::config::ConfigDuration, util::id::IdExt};
+use crate::infrastructure::config::ConfigDuration;
 
 pub use self::node_collection::KnownNodes;
 use self::node_collection::*;

@@ -14,7 +14,7 @@ path = "src/bin/mu.rs"
 doc = false
 
 [dependencies]
-mu_stack = { path = "../mu_stack" }
+mu_stack = { path = "../rust-libs/mu_stack" }
 clap = { version = "4.0", features = ["derive"] }
 anyhow = "1.0"
 thiserror = "1.0"

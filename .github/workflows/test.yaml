@@ -7,7 +7,17 @@ jobs:
   lint_and_test:
     runs-on: ubuntu-latest
     strategy:
-      matrix: { dir: ["executor", "cli", "mailbox_processor", "marketplace", "mu_stack", "sdk"] }
+      matrix:
+        dir:
+          - executor
+          - cli
+          - rust-libs/mailbox_processor
+          - marketplace
+          - rust-libs/mu_stack
+          - sdk
+          - rust-libs/common
+          - rust-libs/runtime
+          - rust-libs/gateway
     steps:
       - uses: actions/checkout@v2
       - uses: actions/cache@v3
