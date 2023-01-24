@@ -2,7 +2,7 @@ use anchor_client::solana_sdk::system_program;
 use anyhow::Result;
 use clap::{Args, Parser};
 
-use crate::config::Config;
+use crate::{config::Config, marketplace_client};
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -80,7 +80,5 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
         rates,
     };
 
-    client.create_region(accounts, instruction, provider_keypair)?;
-
-    Ok(())
+    marketplace_client::region::create(&client, accounts, instruction, provider_keypair)
 }

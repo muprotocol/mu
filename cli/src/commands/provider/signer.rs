@@ -4,7 +4,7 @@ use anchor_client::solana_sdk::signature::read_keypair_file;
 use anyhow::{anyhow, Result};
 use clap::{Args, Parser};
 
-use crate::config::Config;
+use crate::{config::Config, marketplace_client};
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -38,5 +38,5 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
 
     let region_pda = client.get_region_pda(&provider_keypair.pubkey(), args.region_num);
 
-    client.create_signer(provider_keypair, &signer_keypair, region_pda)
+    marketplace_client::signer::create(&client, provider_keypair, &signer_keypair, region_pda)
 }

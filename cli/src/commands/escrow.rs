@@ -11,7 +11,7 @@ use clap::{Args, Parser};
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::Mint;
 
-use crate::config::Config;
+use crate::{config::Config, marketplace_client};
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -54,7 +54,7 @@ pub fn execute_create(config: Config, cmd: CreateEscrowCommand) -> Result<()> {
     let client = config.build_marketplace_client()?;
     let user_wallet = config.get_signer()?;
 
-    client.create_escrow(user_wallet, cmd.provider)
+    marketplace_client::escrow::create(&client, user_wallet, cmd.provider)
 }
 
 pub fn execute_recharge(config: Config, cmd: RechargeEscrowCommand) -> Result<()> {
@@ -70,7 +70,8 @@ pub fn execute_recharge(config: Config, cmd: RechargeEscrowCommand) -> Result<()
     let user_wallet = config.get_signer()?;
     let user_token_account = get_associated_token_address(&user_wallet.pubkey(), &mu_state.mint);
 
-    client.recharge_escrow(
+    marketplace_client::escrow::recharge(
+        &client,
         user_wallet,
         recharge_amount,
         &cmd.provider,

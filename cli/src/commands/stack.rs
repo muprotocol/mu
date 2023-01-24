@@ -7,7 +7,7 @@ use anchor_client::{
 use anyhow::{Context, Result};
 use clap::{Args, Parser};
 
-use crate::config::Config;
+use crate::{config::Config, marketplace_client};
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -138,5 +138,5 @@ pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
         name,
     };
 
-    client.deploy_stack(accounts, instruction, user_wallet, region)
+    marketplace_client::stack::deploy_stack(&client, accounts, instruction, user_wallet, region)
 }
