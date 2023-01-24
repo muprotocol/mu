@@ -1,5 +1,5 @@
 use mu_gateway::GatewayManager;
-use mu_runtime::{types::AssemblyDefinition, Runtime};
+use mu_runtime::{AssemblyDefinition, Runtime};
 use reqwest::Url;
 use thiserror::Error;
 
