@@ -1930,7 +1930,6 @@ dependencies = [
  "dyn-clonable",
  "dyn-clone",
  "env_logger 0.10.0",
- "flate2",
  "futures 0.3.25",
  "http",
  "itertools 0.10.5",
@@ -1938,11 +1937,11 @@ dependencies = [
  "mailbox_processor",
  "marketplace",
  "mu-common",
+ "mu-db",
  "mu-gateway",
  "mu-runtime",
  "mu_stack",
  "musdk-common",
- "nix 0.26.2",
  "num 0.4.0",
  "pin-project",
  "protobuf 3.2.0",
@@ -1952,7 +1951,6 @@ dependencies = [
  "rand 0.8.5",
  "rcgen",
  "reqwest",
- "rust-embed",
  "rustls",
  "serde",
  "serde_json",
@@ -1964,10 +1962,8 @@ dependencies = [
  "solana-sdk",
  "spl-token",
  "stable-hash",
- "tar",
  "test-log",
  "thiserror",
- "tikv-client",
  "tokio",
  "tokio-util",
  "uuid",
@@ -3067,6 +3063,29 @@ name = "mu-common"
 version = "0.1.0"
 dependencies = [
  "num 0.4.0",
+]
+
+[[package]]
+name = "mu-db"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "dyn-clonable",
+ "dyn-clone",
+ "flate2",
+ "log",
+ "mailbox_processor",
+ "mu_stack",
+ "nix 0.26.2",
+ "reqwest",
+ "rust-embed",
+ "serde",
+ "tar",
+ "thiserror",
+ "tikv-client",
+ "tokio",
 ]
 
 [[package]]

@@ -15,7 +15,6 @@ use std::{
 };
 use tokio::{fs::File, io::AsyncWriteExt};
 
-use crate::network::{gossip::KnownNodeConfig, NodeAddress};
 use log::{error, warn};
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
@@ -132,8 +131,19 @@ struct TikvRunnerArgs {
     pub tikv_args: Vec<String>,
 }
 
+pub struct NodeAddress {
+    pub address: IpAddr,
+    pub port: u16,
+}
+
+pub struct RemoteNode {
+    pub address: IpAddr,
+    pub gossip_port: u16,
+    pub pd_port: u16,
+}
+
 enum Node<'a> {
-    Known(&'a KnownNodeConfig),
+    Known(&'a RemoteNode),
     Address(&'a NodeAddress),
 }
 
@@ -147,7 +157,7 @@ fn generate_pd_name(node: Node<'_>) -> String {
 
 fn generate_arguments(
     node_address: NodeAddress,
-    known_node_config: Vec<KnownNodeConfig>,
+    known_node_config: Vec<RemoteNode>,
     config: TikvRunnerConfig,
 ) -> TikvRunnerArgs {
     let warn = |x| {
@@ -253,7 +263,7 @@ struct TikvRunnerImpl {
 
 pub async fn start(
     node_address: NodeAddress,
-    known_node_config: Vec<KnownNodeConfig>,
+    known_node_config: Vec<RemoteNode>,
     config: TikvRunnerConfig,
 ) -> Result<Box<dyn TikvRunner>> {
     let tikv_version = env!("TIKV_VERSION");
@@ -345,18 +355,17 @@ mod test {
     async fn generate_arguments_pd_args_and_tikv_args() {
         let local_host: IpAddr = "127.0.0.1".parse().unwrap();
         let node_address = NodeAddress {
-            address: local_host.clone(),
+            address: local_host,
             port: 2800,
-            generation: 1,
         };
         let known_node_conf = vec![
-            KnownNodeConfig {
-                address: local_host.clone(),
+            RemoteNode {
+                address: local_host,
                 gossip_port: 2801,
                 pd_port: 2381,
             },
-            KnownNodeConfig {
-                address: local_host.clone(),
+            RemoteNode {
+                address: local_host,
                 gossip_port: 2802,
                 pd_port: 2383,
             },
@@ -364,11 +373,11 @@ mod test {
         let tikv_runner_conf = TikvRunnerConfig {
             pd: PdConfig {
                 peer_url: IpAndPort {
-                    address: local_host.clone(),
+                    address: local_host,
                     port: 2380,
                 },
                 client_url: IpAndPort {
-                    address: local_host.clone(),
+                    address: local_host,
                     port: 2379,
                 },
                 data_dir: "./pd_test_dir".into(),
@@ -376,7 +385,7 @@ mod test {
             },
             node: TikvConfig {
                 cluster_url: IpAndPort {
-                    address: local_host.clone(),
+                    address: local_host,
                     port: 20160,
                 },
                 data_dir: "./tikv_test_dir".into(),

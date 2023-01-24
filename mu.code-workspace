@@ -5,6 +5,9 @@
 			"path": "."
 		},
 		{
+			"path": "rust-libs/db"
+		},
+		{
 			"path": "cli"
 		},
 		{

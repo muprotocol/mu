@@ -3,7 +3,7 @@ use mu_runtime::{types::AssemblyDefinition, Runtime};
 use reqwest::Url;
 use thiserror::Error;
 
-use crate::mudb::DbClient;
+use mu_db::DbClient;
 
 use mu_stack::{AssemblyID, HttpMethod, Stack, StackID};
 

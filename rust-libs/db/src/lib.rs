@@ -1,9 +1,15 @@
-use super::{
+mod embed_tikv;
+pub mod error;
+mod types;
+
+pub use self::embed_tikv::{NodeAddress, PdConfig, RemoteNode, TikvConfig, TikvRunnerConfig};
+pub use self::types::{DbClient, DbManager, IpAndPort, Key, Scan, TableName};
+
+use crate::{
     embed_tikv::*,
     error::{Error, Result},
     types::*,
 };
-use crate::network::{gossip::KnownNodeConfig, NodeAddress};
 use anyhow::Context;
 use async_trait::async_trait;
 use mu_stack::StackID;
@@ -50,6 +56,7 @@ impl DbClient for DbClientImpl {
         stack_id: StackID,
         table_list: Vec<TableName>,
     ) -> Result<()> {
+        // TODO: think of something for deleting existing tables
         let s = ScanTableList::ByStackID(stack_id);
         self.inner.delete_range(s).await?;
         let kvs = table_list.into_iter().map(|t| {
@@ -170,20 +177,20 @@ impl DbClient for DbClientImpl {
             .map_err(Into::into)
     }
 
-    async fn batch_scan(&self, scanes: Vec<Scan>, each_limit: u32) -> Result<Vec<(Key, Value)>> {
+    async fn batch_scan(&self, scans: Vec<Scan>, each_limit: u32) -> Result<Vec<(Key, Value)>> {
         Ok(self
             .inner
-            .batch_scan(scanes, each_limit)
+            .batch_scan(scans, each_limit)
             .await?
             .into_iter()
             .map(|kv| kvpair_to_tuple(kv).unwrap())
             .collect())
     }
 
-    async fn batch_scan_keys(&self, scanes: Vec<Scan>, each_limit: u32) -> Result<Vec<Key>> {
+    async fn batch_scan_keys(&self, scans: Vec<Scan>, each_limit: u32) -> Result<Vec<Key>> {
         Ok(self
             .inner
-            .batch_scan_keys(scanes, each_limit)
+            .batch_scan_keys(scans, each_limit)
             .await?
             .into_iter()
             .map(|k| k.try_into().unwrap())
@@ -213,11 +220,11 @@ pub struct DbManagerImpl {
 impl DbManagerImpl {
     pub async fn new_with_embedded_cluster(
         node_address: NodeAddress,
-        known_node_config: Vec<KnownNodeConfig>,
+        known_node_config: Vec<RemoteNode>,
         config: TikvRunnerConfig,
     ) -> anyhow::Result<Self> {
         let endpoints = vec![config.pd.advertise_client_url()];
-        let inner = Some(start(node_address, known_node_config, config).await?);
+        let inner = Some(embed_tikv::start(node_address, known_node_config, config).await?);
 
         // wait 10 secs to ensure cluster is bootstrapped
         sleep(Duration::from_secs(10)).await;

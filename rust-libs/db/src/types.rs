@@ -192,7 +192,7 @@ impl Deref for TableName {
 
 // TODO : consider empty inner_key
 /// # Key
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Key {
     pub stack_id: StackID,
     pub table_name: TableName,
@@ -375,7 +375,7 @@ mod test {
         assert_eq!(res.end_bound(), Bound::Unbounded);
 
         let from = vec![];
-        let res = subset_range(from.clone());
+        let res = subset_range(from);
         assert_eq!(res.start_bound(), Bound::Unbounded);
         assert_eq!(res.end_bound(), Bound::Unbounded);
     }
@@ -383,7 +383,7 @@ mod test {
     #[test]
     fn test_prefixed_by_two_chunk_bound_range() {
         let scan = prefixed_by_two_chunk_bound_range(vec![0, 1], vec![12, 12, 12]);
-        let bound_range: BoundRange = scan.clone().into();
+        let bound_range: BoundRange = scan;
         assert_eq!(
             bound_range.start_bound(),
             Bound::Included(&vec![2, 0, 1, 3, 12, 12, 12].into())
@@ -397,7 +397,7 @@ mod test {
     #[test]
     fn test_prefixed_by_three_chunk_bound_range() {
         let scan = prefixed_by_three_chunk_bound_range(vec![0, 1], vec![12, 12, 12], vec![20, 22]);
-        let bound_range: BoundRange = scan.clone().into();
+        let bound_range: BoundRange = scan;
         assert_eq!(
             bound_range.start_bound(),
             Bound::Included(&vec![2, 0, 1, 3, 12, 12, 12, 20, 22].into())

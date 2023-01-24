@@ -4,12 +4,12 @@ pub use serde_support::{ConfigDuration, ConfigLogLevelFilter, ConfigUri};
 
 use anyhow::{Context, Result};
 use config::{Config, Environment, File, FileFormat};
+use mu_db::TikvRunnerConfig;
 use mu_gateway::GatewayManagerConfig;
 use mu_runtime::types::RuntimeConfig;
 
 use crate::{
     log_setup::LogConfig,
-    mudb::TikvRunnerConfig,
     network::{
         connection_manager::ConnectionManagerConfig,
         gossip::{GossipConfig, KnownNodeConfig},

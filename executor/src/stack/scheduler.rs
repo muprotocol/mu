@@ -9,12 +9,13 @@ use dyn_clonable::clonable;
 use log::{debug, error, info, trace, warn};
 use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel, ReplyChannel};
 use mu_common::replace_with::ReplaceWithDefault;
+use mu_db::DbManager;
 use mu_gateway::GatewayManager;
 use mu_runtime::Runtime;
 use num::BigInt;
 use serde::Deserialize;
 
-use crate::{infrastructure::config::ConfigDuration, mudb::DbManager, network::NodeHash};
+use crate::{infrastructure::config::ConfigDuration, network::NodeHash};
 
 use mu_stack::{Stack, StackID};
 

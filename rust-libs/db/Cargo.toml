@@ -1,0 +1,29 @@
+[package]
+name = "mu-db"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "mu_db"
+
+[dependencies]
+anyhow = "1.0"
+thiserror = "1.0"
+tikv-client = "0.1"
+async-trait = "0.1"
+dyn-clone = "1.0"
+dyn-clonable = "0.9"
+mailbox_processor = { path = "../mailbox_processor" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["fs"] }
+nix = "0.26"
+log = "0.4"
+bytes = "1.2"
+mu_stack = { path = "../mu_stack" }
+rust-embed = "6"
+
+[build-dependencies]
+reqwest = { version = "0.11", features = ["blocking"] }
+anyhow = "1.0"
+flate2 = "1.0.25"
+tar = "0.4.38"
