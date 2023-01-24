@@ -50,7 +50,6 @@ async fn find_and_update_again(
 #[tokio::test]
 #[serial]
 async fn test_mudb_service() {
-    let usage_aggregator = HashMapUsageAggregator::new_boxed();
     let db_manager_config = DBManagerConfig {
         usage_report_duration: Duration::from_secs(10).into(),
     };
