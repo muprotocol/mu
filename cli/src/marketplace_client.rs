@@ -161,7 +161,7 @@ impl MarketplaceClient {
             state: mu_state_pda,
             mint: mu_state.mint,
             escrow_account: escrow_pda,
-            provider: provider,
+            provider,
             user: user_wallet.pubkey(),
             system_program: system_program::id(),
             token_program: spl_token::id(),
@@ -205,15 +205,15 @@ impl MarketplaceClient {
     ) -> Result<()> {
         let escrow_pda = self.get_escrow_pda(&user_wallet.pubkey(), provider);
 
-        if utils::account_exists(self.program.rpc(), &escrow_pda)? {
+        if !utils::account_exists(self.program.rpc(), &escrow_pda)? {
             bail!("There is no escrow account registered with this user_wallet and provider");
         }
 
-        if !utils::account_exists(self.program.rpc(), &user_token_account)? {
+        if !utils::account_exists(self.program.rpc(), user_token_account)? {
             bail!("User token account was not found")
         }
 
-        if utils::get_token_account_balance(self.program.rpc(), &user_token_account)?
+        if utils::get_token_account_balance(self.program.rpc(), user_token_account)?
             < (recharge_amount as f64)
         {
             bail!("User token account has insufficient balance")
@@ -223,7 +223,7 @@ impl MarketplaceClient {
             .request()
             .instruction(spl_token::instruction::transfer(
                 &spl_token::id(),
-                &user_token_account,
+                user_token_account,
                 &escrow_pda,
                 &user_wallet.pubkey(),
                 &[&user_wallet.pubkey()],
@@ -254,7 +254,7 @@ impl MarketplaceClient {
         provider_keypair: Rc<dyn Signer>,
     ) -> Result<()> {
         if !utils::provider_with_keypair_exists(self, &provider_keypair.pubkey())? {
-            bail!("There is no provider registered with this keypair");
+            bail!("There is no provider with this key");
         }
 
         if utils::provider_with_region_exists(
@@ -262,7 +262,7 @@ impl MarketplaceClient {
             &provider_keypair.pubkey(),
             instruction.region_num,
         )? {
-            bail!("There is already a registered region with this provider");
+            bail!("There is already a region with this provider and region number");
         }
 
         self.program
@@ -307,13 +307,14 @@ impl MarketplaceClient {
         };
 
         if !utils::provider_with_keypair_exists(self, &provider_pda)? {
-            bail!("There is no provider registered with this keypair");
+            bail!("There is no provider with this key");
         }
 
         if !utils::account_exists(self.program.rpc(), &region_pda)? {
             bail!("There is no region with this region number registered for this provider")
         }
 
+        // TODO: we'd optimally want to let providers have more than one signer
         if utils::signer_for_region_exists(self, &region_pda)? {
             bail!("There is already a signer for this region")
         }
@@ -347,7 +348,7 @@ impl MarketplaceClient {
         let stack_pda = accounts.stack;
 
         if !utils::provider_with_region_exists(self, &region.provider, region.region_num)? {
-            bail!("There is no region registered with this provider");
+            bail!("There is no such region registered with this provider");
         }
 
         if utils::account_exists(self.program.rpc(), &stack_pda)? {
