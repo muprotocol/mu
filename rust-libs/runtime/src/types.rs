@@ -1,5 +1,5 @@
 use super::{error::Error, function::Pipe};
-use mu_stack::{AssemblyRuntime, StackID};
+use mu_stack::{AssemblyID, AssemblyRuntime, StackID};
 
 use anyhow::Result;
 use bytes::Bytes;
@@ -27,7 +27,7 @@ pub struct InvokeFunctionRequest {
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
-pub struct InstanceID {
+pub(super) struct InstanceID {
     pub function_id: AssemblyID,
     pub instance_id: u64,
 }
@@ -35,36 +35,6 @@ pub struct InstanceID {
 impl Display for InstanceID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.function_id, self.instance_id)
-    }
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct AssemblyID {
-    pub stack_id: StackID,
-    pub assembly_name: String,
-}
-
-impl Display for AssemblyID {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.stack_id, self.assembly_name)
-    }
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct FunctionID {
-    pub assembly_id: AssemblyID,
-    pub function_name: String,
-}
-
-impl FunctionID {
-    pub fn stack_id(&self) -> &StackID {
-        &self.assembly_id.stack_id
-    }
-}
-
-impl Display for FunctionID {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.{}", self.assembly_id, self.function_name)
     }
 }
 

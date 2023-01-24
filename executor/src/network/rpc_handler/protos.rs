@@ -5,12 +5,10 @@ use mu_stack::StackID;
 use musdk_common::Status;
 use protobuf::{EnumOrUnknown, MessageField};
 
-use crate::runtime::{self, types::AssemblyID};
-
 include!(concat!(env!("OUT_DIR"), "/protos/rpc/mod.rs"));
 
-impl From<runtime::types::FunctionID> for rpc::FunctionID {
-    fn from(id: runtime::types::FunctionID) -> Self {
+impl From<mu_stack::FunctionID> for rpc::FunctionID {
+    fn from(id: mu_stack::FunctionID) -> Self {
         let StackID::SolanaPublicKey(pk) = id.assembly_id.stack_id;
         Self {
             stack_id: MessageField(Some(Box::new(rpc::StackID {
@@ -24,7 +22,7 @@ impl From<runtime::types::FunctionID> for rpc::FunctionID {
     }
 }
 
-impl TryFrom<rpc::FunctionID> for runtime::types::FunctionID {
+impl TryFrom<rpc::FunctionID> for mu_stack::FunctionID {
     type Error = anyhow::Error;
 
     fn try_from(id: rpc::FunctionID) -> Result<Self, Self::Error> {
@@ -40,7 +38,7 @@ impl TryFrom<rpc::FunctionID> for runtime::types::FunctionID {
         };
 
         Ok(Self {
-            assembly_id: AssemblyID {
+            assembly_id: mu_stack::AssemblyID {
                 stack_id,
                 assembly_name: id.assembly_name,
             },

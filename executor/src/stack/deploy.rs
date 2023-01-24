@@ -1,16 +1,11 @@
+use mu_gateway::GatewayManager;
+use mu_runtime::{types::AssemblyDefinition, Runtime};
 use reqwest::Url;
 use thiserror::Error;
 
-use crate::{
-    gateway::GatewayManager,
-    mudb::service::{DatabaseID, DatabaseManager},
-    runtime::{
-        types::{AssemblyDefinition, AssemblyID},
-        Runtime,
-    },
-};
+use crate::mudb::service::{DatabaseID, DatabaseManager};
 
-use mu_stack::{HttpMethod, Stack, StackID};
+use mu_stack::{AssemblyID, HttpMethod, Stack, StackID};
 
 #[derive(Error, Debug)]
 pub enum StackValidationError {
