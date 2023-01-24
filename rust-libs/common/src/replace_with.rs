@@ -1,7 +1,5 @@
 use std::ptr;
 
-pub mod id;
-
 pub trait ReplaceWithDefault: Default {
     /// This function is used to take ownership of a value inside a
     /// mutable reference that we know is going to be dropped, such

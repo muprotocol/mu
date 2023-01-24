@@ -1,7 +1,7 @@
 //TODO
 #![allow(dead_code)]
 
-use super::types::AssemblyID;
+use mu_stack::AssemblyID;
 use thiserror::Error;
 use wasmer::{ExportError, InstantiationError, RuntimeError};
 use wasmer_wasi::{WasiError, WasiStateCreationError};

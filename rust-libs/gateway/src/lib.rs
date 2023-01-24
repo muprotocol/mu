@@ -1,31 +1,23 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::{borrow::Cow, collections::HashMap, net::IpAddr, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, future::Future, net::IpAddr, pin::Pin, sync::Arc};
 
 use actix_web::{
-    body::BoxBody, dev::ServerHandle, guard, http, web, App, HttpRequest, HttpResponse, HttpServer,
-    Resource, Responder,
+    body::BoxBody,
+    dev::ServerHandle,
+    guard,
+    http::{self, StatusCode},
+    web, App, HttpRequest, HttpResponse, HttpServer, Resource, Responder,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
-use log::{debug, error, trace};
-use mailbox_processor::{ReplyChannel, RequestReplyChannel};
-use mu_stack::{Gateway, StackID};
+use log::error;
+use mailbox_processor::NotificationChannel;
+use mu_stack::{AssemblyID, FunctionID, Gateway, StackID};
 use musdk_common::{Header, Request, Response, Status};
-use reqwest::StatusCode;
 use serde::Deserialize;
 use tokio::sync::{mpsc, RwLock};
-
-use crate::{
-    network::{connection_manager::ConnectionManager, rpc_handler::RpcHandler, NodeConnection},
-    request_routing::RoutingTarget,
-    runtime::{
-        types::{AssemblyID, FunctionID},
-        Runtime,
-    },
-    stack::usage_aggregator::{Usage, UsageAggregator},
-};
 
 #[async_trait]
 #[clonable]
@@ -40,6 +32,15 @@ pub trait GatewayManager: Clone + Send + Sync {
 pub struct GatewayManagerConfig {
     pub listen_address: IpAddr,
     pub listen_port: u16,
+}
+
+#[derive(Clone)]
+pub enum Notification {
+    ReportUsage {
+        stack_id: StackID,
+        traffic: u64,
+        requests: u64,
+    },
 }
 
 type PathParams<'a> = HashMap<Cow<'a, str>, Cow<'a, str>>;
@@ -92,37 +93,21 @@ impl GatewayManager for GatewayManagerImpl {
 }
 
 // Used to access the gateway manager from within request handlers
-struct DependencyAccessor {
+struct DependencyAccessor<F> {
     gateways: Arc<RwLock<Gateways>>,
-    runtime: Box<dyn Runtime>,
-    connection_manager: Box<dyn ConnectionManager>,
-    rpc_handler: Box<dyn RpcHandler>,
-    usage_aggregator: Box<dyn UsageAggregator>,
-
-    // We can't take a reference to the scheduler here, because the
-    // scheduler also needs a reference to the gateway manager to
-    // deploy the gateways to it.
-    // This problem could be worked around differently, by e.g.
-    // having the scheduler report the stacks it wants to deploy
-    // rather than deploy them itself, which is not a bad idea for
-    // a refactor.
-    // TODO ^^^
-    // Also, another way of going about this is to make all the
-    // different mailboxes and put them in a static variable for
-    // everything else to access as they see fit, but it makes
-    // dependency tracking near impossible.
-    get_routing_target: RequestReplyChannel<StackID, Result<RoutingTarget>>,
+    handle_request: F,
+    notification_channel: NotificationChannel<Notification>,
 }
 
-impl Clone for DependencyAccessor {
+impl<F> Clone for DependencyAccessor<F>
+where
+    F: Clone,
+{
     fn clone(&self) -> Self {
         Self {
             gateways: self.gateways.clone(),
-            runtime: self.runtime.clone(),
-            connection_manager: self.connection_manager.clone(),
-            rpc_handler: self.rpc_handler.clone(),
-            usage_aggregator: self.usage_aggregator.clone(),
-            get_routing_target: self.get_routing_target.clone(),
+            handle_request: self.handle_request.clone(),
+            notification_channel: self.notification_channel.clone(),
         }
     }
 }
@@ -160,30 +145,36 @@ fn match_path_and_extract_path_params<'a, 'ep>(
         }
     }
 }
-// TODO: route requests through outer layer to enable passing to other nodes
-pub async fn start(
+
+pub async fn start<F>(
     config: GatewayManagerConfig,
-    runtime: Box<dyn Runtime>,
-    connection_manager: Box<dyn ConnectionManager>,
-    rpc_handler: Box<dyn RpcHandler>,
-    usage_aggregator: Box<dyn UsageAggregator>,
+    handle_request_callback: F,
 ) -> Result<(
     Box<dyn GatewayManager>,
-    mpsc::UnboundedReceiver<(StackID, ReplyChannel<Result<RoutingTarget>>)>,
-)> {
-    let (req_rep_channel, req_rep_receiver) = RequestReplyChannel::new();
+    mpsc::UnboundedReceiver<Notification>,
+)>
+where
+    for<'a> F: (Fn(
+            FunctionID,
+            Request<'a>,
+        ) -> Pin<Box<dyn Future<Output = Result<Response<'static>>> + Send + 'a>>)
+        // TODO: we're using a box because I don't know how I can use 'a in two where
+        // clauses, so I can't express the same lifetime bound with a generic future
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+{
+    let (tx, rx) = NotificationChannel::<Notification>::new();
 
     let gateways = Arc::new(RwLock::new(HashMap::new()));
 
-    let accessor = {
+    let accessor: DependencyAccessor<F> = {
         let gateways = gateways.clone();
         DependencyAccessor {
             gateways,
-            runtime,
-            connection_manager,
-            rpc_handler,
-            usage_aggregator,
-            get_routing_target: req_rep_channel,
+            handle_request: handle_request_callback,
+            notification_channel: tx,
         }
     };
 
@@ -201,7 +192,7 @@ pub async fn start(
                             .or(guard::Options())
                             .or(guard::Patch()),
                     )
-                    .to(handle_request),
+                    .to(handle_request::<F>),
             )
             .default_service(web::to(|| async { ResponseWrapper::not_found() }))
     })
@@ -220,7 +211,7 @@ pub async fn start(
         gateways,
     };
 
-    Ok((Box::new(gateway_manager_impl), req_rep_receiver))
+    Ok((Box::new(gateway_manager_impl), rx))
 }
 fn calculate_request_size(r: &Request) -> u64 {
     //let mut size = r.path.as_bytes().len() as u64; //TODO: check if we can calculate this
@@ -300,81 +291,6 @@ impl Responder for ResponseWrapper {
     }
 }
 
-// TODO: this function could be in a better location, but currently,
-// only the gateway will be routing requests for the foreseeable future.
-// TODO: alternatively, we could go with the initial idea of a transparent
-// proxy layer between the gateway and runtime, though I don't believe it's
-// justified, given that again, this is the only place we'll be routing
-// requests.
-async fn route_request<'a>(
-    function_id: FunctionID,
-    request: Request<'a>,
-    dependency_accessor: &web::Data<DependencyAccessor>,
-) -> Result<ResponseWrapper> {
-    trace!("Request received for {function_id}, will check deployment status");
-
-    let route = dependency_accessor
-        .get_routing_target
-        .request(function_id.assembly_id.stack_id)
-        .await
-        .context("Failed to request route")?
-        .context("Failed to find route")?;
-
-    debug!(
-        "Deployment status of stack {} is {:?}",
-        function_id.assembly_id.stack_id, route
-    );
-
-    match route {
-        RoutingTarget::NotDeployed => bail!("Stack not deployed"),
-        RoutingTarget::Local => dependency_accessor
-            .runtime
-            .invoke_function(function_id, request)
-            .await
-            .map(ResponseWrapper)
-            .map_err(Into::into),
-        RoutingTarget::Remote(node_connection) => {
-            let (connection_id, new_connection) = match node_connection {
-                NodeConnection::Established(id) => (id, false),
-                NodeConnection::NotEstablished(address) => {
-                    // TODO! Does connecting to the target node here cause the gossip module to expect heartbeats?
-
-                    // TODO should pool these connections so we don't do a connection handshake
-                    // for each user request. QUIC is faster only if you're using an already open
-                    // connection.
-                    trace!("No connection to target node, will establish new connection");
-                    let connection_id = dependency_accessor
-                        .connection_manager
-                        .connect(address.address, address.port)
-                        .await
-                        .context("Failed to connect to invocation target node")?;
-
-                    (connection_id, true)
-                }
-            };
-
-            trace!("Sending request");
-            let response = dependency_accessor
-                .rpc_handler
-                .send_execute_function(connection_id, function_id, request)
-                .await
-                .context("Error in remote function invocation");
-            trace!("Response received");
-
-            if new_connection {
-                trace!("Will disconnect new connection");
-                // Nothing to do if disconnecting errors out
-                let _ = dependency_accessor
-                    .connection_manager
-                    .disconnect(connection_id)
-                    .await;
-            }
-
-            response.map(ResponseWrapper)
-        }
-    }
-}
-
 fn stack_http_method_to_sdk(method: mu_stack::HttpMethod) -> musdk_common::HttpMethod {
     match method {
         mu_stack::HttpMethod::Get => musdk_common::HttpMethod::Get,
@@ -407,11 +323,21 @@ fn actix_http_method_to_stack(method: &http::Method) -> mu_stack::HttpMethod {
     }
 }
 
-async fn handle_request<'a>(
+async fn handle_request<F>(
     request: HttpRequest,
     payload: Option<web::Bytes>,
-    dependency_accessor: web::Data<DependencyAccessor>,
-) -> ResponseWrapper {
+    dependency_accessor: web::Data<DependencyAccessor<F>>,
+) -> ResponseWrapper
+where
+    for<'a> F: (Fn(
+            FunctionID,
+            Request<'a>,
+        ) -> Pin<Box<dyn Future<Output = Result<Response<'static>>> + Send + 'a>>)
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+{
     let Ok(stack_id) = request.match_info().get("stack_id").unwrap().parse() else {
         return ResponseWrapper::not_found();
     };
@@ -475,7 +401,7 @@ async fn handle_request<'a>(
 
     let mut traffic = calculate_request_size(&request);
 
-    let response = match route_request(
+    let response = match (dependency_accessor.handle_request)(
         FunctionID {
             assembly_id: AssemblyID {
                 stack_id,
@@ -484,13 +410,12 @@ async fn handle_request<'a>(
             function_name,
         },
         request,
-        &dependency_accessor,
     )
     .await
     {
         Ok(r) => {
-            traffic += calculate_response_size(&r.0);
-            r
+            traffic += calculate_response_size(&r);
+            ResponseWrapper(r)
         }
         // TODO: Generate meaningful error messages (propagate user function failure?)
         Err(f) => {
@@ -499,15 +424,13 @@ async fn handle_request<'a>(
         }
     };
 
-    dependency_accessor.usage_aggregator.register_usage(
-        stack_id,
-        vec![
-            Usage::GatewayRequests { count: 1 },
-            Usage::GatewayTraffic {
-                size_bytes: traffic,
-            },
-        ],
-    );
+    dependency_accessor
+        .notification_channel
+        .send(Notification::ReportUsage {
+            stack_id,
+            traffic,
+            requests: 1,
+        });
 
     response
 }
