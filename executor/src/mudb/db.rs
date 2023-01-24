@@ -4,6 +4,7 @@ use super::{
     types::*,
 };
 use crate::network::{gossip::KnownNodeConfig, NodeAddress};
+use anyhow::Context;
 use async_trait::async_trait;
 use mu_stack::StackID;
 use std::fmt::Debug;
@@ -218,7 +219,7 @@ impl DbManagerImpl {
         let endpoints = vec![config.pd.advertise_client_url()];
         let inner = Some(start(node_address, known_node_config, config).await?);
 
-        // wait 10 secs to ensure cluster bootstraping
+        // wait 10 secs to ensure cluster is bootstrapped
         sleep(Duration::from_secs(10)).await;
 
         Ok(Self { inner, endpoints })
@@ -235,9 +236,19 @@ impl DbManagerImpl {
 #[async_trait]
 impl DbManager for DbManagerImpl {
     async fn make_client(&self) -> anyhow::Result<Box<dyn DbClient>> {
-        let x = DbClientImpl::new(self.endpoints.clone()).await?;
-        Ok(Box::new(x))
+        let mut x = DbClientImpl::new(self.endpoints.clone()).await;
+
+        // retry if n/2 + 1 clusters have not been bootstrapped
+        let mut i = 0;
+        while x.is_err() && i < 5 {
+            sleep(Duration::from_secs(2_u64.pow(i))).await;
+            x = DbClientImpl::new(self.endpoints.clone()).await;
+            i += 1;
+        }
+
+        Ok(Box::new(x.context("Timeout connection to PDs")?))
     }
+
     async fn stop_embedded_cluster(&self) -> anyhow::Result<()> {
         match &self.inner {
             Some(r) => r.stop().await,

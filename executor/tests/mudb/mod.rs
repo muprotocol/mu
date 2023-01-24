@@ -21,20 +21,15 @@ fn clean_data_dir() {
     });
 }
 
-fn stack_id() -> StackID {
-    StackID::SolanaPublicKey([1; 32])
-}
-
-fn table_name_1() -> TableName {
-    "a::a::a".try_into().unwrap()
-}
-
-fn table_name_2() -> TableName {
-    "a::a::b".try_into().unwrap()
-}
+const STACK_ID: StackID = StackID::SolanaPublicKey([1; 32]);
+const TABLE_NAME_1: &str = "a::a::a";
+const TABLE_NAME_2: &str = "a::a::b";
 
 fn table_list() -> [TableName; 2] {
-    [table_name_1(), table_name_2()]
+    [
+        TABLE_NAME_1.try_into().unwrap(),
+        TABLE_NAME_2.try_into().unwrap(),
+    ]
 }
 
 async fn seed(db: &dyn DbClient, keys: [Key; 4], is_atomic: bool) {
@@ -86,7 +81,7 @@ fn values() -> [Vec<u8>; 4] {
     ]
 }
 
-async fn test_node<T>(
+async fn test_queries_on_a_node_with<T>(
     db: Box<dyn DbClient>,
     stack_id: StackID,
     table_list: [TableName; 2],
@@ -134,7 +129,7 @@ async fn test_node<T>(
     scans.await;
 }
 
-async fn predictable_scan_for_keys_test(
+async fn test_predictable_scans_for_keys(
     db: &dyn DbClient,
     stack_id: StackID,
     table_list: [TableName; 2],
@@ -172,7 +167,7 @@ async fn predictable_scan_for_keys_test(
     assert_eq!(res, x);
 }
 
-async fn unpredictable_scan_for_keys_test(
+async fn test_unpredictable_scans_for_keys(
     db: &dyn DbClient,
     stack_id: StackID,
     table_list: [TableName; 2],
@@ -210,12 +205,14 @@ async fn unpredictable_scan_for_keys_test(
     assert!(x.into_iter().all(|xp| res.contains(&xp)));
 }
 
-async fn table_list_test(db: &dyn DbClient, tl: Vec<TableName>) {
-    let table_names = db.table_list(stack_id().clone(), None).await.unwrap();
+async fn test_table_list(db: &dyn DbClient, tl: Vec<TableName>) {
+    let table_names = db.table_list(STACK_ID.clone(), None).await.unwrap();
     assert_eq!(table_names, tl);
 }
 
-async fn make_client_or_stop_cluster(db_manager: &DbManagerImpl) -> Result<Box<dyn DbClient>> {
+async fn try_to_make_client_or_stop_cluster(
+    db_manager: &DbManagerImpl,
+) -> Result<Box<dyn DbClient>> {
     match db_manager.make_client().await {
         Ok(x) => Ok(x),
         Err(e) => {
@@ -225,21 +222,21 @@ async fn make_client_or_stop_cluster(db_manager: &DbManagerImpl) -> Result<Box<d
     }
 }
 
-async fn run_queries_on_single_node(db: Box<dyn DbClient>) {
+async fn test_queries_on_single_node(db: Box<dyn DbClient>) {
     let db_clone = db.clone();
-    test_node(
+    test_queries_on_a_node_with(
         db.clone(),
-        stack_id(),
+        STACK_ID,
         table_list(),
         vec![1, 0],
-        keys(stack_id(), table_list()),
+        keys(STACK_ID, table_list()),
         false,
         async move {
-            predictable_scan_for_keys_test(
+            test_predictable_scans_for_keys(
                 db_clone.as_ref(),
-                stack_id(),
+                STACK_ID,
                 table_list(),
-                keys(stack_id(), table_list()),
+                keys(STACK_ID, table_list()),
             )
             .await;
         },
@@ -247,7 +244,7 @@ async fn run_queries_on_single_node(db: Box<dyn DbClient>) {
     .await;
 
     // scan table names
-    table_list_test(db.as_ref(), table_list().into()).await;
+    test_table_list(db.as_ref(), table_list().into()).await;
 }
 
 fn make_node_address(port: u16) -> NodeAddress {
@@ -316,24 +313,24 @@ fn rand_keys(si: StackID, tl: [TableName; 2]) -> [Key; 4] {
     ]
 }
 
-async fn n_node_with_same_stack_id_and_tables(dbs: Vec<Box<dyn DbClient>>) {
+async fn start_and_query_nodes_with_same_stackids_and_tables(dbs: Vec<Box<dyn DbClient>>) {
     let db = dbs[0].clone();
     let mut handles = vec![];
     for (i, db) in dbs.into_iter().enumerate() {
         let db_clone = db.clone();
-        let keys = rand_keys(stack_id(), table_list());
+        let keys = rand_keys(STACK_ID, table_list());
         let keys_clone = keys.clone();
-        let f = test_node(
+        let f = test_queries_on_a_node_with(
             db,
-            stack_id(),
+            STACK_ID,
             table_list(),
             vec![i as u8],
             keys.clone(),
             false,
             async move {
-                unpredictable_scan_for_keys_test(
+                test_unpredictable_scans_for_keys(
                     db_clone.as_ref(),
-                    stack_id(),
+                    STACK_ID,
                     table_list(),
                     keys_clone,
                 )
@@ -346,10 +343,10 @@ async fn n_node_with_same_stack_id_and_tables(dbs: Vec<Box<dyn DbClient>>) {
         h.await.unwrap();
     }
 
-    table_list_test(db.as_ref(), table_list().into()).await;
+    test_table_list(db.as_ref(), table_list().into()).await;
 }
 
-async fn n_node_with_same_stack_id(dbs: Vec<Box<dyn DbClient>>) {
+async fn start_and_query_nodes_with_same_stackids_different_tables(dbs: Vec<Box<dyn DbClient>>) {
     let mut handles = vec![];
     for (i, db) in dbs.into_iter().enumerate() {
         let tl = [
@@ -357,19 +354,19 @@ async fn n_node_with_same_stack_id(dbs: Vec<Box<dyn DbClient>>) {
             format!("{}", 100 + i).try_into().unwrap(),
         ];
         let db_clone = db.clone();
-        let f = test_node(
+        let f = test_queries_on_a_node_with(
             db.clone(),
-            stack_id(),
+            STACK_ID,
             tl.clone(),
             vec![i as u8],
-            rand_keys(stack_id(), tl.clone()),
+            rand_keys(STACK_ID, tl.clone()),
             false,
             async move {
-                predictable_scan_for_keys_test(
+                test_predictable_scans_for_keys(
                     db_clone.as_ref(),
-                    stack_id(),
+                    STACK_ID,
                     table_list(),
-                    keys(stack_id(), tl),
+                    keys(STACK_ID, tl),
                 )
                 .await;
             },
@@ -381,7 +378,7 @@ async fn n_node_with_same_stack_id(dbs: Vec<Box<dyn DbClient>>) {
     }
 }
 
-async fn n_node_with_different_stack_id_and_tables(dbs: Vec<Box<dyn DbClient>>) {
+async fn start_and_query_nodes_with_different_stackids_and_tables(dbs: Vec<Box<dyn DbClient>>) {
     let mut handles = vec![];
     for (i, db) in dbs.into_iter().enumerate() {
         let i = i as u8;
@@ -391,7 +388,7 @@ async fn n_node_with_different_stack_id_and_tables(dbs: Vec<Box<dyn DbClient>>) 
             format!("{}", 100 + i).try_into().unwrap(),
         ];
         let db_clone = db.clone();
-        let f = test_node(
+        let f = test_queries_on_a_node_with(
             db.clone(),
             si.clone(),
             tl.clone(),
@@ -399,7 +396,7 @@ async fn n_node_with_different_stack_id_and_tables(dbs: Vec<Box<dyn DbClient>>) 
             rand_keys(si.clone(), tl.clone()),
             false,
             async move {
-                predictable_scan_for_keys_test(
+                test_predictable_scans_for_keys(
                     db_clone.as_ref(),
                     si.clone(),
                     table_list(),
@@ -422,23 +419,27 @@ async fn make_db_client_with_external_cluster() -> Box<dyn DbClient> {
         "127.0.0.1:2384".try_into().unwrap(),
     ])
     .await;
-    make_client_or_stop_cluster(&db_manager).await.unwrap()
-}
-
-async fn make_db_client_with_embedded_cluster(
-    node_address: NodeAddress,
-    known_node_conf: Vec<KnownNodeConfig>,
-    tikv_runner_conf: TikvRunnerConfig,
-) -> Result<(DbManagerImpl, Box<dyn DbClient>)> {
-    let db_manager =
-        DbManagerImpl::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
-            .await?;
-
-    let db = make_client_or_stop_cluster(&db_manager).await?;
-    Ok((db_manager, db))
+    try_to_make_client_or_stop_cluster(&db_manager)
+        .await
+        .unwrap()
 }
 
 async fn make_3_dbs() -> (Vec<DbManagerImpl>, Vec<Box<dyn DbClient>>) {
+    // dummy creation/deletion of db_manager to ensure assets have been downloaded
+    // and /tmp files have created before start concurrent creation.
+    let _ = DbManagerImpl::new_with_embedded_cluster(
+        make_node_address(3000),
+        vec![],
+        make_tikv_runner_conf(3380, 3379, 20260),
+    )
+    .await
+    .unwrap()
+    .stop_embedded_cluster()
+    .await
+    .unwrap();
+
+    // Concurrent db client/manager creation to simulate real nodes
+
     let mut handles = vec![];
     let h = ::tokio::spawn(async move {
         let node_address = make_node_address(2800);
@@ -447,9 +448,19 @@ async fn make_3_dbs() -> (Vec<DbManagerImpl>, Vec<Box<dyn DbClient>>) {
             make_known_node_conf(2801, 2381),
             make_known_node_conf(2802, 2383),
         ];
-        make_db_client_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+        let db_manager = DbManagerImpl::new_with_embedded_cluster(
+            node_address,
+            known_node_conf,
+            tikv_runner_conf,
+        )
+        .await
+        .unwrap();
+
+        let db = try_to_make_client_or_stop_cluster(&db_manager)
             .await
-            .unwrap()
+            .unwrap();
+
+        (db_manager, db)
     });
     handles.push(h);
 
@@ -460,9 +471,18 @@ async fn make_3_dbs() -> (Vec<DbManagerImpl>, Vec<Box<dyn DbClient>>) {
             make_known_node_conf(2800, 2380),
             make_known_node_conf(2802, 2383),
         ];
-        make_db_client_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+        let db_manager = DbManagerImpl::new_with_embedded_cluster(
+            node_address,
+            known_node_conf,
+            tikv_runner_conf,
+        )
+        .await
+        .unwrap();
+
+        let db = try_to_make_client_or_stop_cluster(&db_manager)
             .await
-            .unwrap()
+            .unwrap();
+        (db_manager, db)
     });
     handles.push(h);
 
@@ -473,9 +493,19 @@ async fn make_3_dbs() -> (Vec<DbManagerImpl>, Vec<Box<dyn DbClient>>) {
             make_known_node_conf(2800, 2380),
             make_known_node_conf(2801, 2381),
         ];
-        make_db_client_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+
+        let db_manager = DbManagerImpl::new_with_embedded_cluster(
+            node_address,
+            known_node_conf,
+            tikv_runner_conf,
+        )
+        .await
+        .unwrap();
+
+        let db = try_to_make_client_or_stop_cluster(&db_manager)
             .await
-            .unwrap()
+            .unwrap();
+        (db_manager, db)
     });
     handles.push(h);
 
@@ -496,29 +526,34 @@ async fn make_3_dbs() -> (Vec<DbManagerImpl>, Vec<Box<dyn DbClient>>) {
 
 #[tokio::test]
 #[serial]
-async fn test_single_node_with_embed_and_stop() {
+async fn success_to_start_and_query_single_embedded_clustered_node() {
     clean_data_dir();
 
     let node_address = make_node_address(2803);
     let known_node_conf = vec![];
     let tikv_runner_conf = make_tikv_runner_conf(2385, 2386, 20163);
-    let (db_manager, db_client) =
-        make_db_client_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+    let db_manager =
+        DbManagerImpl::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
             .await
             .unwrap();
 
-    run_queries_on_single_node(db_client).await;
+    let db_client = try_to_make_client_or_stop_cluster(&db_manager)
+        .await
+        .unwrap();
+
+    test_queries_on_single_node(db_client).await;
     db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
 #[serial]
-async fn test_3_node_with_embed_same_stack_id_same_table_then_stop() {
+async fn success_to_start_query_and_stop_3_embedded_clustered_nodes_with_same_stackids_and_tables()
+{
     clean_data_dir();
 
     let (db_managers, dbs) = make_3_dbs().await;
 
-    n_node_with_same_stack_id_and_tables(dbs).await;
+    start_and_query_nodes_with_same_stackids_and_tables(dbs).await;
 
     for x in db_managers {
         x.stop_embedded_cluster().await.unwrap();
@@ -527,12 +562,13 @@ async fn test_3_node_with_embed_same_stack_id_same_table_then_stop() {
 
 #[tokio::test]
 #[serial]
-async fn test_3_node_with_embed_same_stack_id_then_stop() {
+async fn success_to_start_query_and_stop_3_embedded_clustered_nodes_with_same_stackids_different_tables(
+) {
     clean_data_dir();
 
     let (db_managers, dbs) = make_3_dbs().await;
 
-    n_node_with_same_stack_id(dbs).await;
+    start_and_query_nodes_with_same_stackids_different_tables(dbs).await;
 
     for x in db_managers {
         x.stop_embedded_cluster().await.unwrap();
@@ -541,12 +577,13 @@ async fn test_3_node_with_embed_same_stack_id_then_stop() {
 
 #[tokio::test]
 #[serial]
-async fn test_3_node_with_embed_different_stack_id_and_tables_then_stop() {
+async fn success_to_start_query_and_stop_3_embedded_clustered_nodes_with_different_stackids_and_tables(
+) {
     clean_data_dir();
 
     let (db_managers, dbs) = make_3_dbs().await;
 
-    n_node_with_different_stack_id_and_tables(dbs).await;
+    start_and_query_nodes_with_different_stackids_and_tables(dbs).await;
 
     for x in db_managers {
         x.stop_embedded_cluster().await.unwrap();
@@ -567,45 +604,52 @@ async fn test_3_node_with_embed_different_stack_id_and_tables_then_stop() {
 
 #[tokio::test]
 #[serial]
-#[ignore]
-async fn test_single_node_without_embed() {
+#[ignore = "TODO"]
+async fn success_to_start_and_query_single_external_clustered_node() {
     env_logger::builder().is_test(true).try_init().unwrap();
-    run_queries_on_single_node(make_db_client_with_external_cluster().await).await;
+    test_queries_on_single_node(make_db_client_with_external_cluster().await).await;
 }
 
 #[tokio::test]
 #[serial]
-#[ignore]
-async fn test_50_node_with_same_stack_id_and_tables() {
-    env_logger::builder().is_test(true).try_init().unwrap();
-    let db = make_db_client_with_external_cluster().await;
-    n_node_with_same_stack_id_and_tables((0..50).map(|_| db.clone()).collect()).await;
-}
-
-#[tokio::test]
-#[serial]
-#[ignore]
-async fn test_50_node_with_same_stack_id() {
+#[ignore = "TODO"]
+async fn success_to_start_and_query_50_external_clustered_nodes_with_same_stackids_and_tables() {
     env_logger::builder().is_test(true).try_init().unwrap();
     let db = make_db_client_with_external_cluster().await;
-    n_node_with_same_stack_id((0..50).map(|_| db.clone()).collect()).await;
+    start_and_query_nodes_with_same_stackids_and_tables((0..50).map(|_| db.clone()).collect())
+        .await;
 }
 
 #[tokio::test]
 #[serial]
-#[ignore]
-async fn test_50_node_with_different_stack_id_and_tables() {
+#[ignore = "TODO"]
+async fn success_to_start_and_query_50_external_clustered_nodes_with_same_stackids_different_tables(
+) {
     env_logger::builder().is_test(true).try_init().unwrap();
     let db = make_db_client_with_external_cluster().await;
-    n_node_with_different_stack_id_and_tables((0..50).map(|_| db.clone()).collect()).await;
+    start_and_query_nodes_with_same_stackids_different_tables(
+        (0..50).map(|_| db.clone()).collect(),
+    )
+    .await;
 }
 
 #[tokio::test]
 #[serial]
-#[ignore]
+#[ignore = "TODO"]
+async fn success_to_start_and_query_50_external_clustered_nodes_with_different_stackids_and_tables()
+{
+    env_logger::builder().is_test(true).try_init().unwrap();
+    let db = make_db_client_with_external_cluster().await;
+    start_and_query_nodes_with_different_stackids_and_tables((0..50).map(|_| db.clone()).collect())
+        .await;
+}
+
+#[tokio::test]
+#[serial]
+#[ignore = "TODO"]
 async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_tikv() {
     env_logger::builder().is_test(true).try_init().unwrap();
-    let si = stack_id();
+    let si = STACK_ID;
     let tl = table_list();
     let ks = keys(si.clone(), tl.clone());
     let vs = values();
@@ -641,7 +685,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     .unwrap();
 
     for x in [&db, &db2, &db3] {
-        x.set_stack_manifest(stack_id(), table_list().into())
+        x.set_stack_manifest(STACK_ID, table_list().into())
             .await
             .unwrap();
     }

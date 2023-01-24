@@ -10,7 +10,7 @@ use std::{
     env,
     net::{IpAddr, Ipv4Addr},
     os::unix::prelude::PermissionsExt,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process,
 };
 use tokio::{fs::File, io::AsyncWriteExt};
@@ -28,25 +28,30 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
     let mut temp_address = env::temp_dir();
     temp_address.push(name);
 
-    if temp_address.exists() {
-        return Ok(temp_address);
-    }
+    // TODO: remove if and let create temp files every time.
+    // also let this to be separate for TikvRunner
+    // in test module concurrent test need to create temp files once.
+    // otherwise they get race condition of creating temp files.
+    let file = if temp_address.exists() {
+        File::open(temp_address.as_path())
+            .await
+            .context("Failed to open temp file")?
+    } else {
+        let mut file = File::create(temp_address.as_path())
+            .await
+            .context("Failed to create temp file")?;
 
-    let tool = <Assets as RustEmbed>::get(name).context("Failed to get embedded asset")?;
+        let tool = <Assets as RustEmbed>::get(name).context("Failed to get embedded asset")?;
+        let tool_bytes = tool.data;
 
-    let tool_bytes = tool.data;
+        file.write_all(&tool_bytes)
+            .await
+            .context("Failed to write embedded resource to temp file")?;
 
-    let temp_address_ref: &Path = temp_address.as_ref();
+        file.flush().await.context("Failed to flush temp file")?;
 
-    let mut file = File::create(temp_address_ref)
-        .await
-        .context("Failed to create temp file")?;
-
-    file.write_all(&tool_bytes)
-        .await
-        .context("Failed to write embedded resource to temp file")?;
-
-    file.flush().await.context("Failed to flush temp file")?;
+        file
+    };
 
     let mut perms = file
         .metadata()
