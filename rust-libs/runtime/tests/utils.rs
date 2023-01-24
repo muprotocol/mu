@@ -1,13 +1,21 @@
 use std::{
     borrow::Cow,
     collections::{hash_map::Entry, HashMap},
+    env,
     net::{IpAddr, Ipv4Addr},
     path::{Path, PathBuf},
     process::Command,
-    sync::Arc,
+    str::FromStr,
+    sync::{Arc, Mutex},
 };
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
+
+use mu_db::{
+    DbManager, DbManagerImpl, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig,
+};
+use musdk_common::Header;
+
 use async_trait::async_trait;
 
 use mu_db::{DbManager, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig};
@@ -30,10 +38,18 @@ pub struct MapAssemblyProvider {
     inner: HashMap<AssemblyID, AssemblyDefinition>,
 }
 
+impl MapAssemblyProvider {
+    pub fn new() -> Self {
+        Self {
+            inner: HashMap::new(),
+        }
+    }
+}
+
 #[async_trait]
 impl AssemblyProvider for MapAssemblyProvider {
     fn get(&self, id: &AssemblyID) -> Option<&AssemblyDefinition> {
-        self.inner.get(id)
+        Some(self.inner.get(id).unwrap())
     }
 
     fn add_function(&mut self, function: AssemblyDefinition) {
@@ -86,7 +102,7 @@ pub async fn read_wasm_functions<'a>(
     let mut results = HashMap::new();
 
     for project in projects {
-        let source = std::fs::read(project.wasm_module_path())?;
+        let source = std::fs::read(&project.wasm_module_path())?;
 
         results.insert(
             project.id.clone(),
