@@ -1,5 +1,5 @@
 import { AnchorProvider } from "@project-serum/anchor";
-import { createMint, initializeMu } from "./anchor-utils";
+import { createMint, createProviderAuthorizer, initializeMu } from "./anchor-utils";
 import util from "./util";
 
 util.asyncMain(async () => {
@@ -9,5 +9,8 @@ util.asyncMain(async () => {
     let mint = await createMint(anchorProvider, true);
 
     console.log("Initializing Mu smart contract");
-    await initializeMu(anchorProvider, mint);
+    let mu = await initializeMu(anchorProvider, mint, 100_000);
+
+    console.log("Creating provider authorizer");
+    await createProviderAuthorizer(mu, "1");
 });

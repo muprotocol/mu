@@ -1,5 +1,5 @@
 import { AnchorProvider, BN } from "@project-serum/anchor";
-import { createAuthorizedUsageSigner, createProvider, createRegion, getMu, readMintFromStaticKeypair, ServiceRates } from "./anchor-utils";
+import { authorizeProvider, createAuthorizedUsageSigner, createProvider, createRegion, getMu, readMintFromStaticKeypair, readProviderAuthorizer, ServiceRates } from "./anchor-utils";
 import util from "./util"
 
 util.asyncMain(async () => {
@@ -11,6 +11,10 @@ util.asyncMain(async () => {
     let provider = await createProvider(mu, "IB", true);
     console.log(`Provider pubkey: ${provider.pda.toBase58()}`);
 
+    console.log("Authorizing provider");
+    let authorizer = readProviderAuthorizer(mu, "1");
+    await authorizeProvider(mu, provider, authorizer);
+
     console.log("Creating region and usage signer");
     let serviceRates: ServiceRates = {
         billionFunctionMbInstructions: new BN(300000),
@@ -20,7 +24,7 @@ util.asyncMain(async () => {
         millionDbReads: new BN(500),
         millionDbWrites: new BN(2000),
     };
-    let region = await createRegion(mu, provider, "MiddleEarth", 1, serviceRates, 1);
+    let region = await createRegion(mu, provider, "MiddleEarth", 1, serviceRates, new BN(50_000_000));
     console.log(`Region pubkey: ${region.pda.toBase58()}`);
 
     let usageSigner = await createAuthorizedUsageSigner(mu, provider, region, "usage_signer");

@@ -36,7 +36,6 @@ blockchain_monitor:
   solana_provider_public_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
   solana_region_number: 1
   solana_usage_signer_private_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-  solana_min_escrow_balance: 50
   solana_usage_report_interval: 1d
 # TODO
 # db_manager:

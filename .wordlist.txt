@@ -48,6 +48,7 @@ ocsp
 oneshot
 OpenShift
 OUTFILE
+powi
 proto
 protobuf
 protoc

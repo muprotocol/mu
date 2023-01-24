@@ -5,3 +5,5 @@ edition = "2021"
 
 [dependencies]
 musdk = { path= "../../../../../sdk/musdk" }
+musdk-common = { path= "../../../../../sdk/common" }
+itertools = "0.10"

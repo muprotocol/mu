@@ -1,11 +1,12 @@
 use std::rc::Rc;
 
 use anchor_client::{
-    solana_sdk::{pubkey::Pubkey, signer::Signer, system_program, sysvar},
+    solana_sdk::{program_pack::Pack, pubkey::Pubkey, signer::Signer, system_program, sysvar},
     Program,
 };
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use marketplace::MuState;
+use spl_token::state::Mint;
 
 use crate::config::Config;
 
@@ -36,6 +37,11 @@ impl MarketplaceClient {
         let state_pda = self.get_mu_state_pda();
         let mu_state: MuState = self.program.account(state_pda)?;
         Ok((state_pda, mu_state))
+    }
+
+    pub fn get_mint(&self, mu_state: &MuState) -> Result<Mint> {
+        let mint_account = self.program.rpc().get_account(&mu_state.mint)?;
+        <Mint as Pack>::unpack(&mint_account.data).context("Failed to parse mint account data")
     }
 
     pub fn get_provider_pda(&self, provider_wallet: Pubkey) -> Pubkey {
@@ -141,7 +147,8 @@ impl MarketplaceClient {
                 name: provider_name,
             })
             .signer(provider_keypair.as_ref())
-            .send()?;
+            .send_with_spinner_and_config(Default::default())
+            .context("Failed to send provider creation transaction")?;
         Ok(())
     }
 }

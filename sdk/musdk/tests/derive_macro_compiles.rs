@@ -5,10 +5,10 @@ use musdk_derive::mu_functions;
 
 #[mu_functions]
 mod functions {
-    use musdk::{BinaryBody, BinaryResponse, MuContext};
+    use musdk::MuContext;
 
     #[mu_function]
-    fn simple_function<'a>(_ctx: &'a MuContext, request: BinaryBody<'a>) -> BinaryResponse {
-        BinaryResponse::new(request.body.to_vec())
+    fn simple_function<'a>(_ctx: &'a MuContext, data: &'a [u8]) -> Vec<u8> {
+        data.to_vec()
     }
 }

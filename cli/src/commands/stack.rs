@@ -1,10 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use anchor_client::{
-    solana_client::{
-        rpc_config::RpcSendTransactionConfig,
-        rpc_filter::{Memcmp, RpcFilterType},
-    },
+    solana_client::rpc_filter::{Memcmp, RpcFilterType},
     solana_sdk::{pubkey::Pubkey, system_program},
 };
 use anyhow::{Context, Result};
@@ -122,9 +119,14 @@ pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
     let user_wallet = config.get_signer()?;
 
     let stack_pda = client.get_stack_pda(user_wallet.pubkey(), cmd.region, cmd.seed);
+    let region = client
+        .program
+        .account::<marketplace::ProviderRegion>(cmd.region)
+        .context("Failed to fetch region from Solana")?;
 
     let accounts = marketplace::accounts::CreateStack {
         region: cmd.region,
+        provider: region.provider,
         stack: stack_pda,
         user: user_wallet.pubkey(),
         system_program: system_program::id(),
@@ -140,11 +142,7 @@ pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
             name,
         })
         .signer(user_wallet.as_ref())
-        .send_with_spinner_and_config(RpcSendTransactionConfig {
-            // TODO: what's preflight and what's a preflight commitment?
-            skip_preflight: cfg!(debug_assertions),
-            ..Default::default()
-        })
+        .send_with_spinner_and_config(Default::default())
         .context("Failed to send stack creation transaction")?;
 
     println!("Stack deployed successfully with key: {stack_pda}");

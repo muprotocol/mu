@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
-use anchor_client::{
-    solana_client::rpc_config::RpcSendTransactionConfig,
-    solana_sdk::{pubkey::Pubkey, signature::read_keypair_file, signer::Signer, system_program},
+use anchor_client::solana_sdk::{
+    pubkey::Pubkey, signature::read_keypair_file, signer::Signer, system_program,
 };
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser};
@@ -71,11 +70,7 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
             token_account: provider_token_account,
         })
         .signer(provider_keypair.as_ref())
-        .send_with_spinner_and_config(RpcSendTransactionConfig {
-            // TODO: what's preflight and what's a preflight commitment?
-            skip_preflight: cfg!(debug_assertions),
-            ..Default::default()
-        })
+        .send_with_spinner_and_config(Default::default())
         .context("Failed to send authorized signer creation transaction")?;
 
     Ok(())
