@@ -1,7 +1,7 @@
 import type { AppProps } from "next/app";
 
-import Header from "@/components/layout/Header";
-import WalletWrapper from "@/components/wallet/WalletWrapper/WalletWrapper";
+import Header from "@/shared/layout/Header";
+import WalletWrapper from "@/shared/wallet/WalletWrapper/WalletWrapper";
 
 import "@/styles/globals.css";
 import ThemeWrapper from "@/themes/ThemeWrapper";

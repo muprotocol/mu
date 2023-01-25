@@ -1,4 +1,4 @@
-import WalletButton from "@/components/wallet/WalletButton/WalletButton";
+import WalletButton from "@/shared/wallet/WalletButton/WalletButton";
 
 export default function Header() {
     return (

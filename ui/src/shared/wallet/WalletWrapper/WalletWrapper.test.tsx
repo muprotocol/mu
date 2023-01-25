@@ -1,6 +1,6 @@
 import {describe, expect} from "vitest";
 import {render, screen} from "@testing-library/react";
-import WalletWrapper from "@/components/wallet/WalletWrapper/WalletWrapper";
+import WalletWrapper from "@/shared/wallet/WalletWrapper/WalletWrapper";
 import {useContext} from "react";
 import {ConnectionContext, WalletContext} from "@solana/wallet-adapter-react";
 
