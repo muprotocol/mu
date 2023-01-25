@@ -9,10 +9,10 @@ use std::{
 
 #[rustfmt::skip]
 use ::protobuf::Message;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use base58::{FromBase58, ToBase58};
 use borsh::{BorshDeserialize, BorshSerialize};
-use bytes::Bytes;
+use bytes::{BufMut, Bytes};
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
 
 pub const STACK_ID_SIZE: usize = 32;
@@ -26,6 +26,30 @@ impl StackID {
     pub fn get_bytes(&self) -> &[u8; STACK_ID_SIZE] {
         match self {
             Self::SolanaPublicKey(key) => key,
+        }
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut res = Vec::with_capacity(STACK_ID_SIZE + 1);
+        match self {
+            Self::SolanaPublicKey(key) => {
+                res.push(1u8);
+                res.put_slice(key);
+            }
+        }
+        res
+    }
+
+    pub fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
+        if bytes.len() != STACK_ID_SIZE + 1 {
+            bail!("Incorrect byte count");
+        }
+
+        match bytes[0] {
+            // We already know we have exactly enough bytes, so it's safe to unwrap
+            1u8 => Ok(Self::SolanaPublicKey(bytes[1..].try_into().unwrap())),
+
+            x => bail!("Unknown StackID discriminator {x}"),
         }
     }
 }
@@ -68,17 +92,6 @@ impl FromStr for StackID {
             }
             _ => Err(()),
         }
-    }
-}
-
-// TODO: disclimiantor byte
-// Dose it need ?
-impl TryFrom<Vec<u8>> for StackID {
-    type Error = ();
-    fn try_from(blob: Vec<u8>) -> Result<Self, Self::Error> {
-        Ok(Self::SolanaPublicKey(
-            blob.as_slice().try_into().map_err(|_| ())?,
-        ))
     }
 }
 

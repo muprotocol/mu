@@ -15,7 +15,6 @@ Datagram
 datagrams
 deque
 didnt
-disclimiantor
 dont
 flate
 funcs
@@ -79,6 +78,7 @@ rustc
 rustfmt
 rustls
 rustup
+Ryzen
 scans
 scts
 secretkey
@@ -94,7 +94,6 @@ stateful
 struct
 subcommands
 sysvar
-tablename
 thiserror
 tikv
 Tikv

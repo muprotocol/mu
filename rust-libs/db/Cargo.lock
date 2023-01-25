@@ -221,9 +221,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.1.3"
+version = "4.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8d93d855ce6a0aa87b8473ef9169482f40abaa2e9e0993024c35c902cbd5920"
+checksum = "f13b9c79b5d1dd500d20ef541215a6423c75829ef43117e1b4d17fd8af0b5d76"
 dependencies = [
  "bitflags",
  "clap_derive",
@@ -307,6 +307,25 @@ checksum = "1bfb12502f3fc46cca1bb51ac28df9d618d813cdc3d2f25b9fe775a34af26bb3"
 dependencies = [
  "generic-array",
  "typenum",
+]
+
+[[package]]
+name = "db-embedded-tikv"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "dyn-clonable",
+ "dyn-clone",
+ "flate2",
+ "log",
+ "mailbox_processor",
+ "nix",
+ "reqwest",
+ "rust-embed",
+ "serde",
+ "tar",
+ "tokio",
 ]
 
 [[package]]
@@ -1050,22 +1069,19 @@ dependencies = [
  "assert_matches",
  "async-trait",
  "bytes",
+ "db-embedded-tikv",
  "dirs",
  "dyn-clonable",
  "dyn-clone",
  "env_logger",
- "flate2",
  "futures 0.3.25",
  "log",
  "mailbox_processor",
  "mu_stack",
  "nix",
  "rand 0.8.5",
- "reqwest",
- "rust-embed",
  "serde",
  "serial_test",
- "tar",
  "thiserror",
  "tikv-client",
  "tokio",
@@ -1885,9 +1901,9 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 
 [[package]]
 name = "security-framework"
-version = "2.8.0"
+version = "2.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "645926f31b250a2dca3c232496c2d898d91036e45ca0e97e0e2390c54e11be36"
+checksum = "7c4437699b6d34972de58652c68b98cb5b53a4199ab126db8e20ec8ded29a721"
 dependencies = [
  "bitflags",
  "core-foundation",

@@ -1,11 +1,7 @@
-use super::types::IpAndPort;
+//! This module takes a lot of time (~11 secs on a Ryzen9 5900) to type check
+//! due to the embedded resources. We moved it to a separate crate to improve
+//! type check times when developing the DB module.
 
-use anyhow::{Context, Result};
-use async_trait::async_trait;
-use dyn_clonable::clonable;
-use mailbox_processor::callback::CallbackMailboxProcessor;
-use rust_embed::RustEmbed;
-use serde::Deserialize;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr},
@@ -13,11 +9,17 @@ use std::{
     path::PathBuf,
     process,
 };
-use tokio::{fs::File, io::AsyncWriteExt};
 
+use anyhow::{bail, Context, Result};
+use async_trait::async_trait;
+use dyn_clonable::clonable;
 use log::{error, warn};
+use mailbox_processor::callback::CallbackMailboxProcessor;
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
+use rust_embed::RustEmbed;
+use serde::Deserialize;
+use tokio::{fs::File, io::AsyncWriteExt};
 
 #[derive(RustEmbed)]
 #[folder = "assets"]
@@ -67,6 +69,36 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
     Ok(temp_address)
 }
 
+// TODO: support hostname (also in gossip as well)
+/// # IpAndPort
+#[derive(Deserialize, Clone, PartialEq, Eq)]
+pub struct IpAndPort {
+    pub address: IpAddr,
+    pub port: u16,
+}
+
+impl From<IpAndPort> for String {
+    fn from(value: IpAndPort) -> Self {
+        format!("{}:{}", value.address, value.port)
+    }
+}
+
+impl TryFrom<&str> for IpAndPort {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        let x: Vec<&str> = value.split(':').collect();
+        if x.len() != 2 {
+            bail!("Can't parse, expected string in this format: ip_addr:port");
+        } else {
+            Ok(IpAndPort {
+                address: x[0].parse()?,
+                port: x[1].parse()?,
+            })
+        }
+    }
+}
+
 #[derive(Deserialize, Clone)]
 pub struct PdConfig {
     pub data_dir: String,
@@ -108,6 +140,7 @@ impl TikvConfig {
     }
 }
 
+// TODO: this should go in the DB crate.
 #[derive(Deserialize, Clone)]
 pub enum DbConfig {
     External(Vec<IpAndPort>),
@@ -303,7 +336,9 @@ pub async fn start(
 #[async_trait]
 impl TikvRunner for TikvRunnerImpl {
     async fn stop(&self) -> Result<()> {
-        Ok(self.mailbox.post(Message::Stop).await?)
+        self.mailbox.post(Message::Stop).await?;
+        self.mailbox.clone().stop().await;
+        Ok(())
     }
 }
 

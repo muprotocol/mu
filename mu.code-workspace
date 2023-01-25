@@ -11,6 +11,9 @@
 			"path": "rust-libs/db"
 		},
 		{
+			"path": "rust-libs/db-embedded-tikv"
+		},
+		{
 			"path": "rust-libs/common"
 		},
 		{
