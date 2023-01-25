@@ -79,6 +79,7 @@ rustc
 rustfmt
 rustls
 rustup
+Ryzen
 scans
 scts
 secretkey

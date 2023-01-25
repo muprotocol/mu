@@ -1,17 +1,18 @@
-mod embed_tikv;
 pub mod error;
 mod types;
 
-pub use self::embed_tikv::{NodeAddress, PdConfig, RemoteNode, TikvConfig, TikvRunnerConfig};
-pub use self::types::{DbClient, DbManager, IpAndPort, Key, Scan, TableName};
+pub use self::types::{DbClient, DbManager, Key, Scan, TableName};
+pub use db_embedded_tikv::{
+    IpAndPort, NodeAddress, PdConfig, RemoteNode, TikvConfig, TikvRunnerConfig,
+};
 
 use crate::{
-    embed_tikv::*,
     error::{Error, Result},
     types::*,
 };
 use anyhow::Context;
 use async_trait::async_trait;
+use db_embedded_tikv::*;
 use mu_stack::StackID;
 use std::fmt::Debug;
 use tikv_client::{self, KvPair, RawClient, Value};
@@ -224,7 +225,7 @@ impl DbManagerImpl {
         config: TikvRunnerConfig,
     ) -> anyhow::Result<Self> {
         let endpoints = vec![config.pd.advertise_client_url()];
-        let inner = Some(embed_tikv::start(node_address, known_node_config, config).await?);
+        let inner = Some(db_embedded_tikv::start(node_address, known_node_config, config).await?);
 
         // wait 10 secs to ensure cluster is bootstrapped
         sleep(Duration::from_secs(10)).await;

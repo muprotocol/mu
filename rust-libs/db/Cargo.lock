@@ -304,6 +304,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "db-embedded-tikv"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "dyn-clonable",
+ "dyn-clone",
+ "flate2",
+ "log",
+ "mailbox_processor",
+ "nix",
+ "reqwest",
+ "rust-embed",
+ "serde",
+ "tar",
+ "tokio",
+]
+
+[[package]]
 name = "derive-new"
 version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1024,18 +1043,15 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bytes",
+ "db-embedded-tikv",
  "dirs",
  "dyn-clonable",
  "dyn-clone",
- "flate2",
  "log",
  "mailbox_processor",
  "mu_stack",
  "nix",
- "reqwest",
- "rust-embed",
  "serde",
- "tar",
  "thiserror",
  "tikv-client",
  "tokio",

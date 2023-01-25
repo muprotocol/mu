@@ -4,8 +4,8 @@ use bytes::BufMut;
 use dyn_clonable::clonable;
 use mu_stack::StackID;
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 use std::ops::Deref;
-use std::{fmt::Debug, net::IpAddr};
 use tikv_client::{BoundRange, Key as TikvKey, Value};
 
 // TODO: add constraint to Key (actually key.stack_id) to avoid this name
@@ -271,35 +271,6 @@ impl From<Scan> for BoundRange {
                 tablename.into(),
                 key,
             ),
-        }
-    }
-}
-
-// TODO: support hostname (also in gossip as well)
-/// # IpAndPort
-#[derive(Deserialize, Clone, PartialEq, Eq)]
-pub struct IpAndPort {
-    pub address: IpAddr,
-    pub port: u16,
-}
-
-impl From<IpAndPort> for String {
-    fn from(value: IpAndPort) -> Self {
-        format!("{}:{}", value.address, value.port)
-    }
-}
-
-impl TryFrom<&str> for IpAndPort {
-    type Error = String;
-    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
-        let x: Vec<&str> = value.split(':').collect();
-        if x.len() != 2 {
-            Err("Cant parse".into())
-        } else {
-            Ok(IpAndPort {
-                address: x[0].parse().map_err(|e| format!("{e}"))?,
-                port: x[1].parse().map_err(|e| format!("{e}"))?,
-            })
         }
     }
 }

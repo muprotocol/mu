@@ -1,11 +1,7 @@
-use super::types::IpAndPort;
+//! This module takes a lot of time (~11 secs on a Ryzen9 5900) to type check
+//! due to the embedded resources. We moved it to a separate crate to improve
+//! type check times when developing the DB module.
 
-use anyhow::{Context, Result};
-use async_trait::async_trait;
-use dyn_clonable::clonable;
-use mailbox_processor::callback::CallbackMailboxProcessor;
-use rust_embed::RustEmbed;
-use serde::Deserialize;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr},
@@ -13,11 +9,17 @@ use std::{
     path::PathBuf,
     process,
 };
-use tokio::{fs::File, io::AsyncWriteExt};
 
+use anyhow::{Context, Result};
+use async_trait::async_trait;
+use dyn_clonable::clonable;
 use log::{error, warn};
+use mailbox_processor::callback::CallbackMailboxProcessor;
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
+use rust_embed::RustEmbed;
+use serde::Deserialize;
+use tokio::{fs::File, io::AsyncWriteExt};
 
 #[derive(RustEmbed)]
 #[folder = "assets"]
@@ -65,6 +67,35 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
         .context("Failed to set executable permission on temp file")?;
 
     Ok(temp_address)
+}
+
+// TODO: support hostname (also in gossip as well)
+/// # IpAndPort
+#[derive(Deserialize, Clone, PartialEq, Eq)]
+pub struct IpAndPort {
+    pub address: IpAddr,
+    pub port: u16,
+}
+
+impl From<IpAndPort> for String {
+    fn from(value: IpAndPort) -> Self {
+        format!("{}:{}", value.address, value.port)
+    }
+}
+
+impl TryFrom<&str> for IpAndPort {
+    type Error = String;
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        let x: Vec<&str> = value.split(':').collect();
+        if x.len() != 2 {
+            Err("Cant parse".into())
+        } else {
+            Ok(IpAndPort {
+                address: x[0].parse().map_err(|e| format!("{e}"))?,
+                port: x[1].parse().map_err(|e| format!("{e}"))?,
+            })
+        }
+    }
 }
 
 #[derive(Deserialize, Clone)]
