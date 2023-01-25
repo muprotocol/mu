@@ -1,34 +1,57 @@
-use anyhow::{bail, Context, Result};
-use mu::{
-    mudb::{DbManager, DbManagerImpl, IpAndPort, PdConfig, TikvConfig, TikvRunnerConfig},
-    network::NodeAddress,
-    runtime::{
-        start,
-        types::{AssemblyDefinition, AssemblyID, FunctionID, RuntimeConfig},
-        Runtime,
-    },
-    stack::usage_aggregator::UsageAggregator,
-};
-use mu_stack::AssemblyRuntime;
 use std::{
-    collections::HashMap,
+    collections::{hash_map::Entry, HashMap},
     env, fs,
     net::IpAddr,
     path::{Path, PathBuf},
+    process::Command,
     str::FromStr,
+    sync::Arc,
 };
-use tokio::process::Command;
 
-use crate::common::HashMapUsageAggregator;
+use anyhow::{bail, Context, Result};
+use mu_db::{
+    DbManager, DbManagerImpl, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig,
+};
+use tokio::sync::Mutex;
 
-use super::providers::MapAssemblyProvider;
+use async_trait::async_trait;
+use mu_runtime::{
+    start, AssemblyDefinition, AssemblyProvider, Notification, Runtime, RuntimeConfig, Usage,
+};
+use mu_stack::{AssemblyID, AssemblyRuntime, FunctionID, StackID};
+
+#[derive(Default)]
+pub struct MapAssemblyProvider {
+    inner: HashMap<AssemblyID, AssemblyDefinition>,
+}
+
+#[async_trait]
+impl AssemblyProvider for MapAssemblyProvider {
+    fn get(&self, id: &AssemblyID) -> Option<&AssemblyDefinition> {
+        Some(self.inner.get(id).unwrap())
+    }
+
+    fn add_function(&mut self, function: AssemblyDefinition) {
+        self.inner.insert(function.id.clone(), function);
+    }
+
+    fn remove_function(&mut self, id: &AssemblyID) {
+        self.inner.remove(id);
+    }
+
+    fn get_function_names(&self, _stack_id: &StackID) -> Vec<String> {
+        unimplemented!("Not needed")
+    }
+}
 
 const TEST_DATA_DIR: &str = "tests/runtime/test_data";
 
 fn clean_data_dir() {
-    fs::remove_dir_all(TEST_DATA_DIR).unwrap_or_else(|why| {
-        println!("{} {:?}", TEST_DATA_DIR, why.kind());
-    });
+    match fs::remove_dir_all(TEST_DATA_DIR) {
+        Ok(()) => (),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+        Err(e) => Err(e).unwrap(),
+    }
 }
 
 fn ensure_project_dir(project_dir: &Path) -> Result<PathBuf> {
@@ -43,8 +66,7 @@ async fn install_wasm32_wasi_target() -> Result<()> {
     Command::new("rustup")
         .args(["target", "add", "wasm32-wasi"])
         .spawn()?
-        .wait()
-        .await?;
+        .wait()?;
     Ok(())
 }
 
@@ -58,8 +80,7 @@ pub async fn compile_wasm_project(project_dir: &Path) -> Result<()> {
         .arg("build")
         .args(["--release", "--target", "wasm32-wasi"])
         .spawn()?
-        .wait()
-        .await?;
+        .wait()?;
 
     Ok(())
 }
@@ -74,8 +95,7 @@ pub async fn clean_wasm_project(project_dir: &Path) -> Result<()> {
         .env_remove("CARGO_TARGET_DIR")
         .arg("clean")
         .spawn()?
-        .wait()
-        .await?;
+        .wait()?;
 
     Ok(())
 }
@@ -123,13 +143,13 @@ pub async fn read_wasm_functions<'a>(
     let mut results = HashMap::new();
 
     for project in projects {
-        let source = tokio::fs::read(&project.wasm_module_path()).await?.into();
+        let source = std::fs::read(project.wasm_module_path())?;
 
         results.insert(
             project.id.clone(),
             AssemblyDefinition::new(
                 project.id.clone(),
-                source,
+                source.into(),
                 AssemblyRuntime::Wasi1_0,
                 [],
                 project.memory_limit,
@@ -145,14 +165,13 @@ async fn create_map_function_provider<'a>(
 ) -> Result<(HashMap<AssemblyID, AssemblyDefinition>, MapAssemblyProvider)> {
     build_wasm_projects(projects).await?;
     let functions = read_wasm_functions(projects).await?;
-    Ok((functions, MapAssemblyProvider::new()))
+    Ok((functions, MapAssemblyProvider::default()))
 }
 
 fn make_node_address(port: u16) -> NodeAddress {
     NodeAddress {
         address: "127.0.0.1".parse().unwrap(),
         port,
-        generation: 1,
     }
 }
 fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> TikvRunnerConfig {
@@ -160,11 +179,11 @@ fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> Ti
     TikvRunnerConfig {
         pd: PdConfig {
             peer_url: IpAndPort {
-                address: localhost.clone(),
+                address: localhost,
                 port: peer_port,
             },
             client_url: IpAndPort {
-                address: localhost.clone(),
+                address: localhost,
                 port: client_port,
             },
             data_dir: format!("{TEST_DATA_DIR}/pd_data_dir_{peer_port}"),
@@ -172,7 +191,7 @@ fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> Ti
         },
         node: TikvConfig {
             cluster_url: IpAndPort {
-                address: localhost.clone(),
+                address: localhost,
                 port: tikv_port,
             },
             data_dir: format!("{TEST_DATA_DIR}/tikv_data_dir_{tikv_port}"),
@@ -186,7 +205,7 @@ pub async fn create_runtime<'a>(
 ) -> (
     Box<dyn Runtime>,
     Box<dyn DbManager>,
-    Box<dyn UsageAggregator>,
+    Arc<Mutex<HashMap<StackID, Usage>>>,
 ) {
     clean_data_dir();
     let config = RuntimeConfig {
@@ -195,7 +214,6 @@ pub async fn create_runtime<'a>(
     };
 
     let (functions, provider) = create_map_function_provider(projects).await.unwrap();
-    let usage_aggregator = HashMapUsageAggregator::new_boxed();
     let node_address = make_node_address(2803);
     let tikv_config = make_tikv_runner_conf(2385, 2386, 20163);
 
@@ -203,19 +221,35 @@ pub async fn create_runtime<'a>(
         .await
         .unwrap();
 
-    let runtime = start(
-        Box::new(provider),
-        config,
-        Box::new(db_manager.clone()),
-        usage_aggregator.clone(),
-    )
-    .await
-    .unwrap();
+    let (runtime, mut notifications) = start(Box::new(provider), config).await.unwrap();
 
     runtime
         .add_functions(functions.clone().into_values().into_iter().collect())
         .await
         .unwrap();
 
-    (runtime, Box::new(db_manager), usage_aggregator)
+    let usages = Arc::new(Mutex::new(HashMap::new()));
+
+    tokio::spawn({
+        let usages = usages.clone();
+        async move {
+            loop {
+                match notifications.recv().await {
+                    None => continue,
+                    Some(n) => match n {
+                        Notification::ReportUsage(stack_id, usage) => {
+                            let mut map = usages.lock().await;
+                            if let Entry::Vacant(e) = map.entry(stack_id) {
+                                e.insert(usage);
+                            } else {
+                                *map.get_mut(&stack_id).unwrap() += usage;
+                            }
+                        }
+                    },
+                }
+            }
+        }
+    });
+
+    (runtime, Box::new(db_manager), usages)
 }

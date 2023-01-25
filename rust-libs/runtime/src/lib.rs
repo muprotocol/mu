@@ -3,27 +3,32 @@ pub mod function;
 pub mod instance;
 pub mod memory;
 pub mod providers;
-pub mod types;
+mod types;
+
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    ops::{Add, AddAssign},
+};
 
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::*;
-use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel, ReplyChannel};
-use mu_common::id::IdExt;
-use mu_stack::{AssemblyID, FunctionID, StackID};
-use musdk_common::{Header, Request, Response};
-use std::{borrow::Cow, collections::HashMap};
 use tokio::sync::mpsc;
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
 
-use self::{
-    error::Error,
-    instance::{create_store, Instance, Loaded},
-};
-use crate::types::{AssemblyDefinition, AssemblyProvider, InvokeFunctionRequest, RuntimeConfig};
-use crate::error::FunctionLoadingError;
+use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel, ReplyChannel};
+use mu_common::id::IdExt;
+use mu_stack::{AssemblyID, FunctionID, StackID};
+use musdk_common::{Header, Request, Response};
+
+use instance::create_store;
+
+pub use error::{Error, FunctionLoadingError, FunctionRuntimeError};
+pub use instance::{Instance, Loaded, Running};
+pub use types::{AssemblyDefinition, AssemblyProvider, InvokeFunctionRequest, RuntimeConfig};
 
 #[async_trait]
 #[clonable]
@@ -54,6 +59,31 @@ pub struct Usage {
     pub db_strong_writes: u64,
     pub function_instructions: u64,
     pub memory_megabytes: u64,
+}
+
+impl Add for Usage {
+    type Output = Self;
+
+    fn add(mut self, rhs: Self) -> Self::Output {
+        self.db_weak_reads += rhs.db_weak_reads;
+        self.db_weak_writes += rhs.db_weak_writes;
+        self.db_strong_reads += rhs.db_strong_reads;
+        self.db_strong_writes += rhs.db_strong_writes;
+        self.function_instructions += rhs.function_instructions;
+        self.memory_megabytes += rhs.memory_megabytes;
+        self
+    }
+}
+
+impl AddAssign for Usage {
+    fn add_assign(&mut self, rhs: Self) {
+        self.db_weak_reads += rhs.db_weak_reads;
+        self.db_weak_writes += rhs.db_weak_writes;
+        self.db_strong_reads += rhs.db_strong_reads;
+        self.db_strong_writes += rhs.db_strong_writes;
+        self.function_instructions += rhs.function_instructions;
+        self.memory_megabytes += rhs.memory_megabytes;
+    }
 }
 
 #[derive(Debug)]

@@ -1,14 +1,14 @@
-use futures::FutureExt;
-use itertools::Itertools;
-use mu::{runtime::types::AssemblyID, stack::usage_aggregator::UsageCategory};
-use mu_stack::{self, StackID};
-use musdk_common::{Header, Status};
-use serial_test::serial;
 use std::{borrow::Cow, collections::HashMap, path::Path};
 
-use crate::runtime::utils::{create_runtime, Project};
+use futures::FutureExt;
+use itertools::Itertools;
 
-mod providers;
+use mu_runtime::*;
+use mu_stack::{self, AssemblyID, StackID};
+use musdk_common::{Header, Status};
+
+use crate::utils::{create_runtime, Project};
+
 mod utils;
 
 pub fn create_project<'a>(
@@ -21,7 +21,7 @@ pub fn create_project<'a>(
 
     Project {
         name,
-        path: Path::new(&format!("tests/runtime/funcs/{name}")).into(),
+        path: Path::new(&format!("tests/funcs/{name}")).into(),
         id: AssemblyID {
             stack_id: StackID::SolanaPublicKey(rand::random()),
             assembly_name: name.into(),
@@ -47,10 +47,7 @@ fn make_request<'a>(
 }
 
 #[tokio::test]
-#[serial]
 async fn test_simple_func() {
-    env_logger::init();
-
     let projects = vec![create_project("hello-wasm", &["say_hello"], None)];
     let (runtime, db_manager, _) = create_runtime(&projects).await;
 
@@ -76,7 +73,6 @@ async fn test_simple_func() {
 }
 
 // #[tokio::test]
-// #[serial]
 // async fn can_query_mudb() {
 //     let projects = vec![create_project("hello-mudb", None)];
 //     let (runtime, db_service, _) = create_runtime(&projects).await;
@@ -108,7 +104,6 @@ async fn test_simple_func() {
 // }
 
 #[tokio::test]
-#[serial]
 async fn can_run_multiple_instance_of_the_same_function() {
     let projects = vec![create_project("hello-wasm", &["say_hello"], None)];
     let (runtime, db_manager, _) = create_runtime(&projects).await;
@@ -158,7 +153,6 @@ async fn can_run_multiple_instance_of_the_same_function() {
 }
 
 #[tokio::test]
-#[serial]
 async fn can_run_instances_of_different_functions() {
     let projects = vec![
         create_project("hello-wasm", &["say_hello"], None),
@@ -201,9 +195,8 @@ async fn can_run_instances_of_different_functions() {
 }
 
 #[tokio::test]
-#[serial]
 async fn unclean_termination_is_handled() {
-    use mu::runtime::error::*;
+    use mu_runtime::error::*;
 
     let projects = vec![create_project("unclean-termination", &["say_hello"], None)];
     let (runtime, db_manager, _) = create_runtime(&projects).await;
@@ -223,9 +216,8 @@ async fn unclean_termination_is_handled() {
 }
 
 #[tokio::test]
-#[serial]
 async fn functions_with_limited_memory_wont_run() {
-    use mu::runtime::error::*;
+    use mu_runtime::error::*;
 
     let projects = vec![create_project(
         "hello-wasm",
@@ -255,7 +247,6 @@ async fn functions_with_limited_memory_wont_run() {
 }
 
 #[tokio::test]
-#[serial]
 async fn functions_with_limited_memory_will_run_with_enough_memory() {
     let projects = vec![create_project(
         "hello-wasm",
@@ -281,10 +272,9 @@ async fn functions_with_limited_memory_will_run_with_enough_memory() {
 }
 
 #[tokio::test]
-#[serial]
 async fn function_usage_is_reported_correctly_1() {
     let projects = vec![create_project("hello-wasm", &["say_hello"], None)];
-    let (runtime, db_manager, usage_aggregator) = create_runtime(&projects).await;
+    let (runtime, db_manager, usages) = create_runtime(&projects).await;
 
     let request = make_request(
         Cow::Borrowed(b"Chappy"),
@@ -300,32 +290,29 @@ async fn function_usage_is_reported_correctly_1() {
         .await
         .unwrap();
 
-    let usages = usage_aggregator.get_and_reset_usages().await.unwrap();
-    let function_usage = usages.get(function_id.stack_id()).unwrap();
+    let usages = usages.lock().await;
 
-    assert_eq!(
-        function_usage.get(&UsageCategory::DBWrites),
-        Some(0u128).as_ref()
-    );
+    let Usage {
+        db_weak_reads,
+        db_strong_reads,
+        db_weak_writes,
+        db_strong_writes,
+        function_instructions,
+        memory_megabytes,
+    } = usages.get(function_id.stack_id()).unwrap();
 
-    assert_eq!(
-        function_usage.get(&UsageCategory::DBReads),
-        Some(0u128).as_ref()
-    );
-
-    assert!(
-        function_usage
-            .get(&UsageCategory::FunctionMBInstructions)
-            .unwrap()
-            > &0
-    );
+    assert_eq!(*db_weak_writes, 0);
+    assert_eq!(*db_weak_reads, 0);
+    assert_eq!(*db_strong_writes, 0);
+    assert_eq!(*db_strong_reads, 0);
+    assert!(*function_instructions > 0);
+    assert_eq!(*memory_megabytes, 100);
 
     runtime.stop().await.unwrap();
     db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 //#[tokio::test]
-//#[serial]
 //async fn function_usage_is_reported_correctly_2() {
 //    let projects = vec![create_project("database-heavy", None)];
 //    let (runtime, db_service, usage_aggregator) = create_runtime(&projects).await;
@@ -372,9 +359,8 @@ async fn function_usage_is_reported_correctly_1() {
 //}
 
 #[tokio::test]
-#[serial]
 async fn failing_function_should_not_hang() {
-    use mu::runtime::error::*;
+    use mu_runtime::error::*;
     let projects = vec![create_project("hello-wasm", &["failing"], None)];
     let (runtime, db_manager, _) = create_runtime(&projects).await;
 
@@ -399,7 +385,6 @@ async fn failing_function_should_not_hang() {
 }
 
 #[tokio::test]
-#[serial]
 async fn json_body_request_and_response() {
     use serde::{Deserialize, Serialize};
 
@@ -456,7 +441,6 @@ async fn json_body_request_and_response() {
 }
 
 #[tokio::test]
-#[serial]
 async fn string_body_request_and_response() {
     let projects = vec![create_project("multi-body", &["string_body"], None)];
     let (runtime, db_manager, _) = create_runtime(&projects).await;
@@ -482,7 +466,6 @@ async fn string_body_request_and_response() {
 }
 
 #[tokio::test]
-#[serial]
 async fn string_body_request_and_response_fails_with_incorrect_charset() {
     let projects = vec![create_project("multi-body", &["string_body"], None)];
     let (runtime, db_manager, _) = create_runtime(&projects).await;
@@ -511,7 +494,6 @@ async fn string_body_request_and_response_fails_with_incorrect_charset() {
 }
 
 #[tokio::test]
-#[serial]
 async fn string_body_request_and_response_do_not_care_for_content_type() {
     let projects = vec![create_project("multi-body", &["string_body"], None)];
     let (runtime, db_manager, _) = create_runtime(&projects).await;
@@ -540,7 +522,6 @@ async fn string_body_request_and_response_do_not_care_for_content_type() {
 }
 
 #[tokio::test]
-#[serial]
 async fn can_access_path_params() {
     let projects = vec![create_project("hello-wasm", &["path_params"], None)];
     let (runtime, db_manager, _) = create_runtime(&projects).await;

@@ -1,5 +1,4 @@
 /target
-/tests/runtime/funcs/*/target
 /db
 /runtime-cache
 /assets

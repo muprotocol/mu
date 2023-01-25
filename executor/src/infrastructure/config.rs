@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use config::{Config, Environment, File, FileFormat};
 use mu_db::TikvRunnerConfig;
 use mu_gateway::GatewayManagerConfig;
-use mu_runtime::types::RuntimeConfig;
+use mu_runtime::RuntimeConfig;
 
 use crate::{
     log_setup::LogConfig,
