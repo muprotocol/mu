@@ -43,12 +43,12 @@ pub struct Args {
     pub command: Command,
 }
 
-pub fn execute(args: Args) -> Result<()> {
+pub async fn execute(args: Args) -> Result<()> {
     let config = Config::discover(args.cfg_override)?;
     match args.command {
         Command::Provider { sub_command } => provider::execute(config, sub_command),
         Command::List { sub_command } => list::execute(config, sub_command),
         Command::Escrow { sub_command } => escrow::execute(config, sub_command),
-        Command::Stack { sub_command } => stack::execute(config, sub_command),
+        Command::Stack { sub_command } => stack::execute(config, sub_command).await,
     }
 }

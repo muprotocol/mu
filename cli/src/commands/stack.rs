@@ -14,7 +14,7 @@ use marketplace::StackState;
 
 use crate::{
     config::Config,
-    marketplace_client,
+    marketplace_client, runtime,
     template::{read_templates, MUManifest},
 };
 
@@ -22,6 +22,7 @@ use crate::{
 pub enum Command {
     Init(InitStackCommand),
     Build,
+    Run,
     List(ListStacksCommand),
     Deploy(DeployStackCommand),
     Delete(DeleteStackCommand),
@@ -95,10 +96,11 @@ pub struct DeleteStackCommand {
     region: String,
 }
 
-pub fn execute(config: Config, cmd: Command) -> Result<()> {
+pub async fn execute(config: Config, cmd: Command) -> Result<()> {
     match cmd {
         Command::Init(sub_command) => execute_init(config, sub_command),
         Command::Build => execute_build(config),
+        Command::Run => execute_run(config).await,
         Command::List(sub_command) => execute_list(config, sub_command),
         Command::Deploy(sub_command) => execute_deploy(config, sub_command),
         Command::Delete(sub_command) => execute_delete(config, sub_command),
@@ -144,6 +146,19 @@ pub fn execute_init(_config: Config, cmd: InitStackCommand) -> Result<()> {
 
 pub fn execute_build(_config: Config) -> Result<()> {
     MUManifest::read_file(None)?.build_project()
+}
+
+pub async fn execute_run(_config: Config) -> Result<()> {
+    let manifest = MUManifest::read_file(None)?;
+    manifest.build_project()?; //TODO: should we build on run or not?
+
+    let stack = runtime::read_stack(None)?;
+
+    let (runtime, gateway) = runtime::start(stack, &manifest.wasm_module_path()).await?;
+    runtime.stop().await?;
+    gateway.stop().await?;
+
+    Ok(())
 }
 
 pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {

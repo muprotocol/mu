@@ -52,11 +52,11 @@ impl AssemblyProvider for MapAssemblyProvider {
         Some(self.inner.get(id).unwrap())
     }
 
-    fn add_function(&mut self, function: AssemblyDefinition) {
+    fn add_assembly(&mut self, function: AssemblyDefinition) {
         self.inner.insert(function.id.clone(), function);
     }
 
-    fn remove_function(&mut self, id: &AssemblyID) {
+    fn remove_assembly(&mut self, id: &AssemblyID) {
         self.inner.remove(id);
     }
 

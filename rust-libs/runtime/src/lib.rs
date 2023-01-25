@@ -146,11 +146,11 @@ impl RuntimeState {
         ))
     }
 
-    fn load_module(&mut self, function_id: &AssemblyID) -> Result<(Store, Module)> {
-        if self.hashkey_dict.contains_key(function_id) {
+    fn load_module(&mut self, assembly_id: &AssemblyID) -> Result<(Store, Module)> {
+        if self.hashkey_dict.contains_key(assembly_id) {
             let CacheHashAndMemoryLimit { hash, memory_limit } = self
                 .hashkey_dict
-                .get(function_id)
+                .get(assembly_id)
                 .ok_or_else(|| Error::Internal(anyhow!("cache key can not be found")))?
                 .to_owned();
 
@@ -161,9 +161,9 @@ impl RuntimeState {
                 Err(e) => {
                     warn!("cached module is corrupted: {}", e);
 
-                    let definition = self.assembly_provider.get(function_id).ok_or_else(|| {
+                    let definition = self.assembly_provider.get(assembly_id).ok_or_else(|| {
                         Error::FunctionLoadingError(FunctionLoadingError::AssemblyNotFound(
-                            function_id.clone(),
+                            assembly_id.clone(),
                         ))
                     })?;
 
@@ -175,43 +175,43 @@ impl RuntimeState {
                 }
             }
         } else {
-            let function_definition = match self.assembly_provider.get(function_id) {
+            let assembly_definition = match self.assembly_provider.get(assembly_id) {
                 Some(d) => d,
                 None => {
                     return Err(Error::FunctionLoadingError(
-                        FunctionLoadingError::AssemblyNotFound(function_id.clone()),
+                        FunctionLoadingError::AssemblyNotFound(assembly_id.clone()),
                     )
                     .into());
                 }
             };
 
-            let mut hash_array = Vec::with_capacity(function_id.assembly_name.len() + 16); // Uuid is 16 bytes
-            hash_array.extend_from_slice(function_id.stack_id.get_bytes()); //This is bad, should
+            let mut hash_array = Vec::with_capacity(assembly_id.assembly_name.len() + 16); // Uuid is 16 bytes
+            hash_array.extend_from_slice(assembly_id.stack_id.get_bytes()); //This is bad, should
                                                                             //use a method on
                                                                             //StackID
-            hash_array.extend_from_slice(function_id.assembly_name.as_bytes());
+            hash_array.extend_from_slice(assembly_id.assembly_name.as_bytes());
             let hash = wasmer_cache::Hash::generate(&hash_array);
 
             self.hashkey_dict.insert(
-                function_id.clone(),
+                assembly_id.clone(),
                 CacheHashAndMemoryLimit {
                     hash,
-                    memory_limit: function_definition.memory_limit,
+                    memory_limit: assembly_definition.memory_limit,
                 },
             );
 
-            let store = create_store(function_definition.memory_limit)?;
+            let store = create_store(assembly_definition.memory_limit)?;
 
-            if let Ok(module) = Module::from_binary(&store, &function_definition.source) {
+            if let Ok(module) = Module::from_binary(&store, &assembly_definition.source) {
                 if let Err(e) = self.cache.store(hash, &module) {
-                    error!("failed to cache module: {e}, function id: {}", function_id);
+                    error!("failed to cache module: {e}, function id: {}", assembly_id);
                 }
                 Ok((store, module))
             } else {
-                error!("can not build wasm module for function: {}", function_id);
+                error!("can not build wasm module for function: {}", assembly_id);
                 Err(
                     Error::FunctionLoadingError(FunctionLoadingError::InvalidAssembly(
-                        function_id.clone(),
+                        assembly_id.clone(),
                     ))
                     .into(),
                 )

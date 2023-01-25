@@ -29,6 +29,7 @@ pub trait GatewayManager: Clone + Send + Sync {
     async fn stop(&self) -> Result<()>;
 }
 
+//TODO: support multiple listen addresses, including Ipv6
 #[derive(Deserialize)]
 pub struct GatewayManagerConfig {
     pub listen_address: IpAddr,

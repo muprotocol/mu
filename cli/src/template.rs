@@ -182,6 +182,14 @@ impl MUManifest {
         serde_yaml::from_reader(file).map_err(Into::into)
     }
 
+    pub fn wasm_module_path(&self) -> PathBuf {
+        let path = match self.lang {
+            Language::Rust => format!("target/wasm32-wasi/release/{}.wasm", self.name),
+        };
+
+        Path::new(&path).to_path_buf()
+    }
+
     pub fn build_project(&self) -> Result<()> {
         let create_cmd = |cmd, args: &[&str]| {
             let mut cmd = std::process::Command::new(cmd);
@@ -191,11 +199,10 @@ impl MUManifest {
             cmd
         };
 
-        let (mut pre_build, mut build, _wasm_module) = match self.lang {
+        let (mut pre_build, mut build) = match self.lang {
             Language::Rust => (
                 create_cmd("rustup", &["target", "add", "wasm32-wasi"]),
                 create_cmd("cargo", &["build", "--release", "--target", "wasm32-wasi"]),
-                format!("target/wasm32-wasi/release/{}.wasm", self.name),
             ),
         };
 

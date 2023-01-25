@@ -33,7 +33,7 @@ files:
         name: {{name}}
         version: 0.1
         services:
-          # You can add `Database` Service if you want
+          # You can have `Database` Service
           # - type: Database
           #   name: my_db
           - type: Function
