@@ -26,3 +26,9 @@ mu_stack = { path = "../mu_stack" }
 mu-common = { path = "../common" }
 musdk-common = { path = "../../sdk/common" }
 byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
+
+[dev-dependencies]
+serde_json = "1.0"
+futures = "0.3"
+itertools = "0.10"
+rand = "0.8"

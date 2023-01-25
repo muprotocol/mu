@@ -38,12 +38,10 @@ impl Display for InstanceID {
     }
 }
 
-pub type AssemblySource = Bytes;
-
 #[derive(Clone, Debug)]
 pub struct AssemblyDefinition {
     pub id: AssemblyID,
-    pub source: AssemblySource,
+    pub source: Bytes,
     pub runtime: AssemblyRuntime,
 
     // TODO: key must not contain `=` and both must not contain `null` byte
@@ -54,7 +52,7 @@ pub struct AssemblyDefinition {
 impl AssemblyDefinition {
     pub fn new(
         id: AssemblyID,
-        source: AssemblySource,
+        source: Bytes,
         runtime: AssemblyRuntime,
         envs: impl IntoIterator<
             IntoIter = impl Iterator<Item = (String, String)>,
@@ -126,5 +124,3 @@ pub struct RuntimeConfig {
     pub cache_path: PathBuf,
     pub include_function_logs: bool,
 }
-
-pub type InstructionsCount = u64;
