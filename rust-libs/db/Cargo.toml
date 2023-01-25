@@ -18,6 +18,7 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["fs"] }
 nix = "0.26"
 log = "0.4"
+env_logger = "0.10"
 bytes = "1.2"
 mu_stack = { path = "../mu_stack" }
 rust-embed = "6"
@@ -28,3 +29,9 @@ anyhow = "1.0"
 flate2 = "1.0.25"
 tar = "0.4.38"
 dirs = "4"
+
+[dev-dependencies]
+serial_test = "0.8"
+assert_matches = "1.5"
+futures = "0.3"
+rand = "0.8"

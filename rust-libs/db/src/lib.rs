@@ -106,23 +106,17 @@ impl DbClient for DbClientImpl {
     }
 
     async fn scan(&self, scan: Scan, limit: u32) -> Result<Vec<(Key, Value)>> {
-        Ok(self
-            .inner
-            .scan(scan, limit)
-            .await?
-            .into_iter()
-            .map(|kv| kvpair_to_tuple(kv).unwrap())
-            .collect())
+        kvpairs_to_tuples(self.inner.scan(scan, limit).await?)
     }
 
     async fn scan_keys(&self, scan: Scan, limit: u32) -> Result<Vec<Key>> {
-        Ok(self
-            .inner
+        self.inner
             .scan_keys(scan, limit)
             .await?
             .into_iter()
-            .map(|k| k.try_into().unwrap())
-            .collect())
+            .map(|k| k.try_into().map_err(Error::InternalErr))
+            .collect::<Result<Vec<Key>>>()
+            .map_err(Into::into)
     }
 
     async fn table_list(
@@ -134,26 +128,31 @@ impl DbClient for DbClientImpl {
             Some(prefix) => ScanTableList::ByTableNamePrefix(stack_id, prefix),
             None => ScanTableList::ByStackID(stack_id),
         };
-        Ok(self
-            .inner
+        self.inner
             .scan_keys(scan, 128)
             .await?
             .into_iter()
-            .map(|k| TableListKey::try_from(k).unwrap())
-            .map(|k| k.table_name)
-            .collect())
+            .map(|k| {
+                TableListKey::try_from(k)
+                    .map(|x| x.table_name)
+                    .map_err(Error::InternalErr)
+            })
+            .collect::<Result<Vec<TableName>>>()
+            .map_err(Into::into)
     }
 
     async fn stack_id_list(&self) -> Result<Vec<StackID>> {
-        let scan = ScanTableList::Whole;
-        Ok(self
-            .inner
-            .scan_keys(scan, 32)
+        self.inner
+            .scan_keys(ScanTableList::Whole, 32)
             .await?
             .into_iter()
-            .map(|k| TableListKey::try_from(k).unwrap())
-            .map(|k| k.stack_id)
-            .collect())
+            .map(|k| {
+                TableListKey::try_from(k)
+                    .map(|x| x.stack_id)
+                    .map_err(Error::InternalErr)
+            })
+            .collect::<Result<Vec<StackID>>>()
+            .map_err(Into::into)
     }
 
     async fn batch_delete(&self, keys: Vec<Key>) -> Result<()> {
@@ -161,13 +160,7 @@ impl DbClient for DbClientImpl {
     }
 
     async fn batch_get(&self, keys: Vec<Key>) -> Result<Vec<(Key, Value)>> {
-        Ok(self
-            .inner
-            .batch_get(keys)
-            .await?
-            .into_iter()
-            .map(|kv| kvpair_to_tuple(kv).unwrap())
-            .collect())
+        kvpairs_to_tuples(self.inner.batch_get(keys).await?)
     }
 
     async fn batch_put(&self, pairs: Vec<(Key, Value)>, is_atomic: bool) -> Result<()> {
@@ -178,23 +171,17 @@ impl DbClient for DbClientImpl {
     }
 
     async fn batch_scan(&self, scans: Vec<Scan>, each_limit: u32) -> Result<Vec<(Key, Value)>> {
-        Ok(self
-            .inner
-            .batch_scan(scans, each_limit)
-            .await?
-            .into_iter()
-            .map(|kv| kvpair_to_tuple(kv).unwrap())
-            .collect())
+        kvpairs_to_tuples(self.inner.batch_scan(scans, each_limit).await?)
     }
 
     async fn batch_scan_keys(&self, scans: Vec<Scan>, each_limit: u32) -> Result<Vec<Key>> {
-        Ok(self
-            .inner
+        self.inner
             .batch_scan_keys(scans, each_limit)
             .await?
             .into_iter()
-            .map(|k| k.try_into().unwrap())
-            .collect())
+            .map(|k| k.try_into().map_err(Error::InternalErr))
+            .collect::<Result<Vec<Key>>>()
+            .map_err(Into::into)
     }
 
     async fn compare_and_swap(
@@ -264,6 +251,17 @@ impl DbManager for DbManagerImpl {
     }
 }
 
-fn kvpair_to_tuple(kv: KvPair) -> std::result::Result<(Key, Value), String> {
-    Ok((kv.key().clone().try_into()?, kv.into_value()))
+fn kvpairs_to_tuples(kv_pairs: Vec<KvPair>) -> Result<Vec<(Key, Value)>> {
+    let kvpair_to_tuple = |x: KvPair| {
+        Ok((
+            x.key().clone().try_into().map_err(Error::InternalErr)?,
+            x.into_value(),
+        ))
+    };
+
+    kv_pairs
+        .into_iter()
+        .map(kvpair_to_tuple)
+        .collect::<Result<Vec<(Key, Value)>>>()
+        .map_err(Into::into)
 }

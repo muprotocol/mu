@@ -2,11 +2,7 @@ use anyhow::Result;
 use assert_matches::assert_matches;
 use env_logger;
 use futures::Future;
-use mu::{
-    mudb::error::*,
-    mudb::*,
-    network::{gossip::KnownNodeConfig, NodeAddress},
-};
+use mu_db::{error::*, *};
 use mu_stack::StackID;
 use rand::Rng;
 use serial_test::serial;
@@ -251,7 +247,6 @@ fn make_node_address(port: u16) -> NodeAddress {
     NodeAddress {
         address: "127.0.0.1".parse().unwrap(),
         port,
-        generation: 1,
     }
 }
 fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> TikvRunnerConfig {
@@ -280,8 +275,8 @@ fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> Ti
         },
     }
 }
-fn make_known_node_conf(gossip_port: u16, pd_port: u16) -> KnownNodeConfig {
-    KnownNodeConfig {
+fn make_known_node_conf(gossip_port: u16, pd_port: u16) -> RemoteNode {
+    RemoteNode {
         address: "127.0.0.1".parse().unwrap(),
         gossip_port,
         pd_port,
