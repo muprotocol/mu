@@ -1,14 +1,32 @@
 use anyhow::{Context, Result};
 use flate2::bufread::GzDecoder;
-use std::{fs::rename, path::Path};
+use std::{fs, path::Path, process};
 use tar::Archive;
 
 const TIKV_VERSION: &str = "6.4.0";
 
+// The abseil-cpp library refuses to build, so we have to patch its source.
+// If and when we update tikv_client to a more recent version, this should
+// no longer be necessary and can be removed.
+// This is a hack in every sense of the word; it depends on cargo running
+// the build in parallel, and hopes it gets to run before the source file
+// has a chance to be compiled.
+fn patch_abseil_source() {
+    let mut path = dirs::home_dir().unwrap();
+    path.push(".cargo/registry/src/github.com-1ecc6299db9ec823/grpcio-sys-0.8.1/grpc/third_party/abseil-cpp/absl/synchronization/internal/graphcycles.cc");
+    println!("{}", path.to_str().unwrap());
+    let status = process::Command::new("sed")
+        .arg("-i")
+        .arg(r#":a;N;$!ba;s/#include <array>\n#include "absl/#include <array>\n#include <limits>\n#include "absl/g"#)
+        .arg(path)
+        .status()
+        .expect("Failed to patch abseil source files");
+    assert!(status.success());
+}
+
 fn download_and_extract_file(url: String, dest: &str, file_name: &str) -> Result<()> {
     let new_path = Path::new(dest).join(format!("{file_name}-{TIKV_VERSION}"));
 
-    // TODO: figure out whats wrong with rerun-if-changed then remove this
     if new_path.exists() {
         return Ok(());
     }
@@ -32,12 +50,14 @@ fn download_and_extract_file(url: String, dest: &str, file_name: &str) -> Result
 
     let path = Path::new(dest).join(file_name);
 
-    rename(path, new_path).context("Failed to rename file")?;
+    fs::rename(path, new_path).context("Failed to rename file")?;
 
     Ok(())
 }
 
 fn main() {
+    patch_abseil_source();
+
     println!("cargo:rerun-if-changed=assets");
     println!("cargo:rerun-if-changed=protos");
     println!("cargo:rerun-if-changed=build.rs");

@@ -5,10 +5,10 @@
 			"path": "."
 		},
 		{
-			"path": "rust-libs/db"
+			"path": "cli"
 		},
 		{
-			"path": "cli"
+			"path": "rust-libs/db"
 		},
 		{
 			"path": "rust-libs/common"
