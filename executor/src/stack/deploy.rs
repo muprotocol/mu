@@ -105,7 +105,7 @@ pub(super) async fn deploy(
         tables.push(table_name);
     }
     db_service
-        .set_stack_manifest(id, tables)
+        .update_stack_tables(id, tables)
         .await
         .map_err(|e| StackDeploymentError::FailedToDeployDatabases(anyhow::anyhow!("{e}")))?;
 

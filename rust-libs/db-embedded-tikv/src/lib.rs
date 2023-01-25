@@ -10,7 +10,7 @@ use std::{
     process,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::{error, warn};
@@ -84,15 +84,16 @@ impl From<IpAndPort> for String {
 }
 
 impl TryFrom<&str> for IpAndPort {
-    type Error = String;
+    type Error = anyhow::Error;
+
     fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
         let x: Vec<&str> = value.split(':').collect();
         if x.len() != 2 {
-            Err("Cant parse".into())
+            bail!("Can't parse, expected string in this format: ip_addr:port");
         } else {
             Ok(IpAndPort {
-                address: x[0].parse().map_err(|e| format!("{e}"))?,
-                port: x[1].parse().map_err(|e| format!("{e}"))?,
+                address: x[0].parse()?,
+                port: x[1].parse()?,
             })
         }
     }
@@ -139,6 +140,7 @@ impl TikvConfig {
     }
 }
 
+// TODO: this should go in the DB crate.
 #[derive(Deserialize, Clone)]
 pub enum DbConfig {
     External(Vec<IpAndPort>),
@@ -334,7 +336,9 @@ pub async fn start(
 #[async_trait]
 impl TikvRunner for TikvRunnerImpl {
     async fn stop(&self) -> Result<()> {
-        Ok(self.mailbox.post(Message::Stop).await?)
+        self.mailbox.post(Message::Stop).await?;
+        self.mailbox.clone().stop().await;
+        Ok(())
     }
 }
 

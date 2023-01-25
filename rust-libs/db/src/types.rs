@@ -1,12 +1,9 @@
-use super::error::Result;
-use async_trait::async_trait;
 use bytes::BufMut;
-use dyn_clonable::clonable;
 use mu_stack::StackID;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::ops::Deref;
-use tikv_client::{BoundRange, Key as TikvKey, Value};
+use tikv_client::{BoundRange, Key as TikvKey};
 
 // TODO: add constraint to Key (actually key.stack_id) to avoid this name
 const TABLE_LIST_METADATA: &str = "__tlm";
@@ -49,7 +46,6 @@ fn three_chunk_try_from_tikv_key(
     Ok((a, b, c))
 }
 
-/// # TableListKey
 pub struct TableListKey {
     pub stack_id: StackID,
     pub table_name: TableName,
@@ -67,10 +63,9 @@ impl TableListKey {
 impl From<TableListKey> for tikv_client::Key {
     fn from(k: TableListKey) -> Self {
         let first = TABLE_LIST_METADATA.as_bytes();
-        // TODO: stack_id disclimiantor byte
-        let second = k.stack_id.get_bytes();
+        let second = k.stack_id.to_bytes();
         let third = k.table_name.as_bytes();
-        tikv_key_from_3_chunk(first, second, third)
+        tikv_key_from_3_chunk(first, second.as_ref(), third)
     }
 }
 
@@ -80,41 +75,46 @@ impl TryFrom<tikv_client::Key> for TableListKey {
         let (a, b, c) = three_chunk_try_from_tikv_key(value)?;
         if TABLE_LIST_METADATA.as_bytes() != a.as_slice() {
             Err(format!(
-                "cant deserialize TableListKey cause it dont have {TABLE_LIST_METADATA} part"
+                "cant deserialize TableListKey cause it doesn't begin with {TABLE_LIST_METADATA}"
             ))
         } else {
             Ok(Self {
-                stack_id: b
-                    .try_into()
-                    .map_err(|_| "cant deserialize stack_id".to_string())?,
+                stack_id: StackID::try_from_bytes(b.as_ref())
+                    .map_err(|_| "can't deserialize stack_id".to_string())?,
                 table_name: c
                     .try_into()
-                    .map_err(|_| "cant deserialize table_name".to_string())?,
+                    .map_err(|_| "can't deserialize table_name".to_string())?,
             })
         }
     }
 }
 
-fn prefixed_by_a_chunk_bound_range(mut chunk: Blob) -> BoundRange {
-    chunk.insert(0, chunk.len() as u8);
-    subset_range(chunk)
+fn prefixed_by_a_chunk_bound_range(chunk: &[u8]) -> BoundRange {
+    let mut buffer = Vec::with_capacity(chunk.len() + 1);
+    buffer.push(chunk.len().try_into().unwrap());
+    buffer.put_slice(chunk);
+    subset_range(buffer)
 }
-fn prefixed_by_two_chunk_bound_range(mut first: Blob, mut second: Blob) -> BoundRange {
-    first.insert(0, first.len() as u8);
-    second.insert(0, second.len() as u8);
-    first.append(&mut second);
-    subset_range(first)
+fn prefixed_by_two_chunk_bound_range(mut first: &[u8], mut second: &[u8]) -> BoundRange {
+    let mut buffer = Vec::with_capacity(first.len() + second.len() + 2);
+    buffer.push(first.len().try_into().unwrap());
+    buffer.put_slice(first);
+    buffer.push(second.len().try_into().unwrap());
+    buffer.put_slice(second);
+    subset_range(buffer)
 }
 fn prefixed_by_three_chunk_bound_range(
-    mut first: Blob,
-    mut second: Blob,
-    mut third: Blob,
+    mut first: &[u8],
+    mut second: &[u8],
+    mut third: &[u8],
 ) -> BoundRange {
-    first.insert(0, first.len() as u8);
-    second.insert(0, second.len() as u8);
-    first.append(&mut second);
-    first.append(&mut third);
-    subset_range(first)
+    let mut buffer = Vec::with_capacity(first.len() + second.len() + 2);
+    buffer.push(first.len().try_into().unwrap());
+    buffer.put_slice(first);
+    buffer.push(second.len().try_into().unwrap());
+    buffer.put_slice(second);
+    buffer.put_slice(third);
+    subset_range(buffer)
 }
 
 fn subset_range(from: Blob) -> BoundRange {
@@ -122,18 +122,27 @@ fn subset_range(from: Blob) -> BoundRange {
         (..).into()
     } else {
         let to = {
-            let mut x = from.iter().rev().peekable();
-            let mut y = vec![];
-            while Some(&&u8::MAX) == x.peek() {
-                y.push(x.next().unwrap());
+            let mut max = true;
+            let mut to = Vec::with_capacity(from.len());
+            for byte in from.iter().rev() {
+                if max {
+                    if *byte == u8::MAX {
+                        to.push(0);
+                    } else {
+                        to.push(*byte + 1);
+                        max = false;
+                    }
+                } else {
+                    to.push(*byte);
+                }
             }
-            x.next().map(|xp| {
-                x.rev()
-                    .map(ToOwned::to_owned)
-                    .chain([xp + 1].into_iter())
-                    .chain(y.into_iter().map(|_| 0).rev())
-                    .collect()
-            })
+
+            if max {
+                None
+            } else {
+                to.reverse();
+                Some(to)
+            }
         };
         match to {
             Some(to) => (from..to).into(),
@@ -142,7 +151,6 @@ fn subset_range(from: Blob) -> BoundRange {
     }
 }
 
-/// # TableName
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TableName(String);
 
@@ -191,7 +199,6 @@ impl Deref for TableName {
 }
 
 // TODO : consider empty inner_key
-/// # Key
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Key {
     pub stack_id: StackID,
@@ -201,11 +208,10 @@ pub struct Key {
 
 impl From<Key> for tikv_client::Key {
     fn from(k: Key) -> Self {
-        // TODO: bytes disclimiantor
-        let first = k.stack_id.get_bytes();
+        let first = k.stack_id.to_bytes();
         let second = k.table_name.as_bytes();
         let third = &k.inner_key;
-        tikv_key_from_3_chunk(first, second, third)
+        tikv_key_from_3_chunk(first.as_ref(), second, third)
     }
 }
 
@@ -214,12 +220,11 @@ impl TryFrom<tikv_client::Key> for Key {
     fn try_from(value: tikv_client::Key) -> std::result::Result<Self, Self::Error> {
         let (a, b, c) = three_chunk_try_from_tikv_key(value)?;
         Ok(Self {
-            stack_id: a
-                .try_into()
-                .map_err(|_| "cant deserialize a to stack_id".to_string())?,
+            stack_id: StackID::try_from_bytes(a.as_ref())
+                .map_err(|_| "Can't deserialize first key chunk to a StackID".to_string())?,
             table_name: b
                 .try_into()
-                .map_err(|_| "cant deserialize b to table_name".to_string())?,
+                .map_err(|_| "Can't deserialize second key chunk to a string".to_string())?,
             inner_key: c,
         })
     }
@@ -236,16 +241,16 @@ pub enum ScanTableList {
 impl From<ScanTableList> for BoundRange {
     fn from(s: ScanTableList) -> Self {
         match s {
-            ScanTableList::Whole => prefixed_by_a_chunk_bound_range(TABLE_LIST_METADATA.into()),
+            ScanTableList::Whole => prefixed_by_a_chunk_bound_range(TABLE_LIST_METADATA.as_bytes()),
             ScanTableList::ByStackID(stackid) => prefixed_by_two_chunk_bound_range(
-                TABLE_LIST_METADATA.into(),
-                stackid.get_bytes().to_owned().into(),
+                TABLE_LIST_METADATA.as_bytes(),
+                stackid.get_bytes(),
             ),
-            ScanTableList::ByTableNamePrefix(stackid, tablename) => {
+            ScanTableList::ByTableNamePrefix(stackid, table_name) => {
                 prefixed_by_three_chunk_bound_range(
-                    TABLE_LIST_METADATA.into(),
-                    stackid.get_bytes().to_owned().into(),
-                    tablename.into(),
+                    TABLE_LIST_METADATA.as_bytes(),
+                    stackid.get_bytes(),
+                    table_name.as_bytes(),
                 )
             }
         }
@@ -262,63 +267,18 @@ pub enum Scan {
 impl From<Scan> for BoundRange {
     fn from(s: Scan) -> Self {
         match s {
-            Scan::ByTableName(stackid, tablename) => prefixed_by_two_chunk_bound_range(
-                stackid.get_bytes().to_owned().into(),
-                tablename.into(),
-            ),
-            Scan::ByInnerKeyPrefix(stackid, tablename, key) => prefixed_by_three_chunk_bound_range(
-                stackid.get_bytes().to_owned().into(),
-                tablename.into(),
-                key,
-            ),
+            Scan::ByTableName(stackid, table_name) => {
+                prefixed_by_two_chunk_bound_range(stackid.get_bytes(), table_name.as_bytes())
+            }
+            Scan::ByInnerKeyPrefix(stackid, table_name, key) => {
+                prefixed_by_three_chunk_bound_range(
+                    stackid.get_bytes(),
+                    table_name.as_bytes(),
+                    key.as_ref(),
+                )
+            }
         }
     }
-}
-
-#[async_trait]
-#[clonable]
-pub trait DbClient: Send + Sync + Debug + Clone {
-    async fn set_stack_manifest(&self, stack_id: StackID, tables: Vec<TableName>) -> Result<()>;
-    async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()>;
-    async fn get(&self, key: Key) -> Result<Option<Value>>;
-    async fn delete(&self, key: Key, is_atomic: bool) -> Result<()>;
-
-    async fn delete_by_prefix(
-        &self,
-        stack_id: StackID,
-        table_name: TableName,
-        prefix_user_key: Blob,
-    ) -> Result<()>;
-
-    async fn clear_table(&self, stack_id: StackID, table_name: TableName) -> Result<()>;
-    async fn scan(&self, scan: Scan, limit: u32) -> Result<Vec<(Key, Value)>>;
-    async fn scan_keys(&self, scan: Scan, limit: u32) -> Result<Vec<Key>>;
-
-    async fn table_list(
-        &self,
-        stack_id: StackID,
-        table_name_prefix: Option<TableName>,
-    ) -> Result<Vec<TableName>>;
-
-    async fn stack_id_list(&self) -> Result<Vec<StackID>>;
-    async fn batch_delete(&self, keys: Vec<Key>) -> Result<()>;
-    async fn batch_get(&self, keys: Vec<Key>) -> Result<Vec<(Key, Value)>>;
-    async fn batch_put(&self, pairs: Vec<(Key, Value)>, is_atomic: bool) -> Result<()>;
-    async fn batch_scan(&self, scans: Vec<Scan>, each_limit: u32) -> Result<Vec<(Key, Value)>>;
-    async fn batch_scan_keys(&self, scans: Vec<Scan>, each_limit: u32) -> Result<Vec<Key>>;
-
-    async fn compare_and_swap(
-        &self,
-        key: Key,
-        previous_value: Option<Value>,
-        new_value: Value,
-    ) -> Result<(Option<Value>, bool)>;
-}
-
-#[async_trait]
-pub trait DbManager: Send + Sync {
-    async fn make_client(&self) -> anyhow::Result<Box<dyn DbClient>>;
-    async fn stop_embedded_cluster(&self) -> anyhow::Result<()>;
 }
 
 #[cfg(test)]
@@ -353,7 +313,7 @@ mod test {
 
     #[test]
     fn test_prefixed_by_two_chunk_bound_range() {
-        let scan = prefixed_by_two_chunk_bound_range(vec![0, 1], vec![12, 12, 12]);
+        let scan = prefixed_by_two_chunk_bound_range(&[0, 1], &[12, 12, 12]);
         let bound_range: BoundRange = scan;
         assert_eq!(
             bound_range.start_bound(),
@@ -367,7 +327,7 @@ mod test {
 
     #[test]
     fn test_prefixed_by_three_chunk_bound_range() {
-        let scan = prefixed_by_three_chunk_bound_range(vec![0, 1], vec![12, 12, 12], vec![20, 22]);
+        let scan = prefixed_by_three_chunk_bound_range(&[0, 1], &[12, 12, 12], &[20, 22]);
         let bound_range: BoundRange = scan;
         assert_eq!(
             bound_range.start_bound(),
