@@ -242,12 +242,12 @@ impl From<ScanTableList> for BoundRange {
             ScanTableList::Whole => prefixed_by_a_chunk_bound_range(TABLE_LIST_METADATA.as_bytes()),
             ScanTableList::ByStackID(stackid) => prefixed_by_two_chunk_bound_range(
                 TABLE_LIST_METADATA.as_bytes(),
-                stackid.get_bytes(),
+                stackid.to_bytes().as_ref(),
             ),
             ScanTableList::ByTableNamePrefix(stackid, table_name) => {
                 prefixed_by_three_chunk_bound_range(
                     TABLE_LIST_METADATA.as_bytes(),
-                    stackid.get_bytes(),
+                    stackid.to_bytes().as_ref(),
                     table_name.as_bytes(),
                 )
             }
@@ -265,12 +265,13 @@ pub enum Scan {
 impl From<Scan> for BoundRange {
     fn from(s: Scan) -> Self {
         match s {
-            Scan::ByTableName(stackid, table_name) => {
-                prefixed_by_two_chunk_bound_range(stackid.get_bytes(), table_name.as_bytes())
-            }
+            Scan::ByTableName(stackid, table_name) => prefixed_by_two_chunk_bound_range(
+                stackid.to_bytes().as_ref(),
+                table_name.as_bytes(),
+            ),
             Scan::ByInnerKeyPrefix(stackid, table_name, key) => {
                 prefixed_by_three_chunk_bound_range(
-                    stackid.get_bytes(),
+                    stackid.to_bytes().as_ref(),
                     table_name.as_bytes(),
                     key.as_ref(),
                 )

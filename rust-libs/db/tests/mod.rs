@@ -89,7 +89,7 @@ async fn test_queries_on_a_node_with<T>(
     T: Future + Send + 'static,
 {
     // db
-    db.set_stack_manifest(stack_id.clone(), table_list.clone().into())
+    db.update_stack_tables(stack_id.clone(), table_list.clone().into())
         .await
         .unwrap();
     let key = Key {
@@ -680,7 +680,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     .unwrap();
 
     for x in [&db, &db2, &db3] {
-        x.set_stack_manifest(STACK_ID, table_list().into())
+        x.update_stack_tables(STACK_ID, table_list().into())
             .await
             .unwrap();
     }
