@@ -95,7 +95,8 @@ fn prefixed_by_a_chunk_bound_range(chunk: &[u8]) -> BoundRange {
     buffer.put_slice(chunk);
     subset_range(buffer)
 }
-fn prefixed_by_two_chunk_bound_range(mut first: &[u8], mut second: &[u8]) -> BoundRange {
+
+fn prefixed_by_two_chunk_bound_range(first: &[u8], second: &[u8]) -> BoundRange {
     let mut buffer = Vec::with_capacity(first.len() + second.len() + 2);
     buffer.push(first.len().try_into().unwrap());
     buffer.put_slice(first);
@@ -103,11 +104,8 @@ fn prefixed_by_two_chunk_bound_range(mut first: &[u8], mut second: &[u8]) -> Bou
     buffer.put_slice(second);
     subset_range(buffer)
 }
-fn prefixed_by_three_chunk_bound_range(
-    mut first: &[u8],
-    mut second: &[u8],
-    mut third: &[u8],
-) -> BoundRange {
+
+fn prefixed_by_three_chunk_bound_range(first: &[u8], second: &[u8], third: &[u8]) -> BoundRange {
     let mut buffer = Vec::with_capacity(first.len() + second.len() + 2);
     buffer.push(first.len().try_into().unwrap());
     buffer.put_slice(first);
