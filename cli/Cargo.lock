@@ -1392,6 +1392,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctrlc"
+version = "3.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1631ca6e3c59112501a9d87fd86f21591ff77acd31331e8a73f8d80a65bbdd71"
+dependencies = [
+ "nix 0.26.2",
+ "windows-sys 0.42.0",
+]
+
+[[package]]
 name = "curve25519-dalek"
 version = "3.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2943,6 +2953,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "clap 4.1.4",
+ "ctrlc",
  "dirs",
  "marketplace",
  "mu-gateway",
@@ -2963,6 +2974,7 @@ dependencies = [
  "spl-token",
  "thiserror",
  "tokio",
+ "tokio-util",
  "uriparse",
 ]
 

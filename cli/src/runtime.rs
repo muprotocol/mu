@@ -10,13 +10,18 @@ use async_trait::async_trait;
 
 use mu_gateway::{GatewayManager, GatewayManagerConfig};
 use mu_runtime::{AssemblyDefinition, AssemblyProvider, Runtime, RuntimeConfig};
-use mu_stack::{AssemblyID, FunctionID, Stack, StackID};
+use mu_stack::{AssemblyID, FunctionID, Gateway, Stack, StackID};
 use musdk_common::{Request, Response};
 
 pub async fn start(
     stack: Stack,
     function_binary_path: &Path,
-) -> Result<(Box<dyn Runtime>, Box<dyn GatewayManager>)> {
+) -> Result<(
+    Box<dyn Runtime>,
+    Box<dyn GatewayManager>,
+    Vec<Gateway>,
+    StackID,
+)> {
     let stack_id = StackID::SolanaPublicKey(rand::random());
 
     let assembly_provider = MapAssemblyProvider::default();
@@ -41,7 +46,7 @@ pub async fn start(
 
         function_defs.push(AssemblyDefinition {
             id: AssemblyID {
-                stack_id: stack_id.clone(),
+                stack_id,
                 assembly_name: func.name.clone(),
             },
             source: assembly_source.into(),
@@ -51,7 +56,7 @@ pub async fn start(
         });
     }
 
-    runtime.add_functions(function_defs).await?;
+    runtime.add_functions(function_defs.clone()).await?;
 
     let gateway_config = GatewayManagerConfig {
         listen_address: IpAddr::V4(Ipv4Addr::LOCALHOST),
@@ -71,7 +76,9 @@ pub async fn start(
 
     //TODO: Add databases and setup them
 
-    Ok((runtime, gateway))
+    let gateways = stack.gateways().map(ToOwned::to_owned).collect();
+
+    Ok((runtime, gateway, gateways, stack_id))
 }
 
 async fn handle_request(

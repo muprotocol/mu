@@ -8,4 +8,4 @@ mod template;
 mod token_utils;
 
 pub use commands::execute;
-pub use commands::Args;
+pub use commands::Arguments;

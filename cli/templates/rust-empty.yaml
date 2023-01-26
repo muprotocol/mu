@@ -45,7 +45,7 @@ files:
           - type: Gateway
             name: my_gateway
             endpoints:
-              /say_hello/to/{name}:
+              say_hello/to/{name}:
                 - method: get
                   route_to: my_functions.greet_user
     args:

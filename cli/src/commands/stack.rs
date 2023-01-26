@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::PathBuf};
 
 use anchor_client::{
     solana_client::rpc_filter::{Memcmp, RpcFilterType},
@@ -20,29 +16,9 @@ use crate::{
 
 #[derive(Debug, Parser)]
 pub enum Command {
-    Init(InitStackCommand),
-    Build,
-    Run,
     List(ListStacksCommand),
     Deploy(DeployStackCommand),
     Delete(DeleteStackCommand),
-}
-
-#[derive(Debug, Args)]
-pub struct InitStackCommand {
-    /// Initialize a new mu project.
-    name: String,
-
-    /// The directory to create new project in.
-    path: Option<String>,
-
-    #[arg(short, long)]
-    /// Template to use for new project.
-    template: String,
-
-    #[arg(short, long)]
-    /// Language.
-    language: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -96,69 +72,12 @@ pub struct DeleteStackCommand {
     region: String,
 }
 
-pub async fn execute(config: Config, cmd: Command) -> Result<()> {
+pub fn execute(config: Config, cmd: Command) -> Result<()> {
     match cmd {
-        Command::Init(sub_command) => execute_init(config, sub_command),
-        Command::Build => execute_build(config),
-        Command::Run => execute_run(config).await,
         Command::List(sub_command) => execute_list(config, sub_command),
         Command::Deploy(sub_command) => execute_deploy(config, sub_command),
         Command::Delete(sub_command) => execute_delete(config, sub_command),
     }
-}
-
-pub fn execute_init(_config: Config, cmd: InitStackCommand) -> Result<()> {
-    let templates = read_templates()?;
-
-    match templates.iter().find(|t| {
-        t.name == cmd.template && {
-            match &cmd.language {
-                Some(lang) => t.lang.to_string().to_lowercase() == lang.to_lowercase(),
-                None => true,
-            }
-        }
-    }) {
-        None => {
-            println!(
-                "Template `{}` not found, select one of these templates:",
-                cmd.template
-            );
-
-            if !templates.is_empty() {
-                println!("- Name, Lang");
-                println!("===================");
-            }
-            for template in templates {
-                println!("- {},  {}", template.name, template.lang);
-            }
-        }
-        Some(template) => {
-            let mut args = HashMap::new();
-            args.insert("name".to_string(), cmd.name.clone());
-            let path = cmd.path.unwrap_or(format!("./{}", cmd.name));
-            let path = Path::new(&path);
-
-            template.create(path, args)?;
-        }
-    }
-    Ok(())
-}
-
-pub fn execute_build(_config: Config) -> Result<()> {
-    MUManifest::read_file(None)?.build_project()
-}
-
-pub async fn execute_run(_config: Config) -> Result<()> {
-    let manifest = MUManifest::read_file(None)?;
-    manifest.build_project()?; //TODO: should we build on run or not?
-
-    let stack = runtime::read_stack(None)?;
-
-    let (runtime, gateway) = runtime::start(stack, &manifest.wasm_module_path()).await?;
-    runtime.stop().await?;
-    gateway.stop().await?;
-
-    Ok(())
 }
 
 pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {

@@ -191,11 +191,11 @@ pub async fn run() -> Result<()> {
                 Box::pin(request_routing::route_request(
                     f,
                     r,
-                    connection_manager_clone.clone(),
-                    gossip_clone.clone(),
+                    connection_manager.clone(),
+                    gossip.clone(),
                     scheduler_ref.clone(),
-                    rpc_handler_clone.clone(),
-                    runtime_clone.clone(),
+                    rpc_handler.clone(),
+                    runtime.clone(),
                 ))
             }
         })
