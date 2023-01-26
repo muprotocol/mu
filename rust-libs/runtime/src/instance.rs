@@ -4,17 +4,13 @@ use super::{
     error::{Error, FunctionLoadingError},
     function,
     memory::create_memory,
-    types::{
-        AssemblyID, ExecuteFunctionRequest, ExecuteFunctionResponse, FunctionHandle, InstanceID,
-    },
+    types::{ExecuteFunctionRequest, ExecuteFunctionResponse, FunctionHandle, InstanceID},
 };
-use crate::{
-    mudb::service::DatabaseManager, runtime::error::FunctionRuntimeError,
-    stack::usage_aggregator::Usage,
-};
+use crate::{error::FunctionRuntimeError, Usage};
 
 use anyhow::anyhow;
 use log::{error, log, trace, Level};
+use mu_stack::AssemblyID;
 use musdk_common::{
     incoming_message::IncomingMessage,
     outgoing_message::{LogLevel, OutgoingMessage},
@@ -39,30 +35,24 @@ pub fn create_store(memory_limit: byte_unit::Byte) -> Result<Store, Error> {
 }
 
 fn create_usage(
-    db_read: &u64,
-    db_write: &u64,
+    db_read: u64,
+    db_write: u64,
     instructions_count: u64,
-    memory: &byte_unit::Byte,
-) -> Vec<Usage> {
+    memory: byte_unit::Byte,
+) -> Usage {
     let memory_megabytes = memory
         .get_adjusted_unit(byte_unit::ByteUnit::MB)
         .get_value();
     let memory_megabytes = memory_megabytes.floor() as u64;
 
-    vec![
-        Usage::DBRead {
-            weak_reads: *db_read,
-            strong_reads: 0,
-        },
-        Usage::DBWrite {
-            weak_writes: *db_write,
-            strong_writes: 0,
-        },
-        Usage::FunctionMBInstructions {
-            memory_megabytes,
-            instructions: instructions_count,
-        },
-    ]
+    Usage {
+        db_strong_reads: 0,
+        db_strong_writes: 0,
+        db_weak_reads: db_read,
+        db_weak_writes: db_write,
+        function_instructions: instructions_count,
+        memory_megabytes,
+    }
 }
 
 fn metering_point_to_instructions_count(points: &MeteringPoints) -> u64 {
@@ -96,7 +86,6 @@ impl InstanceState for Running {}
 pub struct Instance<S: InstanceState> {
     id: InstanceID,
     state: S,
-    database_service: DatabaseManager,
     memory_limit: byte_unit::Byte,
     include_logs: bool,
 }
@@ -104,12 +93,11 @@ pub struct Instance<S: InstanceState> {
 impl Instance<Loaded> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        function_id: AssemblyID,
+        assembly_id: AssemblyID,
         instance_id: u64,
         envs: HashMap<String, String>,
         store: Store,
         module: Module,
-        database_service: DatabaseManager,
         memory_limit: byte_unit::Byte,
         include_logs: bool,
     ) -> Self {
@@ -121,11 +109,10 @@ impl Instance<Loaded> {
 
         Instance {
             id: InstanceID {
-                function_id,
+                function_id: assembly_id,
                 instance_id,
             },
             state,
-            database_service,
             memory_limit,
             include_logs,
         }
@@ -148,7 +135,6 @@ impl Instance<Loaded> {
         Ok(Instance {
             id: self.id,
             state,
-            database_service: self.database_service,
             memory_limit: self.memory_limit,
             include_logs: self.include_logs,
         })
@@ -160,13 +146,13 @@ impl Instance<Running> {
     pub async fn run_request(
         self,
         request: ExecuteFunctionRequest<'static>,
-    ) -> Result<(ExecuteFunctionResponse, Vec<Usage>), (Error, Vec<Usage>)> {
+    ) -> Result<(ExecuteFunctionResponse, Usage), (Error, Usage)> {
         tokio::task::spawn_blocking(move || self.inner_run_request(request))
             .await
             .map_err(|_| {
                 (
                     Error::Internal(anyhow!("can not run function task to end")),
-                    vec![],
+                    Default::default(),
                 )
             })?
     }
@@ -190,16 +176,16 @@ impl Instance<Running> {
         OutgoingMessage::read(&mut self.state.handle.io.stdout).map_err(Error::FailedToReadMessage)
     }
 
-    fn wait_to_finish_and_get_usage(self) -> Result<Vec<Usage>, (Error, Vec<Usage>)> {
+    fn wait_to_finish_and_get_usage(self) -> Result<Usage, (Error, Usage)> {
         tokio::runtime::Handle::current()
             .block_on(self.state.handle.join_handle)
             .map(move |metering_points| {
                 let usage = |m| {
                     create_usage(
-                        &self.state.database_read_count,
-                        &self.state.database_write_count,
+                        self.state.database_read_count,
+                        self.state.database_write_count,
                         metering_point_to_instructions_count(m),
-                        &self.memory_limit,
+                        self.memory_limit,
                     )
                 };
 
@@ -211,7 +197,7 @@ impl Instance<Running> {
             .map_err(|_| {
                 (
                     Error::Internal(anyhow!("failed to run function task to end")),
-                    vec![],
+                    Default::default(),
                 )
             })?
     }
@@ -219,7 +205,7 @@ impl Instance<Running> {
     fn inner_run_request(
         mut self,
         request: ExecuteFunctionRequest<'static>,
-    ) -> Result<(ExecuteFunctionResponse, Vec<Usage>), (Error, Vec<Usage>)> {
+    ) -> Result<(ExecuteFunctionResponse, Usage), (Error, Usage)> {
         trace!("Running {}", &self.id);
 
         if self.is_finished() {
@@ -232,12 +218,12 @@ impl Instance<Running> {
                 Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(
                     RuntimeError::new("Function Early Exit"),
                 )),
-                vec![],
+                Default::default(),
             ));
         }
 
         self.write_message(IncomingMessage::ExecuteFunction(request))
-            .map_err(|e| (e, vec![]))?;
+            .map_err(|e| (e, Default::default()))?;
         self.state.io_state = IOState::Processing;
 
         loop {
@@ -447,8 +433,8 @@ impl Instance<Running> {
 enum IOState {
     Idle,
     Processing,
-    InRuntimeCall,
-    Closed,
+    // InRuntimeCall,
+    // Closed,
 }
 
 mod utils {

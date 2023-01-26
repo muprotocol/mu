@@ -1,37 +1,34 @@
-//TODO
-#![allow(dead_code)]
-//TODO: Add logging
-
 pub mod error;
 pub mod function;
 pub mod instance;
 pub mod memory;
 pub mod providers;
-pub mod types;
+mod types;
+
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    ops::{Add, AddAssign},
+};
 
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::*;
-use mailbox_processor::{callback::CallbackMailboxProcessor, ReplyChannel};
-use mu_stack::StackID;
-use musdk_common::{Header, Request, Response};
-use std::{borrow::Cow, collections::HashMap};
+use tokio::sync::mpsc;
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
 
-use self::{
-    error::Error,
-    instance::{create_store, Instance, Loaded},
-    types::{
-        AssemblyDefinition, AssemblyID, AssemblyProvider, FunctionID, InvokeFunctionRequest,
-        RuntimeConfig,
-    },
-};
-use crate::{
-    mudb::service::DatabaseManager, runtime::error::FunctionLoadingError,
-    stack::usage_aggregator::UsageAggregator, util::id::IdExt,
-};
+use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel, ReplyChannel};
+use mu_common::id::IdExt;
+use mu_stack::{AssemblyID, FunctionID, StackID};
+use musdk_common::{Header, Request, Response};
+
+use instance::create_store;
+
+pub use error::{Error, FunctionLoadingError, FunctionRuntimeError};
+pub use instance::{Instance, Loaded, Running};
+pub use types::{AssemblyDefinition, AssemblyProvider, InvokeFunctionRequest, RuntimeConfig};
 
 #[async_trait]
 #[clonable]
@@ -49,8 +46,48 @@ pub trait Runtime: Clone + Send + Sync {
     async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>, Error>;
 }
 
+#[derive(Clone)]
+pub enum Notification {
+    ReportUsage(StackID, Usage),
+}
+
+#[derive(Default, Clone)]
+pub struct Usage {
+    pub db_weak_reads: u64,
+    pub db_strong_reads: u64,
+    pub db_weak_writes: u64,
+    pub db_strong_writes: u64,
+    pub function_instructions: u64,
+    pub memory_megabytes: u64,
+}
+
+impl Add for Usage {
+    type Output = Self;
+
+    fn add(mut self, rhs: Self) -> Self::Output {
+        self.db_weak_reads += rhs.db_weak_reads;
+        self.db_weak_writes += rhs.db_weak_writes;
+        self.db_strong_reads += rhs.db_strong_reads;
+        self.db_strong_writes += rhs.db_strong_writes;
+        self.function_instructions += rhs.function_instructions;
+        self.memory_megabytes += rhs.memory_megabytes;
+        self
+    }
+}
+
+impl AddAssign for Usage {
+    fn add_assign(&mut self, rhs: Self) {
+        self.db_weak_reads += rhs.db_weak_reads;
+        self.db_weak_writes += rhs.db_weak_writes;
+        self.db_strong_reads += rhs.db_strong_reads;
+        self.db_strong_writes += rhs.db_strong_writes;
+        self.function_instructions += rhs.function_instructions;
+        self.memory_megabytes += rhs.memory_megabytes;
+    }
+}
+
 #[derive(Debug)]
-pub enum MailboxMessage {
+enum MailboxMessage {
     InvokeFunction(InvokeFunctionRequest),
     Shutdown,
 
@@ -74,32 +111,33 @@ struct RuntimeState {
     assembly_provider: Box<dyn AssemblyProvider>,
     hashkey_dict: HashMap<AssemblyID, CacheHashAndMemoryLimit>,
     cache: FileSystemCache,
-    database_service: DatabaseManager,
-    usage_aggregator: Box<dyn UsageAggregator>,
     next_instance_id: u64,
+    notification_channel: NotificationChannel<Notification>,
 }
 
 impl RuntimeState {
     pub async fn new(
         assembly_provider: Box<dyn AssemblyProvider>,
         config: RuntimeConfig,
-        database_service: DatabaseManager,
-        usage_aggregator: Box<dyn UsageAggregator>,
-    ) -> Result<Self> {
+    ) -> Result<(Self, mpsc::UnboundedReceiver<Notification>)> {
+        let (tx, rx) = NotificationChannel::new();
+
         let hashkey_dict = HashMap::new();
         let mut cache =
             FileSystemCache::new(&config.cache_path).context("failed to create cache")?;
         cache.set_cache_extension(Some("wasmu"));
 
-        Ok(Self {
-            config,
-            hashkey_dict,
-            assembly_provider,
-            cache,
-            database_service,
-            usage_aggregator,
-            next_instance_id: 0,
-        })
+        Ok((
+            Self {
+                config,
+                hashkey_dict,
+                assembly_provider,
+                cache,
+                next_instance_id: 0,
+                notification_channel: tx,
+            },
+            rx,
+        ))
     }
 
     fn load_module(&mut self, function_id: &AssemblyID) -> Result<(Store, Module)> {
@@ -175,27 +213,26 @@ impl RuntimeState {
         }
     }
 
-    async fn instantiate_function(&mut self, function_id: AssemblyID) -> Result<Instance<Loaded>> {
-        trace!("instantiate function {}", function_id);
+    async fn instantiate_function(&mut self, assembly_id: AssemblyID) -> Result<Instance<Loaded>> {
+        trace!("instantiate function {}", assembly_id);
         let definition = self
             .assembly_provider
-            .get(&function_id)
+            .get(&assembly_id)
             .ok_or_else(|| {
                 Error::FunctionLoadingError(FunctionLoadingError::AssemblyNotFound(
-                    function_id.clone(),
+                    assembly_id.clone(),
                 ))
             })?
             .to_owned();
 
-        trace!("loading function {}", function_id);
-        let (store, module) = self.load_module(&function_id)?;
+        trace!("loading function {}", assembly_id);
+        let (store, module) = self.load_module(&assembly_id)?;
         Ok(Instance::new(
-            function_id,
+            assembly_id,
             self.next_instance_id.get_and_increment(),
             definition.envs,
             store,
             module,
-            self.database_service.clone(),
             definition.memory_limit,
             self.config.include_function_logs,
         ))
@@ -286,12 +323,10 @@ impl Runtime for RuntimeImpl {
 pub async fn start(
     assembly_provider: Box<dyn AssemblyProvider>,
     config: RuntimeConfig,
-    db_service: DatabaseManager,
-    usage_aggregator: Box<dyn UsageAggregator>,
-) -> Result<Box<dyn Runtime>> {
-    let state = RuntimeState::new(assembly_provider, config, db_service, usage_aggregator).await?;
+) -> Result<(Box<dyn Runtime>, mpsc::UnboundedReceiver<Notification>)> {
+    let (state, notification_receiver) = RuntimeState::new(assembly_provider, config).await?;
     let mailbox = CallbackMailboxProcessor::start(mailbox_step, state, 10000);
-    Ok(Box::new(RuntimeImpl { mailbox }))
+    Ok((Box::new(RuntimeImpl { mailbox }), notification_receiver))
 }
 
 async fn mailbox_step(
@@ -299,12 +334,12 @@ async fn mailbox_step(
     msg: MailboxMessage,
     mut state: RuntimeState,
 ) -> RuntimeState {
+    let notification_channel = state.notification_channel.clone();
+
     match msg {
         MailboxMessage::InvokeFunction(req) => {
             match state.instantiate_function(req.assembly_id.clone()).await {
                 Ok(instance) => {
-                    let usage_aggregator = state.usage_aggregator.clone();
-
                     tokio::spawn(async move {
                         match instance.start() {
                             Err(e) => req.reply.reply(Err(e)),
@@ -313,13 +348,17 @@ async fn mailbox_step(
                                     .run_request(req.request)
                                     .await
                                     .map(|(resp, usages)| {
-                                        usage_aggregator
-                                            .register_usage(req.assembly_id.stack_id, usages);
+                                        notification_channel.send(Notification::ReportUsage(
+                                            req.assembly_id.stack_id,
+                                            usages,
+                                        ));
                                         resp
                                     })
                                     .map_err(|(error, usages)| {
-                                        usage_aggregator
-                                            .register_usage(req.assembly_id.stack_id, usages);
+                                        notification_channel.send(Notification::ReportUsage(
+                                            req.assembly_id.stack_id,
+                                            usages,
+                                        ));
                                         error
                                     });
 

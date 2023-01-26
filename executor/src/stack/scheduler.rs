@@ -8,12 +8,14 @@ use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::{debug, error, info, trace, warn};
 use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel, ReplyChannel};
+use mu_common::replace_with::ReplaceWithDefault;
+use mu_gateway::GatewayManager;
+use mu_runtime::Runtime;
 use num::BigInt;
 use serde::Deserialize;
 
 use crate::{
-    gateway::GatewayManager, infrastructure::config::ConfigDuration,
-    mudb::service::DatabaseManager, network::NodeHash, runtime::Runtime, util::ReplaceWithDefault,
+    infrastructure::config::ConfigDuration, mudb::service::DatabaseManager, network::NodeHash,
 };
 
 use mu_stack::{Stack, StackID};

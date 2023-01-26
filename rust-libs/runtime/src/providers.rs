@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use super::types::{AssemblyDefinition, AssemblyID, AssemblyProvider};
-use mu_stack::StackID;
+use super::types::{AssemblyDefinition, AssemblyProvider};
+use mu_stack::{AssemblyID, StackID};
 
 type FunctionName = String;
 

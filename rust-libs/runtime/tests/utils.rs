@@ -1,26 +1,44 @@
-use anyhow::{bail, Context, Result};
-use mu::{
-    mudb::{service::DatabaseManager, DBManagerConfig},
-    runtime::{
-        start,
-        types::{AssemblyDefinition, AssemblyID, FunctionID, RuntimeConfig},
-        Runtime,
-    },
-    stack::usage_aggregator::UsageAggregator,
-};
-use mu_stack::AssemblyRuntime;
 use std::{
-    collections::HashMap,
+    collections::{hash_map::Entry, HashMap},
     env,
     path::{Path, PathBuf},
+    process::Command,
     str::FromStr,
-    time::Duration,
+    sync::Arc,
 };
-use tokio::process::Command;
 
-use crate::common::HashMapUsageAggregator;
+use anyhow::{bail, Context, Result};
+use tokio::sync::Mutex;
 
-use super::providers::MapAssemblyProvider;
+use async_trait::async_trait;
+use mu_runtime::{
+    start, AssemblyDefinition, AssemblyProvider, Notification, Runtime, RuntimeConfig, Usage,
+};
+use mu_stack::{AssemblyID, AssemblyRuntime, FunctionID, StackID};
+
+#[derive(Default)]
+pub struct MapAssemblyProvider {
+    inner: HashMap<AssemblyID, AssemblyDefinition>,
+}
+
+#[async_trait]
+impl AssemblyProvider for MapAssemblyProvider {
+    fn get(&self, id: &AssemblyID) -> Option<&AssemblyDefinition> {
+        Some(self.inner.get(id).unwrap())
+    }
+
+    fn add_function(&mut self, function: AssemblyDefinition) {
+        self.inner.insert(function.id.clone(), function);
+    }
+
+    fn remove_function(&mut self, id: &AssemblyID) {
+        self.inner.remove(id);
+    }
+
+    fn get_function_names(&self, _stack_id: &StackID) -> Vec<String> {
+        unimplemented!("Not needed")
+    }
+}
 
 fn ensure_project_dir(project_dir: &Path) -> Result<PathBuf> {
     let project_dir = env::current_dir()?.join(project_dir);
@@ -34,8 +52,7 @@ async fn install_wasm32_wasi_target() -> Result<()> {
     Command::new("rustup")
         .args(["target", "add", "wasm32-wasi"])
         .spawn()?
-        .wait()
-        .await?;
+        .wait()?;
     Ok(())
 }
 
@@ -49,8 +66,7 @@ pub async fn compile_wasm_project(project_dir: &Path) -> Result<()> {
         .arg("build")
         .args(["--release", "--target", "wasm32-wasi"])
         .spawn()?
-        .wait()
-        .await?;
+        .wait()?;
 
     Ok(())
 }
@@ -65,8 +81,7 @@ pub async fn clean_wasm_project(project_dir: &Path) -> Result<()> {
         .env_remove("CARGO_TARGET_DIR")
         .arg("clean")
         .spawn()?
-        .wait()
-        .await?;
+        .wait()?;
 
     Ok(())
 }
@@ -128,13 +143,13 @@ pub async fn read_wasm_functions<'a>(
     let mut results = HashMap::new();
 
     for project in projects {
-        let source = tokio::fs::read(&project.wasm_module_path()).await?.into();
+        let source = std::fs::read(project.wasm_module_path())?;
 
         results.insert(
             project.id.clone(),
             AssemblyDefinition::new(
                 project.id.clone(),
-                source,
+                source.into(),
                 AssemblyRuntime::Wasi1_0,
                 [],
                 project.memory_limit,
@@ -150,39 +165,54 @@ async fn create_map_function_provider<'a>(
 ) -> Result<(HashMap<AssemblyID, AssemblyDefinition>, MapAssemblyProvider)> {
     build_wasm_projects(projects).await?;
     let functions = read_wasm_functions(projects).await?;
-    Ok((functions, MapAssemblyProvider::new()))
+    Ok((functions, MapAssemblyProvider::default()))
 }
 
 pub async fn create_runtime<'a>(
     projects: &'a [Project<'a>],
-) -> (Box<dyn Runtime>, DatabaseManager, Box<dyn UsageAggregator>) {
+) -> (Box<dyn Runtime>, Arc<Mutex<HashMap<StackID, Usage>>>) {
     let config = RuntimeConfig {
         cache_path: PathBuf::from_str("runtime-cache").unwrap(),
         include_function_logs: true,
     };
 
     let (functions, provider) = create_map_function_provider(projects).await.unwrap();
-    let usage_aggregator = HashMapUsageAggregator::new_boxed();
-    let db_manager_config = DBManagerConfig {
-        usage_report_duration: Duration::from_secs(1).into(),
-    };
+    //let db_manager_config = DBManagerConfig {
+    //    usage_report_duration: Duration::from_secs(1).into(),
+    //};
 
-    let db_service = DatabaseManager::new(usage_aggregator.clone(), db_manager_config)
-        .await
-        .unwrap();
-    let runtime = start(
-        Box::new(provider),
-        config,
-        db_service.clone(),
-        usage_aggregator.clone(),
-    )
-    .await
-    .unwrap();
+    //let db_service = DatabaseManager::new(usage_aggregator.clone(), db_manager_config)
+    //    .await
+    //    .unwrap();
+    let (runtime, mut notifications) = start(Box::new(provider), config).await.unwrap();
 
     runtime
         .add_functions(functions.clone().into_values().into_iter().collect())
         .await
         .unwrap();
 
-    (runtime, db_service, usage_aggregator)
+    let usages = Arc::new(Mutex::new(HashMap::new()));
+
+    tokio::spawn({
+        let usages = usages.clone();
+        async move {
+            loop {
+                match notifications.recv().await {
+                    None => continue,
+                    Some(n) => match n {
+                        Notification::ReportUsage(stack_id, usage) => {
+                            let mut map = usages.lock().await;
+                            if let Entry::Vacant(e) = map.entry(stack_id) {
+                                e.insert(usage);
+                            } else {
+                                *map.get_mut(&stack_id).unwrap() += usage;
+                            }
+                        }
+                    },
+                }
+            }
+        }
+    });
+
+    (runtime, usages)
 }

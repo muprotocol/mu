@@ -68,6 +68,36 @@ impl FromStr for StackID {
     }
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct AssemblyID {
+    pub stack_id: StackID,
+    pub assembly_name: String,
+}
+
+impl Display for AssemblyID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.stack_id, self.assembly_name)
+    }
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct FunctionID {
+    pub assembly_id: AssemblyID,
+    pub function_name: String,
+}
+
+impl FunctionID {
+    pub fn stack_id(&self) -> &StackID {
+        &self.assembly_id.stack_id
+    }
+}
+
+impl Display for FunctionID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.assembly_id, self.function_name)
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Stack {
     pub name: String,

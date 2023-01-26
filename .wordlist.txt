@@ -16,6 +16,7 @@ didnt
 funcs
 Hasher
 hashkey
+hashset
 idgen
 ipaddress
 itertools
