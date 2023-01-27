@@ -23,3 +23,7 @@ export default function useAnchorProvider() {
     anchorProvider,
   };
 }
+
+export function withAnchorProvider() {
+
+}

@@ -12,11 +12,12 @@ type getProgramIdProps = NonNullable<ReturnType<typeof getMarketplaceIdl>>;
 export function getMarketplaceProgram(
   provider: AnchorProvider,
 ): Program<Marketplace> {
+  const providerCopy = provider;
   const marketplaceIdl = getMarketplaceIdl();
   const marketplaceProgram = new Program<Marketplace>(
     marketplaceIdl,
     marketplaceIdl.metadata.address,
-    provider,
+    providerCopy,
   );
 
   return marketplaceProgram;
