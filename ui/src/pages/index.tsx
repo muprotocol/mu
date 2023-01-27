@@ -2,10 +2,6 @@ import React from "react";
 
 import Head from "next/head";
 
-import { Button } from "@mui/material";
-
-import ProviderList from "@/shared/provider/ProviderList";
-
 export default function Home() {
   return (
     <>

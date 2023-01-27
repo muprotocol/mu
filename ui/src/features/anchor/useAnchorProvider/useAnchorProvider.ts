@@ -11,7 +11,7 @@ export default function useAnchorProvider() {
   const { connection } = useConnection();
   const anchorWallet = useAnchorWallet() as AnchorWallet;
 
-  const provider = useMemo(() => {
+  const anchorProvider = useMemo(() => {
     return new AnchorProvider(
       connection,
       anchorWallet,
@@ -20,6 +20,6 @@ export default function useAnchorProvider() {
   }, [connection, anchorWallet]);
 
   return {
-    provider,
+    anchorProvider,
   };
 }

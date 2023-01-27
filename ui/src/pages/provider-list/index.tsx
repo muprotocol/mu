@@ -5,7 +5,7 @@ import {
   useConnection,
 } from "@solana/wallet-adapter-react";
 
-import useProviderList from "@/shared/provider/useProviderList/useProviderList";
+import useProviderList from "@/features/provider/useProviderList/useProviderList";
 
 export default function ProviderList() {
   const { providers } = useProviderList();

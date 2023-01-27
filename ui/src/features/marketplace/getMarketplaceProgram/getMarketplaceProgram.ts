@@ -5,7 +5,7 @@ import { Marketplace } from "@mu/marketplace/target/types/marketplace";
 import { AnchorProvider, Program } from "@project-serum/anchor";
 import { PublicKey } from "@solana/web3.js";
 
-import { getMarketplaceIdl } from "@/shared/marketplace/getMarketplaceIdl/getMarketplaceIdl";
+import { getMarketplaceIdl } from "@/features/marketplace/getMarketplaceIdl/getMarketplaceIdl";
 
 type getProgramIdProps = NonNullable<ReturnType<typeof getMarketplaceIdl>>;
 
