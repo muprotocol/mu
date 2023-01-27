@@ -11,7 +11,7 @@ use crate::{
     error::{Error, Result},
     types::*,
 };
-use anyhow::Context;
+use anyhow::{bail, Context};
 use async_trait::async_trait;
 use db_embedded_tikv::*;
 use mu_stack::StackID;
@@ -106,13 +106,15 @@ impl DbClient for DbClientImpl {
         table_list: Vec<TableName>,
     ) -> Result<()> {
         // TODO: think of something for deleting existing tables
-        let s = ScanTableList::ByStackID(stack_id);
-        self.inner.delete_range(s).await?;
-        let kvs = table_list.into_iter().map(|t| {
+        let mut kvs = vec![];
+        for t in table_list {
             let k = TableListKey::new(stack_id, t);
             let v = "";
-            (k, v)
-        });
+            if self.inner.get(k.clone()).await?.is_none() {
+                kvs.push((k, v))
+            }
+        }
+
         self.inner.batch_put(kvs).await.map_err(Into::into)
     }
 
@@ -259,13 +261,46 @@ impl DbManagerImpl {
         known_node_config: Vec<RemoteNode>,
         config: TikvRunnerConfig,
     ) -> anyhow::Result<Self> {
+        const TIMEOUT: u64 = 5;
+
         let endpoints = vec![config.pd.advertise_client_url()];
-        let inner = Some(db_embedded_tikv::start(node_address, known_node_config, config).await?);
+        let inner = db_embedded_tikv::start(node_address, known_node_config, config).await?;
 
         // wait 10 secs to ensure cluster is bootstrapped
         sleep(Duration::from_secs(10)).await;
 
-        Ok(Self { inner, endpoints })
+        #[tailcall::tailcall]
+        async fn go(
+            inner: Box<dyn TikvRunner>,
+            endpoints: Vec<IpAndPort>,
+            timeout_count: u64,
+        ) -> anyhow::Result<DbManagerImpl> {
+            // try making client to ensure n/2 + 1 clusters have been bootstrapped
+            match DbClientImpl::new(endpoints.clone()).await {
+                Err(_) if timeout_count < TIMEOUT => {
+                    sleep(Duration::from_secs(
+                        1.5_f64.powf(timeout_count as f64) as u64
+                    ))
+                    .await;
+                    go(inner, endpoints, timeout_count + 1)
+                }
+                Err(e) if timeout_count >= TIMEOUT => {
+                    inner
+                        .stop()
+                        .await
+                        .context("failed to stop cluster after failed to bootstrap")?;
+                    bail!(e)
+                }
+                _ => Ok(DbManagerImpl {
+                    inner: Some(inner),
+                    endpoints,
+                }),
+            }
+        }
+
+        go(inner, endpoints, 0)
+            .await
+            .context("Timeout connection to PDs")
     }
 
     pub async fn new_with_external_cluster(endpoints: Vec<IpAndPort>) -> Self {
@@ -279,17 +314,7 @@ impl DbManagerImpl {
 #[async_trait]
 impl DbManager for DbManagerImpl {
     async fn make_client(&self) -> anyhow::Result<Box<dyn DbClient>> {
-        let mut x = DbClientImpl::new(self.endpoints.clone()).await;
-
-        // retry if n/2 + 1 clusters have not been bootstrapped
-        let mut i = 0;
-        while x.is_err() && i < 5 {
-            sleep(Duration::from_secs(2_u64.pow(i))).await;
-            x = DbClientImpl::new(self.endpoints.clone()).await;
-            i += 1;
-        }
-
-        Ok(Box::new(x.context("Timeout connection to PDs")?))
+        Ok(Box::new(DbClientImpl::new(self.endpoints.clone()).await?))
     }
 
     async fn stop_embedded_cluster(&self) -> anyhow::Result<()> {

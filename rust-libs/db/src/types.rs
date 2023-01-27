@@ -46,6 +46,7 @@ fn three_chunk_try_from_tikv_key(
     Ok((a, b, c))
 }
 
+#[derive(Clone)]
 pub struct TableListKey {
     pub stack_id: StackID,
     pub table_name: TableName,

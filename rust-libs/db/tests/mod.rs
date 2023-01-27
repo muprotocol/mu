@@ -542,8 +542,7 @@ async fn success_to_start_and_query_single_embedded_clustered_node() {
 
 #[tokio::test]
 #[serial]
-async fn success_to_start_query_and_stop_3_embedded_clustered_nodes_with_same_stackids_and_tables()
-{
+async fn success_to_start_and_query_3_embedded_clustered_nodes_with_same_stackids_and_tables() {
     clean_data_dir();
 
     let (db_managers, dbs) = make_3_dbs().await;
@@ -557,8 +556,8 @@ async fn success_to_start_query_and_stop_3_embedded_clustered_nodes_with_same_st
 
 #[tokio::test]
 #[serial]
-async fn success_to_start_query_and_stop_3_embedded_clustered_nodes_with_same_stackids_different_tables(
-) {
+async fn success_to_start_and_query_3_embedded_clustered_nodes_with_same_stackids_different_tables()
+{
     clean_data_dir();
 
     let (db_managers, dbs) = make_3_dbs().await;
@@ -572,8 +571,8 @@ async fn success_to_start_query_and_stop_3_embedded_clustered_nodes_with_same_st
 
 #[tokio::test]
 #[serial]
-async fn success_to_start_query_and_stop_3_embedded_clustered_nodes_with_different_stackids_and_tables(
-) {
+async fn success_to_start_and_query_3_embedded_clustered_nodes_with_different_stackids_and_tables()
+{
     clean_data_dir();
 
     let (db_managers, dbs) = make_3_dbs().await;

@@ -3115,6 +3115,7 @@ dependencies = [
  "dirs",
  "dyn-clonable",
  "dyn-clone",
+ "env_logger 0.10.0",
  "log",
  "mailbox_processor",
  "mu_stack",
