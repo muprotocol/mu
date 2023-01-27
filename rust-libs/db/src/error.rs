@@ -11,7 +11,7 @@ pub enum Error {
     CantDeserializeKey(String),
     #[error("mu_db: stack_id or table doesn't exist: {0:?}")]
     StackIdOrTableDoseNotExist(Key),
-    #[error("mu_db: interanl error: {0}")]
+    #[error("mu_db: internal error: {0}")]
     InternalErr(String),
 }
 

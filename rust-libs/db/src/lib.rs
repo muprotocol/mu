@@ -157,7 +157,7 @@ impl DbClient for DbClientImpl {
     }
 
     async fn scan(&self, scan: Scan, limit: u32) -> Result<Vec<(Key, Value)>> {
-        kvpairs_to_tuples(self.inner.scan(scan, limit).await?)
+        kv_pairs_to_tuples(self.inner.scan(scan, limit).await?)
     }
 
     async fn scan_keys(&self, scan: Scan, limit: u32) -> Result<Vec<Key>> {
@@ -211,7 +211,7 @@ impl DbClient for DbClientImpl {
     }
 
     async fn batch_get(&self, keys: Vec<Key>) -> Result<Vec<(Key, Value)>> {
-        kvpairs_to_tuples(self.inner.batch_get(keys).await?)
+        kv_pairs_to_tuples(self.inner.batch_get(keys).await?)
     }
 
     async fn batch_put(&self, pairs: Vec<(Key, Value)>, is_atomic: bool) -> Result<()> {
@@ -222,7 +222,7 @@ impl DbClient for DbClientImpl {
     }
 
     async fn batch_scan(&self, scans: Vec<Scan>, each_limit: u32) -> Result<Vec<(Key, Value)>> {
-        kvpairs_to_tuples(self.inner.batch_scan(scans, each_limit).await?)
+        kv_pairs_to_tuples(self.inner.batch_scan(scans, each_limit).await?)
     }
 
     async fn batch_scan_keys(&self, scans: Vec<Scan>, each_limit: u32) -> Result<Vec<Key>> {
@@ -325,7 +325,7 @@ impl DbManager for DbManagerImpl {
     }
 }
 
-fn kvpairs_to_tuples(kv_pairs: Vec<KvPair>) -> Result<Vec<(Key, Value)>> {
+fn kv_pairs_to_tuples(kv_pairs: Vec<KvPair>) -> Result<Vec<(Key, Value)>> {
     let kvpair_to_tuple = |x: KvPair| {
         Ok((
             x.key().clone().try_into().map_err(Error::InternalErr)?,

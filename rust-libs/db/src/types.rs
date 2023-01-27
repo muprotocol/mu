@@ -76,15 +76,15 @@ impl TryFrom<tikv_client::Key> for TableListKey {
         let (a, b, c) = three_chunk_try_from_tikv_key(value)?;
         if TABLE_LIST_METADATA.as_bytes() != a.as_slice() {
             Err(format!(
-                "cant deserialize TableListKey cause it doesn't begin with {TABLE_LIST_METADATA}"
+                "Can't deserialize TableListKey cause it doesn't begin with {TABLE_LIST_METADATA}"
             ))
         } else {
             Ok(Self {
                 stack_id: StackID::try_from_bytes(b.as_ref())
-                    .map_err(|_| "can't deserialize stack_id".to_string())?,
+                    .map_err(|_| "Can't deserialize stack_id".to_string())?,
                 table_name: c
                     .try_into()
-                    .map_err(|_| "can't deserialize table_name".to_string())?,
+                    .map_err(|_| "Can't deserialize table_name".to_string())?,
             })
         }
     }
