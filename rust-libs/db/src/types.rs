@@ -1,3 +1,4 @@
+use anyhow::{bail, Context, Error, Result};
 use bytes::BufMut;
 use mu_stack::StackID;
 use serde::{Deserialize, Serialize};
@@ -22,13 +23,11 @@ fn tikv_key_from_3_chunk(first: &[u8], second: &[u8], third: &[u8]) -> TikvKey {
     x.into()
 }
 
-fn three_chunk_try_from_tikv_key(
-    value: tikv_client::Key,
-) -> std::result::Result<(Blob, Blob, Blob), String> {
+fn three_chunk_try_from_tikv_key(value: tikv_client::Key) -> Result<(Blob, Blob, Blob)> {
     const E: &str = "Insufficient blobs to convert to Key";
     let split_at = |mut x: Vec<u8>, y| {
         if x.len() < y {
-            Err(E.to_string())
+            bail!(E)
         } else {
             let z = x.split_off(y);
             Ok((x, z))
@@ -71,20 +70,18 @@ impl From<TableListKey> for tikv_client::Key {
 }
 
 impl TryFrom<tikv_client::Key> for TableListKey {
-    type Error = String;
-    fn try_from(value: tikv_client::Key) -> std::result::Result<Self, Self::Error> {
+    type Error = Error;
+    fn try_from(value: tikv_client::Key) -> Result<Self> {
         let (a, b, c) = three_chunk_try_from_tikv_key(value)?;
         if TABLE_LIST_METADATA.as_bytes() != a.as_slice() {
-            Err(format!(
+            bail!(
                 "Can't deserialize TableListKey cause it doesn't begin with {TABLE_LIST_METADATA}"
-            ))
+            )
         } else {
             Ok(Self {
                 stack_id: StackID::try_from_bytes(b.as_ref())
-                    .map_err(|_| "Can't deserialize stack_id".to_string())?,
-                table_name: c
-                    .try_into()
-                    .map_err(|_| "Can't deserialize table_name".to_string())?,
+                    .context("Can't deserialize stack_id")?,
+                table_name: c.try_into().context("Can't deserialize table_name")?,
             })
         }
     }
@@ -166,17 +163,17 @@ impl From<TableName> for Blob {
 }
 
 impl TryFrom<Blob> for TableName {
-    type Error = String;
-    fn try_from(blob: Blob) -> std::result::Result<Self, Self::Error> {
-        Self::try_from(String::from_utf8(blob).map_err(|x| x.to_string())?)
+    type Error = Error;
+    fn try_from(blob: Blob) -> Result<Self> {
+        Self::try_from(String::from_utf8(blob)?)
     }
 }
 
 impl TryFrom<String> for TableName {
-    type Error = String;
-    fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+    type Error = Error;
+    fn try_from(value: String) -> Result<Self> {
         if value.as_bytes().len() > u8::MAX as usize {
-            Err("table name can't exceed 255 bytes".into())
+            bail!("table name can't exceed 255 bytes")
         } else {
             Ok(Self(value))
         }
@@ -184,8 +181,8 @@ impl TryFrom<String> for TableName {
 }
 
 impl TryFrom<&str> for TableName {
-    type Error = String;
-    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+    type Error = Error;
+    fn try_from(value: &str) -> Result<Self> {
         Self::try_from(String::from(value))
     }
 }
@@ -215,15 +212,15 @@ impl From<Key> for tikv_client::Key {
 }
 
 impl TryFrom<tikv_client::Key> for Key {
-    type Error = String;
-    fn try_from(value: tikv_client::Key) -> std::result::Result<Self, Self::Error> {
+    type Error = Error;
+    fn try_from(value: tikv_client::Key) -> Result<Self> {
         let (a, b, c) = three_chunk_try_from_tikv_key(value)?;
         Ok(Self {
             stack_id: StackID::try_from_bytes(a.as_ref())
-                .map_err(|_| "Can't deserialize first key chunk to a StackID".to_string())?,
+                .context("Can't deserialize first key chunk to a StackID")?,
             table_name: b
                 .try_into()
-                .map_err(|_| "Can't deserialize second key chunk to a string".to_string())?,
+                .context("Can't deserialize second key chunk to a string")?,
             inner_key: c,
         })
     }

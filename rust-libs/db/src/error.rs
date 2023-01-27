@@ -12,7 +12,7 @@ pub enum Error {
     #[error("mu_db: stack_id or table doesn't exist: {0:?}")]
     StackIdOrTableDoseNotExist(Key),
     #[error("mu_db: internal error: {0}")]
-    InternalErr(String),
+    InternalErr(anyhow::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
