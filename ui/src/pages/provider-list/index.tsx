@@ -1,9 +1,7 @@
-import useGetMarketplaceAccount from "@/features/marketplace/useGetMarketplaceAccount";
 import useProviderList from "@/features/provider/useProviderList/useProviderList";
 
 export default function ProviderList() {
-  // const { providers } = useProviderList();
-  const { providers } = useGetMarketplaceAccount("provider");
+  const { providers } = useProviderList(console.log);
 
   return (
     <div className="container mx-auto">
