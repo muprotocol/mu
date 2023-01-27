@@ -156,7 +156,7 @@ pub async fn execute_run(_config: Config) -> Result<()> {
         for (path, endpoints) in gateway.endpoints {
             for endpoint in endpoints {
                 println!(
-                    "- {}:{} : {} {}{path}",
+                    "- {}:{} : {} {}/{path}",
                     endpoint.route_to.assembly,
                     endpoint.route_to.function,
                     endpoint.method,
