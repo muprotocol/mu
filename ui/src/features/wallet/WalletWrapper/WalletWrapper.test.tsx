@@ -5,7 +5,7 @@ import {useContext} from "react";
 import {ConnectionContext, WalletContext} from "@solana/wallet-adapter-react";
 
 describe("WalletWrapper", () => {
-    test("it should render itself and it's children", async () => {
+    test("it should render itself and it's children", () => {
         const WalletWrapperClient = () => {
             return (
                 <div data-testid="WalletWrapperClient"></div>
