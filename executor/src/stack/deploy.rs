@@ -3,7 +3,7 @@ use mu_runtime::{AssemblyDefinition, Runtime};
 use reqwest::Url;
 use thiserror::Error;
 
-use crate::mudb::service::{DatabaseID, DatabaseManager};
+use mu_db::DbClient;
 
 use mu_stack::{AssemblyID, HttpMethod, Stack, StackID};
 
@@ -56,7 +56,7 @@ pub(super) async fn deploy(
     id: StackID,
     stack: Stack,
     runtime: &dyn Runtime,
-    db_service: &DatabaseManager,
+    db_service: &dyn DbClient,
 ) -> Result<(), StackDeploymentError> {
     let stack = validate(stack).map_err(StackDeploymentError::ValidationError)?;
 
@@ -96,38 +96,18 @@ pub(super) async fn deploy(
         .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
 
     // Step 2: Databases
-    let db_ids = stack
-        .databases()
-        .map(Clone::clone)
-        .into_iter()
-        .map(|db| {
-            let stack_id = id;
-            let db_name = db.name;
-            DatabaseID { stack_id, db_name }
-        })
-        .collect::<Vec<DatabaseID>>();
-
-    for db_id in &db_ids {
-        if !db_service
-            .is_db_exists(db_id)
-            .map_err(|e| StackDeploymentError::FailedToDeployDatabases(e.into()))?
-        {
-            db_service
-                // TODO: create if not exist
-                .create_db_with_default_config(db_id.clone())
-                .await
-                .map_err(|e| StackDeploymentError::FailedToDeployDatabases(e.into()))?;
-        }
+    let mut tables = vec![];
+    for x in stack.databases() {
+        let table_name =
+            x.name.to_owned().try_into().map_err(|e| {
+                StackDeploymentError::FailedToDeployDatabases(anyhow::anyhow!("{e}"))
+            })?;
+        tables.push(table_name);
     }
-
-    // Now that everything deployed successfully, remove all obsolete services
-
-    let prefix = format!("{id}!");
-    for db_id in db_service.query_db_by_prefix(&prefix).unwrap_or_default() {
-        if !db_ids.contains(&db_id) {
-            db_service.drop_db(&db_id).await.unwrap_or(());
-        }
-    }
+    db_service
+        .update_stack_tables(id, tables)
+        .await
+        .map_err(|e| StackDeploymentError::FailedToDeployDatabases(anyhow::anyhow!("{e}")))?;
 
     let existing_function_names = runtime.get_function_names(id).await.unwrap_or_default();
     let mut functions_to_delete = vec![];

@@ -1,6 +1,7 @@
 use std::{
     collections::{hash_map::Entry, HashMap},
-    env,
+    env, fs,
+    net::IpAddr,
     path::{Path, PathBuf},
     process::Command,
     str::FromStr,
@@ -8,6 +9,9 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
+use mu_db::{
+    DbManager, DbManagerImpl, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig,
+};
 use tokio::sync::Mutex;
 
 use async_trait::async_trait;
@@ -37,6 +41,16 @@ impl AssemblyProvider for MapAssemblyProvider {
 
     fn get_function_names(&self, _stack_id: &StackID) -> Vec<String> {
         unimplemented!("Not needed")
+    }
+}
+
+const TEST_DATA_DIR: &str = "tests/runtime/test_data";
+
+fn clean_data_dir() {
+    match fs::remove_dir_all(TEST_DATA_DIR) {
+        Ok(()) => (),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+        Err(e) => Err(e).unwrap(),
     }
 }
 
@@ -85,20 +99,6 @@ pub async fn clean_wasm_project(project_dir: &Path) -> Result<()> {
 
     Ok(())
 }
-
-// pub async fn create_db_if_not_exist(
-//     db_service: DatabaseManager,
-//     database_id: DatabaseID,
-// ) -> Result<()> {
-//     let conf = mudb::Config {
-//         database_id,
-//         ..Default::default()
-//     };
-
-//     db_service.create_db_if_not_exist(conf).await?;
-
-//     Ok(())
-// }
 
 pub struct Project<'a> {
     pub id: AssemblyID,
@@ -168,22 +168,59 @@ async fn create_map_function_provider<'a>(
     Ok((functions, MapAssemblyProvider::default()))
 }
 
+fn make_node_address(port: u16) -> NodeAddress {
+    NodeAddress {
+        address: "127.0.0.1".parse().unwrap(),
+        port,
+    }
+}
+fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> TikvRunnerConfig {
+    let localhost: IpAddr = "127.0.0.1".parse().unwrap();
+    TikvRunnerConfig {
+        pd: PdConfig {
+            peer_url: IpAndPort {
+                address: localhost,
+                port: peer_port,
+            },
+            client_url: IpAndPort {
+                address: localhost,
+                port: client_port,
+            },
+            data_dir: format!("{TEST_DATA_DIR}/pd_data_dir_{peer_port}"),
+            log_file: Some(format!("{TEST_DATA_DIR}/pd_log_{peer_port}")),
+        },
+        node: TikvConfig {
+            cluster_url: IpAndPort {
+                address: localhost,
+                port: tikv_port,
+            },
+            data_dir: format!("{TEST_DATA_DIR}/tikv_data_dir_{tikv_port}"),
+            log_file: Some(format!("{TEST_DATA_DIR}/tikv_log_{tikv_port}")),
+        },
+    }
+}
+
 pub async fn create_runtime<'a>(
     projects: &'a [Project<'a>],
-) -> (Box<dyn Runtime>, Arc<Mutex<HashMap<StackID, Usage>>>) {
+) -> (
+    Box<dyn Runtime>,
+    Box<dyn DbManager>,
+    Arc<Mutex<HashMap<StackID, Usage>>>,
+) {
+    clean_data_dir();
     let config = RuntimeConfig {
         cache_path: PathBuf::from_str("runtime-cache").unwrap(),
         include_function_logs: true,
     };
 
     let (functions, provider) = create_map_function_provider(projects).await.unwrap();
-    //let db_manager_config = DBManagerConfig {
-    //    usage_report_duration: Duration::from_secs(1).into(),
-    //};
+    let node_address = make_node_address(2803);
+    let tikv_config = make_tikv_runner_conf(2385, 2386, 20163);
 
-    //let db_service = DatabaseManager::new(usage_aggregator.clone(), db_manager_config)
-    //    .await
-    //    .unwrap();
+    let db_manager = DbManagerImpl::new_with_embedded_cluster(node_address, vec![], tikv_config)
+        .await
+        .unwrap();
+
     let (runtime, mut notifications) = start(Box::new(provider), config).await.unwrap();
 
     runtime
@@ -214,5 +251,5 @@ pub async fn create_runtime<'a>(
         }
     });
 
-    (runtime, usages)
+    (runtime, Box::new(db_manager), usages)
 }
