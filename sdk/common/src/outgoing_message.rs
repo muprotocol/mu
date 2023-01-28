@@ -1,3 +1,5 @@
+pub mod db;
+
 use std::{
     borrow::Cow,
     io::{Read, Write},
@@ -8,13 +10,19 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
 use crate::Response;
+use db::*;
 
 #[repr(u16)]
 #[derive(FromPrimitive)]
 pub enum OutgoingMessageKind {
+    // Runtime messages
     FatalError = 1,
     FunctionResult = 2,
     Log = 3,
+
+    // DB messages
+    Get = 1001,
+    BatchGet = 1002,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -45,9 +53,14 @@ pub enum LogLevel {
 
 #[derive(Debug)]
 pub enum OutgoingMessage<'a> {
+    // Runtime messages
     FatalError(FatalError<'a>),
     FunctionResult(FunctionResult<'a>),
     Log(Log<'a>),
+
+    // DB messages
+    Get(Get<'a>),
+    BatchGet(BatchGet<'a>),
 }
 
 macro_rules! read_cases {
@@ -83,11 +96,19 @@ impl<'a> OutgoingMessage<'a> {
     pub fn read(reader: &mut impl Read) -> std::io::Result<Self> {
         let kind: u16 = BorshDeserialize::deserialize_reader(reader)?;
 
-        read_cases!(kind, reader, [FatalError, FunctionResult, Log])
+        read_cases!(
+            kind,
+            reader,
+            [FatalError, FunctionResult, Log, Get, BatchGet]
+        )
     }
 
     pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        write_cases!(self, writer, [FatalError, FunctionResult, Log]);
+        write_cases!(
+            self,
+            writer,
+            [FatalError, FunctionResult, Log, Get, BatchGet]
+        );
 
         Ok(())
     }

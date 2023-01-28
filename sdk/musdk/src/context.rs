@@ -1,3 +1,5 @@
+pub mod db;
+
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -36,13 +38,16 @@ impl MuContext {
         }
     }
 
+    pub fn db(&mut self) -> db::DbHandle {
+        db::DbHandle { context: self }
+    }
+
     fn read_and_execute_function(&mut self) {
         fn helper(ctx: &mut MuContext) -> Result<()> {
             let message = ctx.read_message()?;
-            let IncomingMessage::ExecuteFunction(execute_function) = message;
-            //  else {
-            //      return Err(Error::UnexpectedFirstMessageKind)
-            // };
+            let IncomingMessage::ExecuteFunction(execute_function) = message else {
+                 return Err(Error::UnexpectedFirstMessageKind)
+            };
             let function = ctx
                 .functions
                 .get(execute_function.function.as_ref())

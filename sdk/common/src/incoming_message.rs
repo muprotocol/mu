@@ -1,3 +1,5 @@
+pub mod db;
+
 use std::{
     borrow::Cow,
     io::{Read, Write},
@@ -8,11 +10,18 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
 use crate::Request;
+use db::*;
 
 #[repr(u16)]
 #[derive(FromPrimitive)]
 enum IncomingMessageKind {
+    // Runtime messages
     ExecuteFunction = 1,
+
+    // DB Messages
+    DBError = 1001,
+    SingleResult = 1002,
+    ListResult = 1003,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -23,7 +32,13 @@ pub struct ExecuteFunction<'a> {
 
 #[derive(Debug)]
 pub enum IncomingMessage<'a> {
+    // Runtime messages
     ExecuteFunction(ExecuteFunction<'a>),
+
+    // DB messages
+    DBError(DBError<'a>),
+    SingleResult(SingleResult<'a>),
+    ListResult(ListResult<'a>),
 }
 
 macro_rules! read_cases {
@@ -59,11 +74,19 @@ impl<'a> IncomingMessage<'a> {
     pub fn read(reader: &mut impl Read) -> std::io::Result<Self> {
         let kind: u16 = BorshDeserialize::deserialize_reader(reader)?;
 
-        read_cases!(kind, reader, [ExecuteFunction])
+        read_cases!(
+            kind,
+            reader,
+            [ExecuteFunction, DBError, SingleResult, ListResult]
+        )
     }
 
     pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        write_cases!(self, writer, [ExecuteFunction]);
+        write_cases!(
+            self,
+            writer,
+            [ExecuteFunction, DBError, SingleResult, ListResult]
+        );
 
         Ok(())
     }
