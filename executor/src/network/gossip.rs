@@ -120,7 +120,8 @@ pub struct GossipConfig {
 #[derive(Deserialize)]
 pub struct KnownNodeConfig {
     pub address: IpAddr,
-    pub port: u16,
+    pub gossip_port: u16,
+    pub pd_port: u16,
 }
 
 pub type NodeDiedCleanly = bool;

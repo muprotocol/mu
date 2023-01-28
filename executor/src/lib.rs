@@ -1,5 +1,4 @@
 pub mod infrastructure;
-pub mod mudb;
 pub mod network;
 mod request_routing;
 pub mod stack;
@@ -14,6 +13,7 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use log::*;
 use mailbox_processor::NotificationChannel;
+use mu_db::{DbManager, DbManagerImpl};
 use mu_runtime::Runtime;
 use network::rpc_handler::{self, RpcHandler, RpcRequestHandler};
 use stack::{
@@ -38,7 +38,6 @@ use crate::{
         scheduler::{self, Scheduler, SchedulerNotification},
     },
 };
-use mudb::service::DatabaseManager;
 
 pub async fn run() -> Result<()> {
     // TODO handle failures in components
@@ -53,12 +52,12 @@ pub async fn run() -> Result<()> {
         connection_manager_config,
         gossip_config,
         mut known_nodes_config,
+        tikv_config,
         gateway_manager_config,
         log_config,
         runtime_config,
         scheduler_config,
         blockchain_monitor_config,
-        db_manager_config,
     ) = config::initialize_config()?;
 
     let my_node = NodeAddress {
@@ -100,20 +99,23 @@ pub async fn run() -> Result<()> {
 
     info!("Establishing connection to seeds");
 
-    for node in known_nodes_config {
-        match connection_manager.connect(node.address, node.port).await {
+    for node in &known_nodes_config {
+        match connection_manager
+            .connect(node.address, node.gossip_port)
+            .await
+        {
             Ok(connection_id) => known_nodes.push((
                 NodeAddress {
                     address: node.address,
-                    port: node.port,
+                    port: node.gossip_port,
                     generation: 0,
                 },
                 connection_id,
             )),
 
             Err(f) => warn!(
-                "Failed to connect to seed {}:{}, will ignore this seed. Error is: {f:?}",
-                node.address, node.port
+                "Failed to connect to seed {}:{}, will ignore this seed. Error is {f}",
+                node.address, node.gossip_port
             ),
         }
 
@@ -134,7 +136,7 @@ pub async fn run() -> Result<()> {
             .context("Failed to start blockchain monitor")?;
 
     let gossip = gossip::start(
-        my_node,
+        my_node.clone(),
         gossip_config,
         known_nodes,
         gossip_notification_channel,
@@ -143,8 +145,24 @@ pub async fn run() -> Result<()> {
     .context("Failed to start gossip")?;
 
     let function_provider = mu_runtime::providers::DefaultAssemblyProvider::new();
-    let database_manager =
-        DatabaseManager::new(usage_aggregator.clone(), db_manager_config).await?;
+    // TODO: don't leak this implementation
+    // @Hossein: remove this when implementing the external TiKV feature
+    let database_manager = DbManagerImpl::new_with_embedded_cluster(
+        mu_db::NodeAddress {
+            address: my_node.address,
+            port: my_node.port,
+        },
+        known_nodes_config
+            .iter()
+            .map(|c| mu_db::RemoteNode {
+                address: c.address,
+                gossip_port: c.gossip_port,
+                pd_port: c.pd_port,
+            })
+            .collect(),
+        tikv_config,
+    )
+    .await?;
     let (runtime, mut runtime_notification_receiver) =
         mu_runtime::start(Box::new(function_provider), runtime_config)
             .await
@@ -191,7 +209,7 @@ pub async fn run() -> Result<()> {
         scheduler_notification_channel,
         runtime.clone(),
         gateway_manager.clone(),
-        database_manager.clone(),
+        Box::new(database_manager.clone()),
     );
 
     *scheduler_ref.write().await = Some(scheduler.clone());
@@ -230,7 +248,7 @@ pub async fn run() -> Result<()> {
 
         trace!("Stopping database manager");
         database_manager
-            .stop()
+            .stop_embedded_cluster()
             .await
             .context("Failed to stop runtime")?;
 
@@ -289,7 +307,7 @@ pub async fn run() -> Result<()> {
 }
 
 fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
-    node.port == me.port && (node.address == me.address || node.address.is_loopback())
+    node.gossip_port == me.port && (node.address == me.address || node.address.is_loopback())
 }
 
 #[derive(Clone)]

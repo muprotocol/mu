@@ -9,7 +9,6 @@ use musdk_common::{Header, Status};
 
 use crate::utils::{create_runtime, Project};
 
-mod providers;
 mod utils;
 
 pub fn create_project<'a>(
@@ -50,7 +49,7 @@ fn make_request<'a>(
 #[tokio::test]
 async fn test_simple_func() {
     let projects = vec![create_project("hello-wasm", &["say_hello"], None)];
-    let (runtime, _) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let request = make_request(
         Cow::Borrowed(b"Chappy"),
@@ -70,6 +69,7 @@ async fn test_simple_func() {
     );
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 // #[tokio::test]
@@ -106,7 +106,7 @@ async fn test_simple_func() {
 #[tokio::test]
 async fn can_run_multiple_instance_of_the_same_function() {
     let projects = vec![create_project("hello-wasm", &["say_hello"], None)];
-    let (runtime, _) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let make_request = |name: &'static str| {
         make_request(
@@ -149,6 +149,7 @@ async fn can_run_multiple_instance_of_the_same_function() {
     tokio::join!(instance_1, instance_2, instance_3);
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
@@ -157,7 +158,7 @@ async fn can_run_instances_of_different_functions() {
         create_project("hello-wasm", &["say_hello"], None),
         create_project("calc-func", &["add_one"], None),
     ];
-    let (runtime, ..) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let make_request = |body| make_request(body, vec![], HashMap::new(), HashMap::new());
 
@@ -190,6 +191,7 @@ async fn can_run_instances_of_different_functions() {
     tokio::join!(instance_1, instance_2);
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
@@ -197,7 +199,7 @@ async fn unclean_termination_is_handled() {
     use mu_runtime::error::*;
 
     let projects = vec![create_project("unclean-termination", &["say_hello"], None)];
-    let (runtime, _) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let request = make_request(Cow::Borrowed(b""), vec![], HashMap::new(), HashMap::new());
 
@@ -210,6 +212,7 @@ async fn unclean_termination_is_handled() {
     }
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
@@ -221,7 +224,7 @@ async fn functions_with_limited_memory_wont_run() {
         &["memory_heavy"],
         Some(byte_unit::Byte::from_unit(1.0, byte_unit::ByteUnit::MB).unwrap()),
     )];
-    let (runtime, ..) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let request = make_request(
         Cow::Borrowed(b"Fred"),
@@ -240,6 +243,7 @@ async fn functions_with_limited_memory_wont_run() {
     }
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
@@ -249,7 +253,7 @@ async fn functions_with_limited_memory_will_run_with_enough_memory() {
         &["memory_heavy"],
         Some(byte_unit::Byte::from_unit(120.0, byte_unit::ByteUnit::MB).unwrap()),
     )];
-    let (runtime, _) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let request = make_request(
         Cow::Borrowed(b"Fred"),
@@ -264,12 +268,13 @@ async fn functions_with_limited_memory_will_run_with_enough_memory() {
         .await;
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
 async fn function_usage_is_reported_correctly_1() {
     let projects = vec![create_project("hello-wasm", &["say_hello"], None)];
-    let (runtime, usages) = create_runtime(&projects).await;
+    let (runtime, db_manager, usages) = create_runtime(&projects).await;
 
     let request = make_request(
         Cow::Borrowed(b"Chappy"),
@@ -304,6 +309,7 @@ async fn function_usage_is_reported_correctly_1() {
     assert_eq!(*memory_megabytes, 100);
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 //#[tokio::test]
@@ -356,7 +362,7 @@ async fn function_usage_is_reported_correctly_1() {
 async fn failing_function_should_not_hang() {
     use mu_runtime::error::*;
     let projects = vec![create_project("hello-wasm", &["failing"], None)];
-    let (runtime, _) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let request = make_request(
         Cow::Borrowed(b"Chappy"),
@@ -375,6 +381,7 @@ async fn failing_function_should_not_hang() {
     }
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
@@ -382,7 +389,7 @@ async fn json_body_request_and_response() {
     use serde::{Deserialize, Serialize};
 
     let projects = vec![create_project("multi-body", &["json_body"], None)];
-    let (runtime, _) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     #[derive(Serialize)]
     pub struct Form {
@@ -430,12 +437,13 @@ async fn json_body_request_and_response() {
         .await;
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
 async fn string_body_request_and_response() {
     let projects = vec![create_project("multi-body", &["string_body"], None)];
-    let (runtime, _) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let request = make_request(
         Cow::Borrowed(b"Due"),
@@ -454,12 +462,13 @@ async fn string_body_request_and_response() {
         .await;
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
 async fn string_body_request_and_response_fails_with_incorrect_charset() {
     let projects = vec![create_project("multi-body", &["string_body"], None)];
-    let (runtime, _) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let request = make_request(
         Cow::Borrowed(b"Due"),
@@ -481,12 +490,13 @@ async fn string_body_request_and_response_fails_with_incorrect_charset() {
         .await;
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
 async fn string_body_request_and_response_do_not_care_for_content_type() {
     let projects = vec![create_project("multi-body", &["string_body"], None)];
-    let (runtime, _) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let request = make_request(
         Cow::Borrowed(b"Due"),
@@ -508,12 +518,13 @@ async fn string_body_request_and_response_do_not_care_for_content_type() {
         .await;
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
 
 #[tokio::test]
 async fn can_access_path_params() {
     let projects = vec![create_project("hello-wasm", &["path_params"], None)];
-    let (runtime, _) = create_runtime(&projects).await;
+    let (runtime, db_manager, _) = create_runtime(&projects).await;
 
     let request = make_request(
         Cow::Borrowed(b"Due"),
@@ -540,4 +551,5 @@ async fn can_access_path_params() {
         .await;
 
     runtime.stop().await.unwrap();
+    db_manager.stop_embedded_cluster().await.unwrap();
 }
