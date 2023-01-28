@@ -56,6 +56,7 @@ oneshot
 OpenShift
 OUTFILE
 peekable
+powf
 powi
 proto
 protobuf
@@ -94,6 +95,7 @@ stateful
 struct
 subcommands
 sysvar
+tailcall
 thiserror
 tikv
 Tikv

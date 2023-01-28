@@ -1,6 +1,5 @@
 use anyhow::Result;
 use assert_matches::assert_matches;
-use env_logger;
 use futures::Future;
 use mu_db::{error::*, *};
 use mu_stack::StackID;
@@ -46,22 +45,22 @@ async fn seed(db: &dyn DbClient, keys: [Key; 4], is_atomic: bool) {
 fn keys(si: StackID, tl: [TableName; 2]) -> [Key; 4] {
     [
         Key {
-            stack_id: si.clone(),
+            stack_id: si,
             table_name: tl[0].clone(),
             inner_key: vec![0, 0, 1],
         },
         Key {
-            stack_id: si.clone(),
+            stack_id: si,
             table_name: tl[0].clone(),
             inner_key: vec![0, 1, 0],
         },
         Key {
-            stack_id: si.clone(),
+            stack_id: si,
             table_name: tl[0].clone(),
             inner_key: vec![0, 1, 1],
         },
         Key {
-            stack_id: si.clone(),
+            stack_id: si,
             table_name: tl[1].clone(),
             inner_key: vec![1, 0, 0],
         },
@@ -89,11 +88,11 @@ async fn test_queries_on_a_node_with<T>(
     T: Future + Send + 'static,
 {
     // db
-    db.update_stack_tables(stack_id.clone(), table_list.clone().into())
+    db.update_stack_tables(stack_id, table_list.clone().into())
         .await
         .unwrap();
     let key = Key {
-        stack_id: stack_id.clone(),
+        stack_id,
         table_name: table_list[0].clone(),
         inner_key: unique_key,
     };
@@ -112,7 +111,7 @@ async fn test_queries_on_a_node_with<T>(
     assert_eq!(res, None);
     // error table name dose not exist
     let err_key = Key {
-        stack_id: stack_id.clone(),
+        stack_id,
         table_name: "no_existed_table".try_into().unwrap(),
         inner_key: vec![],
     };
@@ -131,7 +130,7 @@ async fn test_predictable_scans_for_keys(
     table_list: [TableName; 2],
     keys: [Key; 4],
 ) {
-    let scan = Scan::ByTableName(stack_id.clone(), table_list[0].clone());
+    let scan = Scan::ByTableName(stack_id, table_list[0].clone());
     let res = db.scan_keys(scan, 800).await.unwrap();
     let x: Vec<Key> = keys
         .iter()
@@ -140,7 +139,7 @@ async fn test_predictable_scans_for_keys(
         .collect();
     assert_eq!(res, x);
 
-    let scan = Scan::ByTableName(stack_id.clone(), table_list[1].clone());
+    let scan = Scan::ByTableName(stack_id, table_list[1].clone());
     let res = db.scan_keys(scan, 800).await.unwrap();
     let x: Vec<Key> = keys
         .iter()
@@ -149,7 +148,7 @@ async fn test_predictable_scans_for_keys(
         .collect();
     assert_eq!(res, x);
 
-    let scan = Scan::ByInnerKeyPrefix(stack_id.clone(), table_list[0].clone(), vec![0, 1]);
+    let scan = Scan::ByInnerKeyPrefix(stack_id, table_list[0].clone(), vec![0, 1]);
     let res = db.scan_keys(scan, 800).await.unwrap();
     let x: Vec<Key> = keys
         .iter()
@@ -169,40 +168,37 @@ async fn test_unpredictable_scans_for_keys(
     table_list: [TableName; 2],
     keys: [Key; 4],
 ) {
-    let scan = Scan::ByTableName(stack_id.clone(), table_list[0].clone());
+    let scan = Scan::ByTableName(stack_id, table_list[0].clone());
     let res = db.scan_keys(scan, 800).await.unwrap();
-    let x: Vec<Key> = keys
+    let mut x = keys
         .iter()
         .filter(|k| k.stack_id == stack_id && k.table_name == table_list[0])
-        .map(Clone::clone)
-        .collect();
-    assert!(x.into_iter().all(|xp| res.contains(&xp)));
+        .map(Clone::clone);
+    assert!(x.all(|xp| res.contains(&xp)));
 
-    let scan = Scan::ByTableName(stack_id.clone(), table_list[1].clone());
+    let scan = Scan::ByTableName(stack_id, table_list[1].clone());
     let res2 = db.scan_keys(scan, 800).await.unwrap();
-    let x: Vec<Key> = keys
+    let mut x = keys
         .iter()
         .filter(|k| k.stack_id == stack_id && k.table_name == table_list[1])
-        .map(Clone::clone)
-        .collect();
-    assert!(x.into_iter().all(|xp| res2.contains(&xp)));
+        .map(Clone::clone);
+    assert!(x.all(|xp| res2.contains(&xp)));
 
-    let scan = Scan::ByInnerKeyPrefix(stack_id.clone(), table_list[0].clone(), vec![0, 1]);
+    let scan = Scan::ByInnerKeyPrefix(stack_id, table_list[0].clone(), vec![0, 1]);
     let res = db.scan_keys(scan, 800).await.unwrap();
-    let x: Vec<Key> = keys
+    let mut x = keys
         .iter()
         .filter(|k| {
             k.stack_id == stack_id
                 && k.table_name == table_list[0]
                 && k.inner_key.starts_with(&[0, 1])
         })
-        .map(Clone::clone)
-        .collect();
-    assert!(x.into_iter().all(|xp| res.contains(&xp)));
+        .map(Clone::clone);
+    assert!(x.all(|xp| res.contains(&xp)));
 }
 
 async fn test_table_list(db: &dyn DbClient, tl: Vec<TableName>) {
-    let table_names = db.table_list(STACK_ID.clone(), None).await.unwrap();
+    let table_names = db.table_list(STACK_ID, None).await.unwrap();
     assert_eq!(table_names, tl);
 }
 
@@ -255,11 +251,11 @@ fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> Ti
     TikvRunnerConfig {
         pd: PdConfig {
             peer_url: IpAndPort {
-                address: any.clone(),
+                address: any,
                 port: peer_port,
             },
             client_url: IpAndPort {
-                address: any.clone(),
+                address: any,
                 port: client_port,
             },
             data_dir: format!("{TEST_DATA_DIR}/pd_data_dir_{peer_port}"),
@@ -267,7 +263,7 @@ fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> Ti
         },
         node: TikvConfig {
             cluster_url: IpAndPort {
-                address: any.clone(),
+                address: any,
                 port: tikv_port,
             },
             data_dir: format!("{TEST_DATA_DIR}/tikv_data_dir_{tikv_port}"),
@@ -286,22 +282,22 @@ fn make_known_node_conf(gossip_port: u16, pd_port: u16) -> RemoteNode {
 fn rand_keys(si: StackID, tl: [TableName; 2]) -> [Key; 4] {
     [
         Key {
-            stack_id: si.clone(),
+            stack_id: si,
             table_name: tl[0].clone(),
             inner_key: rand::thread_rng().gen::<[u8; 3]>().into(),
         },
         Key {
-            stack_id: si.clone(),
+            stack_id: si,
             table_name: tl[0].clone(),
             inner_key: rand::thread_rng().gen::<[u8; 3]>().into(),
         },
         Key {
-            stack_id: si.clone(),
+            stack_id: si,
             table_name: tl[0].clone(),
             inner_key: rand::thread_rng().gen::<[u8; 3]>().into(),
         },
         Key {
-            stack_id: si.clone(),
+            stack_id: si,
             table_name: tl[1].clone(),
             inner_key: rand::thread_rng().gen::<[u8; 3]>().into(),
         },
@@ -385,19 +381,14 @@ async fn start_and_query_nodes_with_different_stackids_and_tables(dbs: Vec<Box<d
         let db_clone = db.clone();
         let f = test_queries_on_a_node_with(
             db.clone(),
-            si.clone(),
+            si,
             tl.clone(),
             vec![i],
-            rand_keys(si.clone(), tl.clone()),
+            rand_keys(si, tl.clone()),
             false,
             async move {
-                test_predictable_scans_for_keys(
-                    db_clone.as_ref(),
-                    si.clone(),
-                    table_list(),
-                    keys(si.clone(), tl),
-                )
-                .await;
+                test_predictable_scans_for_keys(db_clone.as_ref(), si, table_list(), keys(si, tl))
+                    .await;
             },
         );
         handles.push(::tokio::spawn(f));
@@ -413,7 +404,8 @@ async fn make_db_client_with_external_cluster() -> Box<dyn DbClient> {
         "127.0.0.1:2382".try_into().unwrap(),
         "127.0.0.1:2384".try_into().unwrap(),
     ])
-    .await;
+    .await
+    .unwrap();
     try_to_make_client_or_stop_cluster(&db_manager)
         .await
         .unwrap()
@@ -422,7 +414,7 @@ async fn make_db_client_with_external_cluster() -> Box<dyn DbClient> {
 async fn make_3_dbs() -> (Vec<DbManagerImpl>, Vec<Box<dyn DbClient>>) {
     // dummy creation/deletion of db_manager to ensure assets have been downloaded
     // and /tmp files have created before start concurrent creation.
-    let _ = DbManagerImpl::new_with_embedded_cluster(
+    DbManagerImpl::new_with_embedded_cluster(
         make_node_address(3000),
         vec![],
         make_tikv_runner_conf(3380, 3379, 20260),
@@ -645,7 +637,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     env_logger::builder().is_test(true).try_init().unwrap();
     let si = STACK_ID;
     let tl = table_list();
-    let ks = keys(si.clone(), tl.clone());
+    let ks = keys(si, tl.clone());
     let vs = values();
 
     let db = DbManagerImpl::new_with_external_cluster(vec![
@@ -654,6 +646,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
         // "127.0.0.1:2384".try_into().unwrap(),
     ])
     .await
+    .unwrap()
     .make_client()
     .await
     .unwrap();
@@ -664,6 +657,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
         // "127.0.0.1:2384".try_into().unwrap(),
     ])
     .await
+    .unwrap()
     .make_client()
     .await
     .unwrap();
@@ -674,6 +668,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
         "127.0.0.1:2384".try_into().unwrap(),
     ])
     .await
+    .unwrap()
     .make_client()
     .await
     .unwrap();

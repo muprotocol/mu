@@ -45,7 +45,7 @@ fn three_chunk_try_from_tikv_key(value: tikv_client::Key) -> Result<(Blob, Blob,
     Ok((a, b, c))
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct TableListKey {
     pub stack_id: StackID,
     pub table_name: TableName,
@@ -74,9 +74,7 @@ impl TryFrom<tikv_client::Key> for TableListKey {
     fn try_from(value: tikv_client::Key) -> Result<Self> {
         let (a, b, c) = three_chunk_try_from_tikv_key(value)?;
         if TABLE_LIST_METADATA.as_bytes() != a.as_slice() {
-            bail!(
-                "Can't deserialize TableListKey cause it doesn't begin with {TABLE_LIST_METADATA}"
-            )
+            bail!("Can't deserialize TableListKey as it doesn't begin with {TABLE_LIST_METADATA}")
         } else {
             Ok(Self {
                 stack_id: StackID::try_from_bytes(b.as_ref())
@@ -147,7 +145,7 @@ fn subset_range(from: Blob) -> BoundRange {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TableName(String);
 
 impl From<TableName> for String {
@@ -231,7 +229,7 @@ impl TryFrom<tikv_client::Key> for Key {
 pub enum ScanTableList {
     Whole,
     ByStackID(StackID),
-    ByTableNamePrefix(StackID, TableName),
+    ByTableName(StackID, TableName),
 }
 
 impl From<ScanTableList> for BoundRange {
@@ -242,13 +240,11 @@ impl From<ScanTableList> for BoundRange {
                 TABLE_LIST_METADATA.as_bytes(),
                 stackid.to_bytes().as_ref(),
             ),
-            ScanTableList::ByTableNamePrefix(stackid, table_name) => {
-                prefixed_by_three_chunk_bound_range(
-                    TABLE_LIST_METADATA.as_bytes(),
-                    stackid.to_bytes().as_ref(),
-                    table_name.as_bytes(),
-                )
-            }
+            ScanTableList::ByTableName(stackid, table_name) => prefixed_by_three_chunk_bound_range(
+                TABLE_LIST_METADATA.as_bytes(),
+                stackid.to_bytes().as_ref(),
+                table_name.as_bytes(),
+            ),
         }
     }
 }

@@ -6,6 +6,7 @@ pub use db_embedded_tikv::{
     IpAndPort, NodeAddress, PdConfig, RemoteNode, TikvConfig, TikvRunnerConfig,
 };
 use dyn_clonable::clonable;
+use log::warn;
 
 use crate::{
     error::{Error, Result},
@@ -15,7 +16,7 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use db_embedded_tikv::*;
 use mu_stack::StackID;
-use std::fmt::Debug;
+use std::{collections::HashSet, fmt::Debug};
 use tikv_client::{self, KvPair, RawClient, Value};
 use tokio::time::{sleep, Duration};
 
@@ -81,6 +82,8 @@ impl Debug for DbClientImpl {
 }
 
 impl DbClientImpl {
+    // TODO: VERY inefficient to create and drop connections continuously.
+    // We need a connection pooling solution here.
     pub async fn new(endpoints: Vec<IpAndPort>) -> Result<Self> {
         let new = RawClient::new(endpoints).await?;
         Ok(Self {
@@ -106,12 +109,19 @@ impl DbClient for DbClientImpl {
         table_list: Vec<TableName>,
     ) -> Result<()> {
         // TODO: think of something for deleting existing tables
+        let existing_tables = self
+            .inner
+            .scan_keys(types::ScanTableList::ByStackID(stack_id), 10000)
+            .await?
+            .into_iter()
+            .map(|k| k.try_into().map_err(Into::into))
+            .collect::<Result<HashSet<TableListKey>>>()?;
+
         let mut kvs = vec![];
         for t in table_list {
             let k = TableListKey::new(stack_id, t);
-            let v = "";
-            if self.inner.get(k.clone()).await?.is_none() {
-                kvs.push((k, v))
+            if !existing_tables.contains(&k) {
+                kvs.push((k, vec![]))
             }
         }
 
@@ -176,7 +186,7 @@ impl DbClient for DbClientImpl {
         table_name_prefix: Option<TableName>,
     ) -> Result<Vec<TableName>> {
         let scan = match table_name_prefix {
-            Some(prefix) => ScanTableList::ByTableNamePrefix(stack_id, prefix),
+            Some(prefix) => ScanTableList::ByTableName(stack_id, prefix),
             None => ScanTableList::ByStackID(stack_id),
         };
         self.inner
@@ -261,53 +271,69 @@ impl DbManagerImpl {
         known_node_config: Vec<RemoteNode>,
         config: TikvRunnerConfig,
     ) -> anyhow::Result<Self> {
-        const TIMEOUT: u64 = 5;
-
         let endpoints = vec![config.pd.advertise_client_url()];
         let inner = db_embedded_tikv::start(node_address, known_node_config, config).await?;
 
-        // wait 10 secs to ensure cluster is bootstrapped
-        sleep(Duration::from_secs(10)).await;
+        match Self::ensure_cluster_healthy(&endpoints, 10)
+            .await
+            .context("Timed out while trying to connect to TiKV cluster")
+        {
+            Err(e) => {
+                inner
+                    .stop()
+                    .await
+                    .context("Failed to stop cluster after it failed to bootstrap")?;
+                Err(e)
+            }
+            Ok(()) => Ok(Self {
+                endpoints,
+                inner: Some(inner),
+            }),
+        }
+    }
 
+    pub async fn new_with_external_cluster(endpoints: Vec<IpAndPort>) -> anyhow::Result<Self> {
+        Self::ensure_cluster_healthy(&endpoints, 5).await?;
+        Ok(Self {
+            inner: None,
+            endpoints,
+        })
+    }
+
+    async fn ensure_cluster_healthy(
+        endpoints: &Vec<IpAndPort>,
+        max_try_count: u32,
+    ) -> anyhow::Result<()> {
         #[tailcall::tailcall]
-        async fn go(
-            inner: Box<dyn TikvRunner>,
-            endpoints: Vec<IpAndPort>,
-            timeout_count: u64,
-        ) -> anyhow::Result<DbManagerImpl> {
-            // try making client to ensure n/2 + 1 clusters have been bootstrapped
-            match DbClientImpl::new(endpoints.clone()).await {
-                Err(_) if timeout_count < TIMEOUT => {
-                    sleep(Duration::from_secs(
-                        1.5_f64.powf(timeout_count as f64) as u64
+        async fn helper(
+            endpoints: &Vec<IpAndPort>,
+            try_count: u32,
+            max_try_count: u32,
+        ) -> anyhow::Result<()> {
+            // This call will not succeed unless the cluster is reachable and at least
+            // N/2+1 PD nodes are already clustered.
+
+            let check_cluster_health = || async {
+                let client = DbClientImpl::new(endpoints.clone()).await?;
+                client.inner.get(vec![]).await?;
+                Result::Ok(())
+            };
+
+            match check_cluster_health().await {
+                Err(e) if try_count < max_try_count => {
+                    warn!("Failed to reach TiKV cluster due to: {e:?}");
+                    sleep(Duration::from_millis(
+                        (1.5_f64.powf(try_count as f64) * 1000.0).round() as u64,
                     ))
                     .await;
-                    go(inner, endpoints, timeout_count + 1)
+                    helper(endpoints, try_count + 1, max_try_count)
                 }
-                Err(e) if timeout_count >= TIMEOUT => {
-                    inner
-                        .stop()
-                        .await
-                        .context("failed to stop cluster after failed to bootstrap")?;
-                    bail!(e)
-                }
-                _ => Ok(DbManagerImpl {
-                    inner: Some(inner),
-                    endpoints,
-                }),
+                Err(e) => bail!(e),
+                Ok(_) => Ok(()),
             }
         }
 
-        go(inner, endpoints, 0)
-            .await
-            .context("Timeout connection to PDs")
-    }
-
-    pub async fn new_with_external_cluster(endpoints: Vec<IpAndPort>) -> Self {
-        Self {
-            inner: None,
-            endpoints,
-        }
+        helper(endpoints, 0, max_try_count).await
     }
 }
 
