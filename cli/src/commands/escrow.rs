@@ -48,6 +48,7 @@ pub struct WithdrawEscrowCommand {
 
     /// The $MU account to transfer the withdrawn amount to. If left out, the amount will be transferred
     /// to the token account associated with the user wallet.
+    #[arg(long)]
     withdraw_to: Option<Pubkey>,
 
     /// If specified, amount will be withdrawn even if it would result in the escrow balance going below

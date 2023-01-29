@@ -19,8 +19,8 @@ pub mod region;
 pub mod signer;
 pub mod stack;
 
-const PROVIDER_INITIALIZATION_FEE: f64 = 100.0; //TODO: This needs to be read from
-                                                //blockchain
+//TODO: This needs to be read from the blockchain
+const PROVIDER_INITIALIZATION_FEE: u64 = 100_000000;
 
 /// Marketplace Client for communicating with Mu smart contracts
 pub struct MarketplaceClient {
@@ -116,11 +116,9 @@ impl MarketplaceClient {
         }
     }
 
-    pub fn get_token_account_balance(&self, pubkey: &Pubkey) -> Result<f64> {
+    pub fn get_token_account_balance(&self, pubkey: &Pubkey) -> Result<u64> {
         let info = self.program.rpc().get_token_account_balance(pubkey)?;
-        let amount: f64 = info.amount.parse()?;
-
-        Ok(amount / 10u32.pow(info.decimals.into()) as f64)
+        Ok(info.amount.parse()?)
     }
 
     pub fn provider_name_exists(&self, name: &str) -> Result<bool> {
