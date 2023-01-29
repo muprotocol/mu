@@ -14,7 +14,7 @@ mod utils;
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_simple_func<'a>(runtime_fixture: RuntimeFixture) {
-    let (runtime, db_manager, _usages) = runtime_fixture;
+    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(vec![("hello-wasm", &["say_hello"], None)], &runtime)
         .await
         .unwrap();
@@ -73,7 +73,7 @@ async fn test_simple_func<'a>(runtime_fixture: RuntimeFixture) {
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn can_run_multiple_instance_of_the_same_function<'a>(runtime_fixture: RuntimeFixture) {
-    let (runtime, db_manager, _usages) = runtime_fixture;
+    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(vec![("hello-wasm", &["say_hello"], None)], &runtime)
         .await
         .unwrap();
@@ -124,7 +124,7 @@ async fn can_run_multiple_instance_of_the_same_function<'a>(runtime_fixture: Run
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn can_run_instances_of_different_functions<'a>(runtime_fixture: RuntimeFixture) {
-    let (runtime, db_manager, _usages) = runtime_fixture;
+    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(
         vec![
             ("hello-wasm", &["say_hello"], None),
@@ -173,7 +173,7 @@ async fn can_run_instances_of_different_functions<'a>(runtime_fixture: RuntimeFi
 async fn unclean_termination_is_handled<'a>(runtime_fixture: RuntimeFixture) {
     use mu_runtime::error::*;
 
-    let (runtime, db_manager, _usages) = runtime_fixture;
+    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(
         vec![("unclean-termination", &["say_hello"], None)],
         &runtime,
@@ -199,7 +199,7 @@ async fn unclean_termination_is_handled<'a>(runtime_fixture: RuntimeFixture) {
 async fn functions_with_limited_memory_wont_run<'a>(runtime_fixture: RuntimeFixture) {
     use mu_runtime::error::*;
 
-    let (runtime, db_manager, _usages) = runtime_fixture;
+    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(
         vec![(
             "hello-wasm",
@@ -233,7 +233,7 @@ async fn functions_with_limited_memory_wont_run<'a>(runtime_fixture: RuntimeFixt
 async fn functions_with_limited_memory_will_run_with_enough_memory<'a>(
     runtime_fixture: RuntimeFixture,
 ) {
-    let (runtime, db_manager, _usages) = runtime_fixture;
+    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(
         vec![(
             "hello-wasm",
@@ -263,7 +263,7 @@ async fn functions_with_limited_memory_will_run_with_enough_memory<'a>(
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn function_usage_is_reported_correctly_1<'a>(runtime_fixture: RuntimeFixture) {
-    let (runtime, db_manager, usages) = runtime_fixture;
+    let (runtime, _db_manager, usages) = runtime_fixture;
     let projects = create_and_add_projects(vec![("hello-wasm", &["say_hello"], None)], &runtime)
         .await
         .unwrap();
@@ -353,7 +353,7 @@ async fn function_usage_is_reported_correctly_1<'a>(runtime_fixture: RuntimeFixt
 #[tokio::test(flavor = "multi_thread")]
 async fn failing_function_should_not_hang<'a>(runtime_fixture: RuntimeFixture) {
     use mu_runtime::error::*;
-    let (runtime, db_manager, usages) = runtime_fixture;
+    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(vec![("hello-wasm", &["failing"], None)], &runtime)
         .await
         .unwrap();
@@ -382,7 +382,7 @@ async fn failing_function_should_not_hang<'a>(runtime_fixture: RuntimeFixture) {
 async fn json_body_request_and_response<'a>(runtime_fixture: RuntimeFixture) {
     use serde::{Deserialize, Serialize};
 
-    let (runtime, db_manager, usages) = runtime_fixture;
+    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(vec![("multi-body", &["json_body"], None)], &runtime)
         .await
         .unwrap();
@@ -438,7 +438,7 @@ async fn json_body_request_and_response<'a>(runtime_fixture: RuntimeFixture) {
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn string_body_request_and_response<'a>(runtime_fixture: RuntimeFixture) {
-    let (runtime, db_manager, usages) = runtime_fixture;
+    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(vec![("multi-body", &["string_body"], None)], &runtime)
         .await
         .unwrap();
@@ -467,7 +467,7 @@ async fn string_body_request_and_response<'a>(runtime_fixture: RuntimeFixture) {
 async fn string_body_request_and_response_fails_with_incorrect_charset<'a>(
     runtime_fixture: RuntimeFixture,
 ) {
-    let (runtime, db_manager, usages) = runtime_fixture;
+    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(vec![("multi-body", &["string_body"], None)], &runtime)
         .await
         .unwrap();
@@ -499,7 +499,7 @@ async fn string_body_request_and_response_fails_with_incorrect_charset<'a>(
 async fn string_body_request_and_response_do_not_care_for_content_type<'a>(
     runtime_fixture: RuntimeFixture,
 ) {
-    let (runtime, db_manager, usages) = runtime_fixture;
+    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(vec![("multi-body", &["string_body"], None)], &runtime)
         .await
         .unwrap();
@@ -529,7 +529,7 @@ async fn string_body_request_and_response_do_not_care_for_content_type<'a>(
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn can_access_path_params<'a>(runtime_fixture: RuntimeFixture) {
-    let (runtime, db_manager, usages) = runtime_fixture;
+    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(vec![("hello-wasm", &["path_params"], None)], &runtime)
         .await
         .unwrap();

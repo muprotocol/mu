@@ -21,7 +21,7 @@ use mu_runtime::{
 use mu_stack::{AssemblyID, AssemblyRuntime, FunctionID, StackID};
 
 // Add test project names (directory name) in this array to build them when testing
-const TEST_PROJECTS: &'static [&'static str] = &[
+const TEST_PROJECTS: &[&str] = &[
     "hello-wasm",
     "calc-func",
     "multi-body",
@@ -139,6 +139,12 @@ pub mod fixture {
         }
     }
 
+    impl Default for TempDir {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     #[fixture]
     #[once]
     fn temp_dir_fixture() -> TempDir {
@@ -173,20 +179,17 @@ pub mod fixture {
         }
     }
 
-    pub struct DBManagerWrapper {
-        data_dir: PathBuf,
-        db_manager: DbManagerImpl,
-    }
+    pub struct DBManagerWrapper(DbManagerImpl);
 
     impl DBManagerWrapper {
         pub fn get_db_manager(&self) -> Box<dyn DbManager> {
-            Box::new(self.db_manager.clone())
+            Box::new(self.0.clone())
         }
     }
 
     impl Drop for DBManagerWrapper {
         fn drop(&mut self) {
-            block_on!(self.db_manager.stop_embedded_cluster()).unwrap()
+            block_on!(self.0.stop_embedded_cluster()).unwrap()
         }
     }
 
@@ -224,25 +227,24 @@ pub mod fixture {
             },
         };
 
-        DBManagerWrapper {
-            data_dir,
-            db_manager: block_on!(DbManagerImpl::new_with_embedded_cluster(
+        DBManagerWrapper(
+            block_on!(DbManagerImpl::new_with_embedded_cluster(
                 node_address,
                 vec![],
                 tikv_config,
             ))
             .unwrap(),
-        }
+        )
     }
 
     #[fixture]
-    pub fn runtime_fixture<'a>(
+    pub fn runtime_fixture(
         _install_wasm32_wasi_target_fixture: (),
         _build_test_funcs_fixture: (),
         temp_dir_fixture: &TempDir,
-        mudb_fixture: &'a DBManagerWrapper,
+        mudb_fixture: &DBManagerWrapper,
     ) -> RuntimeFixture {
-        let assembly_provider = Box::new(MapAssemblyProvider::default());
+        let assembly_provider = Box::<MapAssemblyProvider>::default();
 
         let config = RuntimeConfig {
             cache_path: temp_dir_fixture.get_rand_subdir(Some("runtime-cache")),
