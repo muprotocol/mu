@@ -77,7 +77,7 @@ pub fn recharge(
         bail!("User token account was not found")
     }
 
-    if client.get_token_account_balance(user_token_account)? < (recharge_amount as f64) {
+    if client.get_token_account_balance(user_token_account)? < recharge_amount {
         bail!("User token account has insufficient balance")
     }
 
@@ -123,6 +123,10 @@ pub fn withdraw(
     let withdraw_amount = ui_amount_to_token_amount(&mint, withdraw_amount);
 
     let escrow_pda = client.get_escrow_pda(&user_wallet.pubkey(), provider_pda);
+    if !client.account_exists(&escrow_pda)? {
+        bail!("There is no escrow account registered with this user_wallet and provider");
+    }
+
     let token_account = get_escrow_balance(client, &escrow_pda)?;
     let balance: u64 = token_account.amount.parse().unwrap();
 
@@ -133,6 +137,27 @@ pub fn withdraw(
         );
         exit(-1);
     }
+
+    let withdraw_to = match withdraw_to {
+        Some(withdraw_to) => {
+            if !client.account_exists(&withdraw_to)? {
+                bail!(
+                    "There is no token account at the specified withdraw_to address. \
+                    If this is a new token account, make sure to initialize it before \
+                    using this command."
+                );
+            }
+            withdraw_to
+        }
+
+        None => {
+            let withdraw_to = get_associated_token_address(&user_wallet.pubkey(), &mu_state.mint);
+            if !client.account_exists(&withdraw_to)? {
+                bail!("There is no associated token account for the current user wallet");
+            }
+            withdraw_to
+        }
+    };
 
     let verify_result = get_regions_where_balance_is_below_minimum(
         client,
@@ -168,9 +193,6 @@ pub fn withdraw(
         println!("Specify --force if you want to withdraw anyway.");
         exit(-1);
     }
-
-    let withdraw_to = withdraw_to
-        .unwrap_or_else(|| get_associated_token_address(&user_wallet.pubkey(), &mu_state.mint));
 
     let accounts = marketplace::accounts::WithdrawEscrow {
         state: state_pda,
