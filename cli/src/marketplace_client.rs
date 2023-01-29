@@ -1,17 +1,26 @@
-use std::rc::Rc;
-
 use anchor_client::{
-    solana_sdk::{program_pack::Pack, pubkey::Pubkey, signer::Signer, system_program, sysvar},
+    solana_client::{
+        client_error::ClientErrorKind,
+        rpc_filter::{Memcmp, RpcFilterType},
+        rpc_request::RpcError,
+    },
+    solana_sdk::{program_pack::Pack, pubkey::Pubkey},
     Program,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use marketplace::MuState;
 use spl_token::state::Mint;
 
 use crate::config::Config;
 
-const PROVIDER_INITIALIZATION_FEE: f64 = 100.0; //TODO: This needs to be read from
-                                                //blockchain
+pub mod escrow;
+pub mod provider;
+pub mod region;
+pub mod signer;
+pub mod stack;
+
+//TODO: This needs to be read from the blockchain
+const PROVIDER_INITIALIZATION_FEE: u64 = 100_000000;
 
 /// Marketplace Client for communicating with Mu smart contracts
 pub struct MarketplaceClient {
@@ -93,82 +102,8 @@ impl MarketplaceClient {
         stack_pda
     }
 
-    pub fn create_provider(
-        &self,
-        provider_keypair: Rc<dyn Signer>,
-        provider_name: String,
-    ) -> Result<()> {
-        let (state_pda, mu_state) = self.get_mu_state()?;
-
-        let (deposit_pda, _) = Pubkey::find_program_address(&[b"deposit"], &self.program.id());
-        let provider_pda = self.get_provider_pda(provider_keypair.pubkey());
-
-        let provider_token_account =
-            self.get_provider_token_account(provider_keypair.pubkey(), &mu_state);
-
-        let accounts = marketplace::accounts::CreateProvider {
-            state: state_pda,
-            provider: provider_pda,
-            deposit_token: deposit_pda,
-            owner: provider_keypair.pubkey(),
-            owner_token: provider_token_account,
-            system_program: system_program::id(),
-            token_program: spl_token::id(),
-            rent: sysvar::rent::id(),
-        };
-
-        if utils::provider_with_keypair_exists(self, &provider_keypair.pubkey())? {
-            bail!("There is already a provider registered with this keypair");
-        }
-
-        if utils::provider_name_exists(self, &provider_name)? {
-            bail!("There is already a provider registered with this name");
-        }
-
-        if !utils::account_exists(self.program.rpc(), &provider_token_account)? {
-            bail!("Token account is not initialized yet.");
-        }
-
-        let provider_token_account_balance =
-            utils::get_token_account_balance(self.program.rpc(), &provider_token_account)?;
-
-        if provider_token_account_balance < PROVIDER_INITIALIZATION_FEE {
-            bail!(
-                "Token account does not have sufficient balance: needed {}, was {}.",
-                PROVIDER_INITIALIZATION_FEE,
-                provider_token_account_balance
-            );
-        }
-
-        self.program
-            .request()
-            .accounts(accounts)
-            .args(marketplace::instruction::CreateProvider {
-                name: provider_name,
-            })
-            .signer(provider_keypair.as_ref())
-            .send_with_spinner_and_config(Default::default())
-            .context("Failed to send provider creation transaction")?;
-        Ok(())
-    }
-}
-
-mod utils {
-    use anchor_client::{
-        solana_client::{
-            client_error::ClientErrorKind,
-            rpc_client::RpcClient,
-            rpc_filter::{Memcmp, RpcFilterType},
-            rpc_request::RpcError,
-        },
-        solana_sdk::pubkey::Pubkey,
-    };
-    use anyhow::{anyhow, Result};
-
-    use super::MarketplaceClient;
-
-    pub fn account_exists(rpc: RpcClient, pubkey: &Pubkey) -> Result<bool> {
-        match rpc.get_account(pubkey) {
+    pub fn account_exists(&self, pubkey: &Pubkey) -> Result<bool> {
+        match self.program.rpc().get_account(pubkey) {
             Ok(_) => Ok(true),
             Err(client_error) => match client_error.kind {
                 ClientErrorKind::RpcError(RpcError::ForUser(s))
@@ -181,14 +116,12 @@ mod utils {
         }
     }
 
-    pub fn get_token_account_balance(rpc: RpcClient, pubkey: &Pubkey) -> Result<f64> {
-        let info = rpc.get_token_account_balance(pubkey)?;
-        let amount: f64 = info.amount.parse()?;
-
-        Ok(amount / 10u32.pow(info.decimals.into()) as f64)
+    pub fn get_token_account_balance(&self, pubkey: &Pubkey) -> Result<u64> {
+        let info = self.program.rpc().get_token_account_balance(pubkey)?;
+        Ok(info.amount.parse()?)
     }
 
-    pub fn provider_name_exists(client: &MarketplaceClient, name: &str) -> Result<bool> {
+    pub fn provider_name_exists(&self, name: &str) -> Result<bool> {
         let name_len: u64 = name
             .len()
             .try_into()
@@ -200,12 +133,12 @@ mod utils {
                 vec![marketplace::MuAccountType::Provider as u8],
             )),
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-                8 + 1 + 32 + 4, // 4 more bytes for the prefix length
+                8 + 1 + 32 + 1 + 4, // 4 more bytes for the prefix length
                 name.as_bytes().to_vec(),
             )),
             RpcFilterType::DataSize(
                 // Account type and etc
-                8 + 1 + 32
+                8 + 1 + 32 + 1
                 // name: String Size + String length
                 + 4 + name_len
                 // End of account data
@@ -213,17 +146,30 @@ mod utils {
             ),
         ];
 
-        let accounts = client.program.accounts::<marketplace::Provider>(filters)?;
+        let accounts = self.program.accounts::<marketplace::Provider>(filters)?;
 
         Ok(!accounts.is_empty())
     }
 
-    pub fn provider_with_keypair_exists(
-        client: &MarketplaceClient,
-        pubkey: &Pubkey,
-    ) -> Result<bool> {
+    pub fn provider_with_keypair_exists(&self, pubkey: &Pubkey) -> Result<bool> {
         let (pda, _) =
-            Pubkey::find_program_address(&[b"provider", &pubkey.to_bytes()], &client.program.id());
-        account_exists(client.program.rpc(), &pda)
+            Pubkey::find_program_address(&[b"provider", &pubkey.to_bytes()], &self.program.id());
+        self.account_exists(&pda)
+    }
+
+    pub fn provider_with_region_exists(&self, provider: &Pubkey, region_num: u32) -> Result<bool> {
+        let (pda, _) = Pubkey::find_program_address(
+            &[b"region", &provider.to_bytes(), &region_num.to_le_bytes()],
+            &self.program.id(),
+        );
+        self.account_exists(&pda)
+    }
+
+    pub fn signer_for_region_exists(&self, region: &Pubkey) -> Result<bool> {
+        let (pda, _) = Pubkey::find_program_address(
+            &[b"authorized_signer", &region.to_bytes()],
+            &self.program.id(),
+        );
+        self.account_exists(&pda)
     }
 }
