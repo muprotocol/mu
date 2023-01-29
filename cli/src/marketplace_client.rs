@@ -1,4 +1,5 @@
 use anchor_client::{
+    anchor_lang::AccountDeserialize,
     solana_client::{
         client_error::ClientErrorKind,
         rpc_filter::{Memcmp, RpcFilterType},
@@ -89,7 +90,7 @@ impl MarketplaceClient {
         escrow_pda
     }
 
-    pub fn get_stack_pda(&self, user_wallet: Pubkey, region_pda: Pubkey, seed: u64) -> Pubkey {
+    pub fn get_stack_pda(&self, user_wallet: &Pubkey, region_pda: &Pubkey, seed: u64) -> Pubkey {
         let (stack_pda, _) = Pubkey::find_program_address(
             &[
                 b"stack",
@@ -110,6 +111,20 @@ impl MarketplaceClient {
                     if s.contains("AccountNotFound") =>
                 {
                     Ok(false)
+                }
+                _ => Err(client_error.into()),
+            },
+        }
+    }
+
+    pub fn try_account<T: AccountDeserialize>(&self, pubkey: &Pubkey) -> Result<Option<T>> {
+        match self.program.rpc().get_account(pubkey) {
+            Ok(x) => Ok(Some(T::try_deserialize(&mut x.data.as_ref())?)),
+            Err(client_error) => match client_error.kind {
+                ClientErrorKind::RpcError(RpcError::ForUser(s))
+                    if s.contains("AccountNotFound") =>
+                {
+                    Ok(None)
                 }
                 _ => Err(client_error.into()),
             },

@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use anchor_client::{
     solana_client::rpc_filter::{Memcmp, RpcFilterType},
-    solana_sdk::{pubkey::Pubkey, system_program},
+    solana_sdk::pubkey::Pubkey,
 };
 use anyhow::{Context, Result};
 use clap::{Args, Parser};
@@ -43,6 +43,14 @@ pub struct DeployStackCommand {
     #[arg(long)]
     /// The region to deploy to.
     region: Pubkey,
+
+    #[arg(long)]
+    /// If specified, only deploy the stack if it doesn't already exist
+    init: bool,
+
+    #[arg(long)]
+    /// If specified, only update the stack if a previous version already exists
+    update: bool,
 }
 
 pub fn execute(config: Config, cmd: Command) -> Result<()> {
@@ -102,41 +110,22 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
 }
 
 pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
-    // TODO: stack update
-
     let yaml = fs::read_to_string(cmd.yaml_file).context("Failed to read stack file")?;
 
     let stack = serde_yaml::from_str::<mu_stack::Stack>(yaml.as_str())
         .context("Failed to deserialize stack from YAML file")?;
 
-    let name = stack.name.clone();
-
-    let proto = stack
-        .serialize_to_proto()
-        .context("Failed to serialize stack to binary format")?;
-
     let client = config.build_marketplace_client()?;
     let user_wallet = config.get_signer()?;
 
-    let stack_pda = client.get_stack_pda(user_wallet.pubkey(), cmd.region, cmd.seed);
-    let region = client
-        .program
-        .account::<marketplace::ProviderRegion>(cmd.region)
-        .context("Failed to fetch region from Solana")?;
+    let deploy_mode = marketplace_client::stack::get_deploy_mode(cmd.init, cmd.update)?;
 
-    let accounts = marketplace::accounts::CreateStack {
-        region: cmd.region,
-        provider: region.provider,
-        stack: stack_pda,
-        user: user_wallet.pubkey(),
-        system_program: system_program::id(),
-    };
-
-    let instruction = marketplace::instruction::CreateStack {
-        stack_seed: cmd.seed,
-        stack_data: proto.to_vec(),
-        name,
-    };
-
-    marketplace_client::stack::deploy_stack(&client, accounts, instruction, user_wallet, region)
+    marketplace_client::stack::deploy_stack(
+        &client,
+        user_wallet,
+        &cmd.region,
+        stack,
+        cmd.seed,
+        deploy_mode,
+    )
 }
