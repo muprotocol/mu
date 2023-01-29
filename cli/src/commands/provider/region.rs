@@ -23,6 +23,12 @@ pub struct CreateArgs {
     )]
     region_num: u32,
 
+    #[arg(
+        long,
+        help = "The minimum amount of escrow balance a user must have so their stacks will be deployed"
+    )]
+    min_escrow_balance: f64,
+
     #[arg(long, help = "Billion function instructions and MB of RAM")]
     billion_function_mb_instructions: u64,
 
@@ -51,6 +57,11 @@ pub fn execute(config: Config, sub_command: Command) -> Result<()> {
 fn create(config: Config, args: CreateArgs) -> Result<()> {
     let client = config.build_marketplace_client()?;
 
+    let (_, state) = client.get_mu_state()?;
+    let mint = client.get_mint(&state)?;
+    let min_escrow_balance =
+        crate::token_utils::ui_amount_to_token_amount(&mint, args.min_escrow_balance);
+
     let provider_keypair = config.get_signer()?;
 
     let provider_pda = client.get_provider_pda(provider_keypair.pubkey());
@@ -76,7 +87,7 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
     let instruction = marketplace::instruction::CreateRegion {
         region_num: args.region_num,
         name: args.name,
-        zones: 1,
+        min_escrow_balance,
         rates,
     };
 

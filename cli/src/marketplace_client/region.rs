@@ -1,9 +1,7 @@
 use super::MarketplaceClient;
 use std::rc::Rc;
 
-use anchor_client::{
-    solana_client::rpc_config::RpcSendTransactionConfig, solana_sdk::signer::Signer,
-};
+use anchor_client::solana_sdk::signer::Signer;
 use anyhow::{bail, Context, Result};
 use marketplace::{accounts, instruction};
 
@@ -27,11 +25,7 @@ pub fn create(
         .accounts(accounts)
         .args(instruction)
         .signer(provider_keypair.as_ref())
-        .send_with_spinner_and_config(RpcSendTransactionConfig {
-            // TODO: what's preflight and what's a preflight commitment?
-            skip_preflight: cfg!(debug_assertions),
-            ..Default::default()
-        })
+        .send_with_spinner_and_config(Default::default())
         .context("Failed to send region creation transaction")?;
 
     Ok(())

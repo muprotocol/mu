@@ -1,0 +1,9 @@
+[package]
+name = "hello-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+musdk = { path= "../../../../../sdk/musdk" }
+musdk-common = { path= "../../../../../sdk/common" }
+itertools = "0.10"

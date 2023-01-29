@@ -24,7 +24,7 @@ util.asyncMain(async () => {
         millionDbReads: new BN(500),
         millionDbWrites: new BN(2000),
     };
-    let region = await createRegion(mu, provider, "MiddleEarth", 1, serviceRates, 1);
+    let region = await createRegion(mu, provider, "MiddleEarth", 1, serviceRates, new BN(50_000_000));
     console.log(`Region pubkey: ${region.pda.toBase58()}`);
 
     let usageSigner = await createAuthorizedUsageSigner(mu, provider, region, "usage_signer");

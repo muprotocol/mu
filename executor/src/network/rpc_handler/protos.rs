@@ -1,15 +1,14 @@
 use std::borrow::Cow;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use mu_stack::StackID;
+use musdk_common::Status;
 use protobuf::{EnumOrUnknown, MessageField};
-
-use crate::runtime::{self, types::AssemblyID};
 
 include!(concat!(env!("OUT_DIR"), "/protos/rpc/mod.rs"));
 
-impl From<runtime::types::FunctionID> for rpc::FunctionID {
-    fn from(id: runtime::types::FunctionID) -> Self {
+impl From<mu_stack::FunctionID> for rpc::FunctionID {
+    fn from(id: mu_stack::FunctionID) -> Self {
         let StackID::SolanaPublicKey(pk) = id.assembly_id.stack_id;
         Self {
             stack_id: MessageField(Some(Box::new(rpc::StackID {
@@ -23,7 +22,7 @@ impl From<runtime::types::FunctionID> for rpc::FunctionID {
     }
 }
 
-impl TryFrom<rpc::FunctionID> for runtime::types::FunctionID {
+impl TryFrom<rpc::FunctionID> for mu_stack::FunctionID {
     type Error = anyhow::Error;
 
     fn try_from(id: rpc::FunctionID) -> Result<Self, Self::Error> {
@@ -39,7 +38,7 @@ impl TryFrom<rpc::FunctionID> for runtime::types::FunctionID {
         };
 
         Ok(Self {
-            assembly_id: AssemblyID {
+            assembly_id: mu_stack::AssemblyID {
                 stack_id,
                 assembly_name: id.assembly_name,
             },
@@ -48,17 +47,17 @@ impl TryFrom<rpc::FunctionID> for runtime::types::FunctionID {
     }
 }
 
-fn header_to_proto(h: musdk_common::Header<'_>) -> rpc::Header {
-    rpc::Header {
-        name: h.name.into_owned(),
+fn header_to_proto(h: musdk_common::Header<'_>) -> rpc::KeyValuePair {
+    rpc::KeyValuePair {
+        key: h.name.into_owned(),
         value: h.value.into_owned(),
         ..Default::default()
     }
 }
 
-fn header_from_proto(h: rpc::Header) -> musdk_common::Header<'static> {
+fn header_from_proto(h: rpc::KeyValuePair) -> musdk_common::Header<'static> {
     musdk_common::Header {
-        name: Cow::Owned(h.name),
+        name: Cow::Owned(h.key),
         value: Cow::Owned(h.value),
     }
 }
@@ -82,9 +81,9 @@ impl<'a> From<musdk_common::Request<'a>> for rpc::Request {
             }
         }
 
-        fn convert_query_param<'a>(q: (Cow<'a, str>, Cow<'a, str>)) -> rpc::QueryParam {
-            let (k, v) = q;
-            rpc::QueryParam {
+        fn convert_key_value_pair<'a>(p: (Cow<'a, str>, Cow<'a, str>)) -> rpc::KeyValuePair {
+            let (k, v) = p;
+            rpc::KeyValuePair {
                 key: k.into_owned(),
                 value: v.into_owned(),
                 ..Default::default()
@@ -93,8 +92,16 @@ impl<'a> From<musdk_common::Request<'a>> for rpc::Request {
 
         Self {
             method: convert_http_method(request.method),
-            path: request.path.into_owned(),
-            query_params: request.query.into_iter().map(convert_query_param).collect(),
+            path_params: request
+                .path_params
+                .into_iter()
+                .map(convert_key_value_pair)
+                .collect(),
+            query_params: request
+                .query_params
+                .into_iter()
+                .map(convert_key_value_pair)
+                .collect(),
             headers: request.headers.into_iter().map(header_to_proto).collect(),
             body: request.body.into_owned(),
             ..Default::default()
@@ -123,24 +130,28 @@ impl TryFrom<rpc::Request> for musdk_common::Request<'static> {
                 .map_err(|i| anyhow!("Unknown enum value {i} for type HttpMethod"))
         }
 
-        fn convert_query_param(q: rpc::QueryParam) -> (Cow<'static, str>, Cow<'static, str>) {
-            (Cow::Owned(q.key), Cow::Owned(q.value))
+        fn convert_key_value(p: rpc::KeyValuePair) -> (Cow<'static, str>, Cow<'static, str>) {
+            (Cow::Owned(p.key), Cow::Owned(p.value))
         }
 
-        fn header_from_proto(h: rpc::Header) -> musdk_common::Header<'static> {
+        fn header_from_proto(h: rpc::KeyValuePair) -> musdk_common::Header<'static> {
             musdk_common::Header {
-                name: Cow::Owned(h.name),
+                name: Cow::Owned(h.key),
                 value: Cow::Owned(h.value),
             }
         }
 
         Ok(Self {
             method: convert_http_method(request.method)?,
-            path: Cow::Owned(request.path),
-            query: request
+            path_params: request
+                .path_params
+                .into_iter()
+                .map(convert_key_value)
+                .collect(),
+            query_params: request
                 .query_params
                 .into_iter()
-                .map(convert_query_param)
+                .map(convert_key_value)
                 .collect(),
             headers: request.headers.into_iter().map(header_from_proto).collect(),
             body: Cow::Owned(request.body),
@@ -151,7 +162,7 @@ impl TryFrom<rpc::Request> for musdk_common::Request<'static> {
 impl<'a> From<musdk_common::Response<'a>> for rpc::Response {
     fn from(response: musdk_common::Response<'a>) -> Self {
         Self {
-            status: response.status as i32,
+            status: response.status.code as i32,
             headers: response.headers.into_iter().map(header_to_proto).collect(),
             body: response.body.into_owned(),
             ..Default::default()
@@ -163,17 +174,14 @@ impl TryFrom<rpc::Response> for musdk_common::Response<'static> {
     type Error = anyhow::Error;
 
     fn try_from(response: rpc::Response) -> Result<Self, Self::Error> {
-        let status = if response.status >= 100 && response.status < 600 {
-            response.status as u16
-        } else {
-            bail!(
-                "{} is out of range for HTTP response status",
-                response.status
-            )
-        };
+        let status_code: u16 = response.status.try_into().context("status_code")?;
+
+        if status_code < 100 && status_code > 600 {
+            bail!("{} is out of range for HTTP response status", status_code)
+        }
 
         Ok(Self {
-            status,
+            status: Status::new(status_code),
             headers: response
                 .headers
                 .into_iter()
