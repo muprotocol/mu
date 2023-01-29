@@ -1,11 +1,10 @@
 use std::{
     borrow::Cow,
     collections::{hash_map::Entry, HashMap},
-    env::temp_dir,
     net::{IpAddr, Ipv4Addr},
     path::{Path, PathBuf},
     process::Command,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use anyhow::Result;
@@ -29,38 +28,28 @@ const TEST_PROJECTS: &'static [&'static str] = &[
     "unclean-termination",
 ];
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct MapAssemblyProvider {
-    inner: Arc<Mutex<HashMap<AssemblyID, AssemblyDefinition>>>,
+    inner: HashMap<AssemblyID, AssemblyDefinition>,
 }
 
 #[async_trait]
 impl AssemblyProvider for MapAssemblyProvider {
-    fn get(&self, _id: &AssemblyID) -> Option<&AssemblyDefinition> {
-        unimplemented!("Not needed")
+    fn get(&self, id: &AssemblyID) -> Option<&AssemblyDefinition> {
+        self.inner.get(id)
     }
 
     fn add_function(&mut self, function: AssemblyDefinition) {
-        self.inner
-            .lock()
-            .unwrap()
-            .insert(function.id.clone(), function);
+        self.inner.insert(function.id.clone(), function);
     }
 
-    fn remove_function(&mut self, _id: &AssemblyID) {
-        unimplemented!("Not needed")
+    fn remove_function(&mut self, id: &AssemblyID) {
+        self.inner.remove(id);
     }
 
     fn get_function_names(&self, _stack_id: &StackID) -> Vec<String> {
         unimplemented!("Not needed")
     }
-}
-
-fn get_temp_dir() -> PathBuf {
-    let rand: [u8; 32] = rand::random();
-    let rand = String::from_utf8_lossy(&rand);
-
-    temp_dir().join(format!("/{rand}"))
 }
 
 pub struct Project<'a> {
@@ -125,6 +114,37 @@ pub mod fixture {
         }};
     }
 
+    pub struct TempDir(PathBuf);
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    impl TempDir {
+        pub fn new() -> Self {
+            Self(std::env::temp_dir().join(Self::rand_dir_name()))
+        }
+
+        pub fn get_rand_subdir(&self, prefix: Option<&str>) -> PathBuf {
+            let name = format!("{}{}", prefix.unwrap_or(""), Self::rand_dir_name());
+            self.0.join(name)
+        }
+
+        fn rand_dir_name() -> String {
+            let rand: [u8; 5] = rand::random();
+            rand.into_iter()
+                .fold(String::new(), |a, i| format!("{a}{i}"))
+        }
+    }
+
+    #[fixture]
+    #[once]
+    fn temp_dir_fixture() -> TempDir {
+        TempDir::new()
+    }
+
     #[fixture]
     #[once]
     pub fn install_wasm32_wasi_target_fixture() {
@@ -153,10 +173,27 @@ pub mod fixture {
         }
     }
 
+    pub struct DBManagerWrapper {
+        data_dir: PathBuf,
+        db_manager: DbManagerImpl,
+    }
+
+    impl DBManagerWrapper {
+        pub fn get_db_manager(&self) -> Box<dyn DbManager> {
+            Box::new(self.db_manager.clone())
+        }
+    }
+
+    impl Drop for DBManagerWrapper {
+        fn drop(&mut self) {
+            block_on!(self.db_manager.stop_embedded_cluster()).unwrap()
+        }
+    }
+
     #[fixture]
     #[once]
-    pub fn mudb_fixture() -> Box<dyn DbManager> {
-        let data_dir = get_temp_dir();
+    pub fn mudb_fixture(temp_dir_fixture: &TempDir) -> DBManagerWrapper {
+        let data_dir = temp_dir_fixture.get_rand_subdir(Some("mudb"));
         let localhost = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
         let node_address = NodeAddress {
@@ -174,49 +211,50 @@ pub mod fixture {
                     address: localhost,
                     port: 12386,
                 },
-                data_dir: data_dir.join("/pd_data_dir").display().to_string(),
-                log_file: Some(data_dir.join("/pd_log").display().to_string()),
+                data_dir: data_dir.join("pd_data_dir").display().to_string(),
+                log_file: Some(data_dir.join("pd_log").display().to_string()),
             },
             node: TikvConfig {
                 cluster_url: IpAndPort {
                     address: localhost,
                     port: 20163,
                 },
-                data_dir: data_dir.join("/tikv_data_dir").display().to_string(),
-                log_file: Some(data_dir.join("/tikv_log").display().to_string()),
+                data_dir: data_dir.join("tikv_data_dir").display().to_string(),
+                log_file: Some(data_dir.join("tikv_log").display().to_string()),
             },
         };
 
-        Box::new(
-            block_on!(DbManagerImpl::new_with_embedded_cluster(
+        DBManagerWrapper {
+            data_dir,
+            db_manager: block_on!(DbManagerImpl::new_with_embedded_cluster(
                 node_address,
                 vec![],
                 tikv_config,
             ))
             .unwrap(),
-        )
+        }
     }
 
     #[fixture]
     pub fn runtime_fixture<'a>(
         _install_wasm32_wasi_target_fixture: (),
         _build_test_funcs_fixture: (),
-        mudb_fixture: &'a Box<dyn DbManager>,
-    ) -> (
-        Box<dyn Runtime>,
-        &'a Box<dyn DbManager>,
-        Box<dyn AssemblyProvider>,
-        Arc<tokio::sync::Mutex<HashMap<StackID, Usage>>>,
-    ) {
-        let assembly_provider = MapAssemblyProvider::default();
+        temp_dir_fixture: &TempDir,
+        mudb_fixture: &'a DBManagerWrapper,
+    ) -> RuntimeFixture {
+        let assembly_provider = Box::new(MapAssemblyProvider::default());
 
         let config = RuntimeConfig {
-            cache_path: get_temp_dir(),
+            cache_path: temp_dir_fixture.get_rand_subdir(Some("runtime-cache")),
             include_function_logs: true,
         };
 
-        let (runtime, mut notifications) =
-            block_on!(start(Box::new(assembly_provider.clone()), config)).unwrap();
+        let (runtime, mut notifications) = block_on!(start(
+            assembly_provider,
+            mudb_fixture.get_db_manager(),
+            config
+        ))
+        .unwrap();
 
         let usages = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
@@ -240,8 +278,14 @@ pub mod fixture {
             }
         });
 
-        (runtime, mudb_fixture, Box::new(assembly_provider), usages)
+        (runtime, mudb_fixture.get_db_manager(), usages)
     }
+
+    pub type RuntimeFixture = (
+        Box<dyn Runtime>,
+        Box<dyn DbManager>,
+        Arc<tokio::sync::Mutex<HashMap<StackID, Usage>>>,
+    );
 }
 
 //pub async fn create_runtime<'a>(
@@ -311,13 +355,13 @@ pub fn create_project<'a>(
 }
 
 pub async fn create_and_add_projects<'a>(
-    definitions: &'a [(&'a str, &'a [&'a str], Option<byte_unit::Byte>)],
+    definitions: Vec<(&'a str, &'a [&'a str], Option<byte_unit::Byte>)>,
     runtime: &Box<dyn Runtime>,
 ) -> Result<Vec<Project<'a>>> {
     let mut projects = vec![];
 
     for (name, funcs, mem_limit) in definitions.into_iter() {
-        projects.push(create_project(name, funcs, mem_limit));
+        projects.push(create_project(name, funcs, &mem_limit));
     }
 
     let functions = read_wasm_functions(&projects).await?;

@@ -1713,6 +1713,7 @@ dependencies = [
  "async-trait",
  "byte-unit",
  "bytes",
+ "db-embedded-tikv",
  "dyn-clonable",
  "dyn-clone",
  "futures 0.3.25",

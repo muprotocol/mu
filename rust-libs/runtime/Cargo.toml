@@ -35,3 +35,4 @@ futures = "0.3"
 itertools = "0.10"
 rand = "0.8"
 async-std = { version = "1.12", features = ["attributes"] }
+db-embedded-tikv = { path = "../db-embedded-tikv" }

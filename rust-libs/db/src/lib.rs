@@ -62,7 +62,8 @@ pub trait DbClient: Send + Sync + Debug + Clone {
 }
 
 #[async_trait]
-pub trait DbManager: Send + Sync {
+#[clonable]
+pub trait DbManager: Send + Sync + Clone {
     async fn make_client(&self) -> anyhow::Result<Box<dyn DbClient>>;
     async fn stop_embedded_cluster(&self) -> anyhow::Result<()>;
 }
