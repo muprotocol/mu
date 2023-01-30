@@ -16,7 +16,8 @@
     "incremental": true,
     "baseUrl": "./src",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@mu/*": ["../../*"]
     },
     "types": ["vitest/globals"]
   },
