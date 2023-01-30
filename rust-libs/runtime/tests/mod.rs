@@ -14,10 +14,12 @@ mod utils;
 #[test_context(RuntimeFixtureWithoutDB)]
 #[tokio::test]
 async fn test_simple_func(fixture: &mut RuntimeFixtureWithoutDB) {
-    let projects =
-        create_and_add_projects(vec![("hello-wasm", &["say_hello"], None)], &fixture.runtime)
-            .await
-            .unwrap();
+    let projects = create_and_add_projects(
+        vec![("hello-wasm", &["say_hello"], None)],
+        &*fixture.runtime,
+    )
+    .await
+    .unwrap();
 
     let request = make_request(
         Cow::Borrowed(b"Chappy"),
@@ -72,10 +74,12 @@ async fn test_simple_func(fixture: &mut RuntimeFixtureWithoutDB) {
 #[test_context(RuntimeFixtureWithoutDB)]
 #[tokio::test]
 async fn can_run_multiple_instance_of_the_same_function(fixture: &mut RuntimeFixtureWithoutDB) {
-    let projects =
-        create_and_add_projects(vec![("hello-wasm", &["say_hello"], None)], &fixture.runtime)
-            .await
-            .unwrap();
+    let projects = create_and_add_projects(
+        vec![("hello-wasm", &["say_hello"], None)],
+        &*fixture.runtime,
+    )
+    .await
+    .unwrap();
 
     let make_request = |name: &'static str| {
         make_request(
@@ -129,7 +133,7 @@ async fn can_run_instances_of_different_functions(fixture: &mut RuntimeFixtureWi
             ("hello-wasm", &["say_hello"], None),
             ("calc-func", &["add_one"], None),
         ],
-        &fixture.runtime,
+        &*fixture.runtime,
     )
     .await
     .unwrap();
@@ -174,7 +178,7 @@ async fn unclean_termination_is_handled(fixture: &mut RuntimeFixtureWithoutDB) {
 
     let projects = create_and_add_projects(
         vec![("unclean-termination", &["say_hello"], None)],
-        &fixture.runtime,
+        &*fixture.runtime,
     )
     .await
     .unwrap();
@@ -202,7 +206,7 @@ async fn functions_with_limited_memory_wont_run(fixture: &mut RuntimeFixtureWith
             &["memory_heavy"],
             Some(byte_unit::Byte::from_unit(1.0, byte_unit::ByteUnit::MB).unwrap()),
         )],
-        &fixture.runtime,
+        &*fixture.runtime,
     )
     .await
     .unwrap();
@@ -236,7 +240,7 @@ async fn functions_with_limited_memory_will_run_with_enough_memory(
             &["memory_heavy"],
             Some(byte_unit::Byte::from_unit(120.0, byte_unit::ByteUnit::MB).unwrap()),
         )],
-        &fixture.runtime,
+        &*fixture.runtime,
     )
     .await
     .unwrap();
@@ -258,10 +262,12 @@ async fn functions_with_limited_memory_will_run_with_enough_memory(
 #[test_context(RuntimeFixtureWithoutDB)]
 #[tokio::test]
 async fn function_usage_is_reported_correctly_1(fixture: &mut RuntimeFixtureWithoutDB) {
-    let projects =
-        create_and_add_projects(vec![("hello-wasm", &["say_hello"], None)], &fixture.runtime)
-            .await
-            .unwrap();
+    let projects = create_and_add_projects(
+        vec![("hello-wasm", &["say_hello"], None)],
+        &*fixture.runtime,
+    )
+    .await
+    .unwrap();
 
     let request = make_request(
         Cow::Borrowed(b"Chappy"),
@@ -348,7 +354,7 @@ async fn function_usage_is_reported_correctly_1(fixture: &mut RuntimeFixtureWith
 async fn failing_function_should_not_hang(fixture: &mut RuntimeFixtureWithoutDB) {
     use mu_runtime::error::*;
     let projects =
-        create_and_add_projects(vec![("hello-wasm", &["failing"], None)], &fixture.runtime)
+        create_and_add_projects(vec![("hello-wasm", &["failing"], None)], &*fixture.runtime)
             .await
             .unwrap();
 
@@ -375,10 +381,12 @@ async fn failing_function_should_not_hang(fixture: &mut RuntimeFixtureWithoutDB)
 async fn json_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB) {
     use serde::{Deserialize, Serialize};
 
-    let projects =
-        create_and_add_projects(vec![("multi-body", &["json_body"], None)], &fixture.runtime)
-            .await
-            .unwrap();
+    let projects = create_and_add_projects(
+        vec![("multi-body", &["json_body"], None)],
+        &*fixture.runtime,
+    )
+    .await
+    .unwrap();
 
     #[derive(Serialize)]
     pub struct Form {
@@ -432,7 +440,7 @@ async fn json_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB) {
 async fn string_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB) {
     let projects = create_and_add_projects(
         vec![("multi-body", &["string_body"], None)],
-        &fixture.runtime,
+        &*fixture.runtime,
     )
     .await
     .unwrap();
@@ -462,7 +470,7 @@ async fn string_body_request_and_response_fails_with_incorrect_charset(
 ) {
     let projects = create_and_add_projects(
         vec![("multi-body", &["string_body"], None)],
-        &fixture.runtime,
+        &*fixture.runtime,
     )
     .await
     .unwrap();
@@ -495,7 +503,7 @@ async fn string_body_request_and_response_do_not_care_for_content_type(
 ) {
     let projects = create_and_add_projects(
         vec![("multi-body", &["string_body"], None)],
-        &fixture.runtime,
+        &*fixture.runtime,
     )
     .await
     .unwrap();
@@ -526,7 +534,7 @@ async fn string_body_request_and_response_do_not_care_for_content_type(
 async fn can_access_path_params(fixture: &mut RuntimeFixtureWithoutDB) {
     let projects = create_and_add_projects(
         vec![("hello-wasm", &["path_params"], None)],
-        &fixture.runtime,
+        &*fixture.runtime,
     )
     .await
     .unwrap();

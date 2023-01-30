@@ -392,7 +392,7 @@ pub fn create_project<'a>(
 
 pub async fn create_and_add_projects<'a>(
     definitions: Vec<(&'a str, &'a [&'a str], Option<byte_unit::Byte>)>,
-    runtime: &Box<dyn Runtime>,
+    runtime: &dyn Runtime,
 ) -> Result<Vec<Project<'a>>> {
     let mut projects = vec![];
 
