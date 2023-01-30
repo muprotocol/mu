@@ -1,10 +1,10 @@
 import { CircularProgress } from "@mui/material";
 
-import useAccounts from "@/features/marketplace/useAccount";
-import useProviderList from "@/features/provider/useProviderList/useProviderList";
+import useAllAccounts from "@/features/marketplace/useAllAccounts/useAllAccounts";
+import useProviderList from "@/features/provider/useProviderList/useProviderList.ts.bak";
 
 export default function ProviderList() {
-  const [providers, isLoading] = useAccounts<"provider">("provider", console.log);
+  const [providers, isLoading] = useAllAccounts<"provider">("provider", console.log);
 
   return (
     <div className="container mx-auto">

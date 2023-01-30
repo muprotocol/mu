@@ -12,9 +12,9 @@ import useWithLoading from "@/hooks/useWithLoading/useWithLoading";
 
 import useMarketplace from "@/features/marketplace/useMarketplace/useMarketplace";
 
-import { MarketplaceAccount, MarketplaceAccountName } from "./marketplace.type";
+import { MarketplaceAccount, MarketplaceAccountName } from "../marketplace.type";
 
-export default function useAccounts<T extends MarketplaceAccountName>(
+export default function useAllAccounts<T extends MarketplaceAccountName>(
   accountName: MarketplaceAccountName,
   onAccountsChanged: (account: MarketplaceAccount<T>[]) => any = () => {},
 ): [accounts: MarketplaceAccount<T>[], isLoading: boolean] {
