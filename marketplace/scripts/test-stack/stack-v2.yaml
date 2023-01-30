@@ -1,5 +1,5 @@
 name: my_stack_v2
-version: 0.1
+version: 0.2
 services:
   - type: Database
     name: my_db

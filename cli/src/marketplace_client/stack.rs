@@ -26,9 +26,6 @@ pub fn deploy_stack(
     }
 
     let stack_pda = client.get_stack_pda(&user_wallet.pubkey(), region_pda, seed);
-    if client.account_exists(&stack_pda)? {
-        bail!("There is already a stack registered with this seed, region and user_wallet")
-    }
 
     let update = {
         let existing = client

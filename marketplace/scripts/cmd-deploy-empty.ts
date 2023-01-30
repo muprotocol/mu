@@ -25,6 +25,7 @@ util.asyncMain(async () => {
     muxer.spawnNew(
         `export BROWSER='' ANCHOR_WALLET='${getDefaultWalletPath()}' && ` +
         `cd ${process.cwd()} && ` +
+        `env -C ${path.resolve(__dirname, "..")} anchor build && ` +
         `npx ts-node ${path.resolve(__dirname, "deploy-contract.ts")} && ` +
         `npx ts-node ${path.resolve(__dirname, "initialize-mu.ts")} && ` +
         `echo Done`,
