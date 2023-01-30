@@ -1,0 +1,7 @@
+// Vitest Snapshot v1
+
+exports[`ThemeWrapper > checks ThemeWrapper's snapshot 1`] = `
+<div>
+  Children
+</div>
+`;
