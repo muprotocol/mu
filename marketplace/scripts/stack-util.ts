@@ -5,9 +5,9 @@ import util from "./util";
 function ensureStackCliTool() {
     let toolDir = path.resolve(__dirname, ".tools");
 
-    util.run(`env -C ${path.resolve(__dirname, "../../mu_stack")} cargo build --bin mu_stack_cli -r && ` +
+    util.run(`env -C ${path.resolve(__dirname, "../../rust-libs/mu_stack")} cargo build --bin mu_stack_cli -r && ` +
         `mkdir -p ${toolDir} && ` +
-        `cp ${path.resolve(__dirname, "../../mu_stack/target/release/mu_stack_cli")} ${toolDir}`);
+        `cp ${path.resolve(__dirname, "../../rust-libs/mu_stack/target/release/mu_stack_cli")} ${toolDir}`);
 }
 
 export const yamlToProto = (yamlPath: string): Uint8Array => {

@@ -11,11 +11,10 @@ fn calc_usage(rates: &ServiceRates, usage: &ServiceUsage) -> u64 {
         / 1_000_000_000) as u64
         + (rates.db_gigabyte_months as u128 * usage.db_bytes_seconds
             / (1024 * 1024 * 1024 * 60 * 60 * 24 * 30)) as u64
-        + (rates.million_db_reads as u64 * usage.db_reads / 1_000_000)
-        + (rates.million_db_writes as u64 * usage.db_writes / 1_000_000)
-        + (rates.million_gateway_requests as u64 * usage.gateway_requests / 1_000_000)
-        + (rates.gigabytes_gateway_traffic as u64 * usage.gateway_traffic_bytes
-            / (1024 * 1024 * 1024))
+        + (rates.million_db_reads * usage.db_reads / 1_000_000)
+        + (rates.million_db_writes * usage.db_writes / 1_000_000)
+        + (rates.million_gateway_requests * usage.gateway_requests / 1_000_000)
+        + (rates.gigabytes_gateway_traffic * usage.gateway_traffic_bytes / (1024 * 1024 * 1024))
 }
 
 pub enum MuAccountType {
@@ -32,18 +31,27 @@ pub enum MuAccountType {
 pub enum Error {
     #[msg("Provider is not authorized")]
     ProviderNotAuthorized,
+
+    #[msg("Commission rate is out of bounds")]
+    CommissionRateOutOfBounds,
 }
 
 #[program]
 pub mod marketplace {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+    pub fn initialize(ctx: Context<Initialize>, commission_rate_micros: u32) -> Result<()> {
+        if commission_rate_micros > 1_000_000 {
+            return Err(Error::CommissionRateOutOfBounds.into());
+        }
+
         ctx.accounts.state.set_inner(MuState {
             account_type: MuAccountType::MuState as u8,
             authority: ctx.accounts.authority.key(),
             mint: ctx.accounts.mint.key(),
             deposit_token: ctx.accounts.deposit_token.key(),
+            commission_token: ctx.accounts.commission_token.key(),
+            commission_rate_micros,
             bump: *ctx.bumps.get("state").unwrap(),
         });
 
@@ -91,8 +99,8 @@ pub mod marketplace {
         ctx: Context<CreateRegion>,
         region_num: u32,
         name: String,
-        zones: u8,
         rates: ServiceRates,
+        min_escrow_balance: u64,
     ) -> Result<()> {
         if !ctx.accounts.provider.authorized {
             return Err(Error::ProviderNotAuthorized.into());
@@ -101,9 +109,9 @@ pub mod marketplace {
         ctx.accounts.region.set_inner(ProviderRegion {
             account_type: MuAccountType::ProviderRegion as u8,
             name,
-            zones,
             region_num,
             rates,
+            min_escrow_balance,
             provider: ctx.accounts.provider.key(),
             bump: *ctx.bumps.get("region").unwrap(),
         });
@@ -158,6 +166,26 @@ pub mod marketplace {
         Ok(())
     }
 
+    pub fn withdraw_escrow_balance(ctx: Context<WithdrawEscrow>, amount: u64) -> Result<()> {
+        let bump = ctx.accounts.state.bump.to_le_bytes();
+        let signer_seeds = vec![b"state".as_ref(), bump.as_ref()];
+        let signer_seeds_wrapper = vec![signer_seeds.as_slice()];
+
+        let transfer = Transfer {
+            from: ctx.accounts.escrow_account.to_account_info(),
+            to: ctx.accounts.withdraw_to.to_account_info(),
+            authority: ctx.accounts.state.to_account_info(),
+        };
+        let transfer_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            transfer,
+            signer_seeds_wrapper.as_slice(),
+        );
+        anchor_spl::token::transfer(transfer_ctx, amount)?;
+
+        Ok(())
+    }
+
     pub fn update_usage(
         ctx: Context<UpdateUsage>,
         update_seed: u128,
@@ -165,21 +193,43 @@ pub mod marketplace {
         usage: ServiceUsage,
     ) -> Result<()> {
         let usage_tokens = calc_usage(&ctx.accounts.region.rates, &usage);
-        msg!("Calculated price: {}", usage_tokens);
+        let commission_tokens =
+            usage_tokens * ctx.accounts.state.commission_rate_micros as u64 / 1_000_000;
+        let provider_tokens = usage_tokens - commission_tokens;
+        msg!(
+            "Calculated price: {}, commission: {}, provider's share: {}",
+            usage_tokens,
+            commission_tokens,
+            provider_tokens,
+        );
+
+        let bump = ctx.accounts.state.bump.to_le_bytes();
+        let signer_seeds = vec![b"state".as_ref(), bump.as_ref()];
+        let signer_seeds_wrapper = vec![signer_seeds.as_slice()];
+
         let transfer = Transfer {
             from: ctx.accounts.escrow_account.to_account_info(),
             to: ctx.accounts.token_account.to_account_info(),
             authority: ctx.accounts.state.to_account_info(),
         };
-        let bump = ctx.accounts.state.bump.to_le_bytes();
-        let seeds = vec![b"state".as_ref(), bump.as_ref()];
-        let seeds_wrapper = vec![seeds.as_slice()];
         let transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             transfer,
-            seeds_wrapper.as_slice(),
+            signer_seeds_wrapper.as_slice(),
         );
-        anchor_spl::token::transfer(transfer_ctx, usage_tokens)?;
+        anchor_spl::token::transfer(transfer_ctx, provider_tokens)?;
+
+        let transfer = Transfer {
+            from: ctx.accounts.escrow_account.to_account_info(),
+            to: ctx.accounts.commission_token.to_account_info(),
+            authority: ctx.accounts.state.to_account_info(),
+        };
+        let transfer_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            transfer,
+            signer_seeds_wrapper.as_slice(),
+        );
+        anchor_spl::token::transfer(transfer_ctx, commission_tokens)?;
 
         ctx.accounts.usage_update.set_inner(UsageUpdate {
             account_type: MuAccountType::UsageUpdate as u8,
@@ -200,6 +250,8 @@ pub struct MuState {
     pub authority: Pubkey,
     pub mint: Pubkey,
     pub deposit_token: Pubkey,
+    pub commission_token: Pubkey,
+    pub commission_rate_micros: u32,
     pub bump: u8,
 }
 
@@ -209,7 +261,7 @@ pub struct Initialize<'info> {
         init,
         payer = authority,
         seeds = [b"state"],
-        space = 8 + 1 + 32 + 32 + 32 + 1,
+        space = 8 + 1 + 32 + 32 + 32 + 32 + 4 + 1,
         bump
     )]
     state: Account<'info, MuState>,
@@ -225,6 +277,16 @@ pub struct Initialize<'info> {
         bump
     )]
     pub deposit_token: Account<'info, TokenAccount>,
+
+    #[account(
+        init,
+        payer = authority,
+        token::mint = mint,
+        token::authority = state,
+        seeds = [b"commission"],
+        bump
+    )]
+    pub commission_token: Account<'info, TokenAccount>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -362,9 +424,9 @@ pub struct ServiceUsage {
 pub struct ProviderRegion {
     pub account_type: u8, // See MuAccountType
     pub provider: Pubkey,
-    pub zones: u8,
     pub region_num: u32,
     pub rates: ServiceRates,
+    pub min_escrow_balance: u64,
     pub bump: u8,
     pub name: String,
 }
@@ -377,7 +439,7 @@ pub struct CreateRegion<'info> {
 
     #[account(
         init,
-        space = 8 + 1 + 32 + 1 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 1 + 4 + name.as_bytes().len(),
+        space = 8 + 1 + 32 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 8 + 1 + 4 + name.as_bytes().len(),
         payer = owner,
         seeds = [b"region", owner.key().as_ref(), region_num.to_le_bytes().as_ref()],
         bump
@@ -418,6 +480,31 @@ pub struct CreateProviderEscrowAccount<'info> {
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawEscrow<'info> {
+    #[account(
+        seeds = [b"state"],
+        bump = state.bump,
+    )]
+    pub state: Account<'info, MuState>,
+
+    #[account(
+        seeds = [b"escrow", user.key().as_ref(), provider.key().as_ref()],
+        bump,
+        mut
+    )]
+    pub escrow_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub withdraw_to: Account<'info, TokenAccount>,
+
+    pub provider: Account<'info, Provider>,
+
+    pub user: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
 }
 
 #[account]
@@ -502,9 +589,14 @@ pub struct UsageUpdate {
 pub struct UpdateUsage<'info> {
     #[account(
         seeds = [b"state"],
-        bump = state.bump
+        bump = state.bump,
+        has_one = commission_token
     )]
     pub state: Account<'info, MuState>,
+
+    /// CHECK: The commission token account as verified by has_one on state
+    #[account(mut)]
+    commission_token: AccountInfo<'info>,
 
     #[account(
         has_one = signer,

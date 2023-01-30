@@ -24,4 +24,6 @@ fn main() {
         .input("protos/gossip.proto")
         .cargo_out_dir("protos/gossip")
         .run_from_script();
+
+    println!("build script ran");
 }

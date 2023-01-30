@@ -1,16 +1,13 @@
 use std::{fs, path::PathBuf};
 
 use anchor_client::{
-    solana_client::{
-        rpc_config::RpcSendTransactionConfig,
-        rpc_filter::{Memcmp, RpcFilterType},
-    },
+    solana_client::rpc_filter::{Memcmp, RpcFilterType},
     solana_sdk::{pubkey::Pubkey, system_program},
 };
 use anyhow::{Context, Result};
 use clap::{Args, Parser};
 
-use crate::config::Config;
+use crate::{config::Config, marketplace_client};
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -135,24 +132,11 @@ pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
         system_program: system_program::id(),
     };
 
-    client
-        .program
-        .request()
-        .accounts(accounts)
-        .args(marketplace::instruction::CreateStack {
-            stack_seed: cmd.seed,
-            stack_data: proto.to_vec(),
-            name,
-        })
-        .signer(user_wallet.as_ref())
-        .send_with_spinner_and_config(RpcSendTransactionConfig {
-            // TODO: what's preflight and what's a preflight commitment?
-            skip_preflight: cfg!(debug_assertions),
-            ..Default::default()
-        })
-        .context("Failed to send stack creation transaction")?;
+    let instruction = marketplace::instruction::CreateStack {
+        stack_seed: cmd.seed,
+        stack_data: proto.to_vec(),
+        name,
+    };
 
-    println!("Stack deployed successfully with key: {stack_pda}");
-
-    Ok(())
+    marketplace_client::stack::deploy_stack(&client, accounts, instruction, user_wallet, region)
 }

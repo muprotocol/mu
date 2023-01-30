@@ -1,19 +1,19 @@
 mod serde_support;
 
-pub use serde_support::{ConfigDuration, ConfigLogLevelFilter};
+pub use serde_support::{ConfigDuration, ConfigLogLevelFilter, ConfigUri};
 
 use anyhow::{Context, Result};
 use config::{Config, Environment, File, FileFormat};
+use mu_db::TikvRunnerConfig;
+use mu_gateway::GatewayManagerConfig;
+use mu_runtime::RuntimeConfig;
 
 use crate::{
-    gateway::GatewayManagerConfig,
     log_setup::LogConfig,
-    mudb::DBManagerConfig,
     network::{
         connection_manager::ConnectionManagerConfig,
         gossip::{GossipConfig, KnownNodeConfig},
     },
-    runtime::types::RuntimeConfig,
     stack::{blockchain_monitor::BlockchainMonitorConfig, scheduler::SchedulerConfig},
 };
 
@@ -21,12 +21,12 @@ pub struct SystemConfig(
     pub ConnectionManagerConfig,
     pub GossipConfig,
     pub Vec<KnownNodeConfig>,
+    pub TikvRunnerConfig,
     pub GatewayManagerConfig,
     pub LogConfig,
     pub RuntimeConfig,
     pub SchedulerConfig,
     pub BlockchainMonitorConfig,
-    pub DBManagerConfig,
 );
 
 pub fn initialize_config() -> Result<SystemConfig> {
@@ -40,6 +40,19 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("gossip.max_peers", "6"),
         ("gossip.peer_update_interval", "10s"),
         ("gossip.liveness_check_interval", "1s"),
+        ("initial_cluster.ip", "127.0.0.1"),
+        ("initial_cluster.gossip_port", "12012"),
+        ("initial_cluster.pd_port", "2380"),
+        ("tikv.pd.data_dir", "/var/lib/mu-executor/pd-data/"),
+        ("tikv.pd.peer_url.address", "127.0.0.1"),
+        ("tikv.pd.peer_url.port", "2380"),
+        ("tikv.pd.client_url.address", "127.0.0.1"),
+        ("tikv.pd.client_url.port", "2379"),
+        ("tikv.pd.log_file", "/var/log/mu-executor/pd-server"),
+        ("tikv.node.cluster_url.address", "127.0.0.1"),
+        ("tikv.node.cluster_url.port", "20160"),
+        ("tikv.node.data_dir", "/var/lib/mu-executor/tikv-data/"),
+        ("tikv.node.log_file", "/var/log/mu-executor/tikv-server"),
         ("gateway_manager.listen_ip", "0.0.0.0"),
         ("gateway_manager.listen_port", "12012"),
         ("scheduler.tick_interval", "1s"),
@@ -48,7 +61,6 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("blockchain_monitor.solana_provider_public_key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
         ("blockchain_monitor.solana_region_number", "1"),
         ("blockchain_monitor.solana_usage_signer_private_key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
-        ("blockchain_monitor.solana_min_escrow_balance", "50"),
         ("db_manager.usage_report_duration", "15m"),
         ("runtime.include_function_logs", "false"),
     ];
@@ -97,8 +109,10 @@ pub fn initialize_config() -> Result<SystemConfig> {
 
     let gossip_config = config.get("gossip").context("Invalid gossip config")?;
 
+    let initial_cluster_config = config.get("tikv").context("Invalid tikv_runner config")?;
+
     let known_node_config: Vec<KnownNodeConfig> = config
-        .get("gossip.seeds")
+        .get("initial_cluster")
         .context("Invalid known_node config")?;
 
     let gateway_config = config
@@ -117,19 +131,15 @@ pub fn initialize_config() -> Result<SystemConfig> {
         .get("blockchain_monitor")
         .context("Invalid blockchain monitor config")?;
 
-    let db_manager_config = config
-        .get("db_manager")
-        .context("Invalid db manager config")?;
-
     Ok(SystemConfig(
         connection_manager_config,
         gossip_config,
         known_node_config,
+        initial_cluster_config,
         gateway_config,
         log_config,
         runtime_config,
         scheduler_config,
         blockchain_monitor_config,
-        db_manager_config,
     ))
 }
