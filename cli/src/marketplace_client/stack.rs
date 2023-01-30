@@ -11,7 +11,7 @@ pub enum DeployMode {
     Automatic,
 }
 
-pub fn deploy_stack(
+pub fn deploy(
     client: &MarketplaceClient,
     user_wallet: Rc<dyn Signer>,
     region_pda: &Pubkey,
@@ -142,4 +142,46 @@ pub fn get_deploy_mode(init: bool, update: bool) -> Result<DeployMode> {
         (false, true) => Ok(DeployMode::UpdateOnly),
         (false, false) => Ok(DeployMode::Automatic),
     }
+}
+
+pub fn delete(
+    client: &MarketplaceClient,
+    user_wallet: Rc<dyn Signer>,
+    stack_pda: &Pubkey,
+    region_pda: Option<&Pubkey>,
+) -> Result<()> {
+    let stack = match client.try_account::<marketplace::Stack>(stack_pda)? {
+        Some(x) => x,
+        None => bail!("There is no stack with this ID"),
+    };
+
+    if let Some(region) = region_pda {
+        if stack.region != *region {
+            bail!(
+                "The stack is not in the specified region; it is in {}",
+                stack.region
+            );
+        }
+    }
+
+    let accounts = marketplace::accounts::DeleteStack {
+        region: stack.region,
+        stack: *stack_pda,
+        user: user_wallet.pubkey(),
+    };
+
+    let instruction = marketplace::instruction::DeleteStack {
+        _stack_seed: stack.seed,
+    };
+
+    client
+        .program
+        .request()
+        .accounts(accounts)
+        .args(instruction)
+        .signer(user_wallet.as_ref())
+        .send_with_spinner_and_config(Default::default())
+        .context("Failed to send stack deletion transaction")?;
+
+    Ok(())
 }

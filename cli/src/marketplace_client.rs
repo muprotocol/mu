@@ -1,5 +1,5 @@
 use anchor_client::{
-    anchor_lang::AccountDeserialize,
+    anchor_lang::{prelude::AnchorError, AccountDeserialize},
     solana_client::{
         client_error::ClientErrorKind,
         rpc_filter::{Memcmp, RpcFilterType},
@@ -119,7 +119,17 @@ impl MarketplaceClient {
 
     pub fn try_account<T: AccountDeserialize>(&self, pubkey: &Pubkey) -> Result<Option<T>> {
         match self.program.rpc().get_account(pubkey) {
-            Ok(x) => Ok(Some(T::try_deserialize(&mut x.data.as_ref())?)),
+            Ok(account) => match T::try_deserialize(&mut account.data.as_ref()) {
+                Ok(x) => Ok(Some(x)),
+
+                Err(anchor_client::anchor_lang::prelude::Error::AnchorError(AnchorError {
+                    // 3002 is "AccountDiscriminatorMismatch", which means we hit the wrong account type
+                    error_code_number: 3002,
+                    ..
+                })) => Ok(None),
+
+                Err(e) => Err(e.into()),
+            },
             Err(client_error) => match client_error.kind {
                 ClientErrorKind::RpcError(RpcError::ForUser(s))
                     if s.contains("AccountNotFound") =>

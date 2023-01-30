@@ -13,6 +13,7 @@ use crate::{config::Config, marketplace_client};
 pub enum Command {
     List(ListStacksCommand),
     Deploy(DeployStackCommand),
+    Delete(DeleteStackCommand),
 }
 
 #[derive(Debug, Args)]
@@ -53,10 +54,24 @@ pub struct DeployStackCommand {
     update: bool,
 }
 
+#[derive(Debug, Args)]
+pub struct DeleteStackCommand {
+    // The ID of the stack to be deleted.
+    stack: Pubkey,
+
+    #[arg(short, long)]
+    // The region the stack is deployed to. This is included
+    // as a safeguard against accidentally deleting the wrong
+    // stack. If you don't wish to specify the region, you can
+    // pass '--region any' to this tool.
+    region: String,
+}
+
 pub fn execute(config: Config, cmd: Command) -> Result<()> {
     match cmd {
         Command::List(sub_command) => execute_list(config, sub_command),
         Command::Deploy(sub_command) => execute_deploy(config, sub_command),
+        Command::Delete(sub_command) => execute_delete(config, sub_command),
     }
 }
 
@@ -120,7 +135,7 @@ pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
 
     let deploy_mode = marketplace_client::stack::get_deploy_mode(cmd.init, cmd.update)?;
 
-    marketplace_client::stack::deploy_stack(
+    marketplace_client::stack::deploy(
         &client,
         user_wallet,
         &cmd.region,
@@ -128,4 +143,19 @@ pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
         cmd.seed,
         deploy_mode,
     )
+}
+
+pub fn execute_delete(config: Config, cmd: DeleteStackCommand) -> Result<()> {
+    let client = config.build_marketplace_client()?;
+    let user_wallet = config.get_signer()?;
+
+    let region = {
+        if cmd.region == "any" {
+            None
+        } else {
+            Some(cmd.region.parse::<Pubkey>()?)
+        }
+    };
+
+    marketplace_client::stack::delete(&client, user_wallet, &cmd.stack, region.as_ref())
 }
