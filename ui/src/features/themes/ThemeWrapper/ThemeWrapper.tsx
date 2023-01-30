@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 
 import { CssBaseline, ThemeProvider } from "@mui/material";
 
-import { lightTheme } from "./lightTheme";
+import { lightTheme } from "../lightTheme/lightTheme";
 
 export type ThemeWrapperProps = {
   children: ReactNode;
