@@ -37,8 +37,15 @@ pub trait DbClient: Send + Sync + Debug + Clone {
     ) -> Result<()>;
 
     async fn clear_table(&self, stack_id: StackID, table_name: TableName) -> Result<()>;
+
     async fn scan(&self, scan: Scan, limit: u32) -> Result<Vec<(Key, Value)>>;
     async fn scan_keys(&self, scan: Scan, limit: u32) -> Result<Vec<Key>>;
+
+    async fn batch_put(&self, pairs: Vec<(Key, Value)>, is_atomic: bool) -> Result<()>;
+    async fn batch_get(&self, keys: Vec<Key>) -> Result<Vec<(Key, Value)>>;
+    async fn batch_delete(&self, keys: Vec<Key>) -> Result<()>;
+    async fn batch_scan(&self, scans: Vec<Scan>, each_limit: u32) -> Result<Vec<(Key, Value)>>;
+    async fn batch_scan_keys(&self, scans: Vec<Scan>, each_limit: u32) -> Result<Vec<Key>>;
 
     async fn table_list(
         &self,
@@ -47,11 +54,6 @@ pub trait DbClient: Send + Sync + Debug + Clone {
     ) -> Result<Vec<TableName>>;
 
     async fn stack_id_list(&self) -> Result<Vec<StackID>>;
-    async fn batch_delete(&self, keys: Vec<Key>) -> Result<()>;
-    async fn batch_get(&self, keys: Vec<Key>) -> Result<Vec<(Key, Value)>>;
-    async fn batch_put(&self, pairs: Vec<(Key, Value)>, is_atomic: bool) -> Result<()>;
-    async fn batch_scan(&self, scans: Vec<Scan>, each_limit: u32) -> Result<Vec<(Key, Value)>>;
-    async fn batch_scan_keys(&self, scans: Vec<Scan>, each_limit: u32) -> Result<Vec<Key>>;
 
     async fn compare_and_swap(
         &self,

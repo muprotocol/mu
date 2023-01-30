@@ -19,9 +19,11 @@ enum IncomingMessageKind {
     ExecuteFunction = 1,
 
     // DB Messages
-    DBError = 1001,
+    DbError = 1001,
     SingleResult = 1002,
     ListResult = 1003,
+    KvPairsResult = 1004,
+    EmptyResult = 1005,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -36,18 +38,25 @@ pub enum IncomingMessage<'a> {
     ExecuteFunction(ExecuteFunction<'a>),
 
     // DB messages
-    DBError(DBError<'a>),
+    DbError(DbError<'a>),
     SingleResult(SingleResult<'a>),
     ListResult(ListResult<'a>),
+    KvPairsResult(KvPairsResult<'a>),
+    EmptyResult(EmptyResult),
 }
 
 macro_rules! read_cases {
-    ($kind: ident, $reader: ident, [$($case: ident),+]) => {
+    ($kind: ident, $reader: ident, [$($case: ident),+]<$lf: lifetime>, [$($unit_case: ident),*]) => {
         match IncomingMessageKind::from_u16($kind) {
             $(Some(IncomingMessageKind::$case) => {
-                let message: $case<'static> = BorshDeserialize::deserialize_reader($reader)?;
+                let message: $case<$lf> = BorshDeserialize::deserialize_reader($reader)?;
                 Ok(Self::$case(message))
             })+
+
+            $(Some(IncomingMessageKind::$unit_case) => {
+                let message: $unit_case = BorshDeserialize::deserialize_reader($reader)?;
+                Ok(Self::$unit_case(message))
+            })*
 
             None => Err(
                 std::io::Error::new(
@@ -77,7 +86,8 @@ impl<'a> IncomingMessage<'a> {
         read_cases!(
             kind,
             reader,
-            [ExecuteFunction, DBError, SingleResult, ListResult]
+            [ExecuteFunction, DbError, SingleResult, ListResult, KvPairsResult]<'static>,
+            [EmptyResult]
         )
     }
 
@@ -85,7 +95,14 @@ impl<'a> IncomingMessage<'a> {
         write_cases!(
             self,
             writer,
-            [ExecuteFunction, DBError, SingleResult, ListResult]
+            [
+                ExecuteFunction,
+                DbError,
+                SingleResult,
+                ListResult,
+                KvPairsResult,
+                EmptyResult
+            ]
         );
 
         Ok(())

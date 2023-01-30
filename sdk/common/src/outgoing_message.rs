@@ -21,8 +21,20 @@ pub enum OutgoingMessageKind {
     Log = 3,
 
     // DB messages
-    Get = 1001,
-    BatchGet = 1002,
+    Put = 1001,
+    Get = 1002,
+    Delete = 1003,
+    DeleteByPrefix = 1004,
+    Scan = 1005,
+    TableList = 1006,
+    BatchPut = 1007,
+    BatchGet = 1008,
+    BatchDelete = 1009,
+    BatchScan = 1010,
+    // TODO
+    // ScanKeys = 1007,
+    // BatchScanKeys = 1013,
+    // CompareAndSwap = 1014,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -59,8 +71,20 @@ pub enum OutgoingMessage<'a> {
     Log(Log<'a>),
 
     // DB messages
+    Put(Put<'a>),
     Get(Get<'a>),
+    Delete(Delete<'a>),
+    DeleteByPrefix(DeleteByPrefix<'a>),
+    Scan(Scan<'a>),
+    TableList(TableList<'a>),
+    BatchPut(BatchPut<'a>),
     BatchGet(BatchGet<'a>),
+    BatchDelete(BatchDelete<'a>),
+    BatchScan(BatchScan<'a>),
+    // TODO
+    // ScanKeys(ScanKeys<'a>),
+    // BatchScanKeys(BatchScanKeys<'a>),
+    // CompareAndSwap(CompareAndSwap<'a>),
 }
 
 macro_rules! read_cases {
@@ -99,7 +123,21 @@ impl<'a> OutgoingMessage<'a> {
         read_cases!(
             kind,
             reader,
-            [FatalError, FunctionResult, Log, Get, BatchGet]
+            [
+                FatalError,
+                FunctionResult,
+                Log,
+                Put,
+                Get,
+                Delete,
+                DeleteByPrefix,
+                Scan,
+                TableList,
+                BatchPut,
+                BatchGet,
+                BatchDelete,
+                BatchScan
+            ]
         )
     }
 
@@ -107,7 +145,21 @@ impl<'a> OutgoingMessage<'a> {
         write_cases!(
             self,
             writer,
-            [FatalError, FunctionResult, Log, Get, BatchGet]
+            [
+                FatalError,
+                FunctionResult,
+                Log,
+                Put,
+                Get,
+                Delete,
+                DeleteByPrefix,
+                Scan,
+                TableList,
+                BatchPut,
+                BatchGet,
+                BatchDelete,
+                BatchScan
+            ]
         );
 
         Ok(())
