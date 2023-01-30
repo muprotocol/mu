@@ -7,7 +7,9 @@ import {
   useConnection,
 } from "@solana/wallet-adapter-react";
 
-export default function useAnchorProvider() {
+export default function useAnchorProvider(): {
+  anchorProvider: AnchorProvider;
+} {
   const { connection } = useConnection();
   const anchorWallet = useAnchorWallet() as AnchorWallet;
 
@@ -22,8 +24,4 @@ export default function useAnchorProvider() {
   return {
     anchorProvider,
   };
-}
-
-export function withAnchorProvider() {
-
 }
