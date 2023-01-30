@@ -2,22 +2,22 @@ use std::{borrow::Cow, collections::HashMap};
 
 use futures::FutureExt;
 use itertools::Itertools;
-use rstest::rstest;
 
 use mu_runtime::*;
 use musdk_common::{Header, Status};
+use test_context::test_context;
 
 use crate::utils::{fixture::*, *};
 
 mod utils;
 
-#[rstest]
-#[tokio::test(flavor = "multi_thread")]
-async fn test_simple_func<'a>(runtime_fixture: RuntimeFixture) {
-    let (runtime, _db_manager, _usages) = runtime_fixture;
-    let projects = create_and_add_projects(vec![("hello-wasm", &["say_hello"], None)], &runtime)
-        .await
-        .unwrap();
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn test_simple_func(fixture: &mut RuntimeFixtureWithoutDB) {
+    let projects =
+        create_and_add_projects(vec![("hello-wasm", &["say_hello"], None)], &fixture.runtime)
+            .await
+            .unwrap();
 
     let request = make_request(
         Cow::Borrowed(b"Chappy"),
@@ -26,7 +26,8 @@ async fn test_simple_func<'a>(runtime_fixture: RuntimeFixture) {
         HashMap::new(),
     );
 
-    let resp = runtime
+    let resp = fixture
+        .runtime
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .await
         .unwrap();
@@ -35,8 +36,6 @@ async fn test_simple_func<'a>(runtime_fixture: RuntimeFixture) {
         "Hello Chappy, welcome to MuRuntime".as_bytes(),
         resp.body.as_ref()
     );
-
-    runtime.stop().await.unwrap();
 }
 
 // #[tokio::test]
@@ -70,13 +69,13 @@ async fn test_simple_func<'a>(runtime_fixture: RuntimeFixture) {
 //     runtime.stop().await.unwrap();
 // }
 
-#[rstest]
-#[tokio::test(flavor = "multi_thread")]
-async fn can_run_multiple_instance_of_the_same_function<'a>(runtime_fixture: RuntimeFixture) {
-    let (runtime, _db_manager, _usages) = runtime_fixture;
-    let projects = create_and_add_projects(vec![("hello-wasm", &["say_hello"], None)], &runtime)
-        .await
-        .unwrap();
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn can_run_multiple_instance_of_the_same_function(fixture: &mut RuntimeFixtureWithoutDB) {
+    let projects =
+        create_and_add_projects(vec![("hello-wasm", &["say_hello"], None)], &fixture.runtime)
+            .await
+            .unwrap();
 
     let make_request = |name: &'static str| {
         make_request(
@@ -89,7 +88,8 @@ async fn can_run_multiple_instance_of_the_same_function<'a>(runtime_fixture: Run
 
     let function_id = projects[0].function_id(0).unwrap();
 
-    let instance_1 = runtime
+    let instance_1 = fixture
+        .runtime
         .invoke_function(function_id.clone(), make_request("Mathew"))
         .then(|r| async move {
             assert_eq!(
@@ -98,7 +98,8 @@ async fn can_run_multiple_instance_of_the_same_function<'a>(runtime_fixture: Run
             )
         });
 
-    let instance_2 = runtime
+    let instance_2 = fixture
+        .runtime
         .invoke_function(function_id.clone(), make_request("Morpheus"))
         .then(|r| async move {
             assert_eq!(
@@ -107,7 +108,8 @@ async fn can_run_multiple_instance_of_the_same_function<'a>(runtime_fixture: Run
             )
         });
 
-    let instance_3 = runtime
+    let instance_3 = fixture
+        .runtime
         .invoke_function(function_id, make_request("Unity"))
         .then(|r| async move {
             assert_eq!(
@@ -117,27 +119,25 @@ async fn can_run_multiple_instance_of_the_same_function<'a>(runtime_fixture: Run
         });
 
     tokio::join!(instance_1, instance_2, instance_3);
-
-    runtime.stop().await.unwrap();
 }
 
-#[rstest]
-#[tokio::test(flavor = "multi_thread")]
-async fn can_run_instances_of_different_functions<'a>(runtime_fixture: RuntimeFixture) {
-    let (runtime, _db_manager, _usages) = runtime_fixture;
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn can_run_instances_of_different_functions(fixture: &mut RuntimeFixtureWithoutDB) {
     let projects = create_and_add_projects(
         vec![
             ("hello-wasm", &["say_hello"], None),
             ("calc-func", &["add_one"], None),
         ],
-        &runtime,
+        &fixture.runtime,
     )
     .await
     .unwrap();
 
     let make_request = |body| make_request(body, vec![], HashMap::new(), HashMap::new());
 
-    let instance_1 = runtime
+    let instance_1 = fixture
+        .runtime
         .invoke_function(
             projects[0].function_id(0).unwrap(),
             make_request(Cow::Borrowed(b"Mathew")),
@@ -150,7 +150,8 @@ async fn can_run_instances_of_different_functions<'a>(runtime_fixture: RuntimeFi
         });
 
     let number = 2023u32;
-    let instance_2 = runtime
+    let instance_2 = fixture
+        .runtime
         .invoke_function(
             projects[1].function_id(0).unwrap(),
             make_request(Cow::Owned(number.to_be_bytes().to_vec())),
@@ -164,49 +165,44 @@ async fn can_run_instances_of_different_functions<'a>(runtime_fixture: RuntimeFi
         });
 
     tokio::join!(instance_1, instance_2);
-
-    runtime.stop().await.unwrap();
 }
 
-#[rstest]
-#[tokio::test(flavor = "multi_thread")]
-async fn unclean_termination_is_handled<'a>(runtime_fixture: RuntimeFixture) {
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn unclean_termination_is_handled(fixture: &mut RuntimeFixtureWithoutDB) {
     use mu_runtime::error::*;
 
-    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(
         vec![("unclean-termination", &["say_hello"], None)],
-        &runtime,
+        &fixture.runtime,
     )
     .await
     .unwrap();
 
     let request = make_request(Cow::Borrowed(b""), vec![], HashMap::new(), HashMap::new());
 
-    match runtime
+    match fixture
+        .runtime
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .await
     {
         Err(Error::FunctionDidntTerminateCleanly) => (),
         _ => panic!("Unclean exit function should fail to run"),
     }
-
-    runtime.stop().await.unwrap();
 }
 
-#[rstest]
-#[tokio::test(flavor = "multi_thread")]
-async fn functions_with_limited_memory_wont_run<'a>(runtime_fixture: RuntimeFixture) {
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn functions_with_limited_memory_wont_run(fixture: &mut RuntimeFixtureWithoutDB) {
     use mu_runtime::error::*;
 
-    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(
         vec![(
             "hello-wasm",
             &["memory_heavy"],
             Some(byte_unit::Byte::from_unit(1.0, byte_unit::ByteUnit::MB).unwrap()),
         )],
-        &runtime,
+        &fixture.runtime,
     )
     .await
     .unwrap();
@@ -218,7 +214,8 @@ async fn functions_with_limited_memory_wont_run<'a>(runtime_fixture: RuntimeFixt
         HashMap::new(),
     );
 
-    let result = runtime
+    let result = fixture
+        .runtime
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .await;
 
@@ -228,19 +225,18 @@ async fn functions_with_limited_memory_wont_run<'a>(runtime_fixture: RuntimeFixt
     }
 }
 
-#[rstest]
-#[tokio::test(flavor = "multi_thread")]
-async fn functions_with_limited_memory_will_run_with_enough_memory<'a>(
-    runtime_fixture: RuntimeFixture,
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn functions_with_limited_memory_will_run_with_enough_memory(
+    fixture: &mut RuntimeFixtureWithoutDB,
 ) {
-    let (runtime, _db_manager, _usages) = runtime_fixture;
     let projects = create_and_add_projects(
         vec![(
             "hello-wasm",
             &["memory_heavy"],
             Some(byte_unit::Byte::from_unit(120.0, byte_unit::ByteUnit::MB).unwrap()),
         )],
-        &runtime,
+        &fixture.runtime,
     )
     .await
     .unwrap();
@@ -252,21 +248,20 @@ async fn functions_with_limited_memory_will_run_with_enough_memory<'a>(
         HashMap::new(),
     );
 
-    runtime
+    fixture
+        .runtime
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .then(|r| async move { assert_eq!(b"Fred", r.unwrap().body.as_ref()) })
         .await;
-
-    runtime.stop().await.unwrap();
 }
 
-#[rstest]
-#[tokio::test(flavor = "multi_thread")]
-async fn function_usage_is_reported_correctly_1<'a>(runtime_fixture: RuntimeFixture) {
-    let (runtime, _db_manager, usages) = runtime_fixture;
-    let projects = create_and_add_projects(vec![("hello-wasm", &["say_hello"], None)], &runtime)
-        .await
-        .unwrap();
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn function_usage_is_reported_correctly_1(fixture: &mut RuntimeFixtureWithoutDB) {
+    let projects =
+        create_and_add_projects(vec![("hello-wasm", &["say_hello"], None)], &fixture.runtime)
+            .await
+            .unwrap();
 
     let request = make_request(
         Cow::Borrowed(b"Chappy"),
@@ -277,12 +272,13 @@ async fn function_usage_is_reported_correctly_1<'a>(runtime_fixture: RuntimeFixt
 
     let function_id = projects[0].function_id(0).unwrap();
 
-    runtime
+    fixture
+        .runtime
         .invoke_function(function_id.clone(), request)
         .await
         .unwrap();
 
-    let usages = usages.lock().await;
+    let usages = fixture.usages.lock().await;
 
     let Usage {
         db_weak_reads,
@@ -299,8 +295,6 @@ async fn function_usage_is_reported_correctly_1<'a>(runtime_fixture: RuntimeFixt
     assert_eq!(*db_strong_reads, 0);
     assert!(*function_instructions > 0);
     assert_eq!(*memory_megabytes, 100);
-
-    runtime.stop().await.unwrap();
 }
 
 //#[tokio::test]
@@ -349,14 +343,14 @@ async fn function_usage_is_reported_correctly_1<'a>(runtime_fixture: RuntimeFixt
 //    runtime.stop().await.unwrap();
 //}
 
-#[rstest]
-#[tokio::test(flavor = "multi_thread")]
-async fn failing_function_should_not_hang<'a>(runtime_fixture: RuntimeFixture) {
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn failing_function_should_not_hang(fixture: &mut RuntimeFixtureWithoutDB) {
     use mu_runtime::error::*;
-    let (runtime, _db_manager, _usages) = runtime_fixture;
-    let projects = create_and_add_projects(vec![("hello-wasm", &["failing"], None)], &runtime)
-        .await
-        .unwrap();
+    let projects =
+        create_and_add_projects(vec![("hello-wasm", &["failing"], None)], &fixture.runtime)
+            .await
+            .unwrap();
 
     let request = make_request(
         Cow::Borrowed(b"Chappy"),
@@ -365,7 +359,8 @@ async fn failing_function_should_not_hang<'a>(runtime_fixture: RuntimeFixture) {
         HashMap::new(),
     );
 
-    let result = runtime
+    let result = fixture
+        .runtime
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .await;
 
@@ -373,19 +368,17 @@ async fn failing_function_should_not_hang<'a>(runtime_fixture: RuntimeFixture) {
         Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(_)) => (),
         _ => panic!("function should have been exited early!"),
     }
-
-    runtime.stop().await.unwrap();
 }
 
-#[rstest]
-#[tokio::test(flavor = "multi_thread")]
-async fn json_body_request_and_response<'a>(runtime_fixture: RuntimeFixture) {
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn json_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB) {
     use serde::{Deserialize, Serialize};
 
-    let (runtime, _db_manager, _usages) = runtime_fixture;
-    let projects = create_and_add_projects(vec![("multi-body", &["json_body"], None)], &runtime)
-        .await
-        .unwrap();
+    let projects =
+        create_and_add_projects(vec![("multi-body", &["json_body"], None)], &fixture.runtime)
+            .await
+            .unwrap();
 
     #[derive(Serialize)]
     pub struct Form {
@@ -420,7 +413,8 @@ async fn json_body_request_and_response<'a>(runtime_fixture: RuntimeFixture) {
         HashMap::new(),
     );
 
-    runtime
+    fixture
+        .runtime
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .then(|r| async move {
             let r = r.unwrap();
@@ -431,17 +425,17 @@ async fn json_body_request_and_response<'a>(runtime_fixture: RuntimeFixture) {
             )
         })
         .await;
-
-    runtime.stop().await.unwrap();
 }
 
-#[rstest]
-#[tokio::test(flavor = "multi_thread")]
-async fn string_body_request_and_response<'a>(runtime_fixture: RuntimeFixture) {
-    let (runtime, _db_manager, _usages) = runtime_fixture;
-    let projects = create_and_add_projects(vec![("multi-body", &["string_body"], None)], &runtime)
-        .await
-        .unwrap();
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn string_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB) {
+    let projects = create_and_add_projects(
+        vec![("multi-body", &["string_body"], None)],
+        &fixture.runtime,
+    )
+    .await
+    .unwrap();
 
     let request = make_request(
         Cow::Borrowed(b"Due"),
@@ -450,7 +444,8 @@ async fn string_body_request_and_response<'a>(runtime_fixture: RuntimeFixture) {
         HashMap::new(),
     );
 
-    runtime
+    fixture
+        .runtime
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .then(|r| async move {
             let r = r.unwrap();
@@ -458,19 +453,19 @@ async fn string_body_request_and_response<'a>(runtime_fixture: RuntimeFixture) {
             assert_eq!(b"Hello Due, got your message", r.body.as_ref());
         })
         .await;
-
-    runtime.stop().await.unwrap();
 }
 
-#[rstest]
-#[tokio::test(flavor = "multi_thread")]
-async fn string_body_request_and_response_fails_with_incorrect_charset<'a>(
-    runtime_fixture: RuntimeFixture,
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn string_body_request_and_response_fails_with_incorrect_charset(
+    fixture: &mut RuntimeFixtureWithoutDB,
 ) {
-    let (runtime, _db_manager, _usages) = runtime_fixture;
-    let projects = create_and_add_projects(vec![("multi-body", &["string_body"], None)], &runtime)
-        .await
-        .unwrap();
+    let projects = create_and_add_projects(
+        vec![("multi-body", &["string_body"], None)],
+        &fixture.runtime,
+    )
+    .await
+    .unwrap();
 
     let request = make_request(
         Cow::Borrowed(b"Due"),
@@ -482,7 +477,8 @@ async fn string_body_request_and_response_fails_with_incorrect_charset<'a>(
         HashMap::new(),
     );
 
-    runtime
+    fixture
+        .runtime
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .then(|r| async move {
             let r = r.unwrap();
@@ -490,19 +486,19 @@ async fn string_body_request_and_response_fails_with_incorrect_charset<'a>(
             assert_eq!(b"unsupported charset: windows-12345", r.body.as_ref());
         })
         .await;
-
-    runtime.stop().await.unwrap();
 }
 
-#[rstest]
-#[tokio::test(flavor = "multi_thread")]
-async fn string_body_request_and_response_do_not_care_for_content_type<'a>(
-    runtime_fixture: RuntimeFixture,
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn string_body_request_and_response_do_not_care_for_content_type(
+    fixture: &mut RuntimeFixtureWithoutDB,
 ) {
-    let (runtime, _db_manager, _usages) = runtime_fixture;
-    let projects = create_and_add_projects(vec![("multi-body", &["string_body"], None)], &runtime)
-        .await
-        .unwrap();
+    let projects = create_and_add_projects(
+        vec![("multi-body", &["string_body"], None)],
+        &fixture.runtime,
+    )
+    .await
+    .unwrap();
 
     let request = make_request(
         Cow::Borrowed(b"Due"),
@@ -514,7 +510,8 @@ async fn string_body_request_and_response_do_not_care_for_content_type<'a>(
         HashMap::new(),
     );
 
-    runtime
+    fixture
+        .runtime
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .then(|r| async move {
             let r = r.unwrap();
@@ -522,17 +519,17 @@ async fn string_body_request_and_response_do_not_care_for_content_type<'a>(
             assert_eq!(b"Hello Due, got your message", r.body.as_ref());
         })
         .await;
-
-    runtime.stop().await.unwrap();
 }
 
-#[rstest]
-#[tokio::test(flavor = "multi_thread")]
-async fn can_access_path_params<'a>(runtime_fixture: RuntimeFixture) {
-    let (runtime, _db_manager, _usages) = runtime_fixture;
-    let projects = create_and_add_projects(vec![("hello-wasm", &["path_params"], None)], &runtime)
-        .await
-        .unwrap();
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn can_access_path_params(fixture: &mut RuntimeFixtureWithoutDB) {
+    let projects = create_and_add_projects(
+        vec![("hello-wasm", &["path_params"], None)],
+        &fixture.runtime,
+    )
+    .await
+    .unwrap();
 
     let request = make_request(
         Cow::Borrowed(b"Due"),
@@ -549,7 +546,8 @@ async fn can_access_path_params<'a>(runtime_fixture: RuntimeFixture) {
         .reduce(|i, j| format!("{i},{j}"))
         .unwrap_or_else(|| "".into());
 
-    runtime
+    fixture
+        .runtime
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .then(|r| async move {
             let r = r.unwrap();
@@ -557,6 +555,4 @@ async fn can_access_path_params<'a>(runtime_fixture: RuntimeFixture) {
             assert_eq!(expected_response.as_bytes(), r.body.as_ref());
         })
         .await;
-
-    runtime.stop().await.unwrap();
 }

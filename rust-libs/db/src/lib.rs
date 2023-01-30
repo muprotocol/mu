@@ -1,7 +1,7 @@
 pub mod error;
 mod types;
 
-pub use self::types::{Key, Scan, TableName};
+pub use self::types::{Blob, Key, Scan, TableName};
 pub use db_embedded_tikv::{
     IpAndPort, NodeAddress, PdConfig, RemoteNode, TikvConfig, TikvRunnerConfig,
 };

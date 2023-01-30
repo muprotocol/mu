@@ -12,7 +12,6 @@ use mu_db::{
     DbManager, DbManagerImpl, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig,
 };
 use musdk_common::Header;
-use rstest::fixture;
 
 use async_trait::async_trait;
 use mu_runtime::{
@@ -104,30 +103,51 @@ pub async fn read_wasm_functions<'a>(
 
 pub mod fixture {
     use super::*;
+    use once_cell::sync::Lazy;
+    use test_context::{AsyncTestContext, TestContext};
 
-    macro_rules! block_on {
-        ($async_expr:expr) => {{
-            tokio::task::block_in_place(|| {
-                let handle = tokio::runtime::Handle::current();
-                handle.block_on($async_expr)
-            })
-        }};
-    }
+    pub static INSTALL_WASM32_TARGET_FIXTURE: Lazy<()> = Lazy::new(|| {
+        Command::new("rustup")
+            .args(["target", "add", "wasm32-wasi"])
+            .spawn()
+            .unwrap()
+            .wait()
+            .unwrap();
+    });
+
+    pub static BUILD_TEST_FUNCS_FIXTURE: Lazy<()> = Lazy::new(|| {
+        for name in TEST_PROJECTS {
+            let project_dir = format!("tests/funcs/{name}");
+            Command::new("cargo")
+                .current_dir(project_dir)
+                .env_remove("CARGO_TARGET_DIR")
+                .arg("build")
+                .args(["--release", "--target", "wasm32-wasi"])
+                .spawn()
+                .unwrap()
+                .wait()
+                .unwrap();
+        }
+    });
 
     pub struct TempDir(PathBuf);
 
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            std::fs::remove_dir_all(&self.0).unwrap();
+    impl TestContext for TempDir {
+        fn setup() -> Self {
+            TempDir::new()
+        }
+
+        fn teardown(self) {
+            std::fs::remove_dir_all(self.0).unwrap();
         }
     }
 
     impl TempDir {
         pub fn new() -> Self {
-            Self(std::env::temp_dir().join(Self::rand_dir_name()))
+            TempDir(std::env::temp_dir().join(TempDir::rand_dir_name()))
         }
 
-        pub fn get_rand_subdir(&self, prefix: Option<&str>) -> PathBuf {
+        pub fn get_rand_sub_dir(&self, prefix: Option<&str>) -> PathBuf {
             let name = format!("{}{}", prefix.unwrap_or(""), Self::rand_dir_name());
             self.0.join(name)
         }
@@ -145,196 +165,210 @@ pub mod fixture {
         }
     }
 
-    #[fixture]
-    #[once]
-    fn temp_dir_fixture() -> TempDir {
-        TempDir::new()
+    pub struct DBManagerFixture {
+        db_manager: DbManagerImpl,
+        data_dir: TempDir,
     }
 
-    #[fixture]
-    #[once]
-    pub fn install_wasm32_wasi_target_fixture() {
-        Command::new("rustup")
-            .args(["target", "add", "wasm32-wasi"])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
-    }
-
-    #[fixture]
-    #[once]
-    pub fn build_test_funcs_fixture() {
-        for name in TEST_PROJECTS {
-            let project_dir = format!("tests/funcs/{name}");
-            Command::new("cargo")
-                .current_dir(project_dir)
-                .env_remove("CARGO_TARGET_DIR")
-                .arg("build")
-                .args(["--release", "--target", "wasm32-wasi"])
-                .spawn()
-                .unwrap()
-                .wait()
-                .unwrap();
-        }
-    }
-
-    pub struct DBManagerWrapper(DbManagerImpl);
-
-    impl DBManagerWrapper {
+    impl DBManagerFixture {
         pub fn get_db_manager(&self) -> Box<dyn DbManager> {
-            Box::new(self.0.clone())
+            Box::new(self.db_manager.clone())
         }
     }
 
-    impl Drop for DBManagerWrapper {
-        fn drop(&mut self) {
-            block_on!(self.0.stop_embedded_cluster()).unwrap()
+    #[async_trait]
+    impl AsyncTestContext for DBManagerFixture {
+        async fn setup() -> Self {
+            let data_dir = TempDir::setup();
+            let localhost = IpAddr::V4(Ipv4Addr::LOCALHOST);
+
+            let node_address = NodeAddress {
+                address: localhost,
+                port: 12803,
+            };
+
+            let tikv_config = TikvRunnerConfig {
+                pd: PdConfig {
+                    peer_url: IpAndPort {
+                        address: localhost,
+                        port: 12385,
+                    },
+                    client_url: IpAndPort {
+                        address: localhost,
+                        port: 12386,
+                    },
+                    data_dir: data_dir
+                        .get_rand_sub_dir(Some("pd_data_dir"))
+                        .display()
+                        .to_string(),
+                    log_file: Some(
+                        data_dir
+                            .get_rand_sub_dir(Some("pd_log"))
+                            .display()
+                            .to_string(),
+                    ),
+                },
+                node: TikvConfig {
+                    cluster_url: IpAndPort {
+                        address: localhost,
+                        port: 20163,
+                    },
+                    data_dir: data_dir
+                        .get_rand_sub_dir(Some("tikv_data_dir"))
+                        .display()
+                        .to_string(),
+                    log_file: Some(
+                        data_dir
+                            .get_rand_sub_dir(Some("tikv_log"))
+                            .display()
+                            .to_string(),
+                    ),
+                },
+            };
+
+            Self {
+                db_manager: DbManagerImpl::new_with_embedded_cluster(
+                    node_address,
+                    vec![],
+                    tikv_config,
+                )
+                .await
+                .unwrap(),
+                data_dir,
+            }
+        }
+
+        async fn teardown(self) {
+            self.db_manager.stop_embedded_cluster().await.unwrap();
+            self.data_dir.teardown()
         }
     }
 
-    #[fixture]
-    #[once]
-    pub fn mudb_fixture(temp_dir_fixture: &TempDir) -> DBManagerWrapper {
-        let data_dir = temp_dir_fixture.get_rand_subdir(Some("mudb"));
-        let localhost = IpAddr::V4(Ipv4Addr::LOCALHOST);
-
-        let node_address = NodeAddress {
-            address: localhost,
-            port: 12803,
-        };
-
-        let tikv_config = TikvRunnerConfig {
-            pd: PdConfig {
-                peer_url: IpAndPort {
-                    address: localhost,
-                    port: 12385,
-                },
-                client_url: IpAndPort {
-                    address: localhost,
-                    port: 12386,
-                },
-                data_dir: data_dir.join("pd_data_dir").display().to_string(),
-                log_file: Some(data_dir.join("pd_log").display().to_string()),
-            },
-            node: TikvConfig {
-                cluster_url: IpAndPort {
-                    address: localhost,
-                    port: 20163,
-                },
-                data_dir: data_dir.join("tikv_data_dir").display().to_string(),
-                log_file: Some(data_dir.join("tikv_log").display().to_string()),
-            },
-        };
-
-        DBManagerWrapper(
-            block_on!(DbManagerImpl::new_with_embedded_cluster(
-                node_address,
-                vec![],
-                tikv_config,
-            ))
-            .unwrap(),
-        )
+    pub struct RuntimeFixture {
+        pub runtime: Box<dyn Runtime>,
+        pub db_manager: DBManagerFixture,
+        pub usages: Arc<tokio::sync::Mutex<HashMap<StackID, Usage>>>,
+        pub data_dir: TempDir,
     }
 
-    #[fixture]
-    pub fn runtime_fixture(
-        _install_wasm32_wasi_target_fixture: (),
-        _build_test_funcs_fixture: (),
-        temp_dir_fixture: &TempDir,
-        mudb_fixture: &DBManagerWrapper,
-    ) -> RuntimeFixture {
-        let assembly_provider = Box::<MapAssemblyProvider>::default();
+    #[async_trait]
+    impl AsyncTestContext for RuntimeFixture {
+        async fn setup() -> Self {
+            // One-time tasks using lazy evaluation
+            let _ = &INSTALL_WASM32_TARGET_FIXTURE;
+            let _ = &BUILD_TEST_FUNCS_FIXTURE;
 
-        let config = RuntimeConfig {
-            cache_path: temp_dir_fixture.get_rand_subdir(Some("runtime-cache")),
-            include_function_logs: true,
-        };
+            let assembly_provider = Box::<MapAssemblyProvider>::default();
+            let db_manager = <DBManagerFixture as AsyncTestContext>::setup().await;
+            let data_dir = TempDir::setup();
 
-        let (runtime, mut notifications) = block_on!(start(
-            assembly_provider,
-            mudb_fixture.get_db_manager(),
-            config
-        ))
-        .unwrap();
+            let config = RuntimeConfig {
+                cache_path: data_dir.get_rand_sub_dir(Some("runtime-cache")),
+                include_function_logs: true,
+            };
 
-        let usages = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+            let (runtime, mut notifications) =
+                start(assembly_provider, db_manager.get_db_manager(), config)
+                    .await
+                    .unwrap();
 
-        tokio::spawn({
-            let usages = usages.clone();
-            async move {
-                loop {
-                    if let Some(n) = notifications.recv().await {
-                        match n {
-                            Notification::ReportUsage(stack_id, usage) => {
-                                let mut map = usages.lock().await;
-                                if let Entry::Vacant(e) = map.entry(stack_id) {
-                                    e.insert(usage);
-                                } else {
-                                    *map.get_mut(&stack_id).unwrap() += usage;
+            let usages = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+
+            tokio::spawn({
+                let usages = usages.clone();
+                async move {
+                    loop {
+                        if let Some(n) = notifications.recv().await {
+                            match n {
+                                Notification::ReportUsage(stack_id, usage) => {
+                                    let mut map = usages.lock().await;
+                                    if let Entry::Vacant(e) = map.entry(stack_id) {
+                                        e.insert(usage);
+                                    } else {
+                                        *map.get_mut(&stack_id).unwrap() += usage;
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-        });
+            });
 
-        (runtime, mudb_fixture.get_db_manager(), usages)
+            RuntimeFixture {
+                runtime,
+                db_manager,
+                usages,
+                data_dir,
+            }
+        }
+        async fn teardown(self) {
+            self.runtime.stop().await.unwrap();
+            AsyncTestContext::teardown(self.db_manager).await;
+            self.data_dir.teardown();
+        }
     }
 
-    pub type RuntimeFixture = (
-        Box<dyn Runtime>,
-        Box<dyn DbManager>,
-        Arc<tokio::sync::Mutex<HashMap<StackID, Usage>>>,
-    );
-}
+    pub struct RuntimeFixtureWithoutDB {
+        pub runtime: Box<dyn Runtime>,
+        pub usages: Arc<tokio::sync::Mutex<HashMap<StackID, Usage>>>,
+        pub data_dir: TempDir,
+    }
 
-//pub async fn create_runtime<'a>(
-//    projects: &'a [Project<'a>],
-//) -> (
-//    Box<dyn Runtime>,
-//    Box<dyn DbManager>,
-//    Arc<Mutex<HashMap<StackID, Usage>>>,
-//) {
-//    let config = RuntimeConfig {
-//        cache_path: get_temp_dir(),
-//        include_function_logs: true,
-//    };
-//
-//    let (functions, provider) = create_map_function_provider(projects).await.unwrap();
-//    let (runtime, mut notifications) = start(Box::new(provider), config).await.unwrap();
-//
-//    runtime
-//        .add_functions(functions.clone().into_values().into_iter().collect())
-//        .await
-//        .unwrap();
-//
-//    let usages = Arc::new(Mutex::new(HashMap::new()));
-//
-//    tokio::spawn({
-//        let usages = usages.clone();
-//        async move {
-//            loop {
-//                match notifications.recv().await {
-//                    None => continue,
-//                    Some(n) => match n {
-//                        Notification::ReportUsage(stack_id, usage) => {
-//                            let mut map = usages.lock().await;
-//                            if let Entry::Vacant(e) = map.entry(stack_id) {
-//                                e.insert(usage);
-//                            } else {
-//                                *map.get_mut(&stack_id).unwrap() += usage;
-//                            }
-//                        }
-//                    },
-//                }
-//            }
-//        }
-//    });
-//
-//    (runtime, Box::new(db_manager), usages)
-//}
+    #[async_trait]
+    impl AsyncTestContext for RuntimeFixtureWithoutDB {
+        async fn setup() -> Self {
+            // One-time tasks using lazy evaluation
+            let _ = &INSTALL_WASM32_TARGET_FIXTURE;
+            let _ = &BUILD_TEST_FUNCS_FIXTURE;
+
+            let assembly_provider = Box::<MapAssemblyProvider>::default();
+            let db_manager = mock_db::EmptyDBManager;
+            let data_dir = TempDir::setup();
+
+            let config = RuntimeConfig {
+                cache_path: data_dir.get_rand_sub_dir(Some("runtime-cache")),
+                include_function_logs: true,
+            };
+
+            let (runtime, mut notifications) =
+                start(assembly_provider, Box::new(db_manager), config)
+                    .await
+                    .unwrap();
+
+            let usages = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+
+            tokio::spawn({
+                let usages = usages.clone();
+                async move {
+                    loop {
+                        if let Some(n) = notifications.recv().await {
+                            match n {
+                                Notification::ReportUsage(stack_id, usage) => {
+                                    let mut map = usages.lock().await;
+                                    if let Entry::Vacant(e) = map.entry(stack_id) {
+                                        e.insert(usage);
+                                    } else {
+                                        *map.get_mut(&stack_id).unwrap() += usage;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            RuntimeFixtureWithoutDB {
+                runtime,
+                usages,
+                data_dir,
+            }
+        }
+        async fn teardown(self) {
+            self.runtime.stop().await.unwrap();
+            self.data_dir.teardown();
+        }
+    }
+}
 
 pub fn create_project<'a>(
     name: &'a str,
@@ -385,5 +419,116 @@ pub fn make_request<'a>(
         body,
         path_params,
         query_params,
+    }
+}
+
+mod mock_db {
+    #![allow(unused)]
+    use async_trait::async_trait;
+    use mu_db::error::Result;
+    use mu_db::{Blob, DbClient, DbManager, Key, Scan, TableName};
+    use mu_stack::StackID;
+    use tikv_client::Value;
+
+    #[derive(Clone)]
+    pub struct EmptyDBManager;
+
+    #[derive(Debug, Clone)]
+    pub struct EmptyDBClient;
+
+    #[async_trait]
+    impl DbClient for EmptyDBClient {
+        async fn update_stack_tables(
+            &self,
+            stack_id: StackID,
+            table_list: Vec<TableName>,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()> {
+            Ok(())
+        }
+
+        async fn get(&self, key: Key) -> Result<Option<Value>> {
+            Ok(None)
+        }
+
+        async fn delete(&self, key: Key, is_atomic: bool) -> Result<()> {
+            Ok(())
+        }
+
+        async fn delete_by_prefix(
+            &self,
+            stack_id: StackID,
+            table_name: TableName,
+            prefix_inner_key: Blob,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        async fn clear_table(&self, stack_id: StackID, table_name: TableName) -> Result<()> {
+            Ok(())
+        }
+
+        async fn scan(&self, scan: Scan, limit: u32) -> Result<Vec<(Key, Value)>> {
+            Ok(vec![])
+        }
+
+        async fn scan_keys(&self, scan: Scan, limit: u32) -> Result<Vec<Key>> {
+            Ok(vec![])
+        }
+
+        async fn table_list(
+            &self,
+            stack_id: StackID,
+            table_name_prefix: Option<TableName>,
+        ) -> Result<Vec<TableName>> {
+            Ok(vec![])
+        }
+
+        async fn stack_id_list(&self) -> Result<Vec<StackID>> {
+            Ok(vec![])
+        }
+
+        async fn batch_delete(&self, keys: Vec<Key>) -> Result<()> {
+            Ok(())
+        }
+
+        async fn batch_get(&self, keys: Vec<Key>) -> Result<Vec<(Key, Value)>> {
+            Ok(vec![])
+        }
+
+        async fn batch_put(&self, pairs: Vec<(Key, Value)>, is_atomic: bool) -> Result<()> {
+            Ok(())
+        }
+
+        async fn batch_scan(&self, scans: Vec<Scan>, each_limit: u32) -> Result<Vec<(Key, Value)>> {
+            Ok(vec![])
+        }
+
+        async fn batch_scan_keys(&self, scans: Vec<Scan>, each_limit: u32) -> Result<Vec<Key>> {
+            Ok(vec![])
+        }
+
+        async fn compare_and_swap(
+            &self,
+            key: Key,
+            previous_value: Option<Value>,
+            new_value: Value,
+        ) -> Result<(Option<Value>, bool)> {
+            Ok((None, false))
+        }
+    }
+
+    #[async_trait]
+    impl DbManager for EmptyDBManager {
+        async fn make_client(&self) -> anyhow::Result<Box<dyn DbClient>> {
+            Ok(Box::new(EmptyDBClient))
+        }
+
+        async fn stop_embedded_cluster(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
     }
 }
