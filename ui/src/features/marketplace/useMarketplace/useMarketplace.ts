@@ -21,5 +21,5 @@ export default function useMarketplace() {
     [anchorProvider.connection, marketplaceIdl],
   );
 
-  return { marketplace: marketplace };
+  return { marketplace };
 }
