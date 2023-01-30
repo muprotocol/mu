@@ -16,9 +16,16 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use db_embedded_tikv::*;
 use mu_stack::StackID;
+use serde::Deserialize;
 use std::{collections::HashSet, fmt::Debug};
 use tikv_client::{self, KvPair, RawClient, Value};
 use tokio::time::{sleep, Duration};
+
+#[derive(Deserialize, Clone)]
+pub enum DbConfig {
+    External(Vec<IpAndPort>),
+    Internal(TikvRunnerConfig),
+}
 
 #[async_trait]
 #[clonable]

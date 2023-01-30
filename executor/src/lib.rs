@@ -13,7 +13,7 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use log::*;
 use mailbox_processor::NotificationChannel;
-use mu_db::{DbManager, DbManagerImpl};
+use mu_db::{DbConfig, DbManager, DbManagerImpl};
 use mu_runtime::Runtime;
 use network::rpc_handler::{self, RpcHandler, RpcRequestHandler};
 use stack::{
@@ -52,7 +52,7 @@ pub async fn run() -> Result<()> {
         connection_manager_config,
         gossip_config,
         mut known_nodes_config,
-        tikv_config,
+        db_config,
         gateway_manager_config,
         log_config,
         runtime_config,
@@ -146,23 +146,31 @@ pub async fn run() -> Result<()> {
 
     let function_provider = mu_runtime::providers::DefaultAssemblyProvider::new();
     // TODO: don't leak this implementation
-    // @Hossein: remove this when implementing the external TiKV feature
-    let database_manager = DbManagerImpl::new_with_embedded_cluster(
-        mu_db::NodeAddress {
-            address: my_node.address,
-            port: my_node.port,
-        },
-        known_nodes_config
-            .iter()
-            .map(|c| mu_db::RemoteNode {
-                address: c.address,
-                gossip_port: c.gossip_port,
-                pd_port: c.pd_port,
-            })
-            .collect(),
-        tikv_config,
-    )
-    .await?;
+    let database_manager = match db_config {
+        DbConfig::Internal(tikv_config) => {
+            DbManagerImpl::new_with_embedded_cluster(
+                mu_db::NodeAddress {
+                    address: my_node.address,
+                    port: my_node.port,
+                },
+                known_nodes_config
+                    .iter()
+                    .map(|c| mu_db::RemoteNode {
+                        address: c.address,
+                        gossip_port: c.gossip_port,
+                        pd_port: c.pd_port,
+                    })
+                    .collect(),
+                tikv_config,
+            )
+            .await?
+        }
+
+        DbConfig::External(endpoints) => {
+            DbManagerImpl::new_with_external_cluster(endpoints).await?
+        }
+    };
+
     let (runtime, mut runtime_notification_receiver) =
         mu_runtime::start(Box::new(function_provider), runtime_config)
             .await
