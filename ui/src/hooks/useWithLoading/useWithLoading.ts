@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 
 export default function useWithLoading<T>(
   promise: Promise<T>,
-  onPromiseResolved: (value: T) => any,
-  dependencies: any[] = []
+  onPromiseResolved: (value: T) => any = () => {},
+  dependencies: any[] = [],
 ) {
   const [isLoading, setIsLoading] = useState(true);
 
@@ -11,7 +11,7 @@ export default function useWithLoading<T>(
     promise.then(onPromiseResolved).finally(() => {
       setIsLoading(false);
     });
-  }, dependencies);
+  }, [...dependencies]);
 
   return [isLoading];
 }

@@ -11,7 +11,6 @@ describe("useMarketplace", () => {
   test("it should return an instance of #anchor.Program", () => {
     const Client = () => {
       const { marketplace } = useMarketplace();
-      console.log(marketplace)
       expect(marketplace).toBeTruthy();
       expect(marketplace).toBeInstanceOf(Program);
       return <></>;
