@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{Args, Parser};
 
-use crate::config::Config;
+use crate::{config::Config, marketplace_client};
 
 mod region;
 mod signer;
@@ -42,5 +42,5 @@ pub fn execute(config: Config, sub_command: Command) -> Result<()> {
 fn create(config: Config, args: CreateArgs) -> Result<()> {
     let client = config.build_marketplace_client()?;
     let provider_keypair = config.get_signer()?;
-    client.create_provider(provider_keypair, args.name)
+    marketplace_client::provider::create(&client, provider_keypair, args.name)
 }

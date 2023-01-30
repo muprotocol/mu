@@ -22,7 +22,7 @@ util.asyncMain(async () => {
         millionDbReads: new BN(500),
         millionDbWrites: new BN(2000),
     };
-    let region = await createRegion(mu, provider, `MiddleEarth-${regionNum}`, regionNum, serviceRates, 1);
+    let region = await createRegion(mu, provider, `MiddleEarth-${regionNum}`, regionNum, serviceRates, new BN(50_000_000));
     console.log(`Region pubkey: ${region.pda.toBase58()}`);
 });
 

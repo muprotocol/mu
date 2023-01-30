@@ -80,25 +80,35 @@ export interface ServiceUsage {
     gatewayTrafficBytes: BN,
 }
 
+export const readKeypair = (path: string): Keypair | undefined => {
+    if (existsSync(path)) {
+        try {
+            let content: Uint8Array = readFileSync(path);
+            let text = Buffer.from(content).toString();
+            let json = JSON.parse(text);
+            let bytes = Uint8Array.from(json);
+            return Keypair.fromSecretKey(bytes);
+        } catch (e) {
+            return undefined;
+        }
+    } else {
+        return undefined;
+    }
+}
+
 export const readOrCreateKeypair = (name?: string): Keypair => {
     if (!name) {
         return Keypair.generate();
     }
 
     let walletPath = path.join(__dirname, "test-wallets", name + ".json");
-    if (existsSync(walletPath)) {
-        try {
-            let content: Uint8Array = readFileSync(walletPath);
-            let text = Buffer.from(content).toString();
-            let json = JSON.parse(text);
-            let bytes = Uint8Array.from(json);
-            return Keypair.fromSecretKey(bytes);
-        } catch (e) {
-            console.error(`Failed to read ${walletPath}, will create new wallet instead`, e);
-        }
+    let keypair = readKeypair(walletPath);
+
+    if (keypair) {
+        return keypair;
     }
 
-    let keypair = Keypair.generate(); // anchor.Wallet has no constructor
+    keypair = Keypair.generate(); // anchor.Wallet has no constructor
     console.log(`Generated keypair ${name}, public key is:`, keypair.publicKey.toBase58());
     let secretkey = Array.from(keypair.secretKey);
     writeFileSync(walletPath, JSON.stringify(secretkey));
@@ -168,10 +178,14 @@ const createAndFundWallet = async (provider: anchor.AnchorProvider, mint: Keypai
     return [wallet, tokenAccount.address];
 };
 
-export const loadWallet = async (provider: anchor.AnchorProvider, name: string, mint: Keypair): Promise<[Keypair, PublicKey]> => {
-    let wallet = readOrCreateKeypair(name);
+export const walletFromKeypair = async (wallet: Keypair, mint: Keypair): Promise<[Keypair, PublicKey]> => {
     let tokenAccount = await spl.getAssociatedTokenAddress(mint.publicKey, wallet.publicKey);
     return [wallet, tokenAccount];
+}
+
+export const loadWallet = async (name: string, mint: Keypair): Promise<[Keypair, PublicKey]> => {
+    let wallet = readOrCreateKeypair(name);
+    return walletFromKeypair(wallet, mint);
 }
 
 export const mintToAccount = async (provider: anchor.AnchorProvider, account: PublicKey, mint: Keypair, amount: number) => {
@@ -191,9 +205,10 @@ export interface MuProgram {
     program: anchor.Program<Marketplace>;
     statePda: anchor.web3.PublicKey;
     depositPda: anchor.web3.PublicKey;
+    commissionPda: anchor.web3.PublicKey;
 }
 
-export const getMu = (anchorProvider: anchor.AnchorProvider, mint: Keypair) => {
+export const getMu = (anchorProvider: anchor.AnchorProvider, mint: Keypair): MuProgram => {
     anchor.setProvider(anchorProvider);
 
     const program = anchor.workspace.Marketplace as Program<Marketplace>;
@@ -208,23 +223,30 @@ export const getMu = (anchorProvider: anchor.AnchorProvider, mint: Keypair) => {
         program.programId
     )[0];
 
+    const commissionPda = publicKey.findProgramAddressSync(
+        [anchor.utils.bytes.utf8.encode("commission")],
+        program.programId
+    )[0];
+
     return {
         anchorProvider,
         mint,
         program,
         statePda,
-        depositPda
+        depositPda,
+        commissionPda,
     };
 
 }
 
-export const initializeMu = async (anchorProvider: anchor.AnchorProvider, mint: Keypair): Promise<MuProgram> => {
+export const initializeMu = async (anchorProvider: anchor.AnchorProvider, mint: Keypair, commission_rate_micros: number): Promise<MuProgram> => {
     let mu = getMu(anchorProvider, mint);
 
-    await mu.program.methods.initialize().accounts({
+    await mu.program.methods.initialize(commission_rate_micros).accounts({
         authority: anchorProvider.wallet.publicKey,
         state: mu.statePda,
         depositToken: mu.depositPda,
+        commissionToken: mu.commissionPda,
         mint: mint.publicKey,
     }).rpc();
 
@@ -260,9 +282,7 @@ export const createProvider = async (mu: MuProgram, name: string, useStaticKeypa
     return { wallet, pda, tokenAccount };
 }
 
-export const loadProviderFromStaticKeypair = async (mu: MuProgram, name: string): Promise<MuProviderInfo> => {
-    let [wallet, tokenAccount] = await loadWallet(mu.anchorProvider, `provider_${name}`, mu.mint);
-
+function getProviderPda(mu: MuProgram, wallet: Keypair) {
     const [pda, _] = publicKey.findProgramAddressSync(
         [
             anchor.utils.bytes.utf8.encode("provider"),
@@ -270,6 +290,22 @@ export const loadProviderFromStaticKeypair = async (mu: MuProgram, name: string)
         ],
         mu.program.programId
     );
+
+    return pda;
+}
+
+export const loadProviderFromKeypair = async (mu: MuProgram, keypair: Keypair): Promise<MuProviderInfo> => {
+    let [wallet, tokenAccount] = await walletFromKeypair(keypair, mu.mint);
+
+    const pda = getProviderPda(mu, wallet);
+
+    return { wallet, pda, tokenAccount };
+}
+
+export const loadProviderFromStaticKeypair = async (mu: MuProgram, name: string): Promise<MuProviderInfo> => {
+    let [wallet, tokenAccount] = await loadWallet(`provider_${name}`, mu.mint);
+
+    const pda = getProviderPda(mu, wallet);
 
     return { wallet, pda, tokenAccount };
 }
@@ -341,12 +377,12 @@ export const createRegion = async (
     name: string,
     regionNum: number,
     rates: ServiceRates,
-    zones: number,
+    minEscrowBalance: BN,
 ): Promise<MuRegionInfo> => {
     let region = getRegion(mu, provider, regionNum);
 
     await mu.program.methods
-        .createRegion(regionNum, name, zones, rates)
+        .createRegion(regionNum, name, rates, minEscrowBalance)
         .accounts({
             provider: provider.pda,
             region: region.pda,
@@ -538,6 +574,7 @@ export const updateStackUsage = async (
         usage,
     ).accounts({
         state: mu.statePda,
+        commissionToken: mu.commissionPda,
         authorizedSigner: authSigner.pda,
         region: region.pda,
         tokenAccount: provider.tokenAccount,
@@ -548,4 +585,25 @@ export const updateStackUsage = async (
     }).signers([authSigner.wallet]).rpc();
 
     return { pda, bump };
+}
+
+export const withdrawEscrowBalance = async (
+    mu: MuProgram,
+    escrowAccount: MuEscrowAccountInfo,
+    userWallet: Keypair,
+    provider: MuProviderInfo,
+    withdrawTo: PublicKey,
+    amount: BN
+) => {
+    await mu.program.methods
+        .withdrawEscrowBalance(amount)
+        .accounts({
+            state: mu.statePda,
+            escrowAccount: escrowAccount.pda,
+            provider: provider.pda,
+            user: userWallet.publicKey,
+            withdrawTo
+        })
+        .signers([userWallet])
+        .rpc();
 }
