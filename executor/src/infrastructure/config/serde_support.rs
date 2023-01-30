@@ -1,5 +1,6 @@
 use std::{ops::Deref, str::FromStr, time::Duration};
 
+use http::Uri;
 use serde::{
     de::{self, Visitor},
     Deserialize, Deserializer,
@@ -129,5 +130,36 @@ impl<'de> Visitor<'de> for ConfigLogLevelFilterDeserializeVisitor {
         let level = log::LevelFilter::from_str(v)
             .map_err(|_| E::invalid_value(de::Unexpected::Str(v), &self))?;
         Ok(ConfigLogLevelFilter(level))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ConfigUri(Uri);
+
+impl<'de> Deserialize<'de> for ConfigUri {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(ConfigUriDeserializeVisitor)
+    }
+}
+
+struct ConfigUriDeserializeVisitor;
+
+impl<'de> Visitor<'de> for ConfigUriDeserializeVisitor {
+    type Value = ConfigUri;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "A valid URI")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(ConfigUri(Uri::from_str(v).map_err(|_| {
+            E::invalid_value(de::Unexpected::Str(v), &self)
+        })?))
     }
 }

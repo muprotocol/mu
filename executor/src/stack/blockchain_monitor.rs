@@ -59,12 +59,11 @@ pub enum BlockchainMonitorNotification {
 
 #[derive(Deserialize)]
 pub struct BlockchainMonitorConfig {
-    solana_cluster_rpc_url: String,
+    solana_cluster_rpc_url: String, // TODO: Use ConfigUri
     solana_cluster_pub_sub_url: String,
     solana_provider_public_key: Base58PublicKey,
     solana_region_number: u32,
     solana_usage_signer_private_key: Base58PrivateKey,
-    solana_min_escrow_balance: f64,
     solana_usage_report_interval: ConfigDuration,
 }
 
@@ -99,6 +98,7 @@ struct Solana<'a> {
     region_pda: Pubkey,
     provider_pda: Pubkey,
     token_decimals: u8,
+    min_escrow_balance: u64,
 }
 
 struct State<'a> {
@@ -180,7 +180,7 @@ pub async fn start(
     );
 
     debug!("Verifying provider public key and region number");
-    ensure_region_exists(&region_pda, &rpc_client).await?;
+    let region = get_region(&region_pda, &rpc_client).await?;
 
     debug!("Retrieving $MU token properties");
     let solana_token_decimals = get_token_decimals(&rpc_client).await?;
@@ -256,8 +256,13 @@ pub async fn start(
     );
 
     debug!("Fetching developer escrow balances");
-    let owner_states =
-        get_owner_states(&rpc_client, &solana_provider_pda, &config, existing_stacks).await?;
+    let owner_states = get_owner_states(
+        &rpc_client,
+        &solana_provider_pda,
+        existing_stacks,
+        region.min_escrow_balance,
+    )
+    .await?;
     let stacks = StackCollection::from_known(owner_states);
 
     debug!("Setting up escrow subscriptions");
@@ -281,6 +286,7 @@ pub async fn start(
             provider_pda: solana_provider_pda,
             token_decimals: solana_token_decimals,
             region_pda,
+            min_escrow_balance: region.min_escrow_balance,
         },
         usage_aggregator,
     };
@@ -306,8 +312,8 @@ pub async fn start(
 async fn get_owner_states(
     rpc_client: &RpcClient,
     provider_pda: &Pubkey,
-    config: &BlockchainMonitorConfig,
     stacks: impl IntoIterator<Item = StackWithMetadata>,
+    min_escrow_balance: u64,
 ) -> Result<HashMap<StackOwner, (OwnerState, Vec<StackWithMetadata>)>> {
     let by_owner = stacks.into_iter().group_by(|s| s.owner());
 
@@ -316,7 +322,7 @@ async fn get_owner_states(
     for (owner, stacks) in &by_owner {
         let escrow_balance = fetch_owner_escrow_balance(rpc_client, &owner, provider_pda).await?;
 
-        let state = if escrow_balance >= config.solana_min_escrow_balance {
+        let state = if escrow_balance >= min_escrow_balance {
             OwnerState::Active
         } else {
             OwnerState::Inactive
@@ -333,7 +339,7 @@ async fn fetch_owner_escrow_balance(
     rpc_client: &RpcClient,
     owner: &StackOwner,
     provider_pda: &Pubkey,
-) -> Result<f64> {
+) -> Result<u64> {
     let StackOwner::Solana(owner_key) = owner;
     //b"escrow", user.key().as_ref(), provider.key().as_ref()
     let (escrow_pda, _) = Pubkey::find_program_address(
@@ -345,8 +351,9 @@ async fn fetch_owner_escrow_balance(
         .await
         .context("Failed to fetch escrow balance from Solana")?;
     token_balance
-        .ui_amount
-        .context("Failed to get amount from token account")
+        .amount
+        .parse()
+        .context("Failed to parse amount from token account")
 }
 
 async fn get_token_decimals(rpc_client: &RpcClient) -> Result<u8> {
@@ -452,7 +459,6 @@ async fn mailbox_body(
                     debug!("Received new stack");
                     if let Err(f) = on_new_stack_received(
                         &mut state,
-                        &config,
                         stack,
                         &notification_channel
                     ).await {
@@ -482,7 +488,6 @@ async fn mailbox_body(
                     Ok(Some((owner_pubkey, escrow_balance))) =>
                         on_solana_escrow_updated(
                             &mut state,
-                            &config,
                             &notification_channel,
                             owner_pubkey,
                             escrow_balance
@@ -507,7 +512,7 @@ async fn mailbox_body(
 async fn select_next_escrow_update(
     subs: &mut HashMap<Pubkey, SolanaSubscription<'_, UiAccount>>,
     token_decimals: u8,
-) -> Result<Option<(Pubkey, f64)>> {
+) -> Result<Option<(Pubkey, u64)>> {
     let next = futures::future::select_all(
         subs.iter_mut()
             .map(|x| Box::pin(next_escrow_update(x, token_decimals))),
@@ -519,7 +524,7 @@ async fn select_next_escrow_update(
 async fn next_escrow_update(
     sub: (&Pubkey, &mut SolanaSubscription<'_, UiAccount>),
     token_decimals: u8,
-) -> Result<Option<(Pubkey, f64)>> {
+) -> Result<Option<(Pubkey, u64)>> {
     let account = sub.1.stream.next().await;
 
     if let Some(account) = account {
@@ -534,12 +539,11 @@ async fn next_escrow_update(
             .context("Failed to parse token account from escrow update")?;
 
         if let TokenAccountType::Account(account) = account {
-            let amount = account.token_amount.ui_amount.ok_or_else(|| {
-                anyhow!(
-                    "Failed to get UI amount from token account, this is likely \
-                        due to too many decimal places in $MU"
-                )
-            })?;
+            let amount = account
+                .token_amount
+                .amount
+                .parse()
+                .context("Failed to parse amount of token account, this should never happen")?;
             trace!("New escrow amount for {} is {amount}", sub.0);
             Ok(Some((*sub.0, amount)))
         } else {
@@ -552,12 +556,11 @@ async fn next_escrow_update(
 
 fn on_solana_escrow_updated(
     state: &mut State,
-    config: &BlockchainMonitorConfig,
     notification_channel: &NotificationChannel<BlockchainMonitorNotification>,
     owner_pubkey: Pubkey,
-    escrow_balance: f64,
+    escrow_balance: u64,
 ) {
-    let new_state = if escrow_balance >= config.solana_min_escrow_balance {
+    let new_state = if escrow_balance >= state.solana.min_escrow_balance {
         OwnerState::Active
     } else {
         OwnerState::Inactive
@@ -619,6 +622,7 @@ async fn report_usages<'a>(state: &mut State<'a>, config: &BlockchainMonitorConf
             .as_slice(),
     )
     .unwrap();
+    let commission_pda = Pubkey::find_program_address(&[b"commission"], &marketplace::id()).0;
 
     debug!("Will report {} usages", usages.len());
 
@@ -687,6 +691,7 @@ async fn report_usages<'a>(state: &mut State<'a>, config: &BlockchainMonitorConf
 
             if let Err(e) = report_usage(
                 &program,
+                commission_pda,
                 payer.clone(),
                 solana_stack_id,
                 auth_signer.token_account,
@@ -709,6 +714,7 @@ async fn report_usages<'a>(state: &mut State<'a>, config: &BlockchainMonitorConf
 #[allow(clippy::too_many_arguments)]
 fn report_usage(
     program: &Program,
+    commission_account: Pubkey,
     payer: Rc<dyn Signer>,
     stack_id: Pubkey,
     token_account: Pubkey,
@@ -748,6 +754,7 @@ fn report_usage(
         signer: payer.pubkey(),
         stack: stack_id,
         state: state_pda,
+        commission_token: commission_account,
         token_program: spl_token::id(),
         system_program: system_program::id(),
         token_account,
@@ -902,7 +909,6 @@ async fn setup_solana_escrow_subscriptions<'a>(
 
 async fn on_new_stack_received(
     state: &mut State<'_>,
-    config: &BlockchainMonitorConfig,
     stack: Response<RpcKeyedAccount>,
     notification_channel: &NotificationChannel<BlockchainMonitorNotification>,
 ) -> Result<()> {
@@ -930,7 +936,7 @@ async fn on_new_stack_received(
                 &state.solana.provider_pda,
             )
             .await?;
-            let state = if escrow_balance >= config.solana_min_escrow_balance {
+            let state = if escrow_balance >= state.solana.min_escrow_balance {
                 OwnerState::Active
             } else {
                 OwnerState::Inactive
@@ -983,7 +989,10 @@ fn read_solana_rpc_keyed_account(stack: Response<RpcKeyedAccount>) -> Result<Sta
 }
 
 // TODO: ensure we have the right usage signer for this region
-async fn ensure_region_exists(region: &Pubkey, rpc_client: &RpcClient) -> Result<()> {
+async fn get_region(
+    region: &Pubkey,
+    rpc_client: &RpcClient,
+) -> Result<marketplace::ProviderRegion> {
     debug!("Fetching region data from Solana");
 
     let account = rpc_client.get_account(region).await.context(format!(
@@ -992,12 +1001,11 @@ async fn ensure_region_exists(region: &Pubkey, rpc_client: &RpcClient) -> Result
             `solana_cluster_rpc_url` is available and that you are not running into rate limits",
     ))?;
 
-    // deserialize to ensure the account data is of the correct type
     let region =
         marketplace::ProviderRegion::try_deserialize(&mut &account.data[..]).context(format!(
             "Failed to deserialize region in {region}, ensure the region was deployed correctly"
         ))?;
     info!("Starting in region {}", region.name);
 
-    Ok(())
+    Ok(region)
 }

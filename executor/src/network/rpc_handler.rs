@@ -8,6 +8,7 @@ use bytes::Bytes;
 use dyn_clonable::clonable;
 use futures::Future;
 use log::warn;
+use mu_stack::FunctionID;
 use musdk_common::{Request, Response};
 use protobuf::{Message, MessageField};
 
@@ -15,7 +16,6 @@ use super::{
     connection_manager::{ConnectionManager, RequestID},
     ConnectionID,
 };
-use crate::runtime::types::FunctionID;
 
 // TODO: bad design, we receive the request from glue code, but access the
 // connection manager directly to send requests and replies. Should use one

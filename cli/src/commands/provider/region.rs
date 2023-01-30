@@ -1,10 +1,8 @@
-use anchor_client::{
-    solana_client::rpc_config::RpcSendTransactionConfig, solana_sdk::system_program,
-};
-use anyhow::{Context, Result};
+use anchor_client::solana_sdk::system_program;
+use anyhow::Result;
 use clap::{Args, Parser};
 
-use crate::config::Config;
+use crate::{config::Config, marketplace_client};
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -24,6 +22,12 @@ pub struct CreateArgs {
         help = "Region number, must be unique across all regions for a provider"
     )]
     region_num: u32,
+
+    #[arg(
+        long,
+        help = "The minimum amount of escrow balance a user must have so their stacks will be deployed"
+    )]
+    min_escrow_balance: f64,
 
     #[arg(long, help = "Billion function instructions and MB of RAM")]
     billion_function_mb_instructions: u64,
@@ -53,11 +57,14 @@ pub fn execute(config: Config, sub_command: Command) -> Result<()> {
 fn create(config: Config, args: CreateArgs) -> Result<()> {
     let client = config.build_marketplace_client()?;
 
+    let (_, state) = client.get_mu_state()?;
+    let mint = client.get_mint(&state)?;
+    let min_escrow_balance =
+        crate::token_utils::ui_amount_to_token_amount(&mint, args.min_escrow_balance);
+
     let provider_keypair = config.get_signer()?;
 
     let provider_pda = client.get_provider_pda(provider_keypair.pubkey());
-
-    // TODO: validation
 
     let region_pda = client.get_region_pda(&provider_keypair.pubkey(), args.region_num);
 
@@ -77,23 +84,12 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
         gigabytes_gateway_traffic: args.gigabytes_gateway_traffic,
     };
 
-    client
-        .program
-        .request()
-        .accounts(accounts)
-        .args(marketplace::instruction::CreateRegion {
-            region_num: args.region_num,
-            name: args.name,
-            zones: 1,
-            rates,
-        })
-        .signer(provider_keypair.as_ref())
-        .send_with_spinner_and_config(RpcSendTransactionConfig {
-            // TODO: what's preflight and what's a preflight commitment?
-            skip_preflight: cfg!(debug_assertions),
-            ..Default::default()
-        })
-        .context("Failed to send region creation transaction")?;
+    let instruction = marketplace::instruction::CreateRegion {
+        region_num: args.region_num,
+        name: args.name,
+        min_escrow_balance,
+        rates,
+    };
 
-    Ok(())
+    marketplace_client::region::create(&client, accounts, instruction, provider_keypair)
 }

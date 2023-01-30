@@ -1,4 +1,4 @@
 /target
-/tests/runtime/funcs/*/target
-/mudb
+/db
 /runtime-cache
+/assets

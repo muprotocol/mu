@@ -7,7 +7,7 @@ mod response_adapters;
 #[cfg(feature = "json")]
 mod json_body;
 
-pub use musdk_common::{outgoing_message::LogLevel, HttpMethod, Request, Response};
+pub use musdk_common::{outgoing_message::LogLevel, HttpMethod, Request, Response, Status};
 pub use musdk_derive::mu_functions;
 
 pub use context::*;

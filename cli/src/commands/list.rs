@@ -5,7 +5,7 @@ use anchor_client::{
 use anyhow::Result;
 use clap::{arg, Args, Parser};
 
-use crate::config::Config;
+use crate::{config::Config, token_utils::token_amount_to_ui_amount};
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -68,6 +68,9 @@ pub fn execute_list_provider(config: Config, cmd: ListProviderCommand) -> Result
 pub fn execute_list_region(config: Config, cmd: ListRegionCommand) -> Result<()> {
     let client = config.build_marketplace_client()?;
 
+    let (_, mu) = client.get_mu_state()?;
+    let mint = client.get_mint(&mu)?;
+
     let filters = vec![
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
             8,
@@ -88,6 +91,10 @@ pub fn execute_list_region(config: Config, cmd: ListRegionCommand) -> Result<()>
     for account in accounts {
         println!("{}. {}:", account.1.region_num, account.1.name);
         println!("\tKey: {}", account.0);
+        println!(
+            "\tMinimum escrow balance: {}",
+            token_amount_to_ui_amount(&mint, account.1.min_escrow_balance)
+        );
         println!("\tRates:");
         println!(
             "\t\tCPU/Memory: {}",
