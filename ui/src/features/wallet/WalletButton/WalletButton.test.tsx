@@ -1,6 +1,6 @@
 import {describe, expect,} from "vitest";
 import {render, screen, waitFor} from "@testing-library/react";
-import WalletButton from "@/components/wallet/WalletButton/WalletButton";
+import WalletButton from "@/features/wallet/WalletButton/WalletButton";
 
 describe("WalletButton", () => {
     test("it should render the default wallet connect button from @solana/wallet-adapter-react-ui", async () => {

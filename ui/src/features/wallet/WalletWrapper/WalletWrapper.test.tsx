@@ -1,11 +1,11 @@
 import {describe, expect} from "vitest";
 import {render, screen} from "@testing-library/react";
-import WalletWrapper from "@/components/wallet/WalletWrapper/WalletWrapper";
+import WalletWrapper from "@/features/wallet/WalletWrapper/WalletWrapper";
 import {useContext} from "react";
 import {ConnectionContext, WalletContext} from "@solana/wallet-adapter-react";
 
 describe("WalletWrapper", () => {
-    test("it should render itself and it's children", async () => {
+    test("it should render itself and it's children", () => {
         const WalletWrapperClient = () => {
             return (
                 <div data-testid="WalletWrapperClient"></div>
