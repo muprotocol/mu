@@ -126,9 +126,7 @@ describe("marketplace", () => {
         );
 
         let stackAccount = await mu.program.account.stack.fetch(stack.pda);
-        expect(stackAccount.name).to.equals("my stack");
-        expect(stackAccount.stack).to.satisfies(bufferEqual(stackData));
-        expect(stackAccount.revision).to.equals(1);
+        assertActiveStackAccount(stackAccount, "my stack", stackData, 1);
     });
 
     it("Updates a stack with bigger data", async () => {
@@ -143,9 +141,7 @@ describe("marketplace", () => {
         );
 
         let stackAccount = await mu.program.account.stack.fetch(stack.pda);
-        expect(stackAccount.name).to.equals("my stack now has a bigger name");
-        expect(stackAccount.stack).to.satisfies(bufferEqual(stackData));
-        expect(stackAccount.revision).to.equals(2);
+        assertActiveStackAccount(stackAccount, "my stack now has a bigger name", stackData, 2);
     });
 
     it("Updates a stack with smaller data", async () => {
@@ -160,9 +156,7 @@ describe("marketplace", () => {
         );
 
         let stackAccount = await mu.program.account.stack.fetch(stack.pda);
-        expect(stackAccount.name).to.equals("my s");
-        expect(stackAccount.stack).to.satisfies(bufferEqual(stackData));
-        expect(stackAccount.revision).to.equals(3);
+        assertActiveStackAccount(stackAccount, "my s", stackData, 3);
     });
 
     it("Updates usage on a stack", async () => {
@@ -205,13 +199,42 @@ describe("marketplace", () => {
     it("Deletes a stack", async () => {
         await deleteStack(mu, userWallet, region, 100);
 
-        await expect(mu.program.account.stack.fetch(stack.pda)).to.be.rejectedWith("Account does not exist");
+        assertDeletedStackAccount(await mu.program.account.stack.fetch(stack.pda));
     });
 
-    // TODO: this is actually a security flaw, as the user could create a stack,
-    // do lots of computation with it, and delete it before usage is reported.
-    // Usage report schedules are easy to monitor on the blockchain, too.
-    it("Can't report usage on a deleted stack", async () => {
+    it("Cannot recreate a deleted stack", async () => {
+        await expect(deployStack(
+            mu,
+            userWallet,
+            provider,
+            region,
+            Buffer.from([]),
+            100,
+            "my stack"
+        )).to.be.rejectedWith("custom program error: 0x0");
+    });
+
+    it("Cannot update a deleted stack", async () => {
+        await expect(updateStack(
+            mu,
+            userWallet,
+            region,
+            Buffer.from([]),
+            100,
+            "my s"
+        )).to.be.rejectedWith("CannotOperateOnDeletedStack");
+    });
+
+    it("Cannot delete a deleted stack", async () => {
+        await expect(deleteStack(
+            mu,
+            userWallet,
+            region,
+            100
+        )).to.be.rejectedWith("CannotOperateOnDeletedStack");
+    });
+
+    it("Can report usage on a deleted stack", async () => {
         const usage: ServiceUsage = {
             functionMbInstructions: new BN(2000 * 1000000000 * 512),
             dbBytesSeconds: new BN(500 * 1024 * 1024 * 60 * 60 * 24 * 15),
@@ -221,9 +244,13 @@ describe("marketplace", () => {
             gatewayTrafficBytes: new BN(5 * 1024 * 1024 * 1024)
         };
 
-        await expect(
-            updateStackUsage(mu, region, stack, authSigner, provider, escrow, 100, usage)
-        ).to.be.rejectedWith("AccountNotInitialized");
+        await updateStackUsage(mu, region, stack, authSigner, provider, escrow, 101, usage);
+
+        const escrowAccount = await spl.getAccount(
+            mu.anchorProvider.connection,
+            escrow.pda
+        );
+        expect(escrowAccount.amount).to.equals(10_000_000n - 2n * usagePrice);
     })
 
     it("Withdraws escrow balance", async () => {
@@ -235,9 +262,22 @@ describe("marketplace", () => {
         expect(tempWalletAccount.amount).to.equals(10_000_000_000n + 5_000_000n); // 10G initial balance
 
         let escrowAccount = await spl.getAccount(mu.anchorProvider.connection, escrow.pda);
-        expect(escrowAccount.amount).to.equals(5_000_000n - usagePrice); // 10M initial balance - 5M withdrawn - usage price
+        expect(escrowAccount.amount).to.equals(5_000_000n - 2n * usagePrice); // 10M initial balance - 5M withdrawn - usage price
     })
 });
+
+const assertActiveStackAccount = (account: any, name: string, stackData: Buffer, revision: number) => {
+    expect(account.state["active"]).to.not.be.undefined;
+    expect(account.state["deleted"]).to.be.undefined;
+    expect(account.state["active"].name).to.equals(name);
+    expect(account.state["active"].stackData).satisfies(bufferEqual(stackData));
+    expect(account.state["active"].revision).to.equals(revision);
+}
+
+const assertDeletedStackAccount = (account: any) => {
+    expect(account.state["active"]).to.be.undefined;
+    expect(account.state["deleted"]).to.not.be.undefined;
+}
 
 const bufferEqual = (b1: Buffer) => (b2: Buffer) => {
     expect(b1.length).to.equals(b2.length);

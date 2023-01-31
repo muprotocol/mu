@@ -274,6 +274,10 @@ pub fn get_regions_where_balance_is_below_minimum(
             vec![marketplace::MuAccountType::Stack as u8],
         )),
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(8 + 1, user.to_bytes().to_vec())),
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            8 + 1 + 32 + 32 + 8 + 1,
+            vec![marketplace::StackStateDiscriminator::Active as u8],
+        )),
     ];
 
     let stacks = client

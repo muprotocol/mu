@@ -33,13 +33,38 @@ pub fn deploy(
             .context("Failed to fetch stack from Solana")?;
 
         match (deploy_mode, existing) {
+            (
+                _,
+                Some(marketplace::Stack {
+                    state: marketplace::StackState::Deleted,
+                    ..
+                }),
+            ) => bail!(
+                "A stack was previously deployed to this region with the same seed, and was \
+                then deleted. You cannot deploy a new stack with the same seed as a deleted \
+                stack. To deploy a new stack, choose a different seed."
+            ),
+
             (DeployMode::InitOnly, Some(_)) => {
                 bail!("Stack already exists, cannot initialize again")
             }
             (DeployMode::UpdateOnly, None) => bail!("Stack was not initialized, cannot update"),
             (DeployMode::InitOnly, None) | (DeployMode::Automatic, None) => false,
-            (DeployMode::UpdateOnly, Some(existing)) | (DeployMode::Automatic, Some(existing)) => {
-                ensure_newer_version(&existing, &stack)?;
+            (
+                DeployMode::UpdateOnly,
+                Some(marketplace::Stack {
+                    state: marketplace::StackState::Active { stack_data, .. },
+                    ..
+                }),
+            )
+            | (
+                DeployMode::Automatic,
+                Some(marketplace::Stack {
+                    state: marketplace::StackState::Active { stack_data, .. },
+                    ..
+                }),
+            ) => {
+                ensure_newer_version(&stack_data, &stack)?;
                 true
             }
         }
@@ -115,12 +140,12 @@ pub fn deploy(
     Ok(())
 }
 
-fn ensure_newer_version(existing: &marketplace::Stack, new: &mu_stack::Stack) -> Result<()> {
+fn ensure_newer_version(existing: &Vec<u8>, new: &mu_stack::Stack) -> Result<()> {
     // This function's name is a bit misleading. We don't use semver, so we can't
     // really ensure the new stack has a *newer* version, just that it doesn't
     // have the *same* version as the existing one.
 
-    let existing = mu_stack::Stack::try_deserialize_proto(&existing.stack[..])
+    let existing = mu_stack::Stack::try_deserialize_proto(existing)
         .context("Failed to deserialize existing stack")?;
 
     if new.version == existing.version {
@@ -168,6 +193,7 @@ pub fn delete(
         region: stack.region,
         stack: *stack_pda,
         user: user_wallet.pubkey(),
+        system_program: system_program::id(),
     };
 
     let instruction = marketplace::instruction::DeleteStack {
