@@ -1724,7 +1724,6 @@ dependencies = [
  "mu-db",
  "mu_stack",
  "musdk-common",
- "once_cell",
  "rand 0.8.5",
  "serde",
  "serde_json",

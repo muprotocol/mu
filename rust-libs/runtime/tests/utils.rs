@@ -102,22 +102,16 @@ pub async fn read_wasm_functions<'a>(
 }
 
 pub mod fixture {
-    use std::{
-        hint::black_box,
-        sync::atomic::{AtomicBool, Ordering},
-    };
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
-    use once_cell::sync::Lazy;
     use test_context::{AsyncTestContext, TestContext};
 
     pub static IS_INSTALL_WASM32_TARGET_RUNNED: AtomicBool = AtomicBool::new(false);
     pub static IS_BUILD_TEST_FUNCS_FIXTURE_RUNNED: AtomicBool = AtomicBool::new(false);
 
     fn install_wasm32_target() {
-        if IS_INSTALL_WASM32_TARGET_RUNNED.load(Ordering::Relaxed) == true {
-            return;
-        } else {
+        if !IS_INSTALL_WASM32_TARGET_RUNNED.load(Ordering::Relaxed) {
             println!("Installing wasm32-wasi target.");
             Command::new("rustup")
                 .args(["target", "add", "wasm32-wasi"])
@@ -130,9 +124,7 @@ pub mod fixture {
     }
 
     fn build_test_funcs() {
-        if IS_BUILD_TEST_FUNCS_FIXTURE_RUNNED.load(Ordering::Relaxed) == true {
-            return;
-        } else {
+        if !IS_BUILD_TEST_FUNCS_FIXTURE_RUNNED.load(Ordering::Relaxed) {
             println!("Building test functions.");
             for name in TEST_PROJECTS {
                 let project_dir = format!("tests/funcs/{name}");
