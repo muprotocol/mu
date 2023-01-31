@@ -497,7 +497,15 @@ async fn step(
                             StackDeployment::DeployedToSelf { .. }
                             | StackDeployment::DeployedToSelfWithPendingUpdate { .. } => {
                                 debug!("Stack {id} is deployed locally, will undeploy since it was removed");
-                                undeploy_stack(id, &state.notification_channel).await;
+                                if let Err(f) = undeploy_stack(
+                                    id,
+                                    state.runtime.as_ref(),
+                                    &state.notification_channel,
+                                )
+                                .await
+                                {
+                                    warn!("Failed to undeploy stack {id} due to: {f:?}");
+                                }
                             }
 
                             StackDeployment::DeployedToOthers { .. }
@@ -614,7 +622,12 @@ async fn tick(state: &mut SchedulerState) {
                         deployed_to_others,
                     ) {
                         info!("Stack {id} was deployed to closer node {node}, will undeploy");
-                        undeploy_stack(*id, &state.notification_channel).await;
+                        if let Err(f) =
+                            undeploy_stack(*id, state.runtime.as_ref(), &state.notification_channel)
+                                .await
+                        {
+                            warn!("Failed to undeploy stack {id} due to: {f:?}");
+                        }
 
                         let stack = stack.take_and_replace_with(useless_stack_with_metadata());
                         let deployed_to = deployed_to_others.take_and_replace_default();
@@ -636,7 +649,12 @@ async fn tick(state: &mut SchedulerState) {
                         deployed_to_others,
                     ) {
                         info!("Stack {id} was deployed to closer node {node}, will undeploy");
-                        undeploy_stack(*id, &state.notification_channel).await;
+                        if let Err(f) =
+                            undeploy_stack(*id, state.runtime.as_ref(), &state.notification_channel)
+                                .await
+                        {
+                            warn!("Failed to undeploy stack {id} due to: {f:?}");
+                        }
 
                         let stack = new_stack.take_and_replace_with(useless_stack_with_metadata());
                         let deployed_to = deployed_to_others.take_and_replace_default();
@@ -750,8 +768,10 @@ async fn deploy_gateways(id: StackID, stack: &Stack, gateway_manager: &dyn Gatew
     }
 }
 
-async fn undeploy_gateways(_id: StackID, _gateway_manager: &dyn GatewayManager) {
-    error!("Undeployment not implemented yet");
+async fn undeploy_gateways(id: StackID, gateway_manager: &dyn GatewayManager) {
+    if let Err(f) = super::deploy::undeploy_gateways(id, gateway_manager).await {
+        warn!("Failed to undeploy gateways of stack {id} due to: {f:?}");
+    }
 }
 
 async fn deploy_stack(
@@ -761,8 +781,7 @@ async fn deploy_stack(
     runtime: &dyn Runtime,
     database_manager: &dyn DbManager,
 ) -> Result<()> {
-    let db_client = database_manager.make_client().await?;
-    match super::deploy::deploy(id, stack, runtime, db_client.as_ref()).await {
+    match super::deploy::deploy(id, stack, runtime, database_manager).await {
         Err(f) => {
             notification_channel.send(SchedulerNotification::FailedToDeployStack(id));
             Err(f.into())
@@ -776,10 +795,13 @@ async fn deploy_stack(
 }
 
 async fn undeploy_stack(
-    _id: StackID,
-    _notification_channel: &NotificationChannel<SchedulerNotification>,
-) {
-    error!("Undeployment not implemented yet");
+    id: StackID,
+    runtime: &dyn Runtime,
+    notification_channel: &NotificationChannel<SchedulerNotification>,
+) -> Result<()> {
+    super::deploy::undeploy_stack(id, runtime).await?;
+    notification_channel.send(SchedulerNotification::StackUndeployed(id));
+    Ok(())
 }
 
 #[derive(Debug)]
