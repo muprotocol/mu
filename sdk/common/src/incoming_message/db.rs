@@ -2,27 +2,23 @@ use std::borrow::Cow;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-type Key<'a> = Cow<'a, [u8]>;
-type Value<'a> = Cow<'a, [u8]>;
-type KeyOrValue<'a> = Cow<'a, [u8]>;
-
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct EmptyResult;
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct SingleResult<'a> {
-    pub item: KeyOrValue<'a>,
+    pub key_or_value: Cow<'a, [u8]>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct ListResult<'a> {
-    pub keys: Vec<Key<'a>>,
+pub struct KeyListResult<'a> {
+    pub keys: Vec<Cow<'a, [u8]>>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct KvPair<'a> {
-    pub key: Key<'a>,
-    pub value: Value<'a>,
+    pub key: Cow<'a, [u8]>,
+    pub value: Cow<'a, [u8]>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]

@@ -90,6 +90,22 @@ impl<'a> DbHandle<'a> {
         resp_to_kv_pairs(resp, "BatchScan")
     }
 
+    pub fn batch_scan_keys<T: Into<&'a [u8]>>(
+        &mut self,
+        table_key_prefixe_tuples: Vec<(&'a str, T)>,
+        each_limit: u32,
+    ) -> Result<Vec<Key>> {
+        let req = BatchScanKeys {
+            table_key_prefixe_tuples: table_key_prefixe_tuples
+                .into_iter()
+                .map(make_cow_table_key_pair)
+                .collect(),
+            each_limit,
+        };
+        let resp = self.request(OM::BatchScanKeys(req))?;
+        resp_to_keys(resp, "BatchScan")
+    }
+
     pub fn table_list(&mut self, table_prefix: &'a str) -> Result<Vec<(Key, Value)>> {
         let req = TableList {
             table_prefix: Cow::Borrowed(table_prefix.as_bytes()),
@@ -157,21 +173,59 @@ impl<'a> TableHandle<'a> {
         let resp = self.db.request(OM::Scan(req))?;
         resp_to_kv_pairs(resp, "Scan")
     }
+
+    pub fn scan_keys(&mut self, key_prefix: impl Into<&'a [u8]>, limit: u32) -> Result<Vec<Key>> {
+        let req = ScanKeys {
+            table: Cow::Borrowed(self.table.as_bytes()),
+            key_prefix: Cow::Borrowed(key_prefix.into()),
+            limit,
+        };
+        let resp = self.db.request(OM::ScanKeys(req))?;
+        resp_to_keys(resp, "ScanKeys")
+    }
+
+    pub fn compare_and_swap<T: Into<&'a [u8]>>(
+        &mut self,
+        key: T,
+        new_value: T,
+        previous_value: Option<T>,
+    ) -> Result<Vec<(Key, Value)>> {
+        let req = CompareAndSwap {
+            table: Cow::Borrowed(self.table.as_bytes()),
+            key: Cow::Borrowed(key.into()),
+            new_value: Cow::Borrowed(new_value.into()),
+            is_previous_value_exist: previous_value.is_some().into(),
+            previous_value: Cow::Borrowed(match previous_value {
+                Some(x) => x.into(),
+                None => &[],
+            }),
+        };
+        let resp = self.db.request(OM::CompareAndSwap(req))?;
+        resp_to_kv_pairs(resp, "Scan")
+    }
 }
 
 fn resp_to_tuple_type(resp: IM, kind_name: &'static str) -> Result<()> {
     match resp {
         IM::EmptyResult(_) => Ok(()),
-        IM::DbError(s) => Err(Error::DatabaseError(s.error.into_owned())),
+        IM::DbError(e) => Err(Error::DatabaseError(e.error.into_owned())),
         _ => Err(Error::UnexpectedMessageKind(kind_name)),
     }
 }
 
 fn resp_to_option_value(resp: IM, kind_name: &'static str) -> Result<Option<Value>> {
     match resp {
-        IM::SingleResult(s) => Ok(Some(s.item.into_owned())),
+        IM::SingleResult(x) => Ok(Some(x.key_or_value.into_owned())),
         IM::EmptyResult(_) => Ok(None),
-        IM::DbError(s) => Err(Error::DatabaseError(s.error.into_owned())),
+        IM::DbError(e) => Err(Error::DatabaseError(e.error.into_owned())),
+        _ => Err(Error::UnexpectedMessageKind(kind_name)),
+    }
+}
+
+fn resp_to_keys(resp: IM, kind_name: &'static str) -> Result<Vec<Key>> {
+    match resp {
+        IM::KeyListResult(x) => Ok(x.keys.into_iter().map(Into::into).collect()),
+        IM::DbError(e) => Err(Error::DatabaseError(e.error.into_owned())),
         _ => Err(Error::UnexpectedMessageKind(kind_name)),
     }
 }

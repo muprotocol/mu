@@ -26,15 +26,14 @@ pub enum OutgoingMessageKind {
     Delete = 1003,
     DeleteByPrefix = 1004,
     Scan = 1005,
-    TableList = 1006,
-    BatchPut = 1007,
-    BatchGet = 1008,
-    BatchDelete = 1009,
-    BatchScan = 1010,
-    // TODO
-    // ScanKeys = 1007,
-    // BatchScanKeys = 1013,
-    // CompareAndSwap = 1014,
+    ScanKeys = 1006,
+    TableList = 1007,
+    BatchPut = 1008,
+    BatchGet = 1009,
+    BatchDelete = 1010,
+    BatchScan = 1011,
+    BatchScanKeys = 1012,
+    CompareAndSwap = 1013,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -76,15 +75,14 @@ pub enum OutgoingMessage<'a> {
     Delete(Delete<'a>),
     DeleteByPrefix(DeleteByPrefix<'a>),
     Scan(Scan<'a>),
+    ScanKeys(ScanKeys<'a>),
     TableList(TableList<'a>),
     BatchPut(BatchPut<'a>),
     BatchGet(BatchGet<'a>),
     BatchDelete(BatchDelete<'a>),
     BatchScan(BatchScan<'a>),
-    // TODO
-    // ScanKeys(ScanKeys<'a>),
-    // BatchScanKeys(BatchScanKeys<'a>),
-    // CompareAndSwap(CompareAndSwap<'a>),
+    BatchScanKeys(BatchScanKeys<'a>),
+    CompareAndSwap(CompareAndSwap<'a>),
 }
 
 macro_rules! read_cases {
@@ -132,11 +130,14 @@ impl<'a> OutgoingMessage<'a> {
                 Delete,
                 DeleteByPrefix,
                 Scan,
+                ScanKeys,
                 TableList,
                 BatchPut,
                 BatchGet,
                 BatchDelete,
-                BatchScan
+                BatchScan,
+                BatchScanKeys,
+                CompareAndSwap
             ]
         )
     }
@@ -154,11 +155,14 @@ impl<'a> OutgoingMessage<'a> {
                 Delete,
                 DeleteByPrefix,
                 Scan,
+                ScanKeys,
                 TableList,
                 BatchPut,
                 BatchGet,
                 BatchDelete,
-                BatchScan
+                BatchScan,
+                BatchScanKeys,
+                CompareAndSwap
             ]
         );
 

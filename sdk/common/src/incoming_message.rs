@@ -21,7 +21,7 @@ enum IncomingMessageKind {
     // DB Messages
     DbError = 1001,
     SingleResult = 1002,
-    ListResult = 1003,
+    KeyListResult = 1003,
     KvPairsResult = 1004,
     EmptyResult = 1005,
 }
@@ -40,13 +40,13 @@ pub enum IncomingMessage<'a> {
     // DB messages
     DbError(DbError<'a>),
     SingleResult(SingleResult<'a>),
-    ListResult(ListResult<'a>),
+    KeyListResult(KeyListResult<'a>),
     KvPairsResult(KvPairsResult<'a>),
     EmptyResult(EmptyResult),
 }
 
 macro_rules! read_cases {
-    ($kind: ident, $reader: ident, [$($case: ident),+]<$lf: lifetime>, [$($unit_case: ident),*]) => {
+    ($kind: ident, $reader: ident, [$($case: ident),+] * $lf: lifetime, [$($unit_case: ident),*]) => {
         match IncomingMessageKind::from_u16($kind) {
             $(Some(IncomingMessageKind::$case) => {
                 let message: $case<$lf> = BorshDeserialize::deserialize_reader($reader)?;
@@ -86,7 +86,7 @@ impl<'a> IncomingMessage<'a> {
         read_cases!(
             kind,
             reader,
-            [ExecuteFunction, DbError, SingleResult, ListResult, KvPairsResult]<'static>,
+            [ExecuteFunction, DbError, SingleResult, KeyListResult, KvPairsResult] * 'static,
             [EmptyResult]
         )
     }
@@ -99,7 +99,7 @@ impl<'a> IncomingMessage<'a> {
                 ExecuteFunction,
                 DbError,
                 SingleResult,
-                ListResult,
+                KeyListResult,
                 KvPairsResult,
                 EmptyResult
             ]
