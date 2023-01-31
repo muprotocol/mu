@@ -1,5 +1,3 @@
-import { CircularProgress } from "@mui/material";
-
 import useAllAccounts from "@/features/marketplace/useAllAccounts/useAllAccounts";
 
 export default function ProviderList() {
@@ -11,7 +9,7 @@ export default function ProviderList() {
   return (
     <div className="container mx-auto">
       <div className="flex gap-2">
-        <h1>Providers</h1> {isLoading && <CircularProgress />}
+        <h1>Providers</h1> {isLoading && <div>Loading...</div>}
       </div>
 
       <div className="flex flex-col gap-2">
