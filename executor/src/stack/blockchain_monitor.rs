@@ -54,7 +54,7 @@ pub trait BlockchainMonitor: Clone + Send + Sync {
 
 pub enum BlockchainMonitorNotification {
     StacksAvailable(Vec<StackWithMetadata>),
-    StacksRemoved(Vec<StackWithMetadata>),
+    StacksRemoved(Vec<StackID>),
 }
 
 #[derive(Deserialize)]
@@ -117,7 +117,10 @@ enum BlockchainMonitorMessage {
 
 enum StackWithState {
     Active(StackWithMetadata),
-    Deleted(Pubkey),
+    Deleted {
+        stack_id: StackID,
+        owner_id: StackOwner,
+    },
 }
 
 #[derive(Clone)]
@@ -259,7 +262,7 @@ pub async fn start(
             let stack = read_solana_account(s)?;
             match stack {
                 StackWithState::Active(s) => Ok(s),
-                StackWithState::Deleted(_) => bail!("Got deleted stack on startup"),
+                StackWithState::Deleted { .. } => bail!("Got deleted stack on startup"),
             }
         })
         .collect::<Result<Vec<_>, _>>()
@@ -601,14 +604,13 @@ fn on_solana_escrow_updated(
         OwnerEntry::Occupied(occ) => {
             let old_state = occ.owner_state();
             if old_state != new_state {
-                let stacks = occ.stacks().cloned().collect::<Vec<_>>();
-
                 match new_state {
                     OwnerState::Active => {
                         trace!(
                             "Transitioning {owner_pubkey} to active state, \
                             stacks will be deployed for this owner"
                         );
+                        let stacks = occ.stacks().cloned().collect::<Vec<_>>();
                         state.stacks.make_active(&owner);
                         notification_channel
                             .send(BlockchainMonitorNotification::StacksAvailable(stacks));
@@ -619,9 +621,10 @@ fn on_solana_escrow_updated(
                             "Transitioning {owner_pubkey} to inactive state, \
                             stacks will be undeployed for this owner"
                         );
+                        let stack_ids = occ.stacks().map(|s| s.id()).collect::<Vec<_>>();
                         state.stacks.make_inactive(&owner);
                         notification_channel
-                            .send(BlockchainMonitorNotification::StacksRemoved(stacks));
+                            .send(BlockchainMonitorNotification::StacksRemoved(stack_ids));
                     }
                 }
             } else {
@@ -942,15 +945,15 @@ async fn on_new_stack_received(
         StackWithState::Active(stack) => {
             debug!("Received new stack with ID {:?}", stack.id());
 
-            // TODO: implement stack updates
             let owner_entry = state.stacks.owner_entry(stack.owner());
 
-            let is_new_stack = match owner_entry {
+            let should_report_stack = match owner_entry {
                 OwnerEntry::Occupied(mut occ) => {
                     trace!(
                         "Already know this stack's owner, which is in state {:?}",
                         occ.owner_state()
                     );
+
                     occ.add_stack(stack.clone())
                 }
                 OwnerEntry::Vacant(vac) => {
@@ -974,19 +977,24 @@ async fn on_new_stack_received(
                 }
             };
 
-            if is_new_stack {
+            if should_report_stack {
                 notification_channel
                     .send(BlockchainMonitorNotification::StacksAvailable(vec![stack]));
             }
         }
 
-        StackWithState::Deleted(stack_id) => {
+        StackWithState::Deleted { stack_id, owner_id } => {
             debug!(
                 "Received deletion notification for stack with ID {:?}",
                 stack_id
             );
 
-            // TODO!!!!
+            if let OwnerEntry::Occupied(occ) = state.stacks.owner_entry(owner_id) {
+                if occ.remove_stack(stack_id).0 {
+                    notification_channel
+                        .send(BlockchainMonitorNotification::StacksRemoved(vec![stack_id]));
+                }
+            }
         }
     }
 
@@ -1017,7 +1025,10 @@ fn read_solana_account((pubkey, account): (Pubkey, Account)) -> Result<StackWith
             }))
         }
 
-        marketplace::StackState::Deleted => Ok(StackWithState::Deleted(pubkey)),
+        marketplace::StackState::Deleted => Ok(StackWithState::Deleted {
+            stack_id: StackID::SolanaPublicKey(pubkey.to_bytes()),
+            owner_id: StackOwner::Solana(stack_account.user),
+        }),
     }
 }
 

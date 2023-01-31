@@ -19,6 +19,8 @@ use crate::{infrastructure::config::ConfigDuration, network::NodeHash};
 
 use mu_stack::{Stack, StackID};
 
+use super::StackWithMetadata;
+
 pub enum StackDeploymentStatus {
     DeployedToSelf { deployed_to_others: Vec<NodeHash> },
     DeployedToOthers { deployed_to: Vec<NodeHash> },
@@ -35,7 +37,7 @@ pub trait Scheduler: Clone + Send + Sync {
     async fn node_undeployed_stacks(&self, node: NodeHash, stack_ids: Vec<StackID>) -> Result<()>;
 
     // TODO: implement stack updates
-    async fn stacks_available(&self, stacks: Vec<(StackID, Stack)>) -> Result<()>;
+    async fn stacks_available(&self, stacks: Vec<StackWithMetadata>) -> Result<()>;
     async fn stacks_removed(&self, ids: Vec<StackID>) -> Result<()>;
 
     /// We start scheduling stacks after a delay, to make sure we have
@@ -66,7 +68,7 @@ enum SchedulerMessage {
     NodeDeployedStacks(NodeHash, Vec<StackID>),
     NodeUndeployedStacks(NodeHash, Vec<StackID>),
 
-    StacksAvailable(Vec<(StackID, Stack)>),
+    StacksAvailable(Vec<StackWithMetadata>),
     StacksRemoved(Vec<StackID>),
 
     ReadyToScheduleStacks,
@@ -117,7 +119,7 @@ impl Scheduler for SchedulerImpl {
             .map_err(Into::into)
     }
 
-    async fn stacks_available(&self, stacks: Vec<(StackID, Stack)>) -> Result<()> {
+    async fn stacks_available(&self, stacks: Vec<StackWithMetadata>) -> Result<()> {
         self.mailbox
             .post(SchedulerMessage::StacksAvailable(stacks))
             .await
@@ -157,7 +159,7 @@ enum StackDeployment {
     Unknown { deployed_to: HashSet<NodeHash> },
 
     /// An undeployed stack, which we may or may not want to deploy locally
-    Undeployed { stack: Stack },
+    Undeployed { stack: StackWithMetadata },
 
     /// A stack with a "deployment candidate" which is not the current node.
     /// A deployment candidate is a node with less hash distance to the
@@ -168,7 +170,7 @@ enum StackDeployment {
     /// the stack to the undeployed state and either deploy it locally or
     /// find another deployment candidate.
     HasDeploymentCandidate {
-        stack: Stack,
+        stack: StackWithMetadata,
         deployment_candidate: NodeHash,
     },
 
@@ -178,14 +180,14 @@ enum StackDeployment {
     /// the stack if the other node is closer, or waiting for the other node
     /// to drop it if we're closer.
     DeployedToSelf {
-        stack: Stack,
+        stack: StackWithMetadata,
         deployed_to_others: HashSet<NodeHash>,
     },
 
     /// A stack that is deployed to other nodes, and which we have no
     /// interest in deploying locally.
     DeployedToOthers {
-        stack: Stack,
+        stack: StackWithMetadata,
         deployed_to: HashSet<NodeHash>,
     },
 }
@@ -397,13 +399,14 @@ async fn step(
         }
 
         SchedulerMessage::StacksAvailable(stacks) => {
-            for (id, stack) in stacks {
+            for stack in stacks {
+                let id = stack.id();
                 state.reevaluate_on_next_tick.insert(id);
 
                 // As soon as we get a stack definition, we want to deploy its gateways so we can
                 // route new requests to that stack to the correct node.
                 info!("Deploying gateways for {id}");
-                deploy_gateways(id, &stack, state.gateway_manager.as_ref()).await;
+                deploy_gateways(id, &stack.stack, state.gateway_manager.as_ref()).await;
 
                 match state.stacks.entry(id) {
                     Entry::Vacant(vac) => {
