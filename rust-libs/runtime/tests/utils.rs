@@ -102,33 +102,53 @@ pub async fn read_wasm_functions<'a>(
 }
 
 pub mod fixture {
+    use std::{
+        hint::black_box,
+        sync::atomic::{AtomicBool, Ordering},
+    };
+
     use super::*;
     use once_cell::sync::Lazy;
     use test_context::{AsyncTestContext, TestContext};
 
-    pub static INSTALL_WASM32_TARGET_FIXTURE: Lazy<()> = Lazy::new(|| {
-        Command::new("rustup")
-            .args(["target", "add", "wasm32-wasi"])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
-    });
+    pub static IS_INSTALL_WASM32_TARGET_RUNNED: AtomicBool = AtomicBool::new(false);
+    pub static IS_BUILD_TEST_FUNCS_FIXTURE_RUNNED: AtomicBool = AtomicBool::new(false);
 
-    pub static BUILD_TEST_FUNCS_FIXTURE: Lazy<()> = Lazy::new(|| {
-        for name in TEST_PROJECTS {
-            let project_dir = format!("tests/funcs/{name}");
-            Command::new("cargo")
-                .current_dir(project_dir)
-                .env_remove("CARGO_TARGET_DIR")
-                .arg("build")
-                .args(["--release", "--target", "wasm32-wasi"])
+    fn install_wasm32_target() {
+        if IS_INSTALL_WASM32_TARGET_RUNNED.load(Ordering::Relaxed) == true {
+            return;
+        } else {
+            println!("Installing wasm32-wasi target.");
+            Command::new("rustup")
+                .args(["target", "add", "wasm32-wasi"])
                 .spawn()
                 .unwrap()
                 .wait()
                 .unwrap();
+            IS_INSTALL_WASM32_TARGET_RUNNED.store(true, Ordering::Relaxed);
         }
-    });
+    }
+
+    fn build_test_funcs() {
+        if IS_BUILD_TEST_FUNCS_FIXTURE_RUNNED.load(Ordering::Relaxed) == true {
+            return;
+        } else {
+            println!("Building test functions.");
+            for name in TEST_PROJECTS {
+                let project_dir = format!("tests/funcs/{name}");
+                Command::new("cargo")
+                    .current_dir(project_dir)
+                    .env_remove("CARGO_TARGET_DIR")
+                    .arg("build")
+                    .args(["--release", "--target", "wasm32-wasi"])
+                    .spawn()
+                    .unwrap()
+                    .wait()
+                    .unwrap();
+                IS_BUILD_TEST_FUNCS_FIXTURE_RUNNED.store(true, Ordering::Relaxed);
+            }
+        }
+    }
 
     pub struct TempDir(PathBuf);
 
@@ -254,9 +274,8 @@ pub mod fixture {
     #[async_trait]
     impl AsyncTestContext for RuntimeFixture {
         async fn setup() -> Self {
-            // One-time tasks using lazy evaluation
-            let _ = &INSTALL_WASM32_TARGET_FIXTURE;
-            let _ = &BUILD_TEST_FUNCS_FIXTURE;
+            install_wasm32_target();
+            build_test_funcs();
 
             let assembly_provider = Box::<MapAssemblyProvider>::default();
             let db_manager = <DBManagerFixture as AsyncTestContext>::setup().await;
@@ -317,9 +336,8 @@ pub mod fixture {
     #[async_trait]
     impl AsyncTestContext for RuntimeFixtureWithoutDB {
         async fn setup() -> Self {
-            // One-time tasks using lazy evaluation
-            let _ = &INSTALL_WASM32_TARGET_FIXTURE;
-            let _ = &BUILD_TEST_FUNCS_FIXTURE;
+            install_wasm32_target();
+            build_test_funcs();
 
             let assembly_provider = Box::<MapAssemblyProvider>::default();
             let db_manager = mock_db::EmptyDBManager;
