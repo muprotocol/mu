@@ -13,5 +13,5 @@ util.asyncMain(async () => {
     let userWallet = await readOrCreateUserWallet(mu, 1);
     let escrowAccount = await createEscrowAccount(mu, userWallet.keypair, provider);
     console.log(`Escrow PDA: ${escrowAccount.pda}`);
-    await mintToAccount(anchorProvider, escrowAccount.pda, mint, 50_000001);
+    await mintToAccount(anchorProvider, escrowAccount.pda, mint, 60_000000);
 });
