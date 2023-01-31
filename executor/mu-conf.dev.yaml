@@ -1,16 +1,10 @@
 log:
   level: info
   filters:
-    - module: mu
+    - module: mu::stack::blockchain_monitor
       level: trace
     - module: mu::stack::scheduler
-      level: debug
-    - module: mu::gateway
       level: trace
-    - module: mu::network::connection_manager
-      level: info
-    - module: mu::network::gossip
-      level: info
     - module: quinn::connection
       level: off
     - module: wasmer_compiler_cranelift::translator::func_translator
