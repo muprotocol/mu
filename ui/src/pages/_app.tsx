@@ -1,10 +1,9 @@
 import type { AppProps } from "next/app";
 
 import Header from "@/features/layout/Header";
+import ThemeWrapper from "@/features/themes/ThemeWrapper/ThemeWrapper";
 import WalletWrapper from "@/features/wallet/WalletWrapper/WalletWrapper";
-
 import "@/styles/globals.css";
-import ThemeWrapper from "@/themes/ThemeWrapper";
 
 export default function App({ Component, pageProps }: AppProps) {
   return (
