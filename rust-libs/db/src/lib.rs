@@ -21,10 +21,12 @@ use std::{collections::HashSet, fmt::Debug};
 use tikv_client::{self, KvPair, RawClient, Value};
 use tokio::time::{sleep, Duration};
 
+// only one should be provided
+// used struct instead of enum, only for better visual structure in config
 #[derive(Deserialize, Clone)]
-pub enum DbConfig {
-    External(Vec<IpAndPort>),
-    Internal(TikvRunnerConfig),
+pub struct DbConfig {
+    external: Option<Vec<IpAndPort>>,
+    internal: Option<TikvRunnerConfig>,
 }
 
 #[async_trait]
@@ -341,6 +343,20 @@ impl DbManagerImpl {
         }
 
         helper(endpoints, 0, max_try_count).await
+    }
+
+    pub async fn start(
+        node: NodeAddress,
+        remote_nodes: Vec<RemoteNode>,
+        db_config: DbConfig,
+    ) -> anyhow::Result<Self> {
+        match (db_config.internal, db_config.external) {
+            (Some(tikv_config), None) => {
+                DbManagerImpl::new_with_embedded_cluster(node, remote_nodes, tikv_config).await
+            }
+            (None, Some(endpoints)) => DbManagerImpl::new_with_external_cluster(endpoints).await,
+            _ => bail!("exactly one of the external or internal fields of tikv should be provided"),
+        }
     }
 }
 
