@@ -501,17 +501,11 @@ async fn process_blockchain_monitor_notification(
         None => (), // TODO
         Some(BlockchainMonitorNotification::StacksAvailable(stacks)) => {
             debug!("Stacks available: {stacks:?}");
-            scheduler
-                .stacks_available(stacks.into_iter().map(|s| (s.id(), s.stack)).collect())
-                .await
-                .unwrap();
+            scheduler.stacks_available(stacks).await.unwrap();
         }
-        Some(BlockchainMonitorNotification::StacksRemoved(stacks)) => {
-            debug!("Stacks removed: {stacks:?}");
-            scheduler
-                .stacks_removed(stacks.into_iter().map(|s| s.id()).collect())
-                .await
-                .unwrap();
+        Some(BlockchainMonitorNotification::StacksRemoved(stack_ids)) => {
+            debug!("Stacks removed: {stack_ids:?}");
+            scheduler.stacks_removed(stack_ids).await.unwrap();
         }
     }
 }

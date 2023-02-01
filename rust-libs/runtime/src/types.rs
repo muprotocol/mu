@@ -14,8 +14,9 @@ pub(super) type ExecuteFunctionResponse = musdk_common::outgoing_message::Functi
 
 pub trait AssemblyProvider: Send {
     fn get(&self, id: &AssemblyID) -> Option<&AssemblyDefinition>;
-    fn add_function(&mut self, function: AssemblyDefinition);
+    fn add_function(&mut self, assembly: AssemblyDefinition);
     fn remove_function(&mut self, id: &AssemblyID);
+    fn remove_all_functions(&mut self, stack_id: &StackID) -> Option<Vec<String>>;
     fn get_function_names(&self, stack_id: &StackID) -> Vec<String>;
 }
 

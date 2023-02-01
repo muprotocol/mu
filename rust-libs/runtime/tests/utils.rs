@@ -46,6 +46,10 @@ impl AssemblyProvider for MapAssemblyProvider {
         self.inner.remove(id);
     }
 
+    fn remove_all_functions(&mut self, _stack_id: &StackID) -> Option<Vec<String>> {
+        unimplemented!("Not needed for tests")
+    }
+
     fn get_function_names(&self, _stack_id: &StackID) -> Vec<String> {
         unimplemented!("Not needed")
     }

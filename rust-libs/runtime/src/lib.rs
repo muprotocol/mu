@@ -44,6 +44,7 @@ pub trait Runtime: Clone + Send + Sync {
 
     async fn add_functions(&self, functions: Vec<AssemblyDefinition>) -> Result<(), Error>;
     async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<(), Error>;
+    async fn remove_all_functions(&self, stack_id: StackID) -> Result<(), Error>;
     async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>, Error>;
 }
 
@@ -94,6 +95,7 @@ enum MailboxMessage {
 
     AddFunctions(Vec<AssemblyDefinition>),
     RemoveFunctions(StackID, Vec<String>),
+    RemoveAllFunctions(StackID),
     GetFunctionNames(StackID, ReplyChannel<Vec<String>>),
 }
 
@@ -317,6 +319,13 @@ impl Runtime for RuntimeImpl {
             .map_err(|e| Error::Internal(e.into()))
     }
 
+    async fn remove_all_functions(&self, stack_id: StackID) -> Result<(), Error> {
+        self.mailbox
+            .post(MailboxMessage::RemoveAllFunctions(stack_id))
+            .await
+            .map_err(|e| Error::Internal(e.into()))
+    }
+
     async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>, Error> {
         self.mailbox
             .post_and_reply(|r| MailboxMessage::GetFunctionNames(stack_id, r))
@@ -390,13 +399,25 @@ async fn mailbox_step(
 
         MailboxMessage::RemoveFunctions(stack_id, functions_names) => {
             for function_name in functions_names {
-                let function_id = AssemblyID {
+                let assembly_id = AssemblyID {
                     stack_id,
                     assembly_name: function_name,
                 };
 
-                state.assembly_provider.remove_function(&function_id);
-                state.hashkey_dict.remove(&function_id);
+                state.assembly_provider.remove_function(&assembly_id);
+                state.hashkey_dict.remove(&assembly_id);
+            }
+        }
+
+        MailboxMessage::RemoveAllFunctions(stack_id) => {
+            let function_names = state.assembly_provider.remove_all_functions(&stack_id);
+            if let Some(names) = function_names {
+                for name in names {
+                    state.hashkey_dict.remove(&AssemblyID {
+                        stack_id,
+                        assembly_name: name,
+                    });
+                }
             }
         }
 
