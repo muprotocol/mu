@@ -1,15 +1,13 @@
 use std::rc::Rc;
 
 use super::MarketplaceClient;
-use anchor_client::solana_sdk::{
-    pubkey::Pubkey, signature::Keypair, signer::Signer, system_program,
-};
+use anchor_client::solana_sdk::{pubkey::Pubkey, signer::Signer, system_program};
 use anyhow::{bail, Context, Result};
 
 pub fn create(
     client: &MarketplaceClient,
     provider_keypair: Rc<dyn Signer>,
-    signer_keypair: &Keypair,
+    signer_keypair: Rc<dyn Signer>,
     region_pda: Pubkey,
 ) -> Result<()> {
     let (_, mu_state) = client.get_mu_state()?;

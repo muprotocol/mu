@@ -8,7 +8,7 @@ test-ledger
 Cargo.lock
 __pycache__
 /scripts/.tools
-/scripts/test-stack/test-function.wasm
+/scripts/test-stack/*.wasm
 
 # See stackoverflow.com/questions/2820255
 !/target

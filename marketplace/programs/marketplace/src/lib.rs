@@ -34,6 +34,9 @@ pub enum Error {
 
     #[msg("Commission rate is out of bounds")]
     CommissionRateOutOfBounds,
+
+    #[msg("Cannot operate on a deleted stack")]
+    CannotOperateOnDeletedStack,
 }
 
 #[program]
@@ -131,15 +134,48 @@ pub mod marketplace {
 
         ctx.accounts.stack.set_inner(Stack {
             account_type: MuAccountType::Stack as u8,
-            stack: stack_data,
             user: ctx.accounts.user.key(),
             region: ctx.accounts.region.key(),
             seed: stack_seed,
-            revision: 1,
             bump: *ctx.bumps.get("stack").unwrap(),
-            name,
+            state: StackState::Active {
+                revision: 1,
+                name,
+                stack_data,
+            },
         });
 
+        Ok(())
+    }
+
+    pub fn update_stack(
+        ctx: Context<UpdateStack>,
+        _stack_seed: u64,
+        stack_data: Vec<u8>,
+        name: String,
+    ) -> Result<()> {
+        match ctx.accounts.stack.state {
+            StackState::Deleted => Err(Error::CannotOperateOnDeletedStack.into()),
+            StackState::Active {
+                ref mut revision,
+                name: ref mut name_ref,
+                stack_data: ref mut stack_data_ref,
+            } => {
+                *name_ref = name;
+                *stack_data_ref = stack_data;
+                *revision += 1;
+
+                Ok(())
+            }
+        }
+    }
+
+    pub fn delete_stack(ctx: Context<DeleteStack>, _stack_seed: u64) -> Result<()> {
+        if let StackState::Deleted = ctx.accounts.stack.state {
+            return Err(Error::CannotOperateOnDeletedStack.into());
+        }
+
+        ctx.accounts.stack.state = StackState::Deleted;
         Ok(())
     }
 
@@ -192,6 +228,7 @@ pub mod marketplace {
         _escrow_bump: u8,
         usage: ServiceUsage,
     ) -> Result<()> {
+        // TODO: only allow usage updates up to a certain point in time after the stack was deleted
         let usage_tokens = calc_usage(&ctx.accounts.region.rates, &usage);
         let commission_tokens =
             usage_tokens * ctx.accounts.state.commission_rate_micros as u64 / 1_000_000;
@@ -513,10 +550,26 @@ pub struct Stack {
     pub user: Pubkey,
     pub region: Pubkey,
     pub seed: u64,
-    pub revision: u32,
     pub bump: u8,
-    pub name: String,
-    pub stack: Vec<u8>,
+    pub state: StackState,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub enum StackState {
+    // I hate putting so many fields in an enum case, but if we declare a struct
+    // for the fields, the anchor TS client library will choke on it.
+    Active {
+        revision: u32,
+        name: String,
+        stack_data: Vec<u8>,
+    },
+    Deleted,
+}
+
+#[repr(u8)]
+pub enum StackStateDiscriminator {
+    Active = 0,
+    Deleted = 1,
 }
 
 #[derive(Accounts)]
@@ -530,9 +583,51 @@ pub struct CreateStack<'info> {
     #[account(
         init,
         payer = user,
-        space = 8 + 1 + 32 + 32 + 8 + 4 + 1 + 4 + name.len() + 4 + stack_data.len(),
+        space = 8 + 1 + 32 + 32 + 8 + 1 + 1 + 4 + 4 + name.len() + 4 + stack_data.len(),
         seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_le_bytes().as_ref()],
         bump
+    )]
+    pub stack: Account<'info, Stack>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(stack_seed: u64, stack_data: Vec<u8>, name: String)]
+pub struct UpdateStack<'info> {
+    pub region: Account<'info, ProviderRegion>,
+
+    #[account(
+        mut,
+        realloc = 8 + 1 + 32 + 32 + 8 + 1 + 1 + 4 + 4 + name.len() + 4 + stack_data.len(),
+        realloc::payer = user,
+        realloc::zero = false,
+        seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_le_bytes().as_ref()],
+        has_one = user,
+        bump = stack.bump,
+    )]
+    pub stack: Account<'info, Stack>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(stack_seed: u64)]
+pub struct DeleteStack<'info> {
+    pub region: Account<'info, ProviderRegion>,
+
+    #[account(
+        mut,
+        realloc = 8 + 1 + 32 + 32 + 8 + 1 + 1,
+        realloc::payer = user,
+        realloc::zero = false,
+        seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_le_bytes().as_ref()],
+        has_one = user,
+        bump = stack.bump,
     )]
     pub stack: Account<'info, Stack>,
 

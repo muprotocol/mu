@@ -54,7 +54,7 @@ pub trait BlockchainMonitor: Clone + Send + Sync {
 
 pub enum BlockchainMonitorNotification {
     StacksAvailable(Vec<StackWithMetadata>),
-    StacksRemoved(Vec<StackWithMetadata>),
+    StacksRemoved(Vec<StackID>),
 }
 
 #[derive(Deserialize)]
@@ -113,6 +113,14 @@ enum BlockchainMonitorMessage {
     GetMetadata(StackID, ReplyChannel<Option<StackMetadata>>),
     Tick(ReplyChannel<()>),
     Stop(ReplyChannel<()>),
+}
+
+enum StackWithState {
+    Active(StackWithMetadata),
+    Deleted {
+        stack_id: StackID,
+        owner_id: StackOwner,
+    },
 }
 
 #[derive(Clone)]
@@ -189,7 +197,10 @@ pub async fn start(
     debug!("Setting up stack subscription");
     let get_stacks_config = RpcProgramAccountsConfig {
         filters: Some(vec![
-            RpcFilterType::Memcmp(Memcmp::new_raw_bytes(8, vec![5u8])),
+            RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+                8,
+                vec![marketplace::MuAccountType::Stack as u8],
+            )),
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
                 8 + 1 + 32,
                 region_pda.to_bytes().to_vec(),
@@ -231,14 +242,29 @@ pub async fn start(
     };
 
     debug!("Retrieving existing stacks");
+    let mut get_existing_stacks_config = get_stacks_config.clone();
+    get_existing_stacks_config
+        .filters
+        .as_mut()
+        .unwrap()
+        .push(RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            8 + 1 + 32 + 32 + 8 + 1,
+            vec![marketplace::StackStateDiscriminator::Active as u8],
+        )));
     let existing_stacks = rpc_client
-        .get_program_accounts_with_config(&marketplace::id(), get_stacks_config)
+        .get_program_accounts_with_config(&marketplace::id(), get_existing_stacks_config)
         .await
         .context("Failed to fetch existing stacks from Solana")?;
 
     let existing_stacks = existing_stacks
         .into_iter()
-        .map(read_solana_account)
+        .map(|s| {
+            let stack = read_solana_account(s)?;
+            match stack {
+                StackWithState::Active(s) => Ok(s),
+                StackWithState::Deleted { .. } => bail!("Got deleted stack on startup"),
+            }
+        })
         .collect::<Result<Vec<_>, _>>()
         .context("Failed to parse stacks retrieved from Solana")?;
 
@@ -578,14 +604,13 @@ fn on_solana_escrow_updated(
         OwnerEntry::Occupied(occ) => {
             let old_state = occ.owner_state();
             if old_state != new_state {
-                let stacks = occ.stacks().cloned().collect::<Vec<_>>();
-
                 match new_state {
                     OwnerState::Active => {
                         trace!(
                             "Transitioning {owner_pubkey} to active state, \
                             stacks will be deployed for this owner"
                         );
+                        let stacks = occ.stacks().cloned().collect::<Vec<_>>();
                         state.stacks.make_active(&owner);
                         notification_channel
                             .send(BlockchainMonitorNotification::StacksAvailable(stacks));
@@ -596,9 +621,10 @@ fn on_solana_escrow_updated(
                             "Transitioning {owner_pubkey} to inactive state, \
                             stacks will be undeployed for this owner"
                         );
+                        let stack_ids = occ.stacks().map(|s| s.id()).collect::<Vec<_>>();
                         state.stacks.make_inactive(&owner);
                         notification_channel
-                            .send(BlockchainMonitorNotification::StacksRemoved(stacks));
+                            .send(BlockchainMonitorNotification::StacksRemoved(stack_ids));
                     }
                 }
             } else {
@@ -909,72 +935,104 @@ async fn setup_solana_escrow_subscriptions<'a>(
 
 async fn on_new_stack_received(
     state: &mut State<'_>,
-    stack: Response<RpcKeyedAccount>,
+    account: Response<RpcKeyedAccount>,
     notification_channel: &NotificationChannel<BlockchainMonitorNotification>,
 ) -> Result<()> {
-    let stack = read_solana_rpc_keyed_account(stack)
+    let stack = read_solana_rpc_keyed_account(account)
         .context("Received stack from blockchain but failed to deserialize")?;
 
-    debug!("Received new stack with ID {:?}", stack.id());
+    match stack {
+        StackWithState::Active(stack) => {
+            debug!("Received new stack with ID {:?}", stack.id());
 
-    // TODO: implement stack updates
-    let owner_entry = state.stacks.owner_entry(stack.owner());
+            let owner_entry = state.stacks.owner_entry(stack.owner());
 
-    let is_new_stack = match owner_entry {
-        OwnerEntry::Occupied(mut occ) => {
-            trace!(
-                "Already know this stack's owner, which is in state {:?}",
-                occ.owner_state()
-            );
-            occ.add_stack(stack.clone())
-        }
-        OwnerEntry::Vacant(vac) => {
-            trace!("This stack is from a new owner, fetching escrow balance");
-            let escrow_balance = fetch_owner_escrow_balance(
-                &state.solana.rpc_client,
-                &stack.owner(),
-                &state.solana.provider_pda,
-            )
-            .await?;
-            let state = if escrow_balance >= state.solana.min_escrow_balance {
-                OwnerState::Active
-            } else {
-                OwnerState::Inactive
+            let should_report_stack = match owner_entry {
+                OwnerEntry::Occupied(mut occ) => {
+                    trace!(
+                        "Already know this stack's owner, which is in state {:?}",
+                        occ.owner_state()
+                    );
+
+                    occ.add_stack(stack.clone())
+                }
+                OwnerEntry::Vacant(vac) => {
+                    trace!("This stack is from a new owner, fetching escrow balance");
+                    let escrow_balance = fetch_owner_escrow_balance(
+                        &state.solana.rpc_client,
+                        &stack.owner(),
+                        &state.solana.provider_pda,
+                    )
+                    .await?;
+                    let state = if escrow_balance >= state.solana.min_escrow_balance {
+                        OwnerState::Active
+                    } else {
+                        OwnerState::Inactive
+                    };
+
+                    trace!("New owner has escrow balance {escrow_balance}, adding with state {state:?}");
+
+                    vac.insert_first(state, stack.clone());
+                    true
+                }
             };
 
-            trace!("New owner has escrow balance {escrow_balance}, adding with state {state:?}");
-
-            vac.insert_first(state, stack.clone());
-            true
+            if should_report_stack {
+                notification_channel
+                    .send(BlockchainMonitorNotification::StacksAvailable(vec![stack]));
+            }
         }
-    };
 
-    if is_new_stack {
-        notification_channel.send(BlockchainMonitorNotification::StacksAvailable(vec![stack]));
+        StackWithState::Deleted { stack_id, owner_id } => {
+            debug!(
+                "Received deletion notification for stack with ID {:?}",
+                stack_id
+            );
+
+            if let OwnerEntry::Occupied(occ) = state.stacks.owner_entry(owner_id) {
+                if occ.remove_stack(stack_id).0 {
+                    notification_channel
+                        .send(BlockchainMonitorNotification::StacksRemoved(vec![stack_id]));
+                }
+            }
+        }
     }
 
     Ok(())
 }
 
-fn read_solana_account((pubkey, account): (Pubkey, Account)) -> Result<StackWithMetadata> {
-    let stack_data = marketplace::Stack::try_deserialize(&mut &account.data[..])
+fn read_solana_account((pubkey, account): (Pubkey, Account)) -> Result<StackWithState> {
+    let stack_account = marketplace::Stack::try_deserialize(&mut &account.data[..])
         .context("Failed to deserialize Stack data")?;
 
-    let stack_definition =
-        mu_stack::Stack::try_deserialize_proto(stack_data.stack.into_boxed_slice().as_ref())
-            .context("Failed to deserialize stack definition")?;
+    match stack_account.state {
+        marketplace::StackState::Active {
+            revision,
+            name,
+            stack_data,
+        } => {
+            let stack_definition = mu_stack::Stack::try_deserialize_proto(stack_data)
+                .context("Failed to deserialize stack definition")?;
 
-    Ok(StackWithMetadata {
-        stack: stack_definition,
-        revision: stack_data.revision,
-        metadata: StackMetadata::Solana(super::SolanaStackMetadata {
-            account_id: pubkey,
-            owner: stack_data.user,
+            Ok(StackWithState::Active(StackWithMetadata {
+                stack: stack_definition,
+                name,
+                revision,
+                metadata: StackMetadata::Solana(super::SolanaStackMetadata {
+                    account_id: pubkey,
+                    owner: stack_account.user,
+                }),
+            }))
+        }
+
+        marketplace::StackState::Deleted => Ok(StackWithState::Deleted {
+            stack_id: StackID::SolanaPublicKey(pubkey.to_bytes()),
+            owner_id: StackOwner::Solana(stack_account.user),
         }),
-    })
+    }
 }
 
-fn read_solana_rpc_keyed_account(stack: Response<RpcKeyedAccount>) -> Result<StackWithMetadata> {
+fn read_solana_rpc_keyed_account(stack: Response<RpcKeyedAccount>) -> Result<StackWithState> {
     let pubkey = stack
         .value
         .pubkey
