@@ -11,7 +11,7 @@ import {
     promptForRemovalIfLedgerExists,
     waitForLocalValidatorToStart
 } from "./anchor-utils";
-import {ProcessMultiplexer} from "./process-multiplexer";
+import { ProcessMultiplexer } from "./process-multiplexer";
 
 util.asyncMain(async () => {
     if (!promptForRemovalIfLedgerExists()) {
@@ -30,6 +30,7 @@ util.asyncMain(async () => {
     muxer.spawnNew(
         `export BROWSER='' ANCHOR_WALLET='${getDefaultWalletPath()}' && ` +
         `cd '${process.cwd()}' && ` +
+        `env -C ${path.resolve(__dirname, "..")} anchor build && ` +
         `npx ts-node ${path.resolve(__dirname, "deploy-contract.ts")} && ` +
         `npx ts-node ${path.resolve(__dirname, "initialize-mu.ts")} && ` +
         `npx ts-node ${path.resolve(__dirname, "fund-wallet.ts")} cli_provider && ` +

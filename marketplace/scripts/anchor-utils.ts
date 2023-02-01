@@ -514,19 +514,19 @@ export const deployStack = async (
     stackSeed: number,
     name: string
 ): Promise<MuStackInfo> => {
-    const stack_seed = new anchor.BN(stackSeed);
+    const stackSeedBN = new anchor.BN(stackSeed);
     const pda = publicKey.findProgramAddressSync(
         [
             anchor.utils.bytes.utf8.encode("stack"),
             userWallet.publicKey.toBytes(),
             region.pda.toBytes(),
-            stack_seed.toBuffer("le", 8)],
+            stackSeedBN.toBuffer("le", 8)],
         mu.program.programId
     )[0];
 
     await
         mu.program.methods.createStack(
-            stack_seed,
+            stackSeedBN,
             stack,
             name
         ).accounts({
@@ -538,6 +538,64 @@ export const deployStack = async (
         }).signers([userWallet]).rpc();
 
     return { pda };
+}
+
+export const updateStack = async (
+    mu: MuProgram,
+    userWallet: Keypair,
+    region: MuRegionInfo,
+    stack: Buffer,
+    stackSeed: number,
+    name: string
+): Promise<MuStackInfo> => {
+    const stackSeedBN = new anchor.BN(stackSeed);
+    const pda = publicKey.findProgramAddressSync(
+        [
+            anchor.utils.bytes.utf8.encode("stack"),
+            userWallet.publicKey.toBytes(),
+            region.pda.toBytes(),
+            stackSeedBN.toBuffer("le", 8)],
+        mu.program.programId
+    )[0];
+
+    await
+        mu.program.methods.updateStack(
+            stackSeedBN,
+            stack,
+            name
+        ).accounts({
+            user: userWallet.publicKey,
+            stack: pda,
+            region: region.pda,
+        }).signers([userWallet]).rpc();
+
+    return { pda };
+}
+
+export const deleteStack = async (
+    mu: MuProgram,
+    userWallet: Keypair,
+    region: MuRegionInfo,
+    stackSeed: number,
+): Promise<void> => {
+    const stackSeedBN = new anchor.BN(stackSeed);
+    const pda = publicKey.findProgramAddressSync(
+        [
+            anchor.utils.bytes.utf8.encode("stack"),
+            userWallet.publicKey.toBytes(),
+            region.pda.toBytes(),
+            stackSeedBN.toBuffer("le", 8)],
+        mu.program.programId
+    )[0];
+
+    await
+        mu.program.methods.deleteStack(
+            stackSeedBN,
+        ).accounts({
+            user: userWallet.publicKey,
+            stack: pda,
+            region: region.pda,
+        }).signers([userWallet]).rpc();
 }
 
 export interface MuStackUsageUpdateInfo {

@@ -41,17 +41,14 @@ pub struct ListRegionCommand {
 pub fn execute_list_provider(config: Config, cmd: ListProviderCommand) -> Result<()> {
     let client = config.build_marketplace_client()?;
 
-    let mut filters = vec![
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8,
-            vec![marketplace::MuAccountType::Provider as u8],
-        )),
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(8 + 1 + 32, vec![1])),
-    ];
+    let mut filters = vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+        8 + 32,
+        vec![1],
+    ))];
 
     if let Some(name_prefix) = cmd.name_prefix {
         filters.push(RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1 + 32 + 4, // 4 more bytes for the prefix length
+            8 + 32 + 4, // 4 more bytes for the prefix length
             name_prefix.as_bytes().to_vec(),
         )));
     }
@@ -71,16 +68,10 @@ pub fn execute_list_region(config: Config, cmd: ListRegionCommand) -> Result<()>
     let (_, mu) = client.get_mu_state()?;
     let mint = client.get_mint(&mu)?;
 
-    let filters = vec![
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8,
-            vec![marketplace::MuAccountType::ProviderRegion as u8],
-        )),
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1,
-            cmd.provider.to_bytes().to_vec(),
-        )),
-    ];
+    let filters = vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+        8,
+        cmd.provider.to_bytes().to_vec(),
+    ))];
 
     let mut accounts = client
         .program
