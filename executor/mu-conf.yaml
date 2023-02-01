@@ -43,13 +43,12 @@ blockchain_monitor:
 #   usage_report_duration: 15m
 tikv:
   # if you already have a db running use external template and set internal as null.
-  # External:
+  # external:
   # - address: 127.0.0.1
   #   port: 8000
   # - address: 127.0.0.1
   #   port: 8000
-  External: null
-  Internal:
+  internal:
     pd:
       data_dir: /var/lib/mu-executor/pd-data/
       peer_url:
