@@ -57,14 +57,14 @@ pub struct DeployStackCommand {
 
 #[derive(Debug, Args)]
 pub struct DeleteStackCommand {
-    // The ID of the stack to be deleted.
+    /// The ID of the stack to be deleted.
     stack: Pubkey,
 
     #[arg(short, long)]
-    // The region the stack is deployed to. This is included
-    // as a safeguard against accidentally deleting the wrong
-    // stack. If you don't wish to specify the region, you can
-    // pass '--region any' to this tool.
+    /// The region the stack is deployed to. This is included
+    /// as a safeguard against accidentally deleting the wrong
+    /// stack. If you don't wish to specify the region, you can
+    /// pass '--region any' to this tool.
     region: String,
 }
 
