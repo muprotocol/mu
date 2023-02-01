@@ -1,7 +1,6 @@
 use std::{fs, path::PathBuf};
 
 use anchor_client::{
-    anchor_lang::Discriminator,
     solana_client::rpc_filter::{Memcmp, RpcFilterType},
     solana_sdk::pubkey::Pubkey,
 };
@@ -82,10 +81,6 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
     let user_wallet = config.get_signer()?;
 
     let mut filters = vec![
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            0,
-            marketplace::Stack::discriminator().to_vec(),
-        )),
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
             8,
             user_wallet.pubkey().to_bytes().to_vec(),

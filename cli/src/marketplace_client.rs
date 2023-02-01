@@ -1,5 +1,5 @@
 use anchor_client::{
-    anchor_lang::{prelude::AnchorError, AccountDeserialize, Discriminator},
+    anchor_lang::{prelude::AnchorError, AccountDeserialize},
     solana_client::{
         client_error::ClientErrorKind,
         rpc_filter::{Memcmp, RpcFilterType},
@@ -148,10 +148,6 @@ impl MarketplaceClient {
 
     pub fn provider_name_exists(&self, name: &str) -> Result<bool> {
         let filters = vec![
-            RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-                0,
-                marketplace::Provider::discriminator().to_vec(),
-            )),
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
                 8 + 32 + 1,
                 name.len().to_le_bytes().to_vec(),

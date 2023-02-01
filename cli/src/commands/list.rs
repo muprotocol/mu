@@ -1,5 +1,4 @@
 use anchor_client::{
-    anchor_lang::Discriminator,
     solana_client::rpc_filter::{Memcmp, RpcFilterType},
     solana_sdk::pubkey::Pubkey,
 };
@@ -42,13 +41,10 @@ pub struct ListRegionCommand {
 pub fn execute_list_provider(config: Config, cmd: ListProviderCommand) -> Result<()> {
     let client = config.build_marketplace_client()?;
 
-    let mut filters = vec![
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            0,
-            marketplace::Provider::discriminator().to_vec(),
-        )),
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(8 + 32, vec![1])),
-    ];
+    let mut filters = vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+        8 + 32,
+        vec![1],
+    ))];
 
     if let Some(name_prefix) = cmd.name_prefix {
         filters.push(RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
@@ -72,13 +68,10 @@ pub fn execute_list_region(config: Config, cmd: ListRegionCommand) -> Result<()>
     let (_, mu) = client.get_mu_state()?;
     let mint = client.get_mint(&mu)?;
 
-    let filters = vec![
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            0,
-            marketplace::ProviderRegion::discriminator().to_vec(),
-        )),
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(8, cmd.provider.to_bytes().to_vec())),
-    ];
+    let filters = vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+        8,
+        cmd.provider.to_bytes().to_vec(),
+    ))];
 
     let mut accounts = client
         .program
