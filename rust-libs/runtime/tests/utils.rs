@@ -107,11 +107,11 @@ pub mod fixture {
     use super::*;
     use test_context::{AsyncTestContext, TestContext};
 
-    pub static DID_INSTALL_WASM32_TARGET_RAN: AtomicBool = AtomicBool::new(false);
-    pub static DID_BUILD_TEST_FUNCS_FIXTURE_RAN: AtomicBool = AtomicBool::new(false);
+    pub static DID_INSTALL_WASM32_TARGET_RUN: AtomicBool = AtomicBool::new(false);
+    pub static DID_BUILD_TEST_FUNCS_FIXTURE_RUN: AtomicBool = AtomicBool::new(false);
 
     fn install_wasm32_target() {
-        if !DID_INSTALL_WASM32_TARGET_RAN.load(Ordering::Relaxed) {
+        if !DID_INSTALL_WASM32_TARGET_RUN.load(Ordering::Relaxed) {
             println!("Installing wasm32-wasi target.");
             Command::new("rustup")
                 .args(["target", "add", "wasm32-wasi"])
@@ -119,12 +119,12 @@ pub mod fixture {
                 .unwrap()
                 .wait()
                 .unwrap();
-            DID_INSTALL_WASM32_TARGET_RAN.store(true, Ordering::Relaxed);
+            DID_INSTALL_WASM32_TARGET_RUN.store(true, Ordering::Relaxed);
         }
     }
 
     fn build_test_funcs() {
-        if !DID_BUILD_TEST_FUNCS_FIXTURE_RAN.load(Ordering::Relaxed) {
+        if !DID_BUILD_TEST_FUNCS_FIXTURE_RUN.load(Ordering::Relaxed) {
             println!("Building test functions.");
             for name in TEST_PROJECTS {
                 let project_dir = format!("tests/funcs/{name}");
@@ -137,7 +137,7 @@ pub mod fixture {
                     .unwrap()
                     .wait()
                     .unwrap();
-                DID_BUILD_TEST_FUNCS_FIXTURE_RAN.store(true, Ordering::Relaxed);
+                DID_BUILD_TEST_FUNCS_FIXTURE_RUN.store(true, Ordering::Relaxed);
             }
         }
     }
