@@ -33,9 +33,14 @@ jobs:
             target/
             cli/target/
             executor/target/
-            mailbox_processor/target/
             marketplace/target/
-            mu_stack/target/
+            rust-libs/common/target/
+            rust-libs/db/target/
+            rust-libs/db-embedded-tikv/target/
+            rust-libs/gateway/target/
+            rust-libs/mailbox_processor/target/
+            rust-libs/mu_stack/target/
+            rust-libs/runtime/target/
             sdk/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Install system dependencies
@@ -72,8 +77,13 @@ jobs:
             target/
             cli/target/
             executor/target/
-            mailbox_processor/target/
             marketplace/target/
-            mu_stack/target/
+            rust-libs/common/target/
+            rust-libs/db/target/
+            rust-libs/db-embedded-tikv/target/
+            rust-libs/gateway/target/
+            rust-libs/mailbox_processor/target/
+            rust-libs/mu_stack/target/
+            rust-libs/runtime/target/
             sdk/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
