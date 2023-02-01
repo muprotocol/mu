@@ -15,6 +15,7 @@ use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::*;
+use mu_db::DbManager;
 use tokio::sync::mpsc;
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
@@ -111,6 +112,7 @@ struct CacheHashAndMemoryLimit {
 struct RuntimeState {
     config: RuntimeConfig,
     assembly_provider: Box<dyn AssemblyProvider>,
+    db_manager: Box<dyn DbManager>,
     hashkey_dict: HashMap<AssemblyID, CacheHashAndMemoryLimit>,
     cache: FileSystemCache,
     next_instance_id: u64,
@@ -120,6 +122,7 @@ struct RuntimeState {
 impl RuntimeState {
     pub async fn new(
         assembly_provider: Box<dyn AssemblyProvider>,
+        db_manager: Box<dyn DbManager>,
         config: RuntimeConfig,
     ) -> Result<(Self, mpsc::UnboundedReceiver<Notification>)> {
         let (tx, rx) = NotificationChannel::new();
@@ -132,8 +135,9 @@ impl RuntimeState {
         Ok((
             Self {
                 config,
-                hashkey_dict,
                 assembly_provider,
+                db_manager,
+                hashkey_dict,
                 cache,
                 next_instance_id: 0,
                 notification_channel: tx,
@@ -237,6 +241,7 @@ impl RuntimeState {
             module,
             definition.memory_limit,
             self.config.include_function_logs,
+            self.db_manager.clone(),
         ))
     }
 }
@@ -331,9 +336,11 @@ impl Runtime for RuntimeImpl {
 
 pub async fn start(
     assembly_provider: Box<dyn AssemblyProvider>,
+    db_manager: Box<dyn DbManager>,
     config: RuntimeConfig,
 ) -> Result<(Box<dyn Runtime>, mpsc::UnboundedReceiver<Notification>)> {
-    let (state, notification_receiver) = RuntimeState::new(assembly_provider, config).await?;
+    let (state, notification_receiver) =
+        RuntimeState::new(assembly_provider, db_manager, config).await?;
     let mailbox = CallbackMailboxProcessor::start(mailbox_step, state, 10000);
     Ok((Box::new(RuntimeImpl { mailbox }), notification_receiver))
 }

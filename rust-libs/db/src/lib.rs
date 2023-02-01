@@ -1,7 +1,7 @@
 pub mod error;
 mod types;
 
-pub use self::types::{Key, Scan, TableName};
+pub use self::types::{Blob, Key, Scan, TableName};
 pub use db_embedded_tikv::{
     IpAndPort, NodeAddress, PdConfig, RemoteNode, TikvConfig, TikvRunnerConfig,
 };
@@ -62,7 +62,8 @@ pub trait DbClient: Send + Sync + Debug + Clone {
 }
 
 #[async_trait]
-pub trait DbManager: Send + Sync {
+#[clonable]
+pub trait DbManager: Send + Sync + Clone {
     async fn make_client(&self) -> anyhow::Result<Box<dyn DbClient>>;
     async fn stop_embedded_cluster(&self) -> anyhow::Result<()>;
 }

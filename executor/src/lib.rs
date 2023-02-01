@@ -163,10 +163,13 @@ pub async fn run() -> Result<()> {
         tikv_config,
     )
     .await?;
-    let (runtime, mut runtime_notification_receiver) =
-        mu_runtime::start(Box::new(function_provider), runtime_config)
-            .await
-            .context("Failed to initiate runtime")?;
+    let (runtime, mut runtime_notification_receiver) = mu_runtime::start(
+        Box::new(function_provider),
+        Box::new(database_manager.clone()),
+        runtime_config,
+    )
+    .await
+    .context("Failed to initiate runtime")?;
 
     let rpc_handler = rpc_handler::new(
         connection_manager.clone(),
