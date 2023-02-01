@@ -29,7 +29,10 @@ musdk-common = { path = "../../sdk/common" }
 byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
 
 [dev-dependencies]
+test-context = "0.1.4"
 serde_json = "1.0"
 futures = "0.3"
 itertools = "0.10"
 rand = "0.8"
+db-embedded-tikv = { path = "../db-embedded-tikv" }
+tikv-client = "0.1.0"

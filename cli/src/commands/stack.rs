@@ -2,17 +2,19 @@ use std::{fs, path::PathBuf};
 
 use anchor_client::{
     solana_client::rpc_filter::{Memcmp, RpcFilterType},
-    solana_sdk::{pubkey::Pubkey, system_program},
+    solana_sdk::pubkey::Pubkey,
 };
 use anyhow::{Context, Result};
 use clap::{Args, Parser};
+use marketplace::StackState;
 
-use crate::config::Config;
+use crate::{config::Config, marketplace_client};
 
 #[derive(Debug, Parser)]
 pub enum Command {
     List(ListStacksCommand),
     Deploy(DeployStackCommand),
+    Delete(DeleteStackCommand),
 }
 
 #[derive(Debug, Args)]
@@ -43,12 +45,34 @@ pub struct DeployStackCommand {
     #[arg(long)]
     /// The region to deploy to.
     region: Pubkey,
+
+    #[arg(long)]
+    /// If specified, only deploy the stack if it doesn't already exist
+    init: bool,
+
+    #[arg(long)]
+    /// If specified, only update the stack if a previous version already exists
+    update: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct DeleteStackCommand {
+    /// The ID of the stack to be deleted.
+    stack: Pubkey,
+
+    #[arg(short, long)]
+    /// The region the stack is deployed to. This is included
+    /// as a safeguard against accidentally deleting the wrong
+    /// stack. If you don't wish to specify the region, you can
+    /// pass '--region any' to this tool.
+    region: String,
 }
 
 pub fn execute(config: Config, cmd: Command) -> Result<()> {
     match cmd {
         Command::List(sub_command) => execute_list(config, sub_command),
         Command::Deploy(sub_command) => execute_deploy(config, sub_command),
+        Command::Delete(sub_command) => execute_delete(config, sub_command),
     }
 }
 
@@ -64,6 +88,10 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
             8 + 1,
             user_wallet.pubkey().to_bytes().to_vec(),
+        )),
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            8 + 1 + 32 + 32 + 8 + 1,
+            vec![marketplace::StackStateDiscriminator::Active as u8],
         )),
     ];
 
@@ -90,11 +118,15 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
         println!("No stacks found");
     } else {
         for (key, stack) in stacks {
-            println!("{}:", stack.name);
-            println!("\tKey: {}", key);
-            println!("\tRegion: {}", stack.region); // TODO: print region name
-            println!("\tSeed: {}", stack.seed);
-            println!("\tRevision: {}", stack.revision);
+            if let StackState::Active { revision, name, .. } = stack.state {
+                println!("{}:", name);
+                println!("\tKey: {}", key);
+                println!("\tRegion: {}", stack.region); // TODO: print region name
+                println!("\tSeed: {}", stack.seed);
+                println!("\tRevision: {}", revision);
+            } else {
+                println!("Internal error: didn't expect to receive deleted stack")
+            }
         }
     }
 
@@ -102,50 +134,37 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
 }
 
 pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
-    // TODO: stack update
-
     let yaml = fs::read_to_string(cmd.yaml_file).context("Failed to read stack file")?;
 
     let stack = serde_yaml::from_str::<mu_stack::Stack>(yaml.as_str())
         .context("Failed to deserialize stack from YAML file")?;
 
-    let name = stack.name.clone();
-
-    let proto = stack
-        .serialize_to_proto()
-        .context("Failed to serialize stack to binary format")?;
-
     let client = config.build_marketplace_client()?;
     let user_wallet = config.get_signer()?;
 
-    let stack_pda = client.get_stack_pda(user_wallet.pubkey(), cmd.region, cmd.seed);
-    let region = client
-        .program
-        .account::<marketplace::ProviderRegion>(cmd.region)
-        .context("Failed to fetch region from Solana")?;
+    let deploy_mode = marketplace_client::stack::get_deploy_mode(cmd.init, cmd.update)?;
 
-    let accounts = marketplace::accounts::CreateStack {
-        region: cmd.region,
-        provider: region.provider,
-        stack: stack_pda,
-        user: user_wallet.pubkey(),
-        system_program: system_program::id(),
+    marketplace_client::stack::deploy(
+        &client,
+        user_wallet,
+        &cmd.region,
+        stack,
+        cmd.seed,
+        deploy_mode,
+    )
+}
+
+pub fn execute_delete(config: Config, cmd: DeleteStackCommand) -> Result<()> {
+    let client = config.build_marketplace_client()?;
+    let user_wallet = config.get_signer()?;
+
+    let region = {
+        if cmd.region == "any" {
+            None
+        } else {
+            Some(cmd.region.parse::<Pubkey>()?)
+        }
     };
 
-    client
-        .program
-        .request()
-        .accounts(accounts)
-        .args(marketplace::instruction::CreateStack {
-            stack_seed: cmd.seed,
-            stack_data: proto.to_vec(),
-            name,
-        })
-        .signer(user_wallet.as_ref())
-        .send_with_spinner_and_config(Default::default())
-        .context("Failed to send stack creation transaction")?;
-
-    println!("Stack deployed successfully with key: {stack_pda}");
-
-    Ok(())
+    marketplace_client::stack::delete(&client, user_wallet, &cmd.stack, region.as_ref())
 }

@@ -15,6 +15,7 @@ use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::*;
+use mu_db::DbManager;
 use tokio::sync::mpsc;
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
@@ -43,6 +44,7 @@ pub trait Runtime: Clone + Send + Sync {
 
     async fn add_functions(&self, functions: Vec<AssemblyDefinition>) -> Result<(), Error>;
     async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<(), Error>;
+    async fn remove_all_functions(&self, stack_id: StackID) -> Result<(), Error>;
     async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>, Error>;
 }
 
@@ -93,6 +95,7 @@ enum MailboxMessage {
 
     AddFunctions(Vec<AssemblyDefinition>),
     RemoveFunctions(StackID, Vec<String>),
+    RemoveAllFunctions(StackID),
     GetFunctionNames(StackID, ReplyChannel<Vec<String>>),
 }
 
@@ -109,6 +112,7 @@ struct CacheHashAndMemoryLimit {
 struct RuntimeState {
     config: RuntimeConfig,
     assembly_provider: Box<dyn AssemblyProvider>,
+    db_manager: Box<dyn DbManager>,
     hashkey_dict: HashMap<AssemblyID, CacheHashAndMemoryLimit>,
     cache: FileSystemCache,
     next_instance_id: u64,
@@ -118,6 +122,7 @@ struct RuntimeState {
 impl RuntimeState {
     pub async fn new(
         assembly_provider: Box<dyn AssemblyProvider>,
+        db_manager: Box<dyn DbManager>,
         config: RuntimeConfig,
     ) -> Result<(Self, mpsc::UnboundedReceiver<Notification>)> {
         let (tx, rx) = NotificationChannel::new();
@@ -130,8 +135,9 @@ impl RuntimeState {
         Ok((
             Self {
                 config,
-                hashkey_dict,
                 assembly_provider,
+                db_manager,
+                hashkey_dict,
                 cache,
                 next_instance_id: 0,
                 notification_channel: tx,
@@ -235,6 +241,7 @@ impl RuntimeState {
             module,
             definition.memory_limit,
             self.config.include_function_logs,
+            self.db_manager.clone(),
         ))
     }
 }
@@ -312,6 +319,13 @@ impl Runtime for RuntimeImpl {
             .map_err(|e| Error::Internal(e.into()))
     }
 
+    async fn remove_all_functions(&self, stack_id: StackID) -> Result<(), Error> {
+        self.mailbox
+            .post(MailboxMessage::RemoveAllFunctions(stack_id))
+            .await
+            .map_err(|e| Error::Internal(e.into()))
+    }
+
     async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>, Error> {
         self.mailbox
             .post_and_reply(|r| MailboxMessage::GetFunctionNames(stack_id, r))
@@ -322,9 +336,11 @@ impl Runtime for RuntimeImpl {
 
 pub async fn start(
     assembly_provider: Box<dyn AssemblyProvider>,
+    db_manager: Box<dyn DbManager>,
     config: RuntimeConfig,
 ) -> Result<(Box<dyn Runtime>, mpsc::UnboundedReceiver<Notification>)> {
-    let (state, notification_receiver) = RuntimeState::new(assembly_provider, config).await?;
+    let (state, notification_receiver) =
+        RuntimeState::new(assembly_provider, db_manager, config).await?;
     let mailbox = CallbackMailboxProcessor::start(mailbox_step, state, 10000);
     Ok((Box::new(RuntimeImpl { mailbox }), notification_receiver))
 }
@@ -383,13 +399,25 @@ async fn mailbox_step(
 
         MailboxMessage::RemoveFunctions(stack_id, functions_names) => {
             for function_name in functions_names {
-                let function_id = AssemblyID {
+                let assembly_id = AssemblyID {
                     stack_id,
                     assembly_name: function_name,
                 };
 
-                state.assembly_provider.remove_function(&function_id);
-                state.hashkey_dict.remove(&function_id);
+                state.assembly_provider.remove_function(&assembly_id);
+                state.hashkey_dict.remove(&assembly_id);
+            }
+        }
+
+        MailboxMessage::RemoveAllFunctions(stack_id) => {
+            let function_names = state.assembly_provider.remove_all_functions(&stack_id);
+            if let Some(names) = function_names {
+                for name in names {
+                    state.hashkey_dict.remove(&AssemblyID {
+                        stack_id,
+                        assembly_name: name,
+                    });
+                }
             }
         }
 

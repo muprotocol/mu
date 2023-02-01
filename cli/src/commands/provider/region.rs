@@ -1,13 +1,8 @@
-use anchor_client::{
-    anchor_lang::AccountDeserialize,
-    solana_client::rpc_client::RpcClient,
-    solana_sdk::{account::ReadableAccount, pubkey::Pubkey, system_program},
-};
-use anyhow::{bail, Context, Result};
+use anchor_client::solana_sdk::system_program;
+use anyhow::Result;
 use clap::{Args, Parser};
-use solana_account_decoder::parse_token::{self, TokenAccountType};
 
-use crate::config::Config;
+use crate::{config::Config, marketplace_client};
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -62,14 +57,14 @@ pub fn execute(config: Config, sub_command: Command) -> Result<()> {
 fn create(config: Config, args: CreateArgs) -> Result<()> {
     let client = config.build_marketplace_client()?;
 
-    let token_decimals = get_token_decimals(&client.program.rpc())?;
-    let min_escrow_balance = ui_amount_to_token_amount(args.min_escrow_balance, token_decimals);
+    let (_, state) = client.get_mu_state()?;
+    let mint = client.get_mint(&state)?;
+    let min_escrow_balance =
+        crate::token_utils::ui_amount_to_token_amount(&mint, args.min_escrow_balance);
 
     let provider_keypair = config.get_signer()?;
 
     let provider_pda = client.get_provider_pda(provider_keypair.pubkey());
-
-    // TODO: validation
 
     let region_pda = client.get_region_pda(&provider_keypair.pubkey(), args.region_num);
 
@@ -89,46 +84,12 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
         gigabytes_gateway_traffic: args.gigabytes_gateway_traffic,
     };
 
-    client
-        .program
-        .request()
-        .accounts(accounts)
-        .args(marketplace::instruction::CreateRegion {
-            region_num: args.region_num,
-            name: args.name,
-            min_escrow_balance,
-            rates,
-        })
-        .signer(provider_keypair.as_ref())
-        .send_with_spinner_and_config(Default::default())
-        .context("Failed to send region creation transaction")?;
+    let instruction = marketplace::instruction::CreateRegion {
+        region_num: args.region_num,
+        name: args.name,
+        min_escrow_balance,
+        rates,
+    };
 
-    Ok(())
-}
-
-fn get_token_decimals(rpc_client: &RpcClient) -> Result<u8> {
-    let (state_pda, _) = Pubkey::find_program_address(&[b"state"], &marketplace::id());
-    let state = rpc_client
-        .get_account(&state_pda)
-        .context("Failed to fetch mu state from Solana")?;
-    let state = marketplace::MuState::try_deserialize(&mut state.data())
-        .context("Failed to read mu state from Solana")?;
-
-    let mint_address = state.mint;
-    let mint = rpc_client
-        .get_account(&mint_address)
-        .context("Failed to fetch $MU mint from Solana")?;
-    let mint = parse_token::parse_token(mint.data(), None)
-        .context("Failed to read $MU mint from Solana")?;
-
-    if let TokenAccountType::Mint(mint) = mint {
-        Ok(mint.decimals)
-    } else {
-        bail!("Expected $MU mint to be a mint account");
-    }
-}
-
-fn ui_amount_to_token_amount(ui_amount: f64, decimals: u8) -> u64 {
-    let exp = 10u64.pow(decimals as u32) as f64;
-    (ui_amount * exp).round() as u64
+    marketplace_client::region::create(&client, accounts, instruction, provider_keypair)
 }
