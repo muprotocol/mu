@@ -9,9 +9,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
-use mu_db::{
-    DbManager, DbManagerImpl, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig,
-};
+use mu_db::{DbManager, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig};
 use tokio::sync::Mutex;
 
 use async_trait::async_trait;
@@ -217,7 +215,7 @@ pub async fn create_runtime<'a>(
     let node_address = make_node_address(2803);
     let tikv_config = make_tikv_runner_conf(2385, 2386, 20163);
 
-    let db_manager = DbManagerImpl::new_with_embedded_cluster(node_address, vec![], tikv_config)
+    let db_manager = mu_db::new_with_embedded_cluster(node_address, vec![], tikv_config)
         .await
         .unwrap();
 
@@ -251,5 +249,5 @@ pub async fn create_runtime<'a>(
         }
     });
 
-    (runtime, Box::new(db_manager), usages)
+    (runtime, db_manager, usages)
 }

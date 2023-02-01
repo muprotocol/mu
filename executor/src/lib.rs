@@ -13,7 +13,6 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use log::*;
 use mailbox_processor::NotificationChannel;
-use mu_db::{DbManager, DbManagerImpl};
 use mu_runtime::Runtime;
 use network::rpc_handler::{self, RpcHandler, RpcRequestHandler};
 use stack::{
@@ -146,7 +145,7 @@ pub async fn run() -> Result<()> {
 
     let function_provider = mu_runtime::providers::DefaultAssemblyProvider::new();
 
-    let database_manager = DbManagerImpl::start(
+    let database_manager = mu_db::start(
         mu_db::NodeAddress {
             address: my_node.address,
             port: my_node.port,
@@ -209,7 +208,7 @@ pub async fn run() -> Result<()> {
         scheduler_notification_channel,
         runtime.clone(),
         gateway_manager.clone(),
-        Box::new(database_manager.clone()),
+        database_manager.clone(),
     );
 
     *scheduler_ref.write().await = Some(scheduler.clone());
