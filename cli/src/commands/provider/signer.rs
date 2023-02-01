@@ -11,7 +11,7 @@ pub enum Command {
 
 #[derive(Args, Debug)]
 pub struct CreateArgs {
-    #[arg(long, help = "Keypair URL of the authorized signer wallet")]
+    #[arg(long, help = "Keypair URI of the authorized signer wallet")]
     signer_keypair: String,
 
     #[arg(long)]
