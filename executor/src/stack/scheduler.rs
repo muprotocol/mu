@@ -459,7 +459,7 @@ async fn step(
                             }
                         }
 
-                        // Way to go Mr. developer! Keep those updates coming! XD
+                        // Way to go developers! Keep those updates coming! XD
                         StackDeployment::DeployedToSelfWithPendingUpdate {
                             new_stack: ref mut previous_new_stack,
                             ..
