@@ -10,6 +10,7 @@ use crate::{error::FunctionRuntimeError, Usage};
 
 use anyhow::anyhow;
 use log::{error, log, trace, Level};
+use mu_db::DbManager;
 use mu_stack::AssemblyID;
 use musdk_common::{
     incoming_message::IncomingMessage,
@@ -82,12 +83,12 @@ pub struct Running {
 
 impl InstanceState for Running {}
 
-#[derive(Debug)]
 pub struct Instance<S: InstanceState> {
     id: InstanceID,
     state: S,
     memory_limit: byte_unit::Byte,
     include_logs: bool,
+    db_manager: Box<dyn DbManager>,
 }
 
 impl Instance<Loaded> {
@@ -100,6 +101,7 @@ impl Instance<Loaded> {
         module: Module,
         memory_limit: byte_unit::Byte,
         include_logs: bool,
+        db_manager: Box<dyn DbManager>,
     ) -> Self {
         let state = Loaded {
             store,
@@ -115,6 +117,7 @@ impl Instance<Loaded> {
             state,
             memory_limit,
             include_logs,
+            db_manager,
         }
     }
 
@@ -137,6 +140,7 @@ impl Instance<Loaded> {
             state,
             memory_limit: self.memory_limit,
             include_logs: self.include_logs,
+            db_manager: self.db_manager,
         })
     }
 }
