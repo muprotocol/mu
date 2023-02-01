@@ -1,6 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use anchor_client::{
+    anchor_lang::Discriminator,
     solana_client::rpc_filter::{Memcmp, RpcFilterType},
     solana_sdk::pubkey::Pubkey,
 };
@@ -82,29 +83,29 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
 
     let mut filters = vec![
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8,
-            vec![marketplace::MuAccountType::Stack as u8],
+            0,
+            marketplace::Stack::discriminator().to_vec(),
         )),
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1,
+            8,
             user_wallet.pubkey().to_bytes().to_vec(),
         )),
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1 + 32 + 32 + 8 + 1,
+            8 + 32 + 32 + 8 + 1,
             vec![marketplace::StackStateDiscriminator::Active as u8],
         )),
     ];
 
     if let Some(region) = cmd.region {
         filters.push(RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1 + 32,
+            8 + 32,
             region.to_bytes().to_vec(),
         )));
     }
 
     if let Some(name_prefix) = cmd.name_prefix {
         filters.push(RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1 + 32 + 32 + 8 + 4 + 1 + 4,
+            8 + 32 + 32 + 8 + 4 + 1 + 4,
             name_prefix.as_bytes().to_vec(),
         )))
     }

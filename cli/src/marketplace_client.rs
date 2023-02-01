@@ -1,5 +1,5 @@
 use anchor_client::{
-    anchor_lang::{prelude::AnchorError, AccountDeserialize},
+    anchor_lang::{prelude::AnchorError, AccountDeserialize, Discriminator},
     solana_client::{
         client_error::ClientErrorKind,
         rpc_filter::{Memcmp, RpcFilterType},
@@ -8,7 +8,7 @@ use anchor_client::{
     solana_sdk::{program_pack::Pack, pubkey::Pubkey},
     Program,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use marketplace::MuState;
 use spl_token::state::Mint;
 
@@ -147,28 +147,19 @@ impl MarketplaceClient {
     }
 
     pub fn provider_name_exists(&self, name: &str) -> Result<bool> {
-        let name_len: u64 = name
-            .len()
-            .try_into()
-            .map_err(|e| anyhow!("provider name too long: {e}"))?;
-
         let filters = vec![
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-                8,
-                vec![marketplace::MuAccountType::Provider as u8],
+                0,
+                marketplace::Provider::discriminator().to_vec(),
             )),
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-                8 + 1 + 32 + 1 + 4, // 4 more bytes for the prefix length
+                8 + 32 + 1,
+                name.len().to_le_bytes().to_vec(),
+            )),
+            RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+                8 + 32 + 1 + 4,
                 name.as_bytes().to_vec(),
             )),
-            RpcFilterType::DataSize(
-                // Account type and etc
-                8 + 1 + 32 + 1
-                // name: String Size + String length
-                + 4 + name_len
-                // End of account data
-                + 1,
-            ),
         ];
 
         let accounts = self.program.accounts::<marketplace::Provider>(filters)?;

@@ -1,6 +1,7 @@
 use std::{collections::HashSet, process::exit, rc::Rc};
 
 use anchor_client::{
+    anchor_lang::Discriminator,
     solana_client::{
         client_error::{ClientError, ClientErrorKind},
         rpc_filter::{Memcmp, RpcFilterType},
@@ -254,13 +255,10 @@ pub fn get_regions_where_balance_is_below_minimum(
 
     let region_filter = vec![
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8,
-            vec![marketplace::MuAccountType::ProviderRegion as u8],
+            0,
+            marketplace::ProviderRegion::discriminator().to_vec(),
         )),
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1,
-            provider_pda.to_bytes().to_vec(),
-        )),
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(8, provider_pda.to_bytes().to_vec())),
     ];
 
     let regions = client
@@ -270,12 +268,12 @@ pub fn get_regions_where_balance_is_below_minimum(
 
     let stack_filter = vec![
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8,
-            vec![marketplace::MuAccountType::Stack as u8],
+            0,
+            marketplace::Stack::discriminator().to_vec(),
         )),
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(8 + 1, user.to_bytes().to_vec())),
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(8, user.to_bytes().to_vec())),
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1 + 32 + 32 + 8 + 1,
+            8 + 32 + 32 + 8 + 1,
             vec![marketplace::StackStateDiscriminator::Active as u8],
         )),
     ];
