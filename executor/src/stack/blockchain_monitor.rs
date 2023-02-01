@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::{Duration, SystemTime};
 use std::{collections::HashMap, marker::PhantomPinned, ops::Deref, pin::Pin};
 
-use anchor_client::anchor_lang::AccountDeserialize;
+use anchor_client::anchor_lang::{AccountDeserialize, Discriminator};
 use anchor_client::{Cluster, Program};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -195,14 +195,15 @@ pub async fn start(
     debug!("$MU has {solana_token_decimals} decimal places");
 
     debug!("Setting up stack subscription");
+
     let get_stacks_config = RpcProgramAccountsConfig {
         filters: Some(vec![
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-                8,
-                vec![marketplace::MuAccountType::Stack as u8],
+                0,
+                marketplace::Stack::discriminator().to_vec(),
             )),
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-                8 + 1 + 32,
+                8 + 32,
                 region_pda.to_bytes().to_vec(),
             )),
         ]),
@@ -248,7 +249,7 @@ pub async fn start(
         .as_mut()
         .unwrap()
         .push(RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1 + 32 + 32 + 8 + 1,
+            8 + 32 + 32 + 8 + 1,
             vec![marketplace::StackStateDiscriminator::Active as u8],
         )));
     let existing_stacks = rpc_client

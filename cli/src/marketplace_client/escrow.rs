@@ -252,16 +252,10 @@ pub fn get_regions_where_balance_is_below_minimum(
         .account::<marketplace::Provider>(*provider_pda)
         .context("Failed to fetch provider details")?;
 
-    let region_filter = vec![
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8,
-            vec![marketplace::MuAccountType::ProviderRegion as u8],
-        )),
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1,
-            provider_pda.to_bytes().to_vec(),
-        )),
-    ];
+    let region_filter = vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+        8,
+        provider_pda.to_bytes().to_vec(),
+    ))];
 
     let regions = client
         .program
@@ -269,13 +263,9 @@ pub fn get_regions_where_balance_is_below_minimum(
         .context("Failed to fetch provider regions")?;
 
     let stack_filter = vec![
+        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(8, user.to_bytes().to_vec())),
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8,
-            vec![marketplace::MuAccountType::Stack as u8],
-        )),
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(8 + 1, user.to_bytes().to_vec())),
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1 + 32 + 32 + 8 + 1,
+            8 + 32 + 32 + 8 + 1,
             vec![marketplace::StackStateDiscriminator::Active as u8],
         )),
     ];
