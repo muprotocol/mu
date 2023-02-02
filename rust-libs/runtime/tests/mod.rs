@@ -5,7 +5,6 @@ use itertools::Itertools;
 use test_context::test_context;
 
 use mu_runtime::*;
-use mu_stack::{self, AssemblyID, StackID};
 use musdk_common::{Header, Status};
 
 use crate::utils::{fixture::*, *};

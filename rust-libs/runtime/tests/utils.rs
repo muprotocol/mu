@@ -1,15 +1,13 @@
 use std::{
     borrow::Cow,
     collections::{hash_map::Entry, HashMap},
-    env,
     net::{IpAddr, Ipv4Addr},
     path::{Path, PathBuf},
     process::Command,
-    str::FromStr,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::Result;
 
 use mu_db::{
     DbManager, DbManagerImpl, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig,
@@ -38,25 +36,17 @@ pub struct MapAssemblyProvider {
     inner: HashMap<AssemblyID, AssemblyDefinition>,
 }
 
-impl MapAssemblyProvider {
-    pub fn new() -> Self {
-        Self {
-            inner: HashMap::new(),
-        }
-    }
-}
-
 #[async_trait]
 impl AssemblyProvider for MapAssemblyProvider {
     fn get(&self, id: &AssemblyID) -> Option<&AssemblyDefinition> {
         Some(self.inner.get(id).unwrap())
     }
 
-    fn add_assembly(&mut self, function: AssemblyDefinition) {
+    fn add_function(&mut self, function: AssemblyDefinition) {
         self.inner.insert(function.id.clone(), function);
     }
 
-    fn remove_assembly(&mut self, id: &AssemblyID) {
+    fn remove_function(&mut self, id: &AssemblyID) {
         self.inner.remove(id);
     }
 

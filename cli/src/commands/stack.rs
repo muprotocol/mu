@@ -8,11 +8,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser};
 use marketplace::StackState;
 
-use crate::{
-    config::Config,
-    marketplace_client, runtime,
-    template::{read_templates, MUManifest},
-};
+use crate::{config::Config, marketplace_client};
 
 #[derive(Debug, Parser)]
 pub enum Command {
