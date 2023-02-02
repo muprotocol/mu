@@ -5,6 +5,7 @@ on:
 
 env:
   LLVM_SYS_120_PREFIX: /usr/lib/llvm-12/
+  MARKETPLACE_REPO: mu 
 
 jobs:
   lint_and_test:
@@ -76,6 +77,7 @@ jobs:
       - name: Install Salona
         run: sh -c "$(curl -sSfL https://release.solana.com/stable/install)"
       - name: Install Anchor
+        if: env.MARKETPLACE_REPO == "mu"
         run: |
           cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
           avm install latest
