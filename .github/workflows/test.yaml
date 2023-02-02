@@ -5,7 +5,7 @@ on:
 
 env:
   LLVM_SYS_120_PREFIX: /usr/lib/llvm-12/
-  RUST_BACKTRACE: 1
+  RUST_BACKTRACE: full
 
 jobs:
   lint_and_test:
