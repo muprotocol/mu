@@ -17,7 +17,7 @@ macro_rules! query_struct {
 query_struct!(Put<'a>{
     key: Cow<'a, [u8]>,
     value: Cow<'a, [u8]>,
-    is_atomic: u8
+    is_atomic: bool
 });
 
 query_struct!(Get<'a>{
@@ -26,7 +26,7 @@ query_struct!(Get<'a>{
 
 query_struct!(Delete<'a>{
     key: Cow<'a, [u8]>,
-    is_atomic: u8
+    is_atomic: bool
 });
 
 query_struct!(DeleteByPrefix<'a>{
