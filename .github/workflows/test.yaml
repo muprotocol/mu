@@ -5,7 +5,7 @@ on:
 
 env:
   LLVM_SYS_120_PREFIX: /usr/lib/llvm-12/
-  MARKETPLACE_REPO: mu 
+  RUST_BACKTRACE: 1
 
 jobs:
   lint_and_test:
@@ -83,10 +83,13 @@ jobs:
           avm install latest
           avm use latest
       - name: Install npm dependencies
+        if: matrix.dir == 'marketplace'
         run: npm install
       - name: Build smart contract
+        if: matrix.dir == 'marketplace'
         run: anchor build
       - name: Run anchor tests
+        if: matrix.dir == 'marketplace'
         run: anchor run test
       - name: Save dependencies cache
         uses: actions/cache@v3
