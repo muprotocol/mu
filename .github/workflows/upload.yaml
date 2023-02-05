@@ -2,7 +2,7 @@ name: Build and Upload on NextCloud
 
 on:
   push:
-
+    
 env:
   LLVM_SYS_120_PREFIX: /usr/lib/llvm-12/
   RUST_BACKTRACE: full
@@ -10,6 +10,10 @@ env:
 jobs:
   lint_and_test:
     runs-on: [self-hosted, linux, X64]
+    strategy:
+      matrix:
+        dir:
+          - executor
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -23,7 +27,6 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            target/
             executor/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       
@@ -42,12 +45,12 @@ jobs:
 
       - name: Check style
         run: cargo fmt -- --check
+        working-directory: ${{ matrix.dir }}
 
       - name: Build Release
         if: success()
         run: cargo build --release
-        env:
-          RUST_BACKTRACE: 1
+        working-directory: ${{ matrix.dir }}
 
       - name: Nextcloud Artifact
         if: success()
@@ -55,8 +58,8 @@ jobs:
         env:
           ARTIFACT_KEEP_RELEASES: 2
         with:
-          name: 'artifact'                                  
-          path: 'executor/target/release/mu-executor'                                
+          name: 'my-artifact'                                  
+          path: 'executor/**/**/mu-executor'                                
           nextcloud-url: 'https://nextcloud.030labs.org'        
           nextcloud-username: ${{ secrets.NEXTCLOUD_USERNAME }} 
           nextcloud-password: ${{ secrets.NEXTCLOUD_PASSWORD }}
@@ -70,6 +73,5 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            target/
             executor/target/ 
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
