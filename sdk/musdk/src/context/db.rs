@@ -37,18 +37,23 @@ pub struct DbHandle<'a> {
 }
 
 impl<'a> DbHandle<'a> {
-    pub fn table<'b: 'a>(&'b mut self, table: &'b str) -> TableHandle {
-        TableHandle { db: self, table }
+    pub fn table<'b: 'a>(&'b mut self, table: &'b str) -> Result<TableHandle> {
+        let is_table_exist = self.table_list("")?.contains(&table.into());
+        if is_table_exist {
+            Ok(TableHandle { db: self, table })
+        } else {
+            Err(Error::DatabaseError("Table dose not exist".into()))
+        }
     }
 
-    fn request(&mut self, req: OM) -> Result<IM<'a>> {
+    fn request(&mut self, req: OM) -> Result<IM<'static>> {
         self.context.write_message(req)?;
         self.context.read_message()
     }
 
-    pub fn batch_put<T: Into<&'a [u8]>>(
+    pub fn batch_put<'b, T: Into<&'b [u8]>>(
         &mut self,
-        table_key_value_triples: Vec<(&'a str, T, T)>,
+        table_key_value_triples: Vec<(&'b str, T, T)>,
         is_atomic: bool,
     ) -> Result<()> {
         let req = BatchPut {
@@ -68,73 +73,61 @@ impl<'a> DbHandle<'a> {
         resp_to_tuple_type(resp, "BatchPut")
     }
 
-    pub fn batch_get<T: Into<&'a [u8]>>(
+    pub fn batch_get<'b, T: Into<&'b [u8]>>(
         &mut self,
-        table_key_tuples: Vec<(&'a str, T)>,
+        table_key_tuples: Vec<(&'b str, T)>,
     ) -> Result<Vec<(Key, Value)>> {
         let req = BatchGet {
-            table_key_tuples: table_key_tuples
-                .into_iter()
-                .map(into_tuple_cow_u8)
-                .collect(),
+            table_key_tuples: vec_tuple_cow_u8_from(table_key_tuples),
         };
         let resp = self.request(OM::BatchGet(req))?;
         resp_to_vec_tuple_blob(resp, "BatchGet")
     }
 
-    pub fn batch_delete<T: Into<&'a [u8]>>(
+    pub fn batch_delete<'b, T: Into<&'b [u8]>>(
         &mut self,
-        table_key_tuples: Vec<(&'a str, T)>,
+        table_key_tuples: Vec<(&'b str, T)>,
     ) -> Result<()> {
         let req = BatchDelete {
-            table_key_tuples: table_key_tuples
-                .into_iter()
-                .map(into_tuple_cow_u8)
-                .collect(),
+            table_key_tuples: vec_tuple_cow_u8_from(table_key_tuples),
         };
         let resp = self.request(OM::BatchDelete(req))?;
         resp_to_tuple_type(resp, "BatchDelete")
     }
 
-    pub fn batch_scan<T: Into<&'a [u8]>>(
+    pub fn batch_scan<'b, T: Into<&'b [u8]>>(
         &mut self,
-        table_key_prefixe_tuples: Vec<(&'a str, T)>,
+        table_key_prefixe_tuples: Vec<(&'b str, T)>,
         each_limit: u32,
     ) -> Result<Vec<(Key, Value)>> {
         let req = BatchScan {
-            table_key_prefixe_tuples: table_key_prefixe_tuples
-                .into_iter()
-                .map(into_tuple_cow_u8)
-                .collect(),
+            table_key_prefixe_tuples: vec_tuple_cow_u8_from(table_key_prefixe_tuples),
             each_limit,
         };
         let resp = self.request(OM::BatchScan(req))?;
         resp_to_vec_tuple_blob(resp, "BatchScan")
     }
 
-    pub fn batch_scan_keys<T: Into<&'a [u8]>>(
+    pub fn batch_scan_keys<'b, T: Into<&'b [u8]>>(
         &mut self,
-        table_key_prefixe_tuples: Vec<(&'a str, T)>,
+        table_key_prefixe_tuples: Vec<(&'b str, T)>,
         each_limit: u32,
     ) -> Result<Vec<Key>> {
         let req = BatchScanKeys {
-            table_key_prefixe_tuples: table_key_prefixe_tuples
-                .into_iter()
-                .map(into_tuple_cow_u8)
-                .collect(),
+            table_key_prefixe_tuples: vec_tuple_cow_u8_from(table_key_prefixe_tuples),
             each_limit,
         };
         let resp = self.request(OM::BatchScanKeys(req))?;
         resp_to_vec_blob(resp, "BatchScan")
     }
 
-    pub fn table_list(&mut self, table_prefix: &'a str) -> Result<Vec<TableName>> {
+    pub fn table_list<'b>(&mut self, table_prefix: &'b str) -> Result<Vec<TableName>> {
         let req = TableList {
             table_prefix: Cow::Borrowed(table_prefix.as_bytes()),
         };
         let resp = self.request(OM::TableList(req))?;
-        resp_to_vec_blob(resp, "TableList")
-            .map(Vec::into_iter)?
+        resp_to_vec_blob(resp, "TableList")?
+            .into_iter()
             .map(String::from_utf8)
             .collect::<std::result::Result<_, _>>()
             .map_err(|e| Error::DatabaseError(e.to_string()))
@@ -147,7 +140,7 @@ pub struct TableHandle<'a> {
 }
 
 impl<'a> TableHandle<'a> {
-    pub fn put<T: Into<&'a [u8]>>(&mut self, key: T, value: T, is_atomic: bool) -> Result<()> {
+    pub fn put<'b, T: Into<&'b [u8]>>(&mut self, key: T, value: T, is_atomic: bool) -> Result<()> {
         let req = Put {
             table: Cow::Borrowed(self.table.as_bytes()),
             key: Cow::Borrowed(key.into()),
@@ -158,7 +151,7 @@ impl<'a> TableHandle<'a> {
         resp_to_tuple_type(resp, "Put")
     }
 
-    pub fn get(&mut self, key: impl Into<&'a [u8]>) -> Result<Option<Value>> {
+    pub fn get<'b>(&mut self, key: impl Into<&'b [u8]>) -> Result<Option<Value>> {
         let req = Get {
             table: Cow::Borrowed(self.table.as_bytes()),
             key: Cow::Borrowed(key.into()),
@@ -167,7 +160,7 @@ impl<'a> TableHandle<'a> {
         resp_to_option_blob(resp, "Get")
     }
 
-    pub fn delete(&mut self, key: impl Into<&'a [u8]>, is_atomic: bool) -> Result<()> {
+    pub fn delete<'b>(&mut self, key: impl Into<&'b [u8]>, is_atomic: bool) -> Result<()> {
         let req = Delete {
             table: Cow::Borrowed(self.table.as_bytes()),
             key: Cow::Borrowed(key.into()),
@@ -177,7 +170,7 @@ impl<'a> TableHandle<'a> {
         resp_to_tuple_type(resp, "Delete")
     }
 
-    pub fn delete_by_prefix(&mut self, key_prefix: impl Into<&'a [u8]>) -> Result<()> {
+    pub fn delete_by_prefix<'b>(&mut self, key_prefix: impl Into<&'b [u8]>) -> Result<()> {
         let req = DeleteByPrefix {
             table: Cow::Borrowed(self.table.as_bytes()),
             key_prefix: Cow::Borrowed(key_prefix.into()),
@@ -186,9 +179,9 @@ impl<'a> TableHandle<'a> {
         resp_to_tuple_type(resp, "DeleteByPrefix")
     }
 
-    pub fn scan(
+    pub fn scan<'b>(
         &mut self,
-        key_prefix: impl Into<&'a [u8]>,
+        key_prefix: impl Into<&'b [u8]>,
         limit: u32,
     ) -> Result<Vec<(Key, Value)>> {
         let req = Scan {
@@ -200,7 +193,11 @@ impl<'a> TableHandle<'a> {
         resp_to_vec_tuple_blob(resp, "Scan")
     }
 
-    pub fn scan_keys(&mut self, key_prefix: impl Into<&'a [u8]>, limit: u32) -> Result<Vec<Key>> {
+    pub fn scan_keys<'b>(
+        &mut self,
+        key_prefix: impl Into<&'b [u8]>,
+        limit: u32,
+    ) -> Result<Vec<Key>> {
         let req = ScanKeys {
             table: Cow::Borrowed(self.table.as_bytes()),
             key_prefix: Cow::Borrowed(key_prefix.into()),
@@ -210,7 +207,7 @@ impl<'a> TableHandle<'a> {
         resp_to_vec_blob(resp, "ScanKeys")
     }
 
-    pub fn compare_and_swap<T: Into<&'a [u8]>>(
+    pub fn compare_and_swap<'b, T: Into<&'b [u8]>>(
         &mut self,
         key: T,
         new_value: T,
@@ -279,6 +276,12 @@ fn resp_tail_to_err<T>(tail: IM, kind_name: &'static str) -> Result<T> {
     }
 }
 
-fn into_tuple_cow_u8<'a>(x: (&'a str, impl Into<&'a [u8]>)) -> (Cow<'_, [u8]>, Cow<'_, [u8]>) {
-    (Cow::Borrowed(x.0.as_bytes()), Cow::Borrowed(x.1.into()))
+fn vec_tuple_cow_u8_from<'a, T>(pairs: Vec<(&'a str, T)>) -> Vec<(Cow<[u8]>, Cow<[u8]>)>
+where
+    T: Into<&'a [u8]>,
+{
+    let into_tuple_cow_u8 =
+        |y: (&'a str, T)| (Cow::Borrowed(y.0.as_bytes()), Cow::Borrowed(y.1.into()));
+
+    pairs.into_iter().map(into_tuple_cow_u8).collect()
 }
