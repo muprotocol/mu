@@ -59,6 +59,7 @@ jobs:
       - name: Build Release
         if: success()
         run: cargo build --release
+        working-directory: ${{ matrix.dir }}
 
       - name: Upload to Nextcloud
         if: success()
