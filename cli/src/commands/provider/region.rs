@@ -11,7 +11,6 @@ pub enum Command {
 }
 
 //TODO: Add json or yaml support input string or file support
-// TODO: actually, is it even a good idea to take this many args on the command line?
 #[derive(Args, Debug)]
 pub struct CreateArgs {
     #[arg(long, help = "Region name")]

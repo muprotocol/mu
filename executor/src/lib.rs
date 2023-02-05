@@ -3,11 +3,7 @@ pub mod network;
 mod request_routing;
 pub mod stack;
 
-use std::{
-    process,
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{process, sync::Arc, time::SystemTime};
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
@@ -59,6 +55,8 @@ pub async fn run() -> Result<()> {
         scheduler_config,
         blockchain_monitor_config,
     ) = config::initialize_config()?;
+
+    let stabilization_wait_time = *gossip_config.network_stabilization_wait_time;
 
     let my_node = NodeAddress {
         address: connection_manager_config.listen_address,
@@ -178,7 +176,6 @@ pub async fn run() -> Result<()> {
         },
     );
 
-    // TODO: no notification channel for now, requests are sent straight to runtime
     let connection_manager_clone = connection_manager.clone();
     let gossip_clone = gossip.clone();
     let rpc_handler_clone = rpc_handler.clone();
@@ -293,10 +290,12 @@ pub async fn run() -> Result<()> {
         Result::<()>::Ok(())
     });
 
-    // TODO make the wait configurable
     {
-        info!("Waiting 4 seconds for node discovery to complete");
-        tokio::time::sleep(Duration::from_secs(4)).await;
+        info!(
+            "Waiting {} seconds for gossip state to stabilize",
+            stabilization_wait_time.as_secs()
+        );
+        tokio::time::sleep(stabilization_wait_time).await;
 
         info!("Will start to schedule stacks now");
         scheduler_clone.ready_to_schedule_stacks().await?;

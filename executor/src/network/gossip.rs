@@ -115,6 +115,7 @@ pub struct GossipConfig {
     pub assume_dead_after_missed_heartbeats: u32,
     pub max_peers: usize,
     pub peer_update_interval: ConfigDuration,
+    pub network_stabilization_wait_time: ConfigDuration,
 }
 
 #[derive(Deserialize)]

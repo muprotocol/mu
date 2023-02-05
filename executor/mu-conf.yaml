@@ -20,6 +20,7 @@ gossip:
   max_peers: 6
   peer_update_interval: 10s
   liveness_check_interval: 1s
+  network_stabilization_interval: 5s
 initial_cluster:
   # TODO: allow hostnames
   - address: 127.0.0.1
