@@ -11,7 +11,6 @@ jobs:
       matrix:
         dir:
           - executor
-          - cli
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -64,6 +63,8 @@ jobs:
       - name: Upload to Nextcloud
         if: success()
         uses: trympet/nextcloud-artifacts-action@v2
+        with:
+          path: ./target/release/mu-executor
         env:
           NC_URL: 'https://nextcloud.030labs.org'
           NC_USERNAME: ${{ secrets.NEXTCLOUD_USERNAME }}
