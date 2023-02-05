@@ -1,9 +1,14 @@
-name: Build CLI, Executor and Upload on NextCloud
+name: Build and Upload on NextCloud
+
 on:
-  pull_request:
+  push:
+    branches:
+      - '*'
+
 env:
   LLVM_SYS_120_PREFIX: /usr/lib/llvm-12/
   RUST_BACKTRACE: full
+
 jobs:
   lint_and_test:
     runs-on: [self-hosted, linux, X64]
@@ -24,8 +29,8 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
+            ~/docker/actions-runner/_work/mu/mu/
             target/
-            cli/target/
             executor/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       
@@ -41,6 +46,7 @@ jobs:
           override: true
           components: rustfmt, clippy
           target: wasm32-wasi
+
       - name: Check style
         run: cargo fmt -- --check
         working-directory: ${{ matrix.dir }}
@@ -59,20 +65,21 @@ jobs:
         if: success()
         run: cargo build --release
         working-directory: ${{ matrix.dir }}
+        env:
+          RUST_BACKTRACE: 1
 
-      - name: Upload to Nextcloud
+
+      - name: Nextcloud Artifact
         if: success()
         uses: trympet/nextcloud-artifacts-action@v2
-        with:
-          path: ./target/release/mu-executor
         env:
-          NC_URL: 'https://nextcloud.030labs.org'
-          NC_USERNAME: ${{ secrets.NEXTCLOUD_USERNAME }}
-          NC_PASSWORD: ${{ secrets.NEXTCLOUD_PASSWORD }}
-          ARTIFACT_DIRECTORY: 'target/release'
-          ARTIFACT_PATTERN: '*'
-          ARTIFACT_PREFIX: 'releases/project'
-          MAX_ARTIFACTS: '2'
+          ARTIFACT_KEEP_RELEASES: 2
+        with:
+          name: 'my-artifact'                                  
+          path: './target/release/'                                  
+          nextcloud-url: 'https://nextcloud.030labs.org'        
+          nextcloud-username: ${{ secrets.NEXTCLOUD_USERNAME }} 
+          nextcloud-password: ${{ secrets.NEXTCLOUD_PASSWORD }}
 
       - name: Save dependencies cache
         uses: actions/cache@v3
@@ -86,4 +93,5 @@ jobs:
             target/
             cli/target/
             executor/target/ 
+            ~/docker/actions-runner/_work/mu/mu/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
