@@ -64,7 +64,7 @@ jobs:
           ARTIFACT_KEEP_RELEASES: 2
         with:
           name: 'my-artifact'                                  
-          path: 'executor/target/release/mu-executor'                                
+          path: '${{ matrix.dir }}/target/release/mu-executor'                                
           nextcloud-url: 'https://nextcloud.030labs.org'        
           nextcloud-username: ${{ secrets.NEXTCLOUD_USERNAME }} 
           nextcloud-password: ${{ secrets.NEXTCLOUD_PASSWORD }}
