@@ -1,14 +1,11 @@
 name: Build CLI, Executor and Upload on NextCloud
-
 on:
   push:
     branches:
       - '*'
-
 env:
   LLVM_SYS_120_PREFIX: /usr/lib/llvm-12/
   RUST_BACKTRACE: full
-
 jobs:
   lint_and_test:
     runs-on: [self-hosted, linux, X64]
