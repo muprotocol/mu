@@ -60,12 +60,11 @@ jobs:
       - name: Nextcloud Artifact
         if: success()
         uses: trympet/nextcloud-artifacts-action@v2
-        working-directory: ${{ matrix.dir }}
         env:
           ARTIFACT_KEEP_RELEASES: 2
         with:
           name: 'my-artifact'                                  
-          path: './target/release/mu-executor'                                  
+          path: 'executor/target/release/mu-executor/'                                  
           nextcloud-url: 'https://nextcloud.030labs.org'        
           nextcloud-username: ${{ secrets.NEXTCLOUD_USERNAME }} 
           nextcloud-password: ${{ secrets.NEXTCLOUD_PASSWORD }}
