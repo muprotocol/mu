@@ -16,10 +16,10 @@ jobs:
           - executor
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@master
       
       - name: Restore dependencies cache
-        uses: actions/cache@v3
+        uses: actions/cache@master
         if: success()
         with:
           path: |
