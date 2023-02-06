@@ -1,4 +1,7 @@
 [workspace]
 members = ["programs/*"]
 
-exclude = ["scripts/test-stack/test-function"]
+exclude = [
+    "scripts/test-stack/test-function",
+    "scripts/test-stack/test-function-v2",
+]

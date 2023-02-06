@@ -133,9 +133,33 @@ impl Config {
             .parse::<Self>()
     }
 
-    // TODO: I feel we can support all types of keypairs (not just files) if we're smart here.
-    // TODO: read solana cli sources to see how they handle the keypair URL.
     pub fn get_signer(&self) -> Result<Rc<dyn Signer>> {
+        let signer_ref = self.signer.borrow();
+        match signer_ref.as_ref() {
+            Some(x) => Ok(x.clone()),
+            None => {
+                // Drop the ref so we can re-borrow down below
+                drop(signer_ref);
+
+                let (signer, wallet_manager) = Self::read_keypair_from_url(
+                    self.keypair.as_ref(),
+                    self.skip_seed_phrase_validation,
+                    self.confirm_key,
+                )?;
+
+                *self.signer.borrow_mut() = Some(signer.clone());
+                *self.wallet_manager.borrow_mut() = wallet_manager;
+                Ok(signer)
+            }
+        }
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn read_keypair_from_url(
+        url: Option<&String>,
+        skip_seed_phrase_validation: bool,
+        confirm_key: bool,
+    ) -> Result<(Rc<dyn Signer>, Option<Arc<RemoteWalletManager>>)> {
         fn read_default_keypair_file() -> Result<Rc<dyn Signer>> {
             let default_keypair_path = shellexpand::tilde("~/.config/solana/id.json");
             match fs::metadata(&*default_keypair_path) {
@@ -149,37 +173,17 @@ impl Config {
             }
         }
 
-        let signer_ref = self.signer.borrow();
-        match signer_ref.as_ref() {
-            Some(x) => Ok(x.clone()),
-            None => {
-                // Drop the ref so we can re-borrow down below
-                drop(signer_ref);
-
-                let (signer, wallet_manager) = {
-                    match &self.keypair {
-                        None => read_default_keypair_file().map(|x| (x, None)),
-                        Some(keypair) => {
-                            let mut wallet_manager = None;
-                            let config = signer::SignerFromPathConfig {
-                                skip_seed_phrase_validation: self.skip_seed_phrase_validation,
-                                confirm_key: self.confirm_key,
-                            };
-                            signer::signer_from_path(
-                                keypair.as_str(),
-                                "keypair",
-                                &mut wallet_manager,
-                                &config,
-                            )
-                            .context("Failed to read keypair")
-                            .map(|b| (b.into(), wallet_manager))
-                        }
-                    }
-                }?;
-
-                *self.signer.borrow_mut() = Some(signer.clone());
-                *self.wallet_manager.borrow_mut() = wallet_manager;
-                Ok(signer)
+        match &url {
+            None => read_default_keypair_file().map(|x| (x, None)),
+            Some(keypair) => {
+                let mut wallet_manager = None;
+                let config = signer::SignerFromPathConfig {
+                    skip_seed_phrase_validation,
+                    confirm_key,
+                };
+                signer::signer_from_path(keypair.as_str(), "keypair", &mut wallet_manager, &config)
+                    .context("Failed to read keypair")
+                    .map(|b| (b.into(), wallet_manager))
             }
         }
     }

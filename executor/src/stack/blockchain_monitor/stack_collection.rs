@@ -194,6 +194,8 @@ impl<'a> VacantOwnerEntry<'a> {
 }
 
 impl<'a> OccupiedOwnerEntry<'a> {
+    /// Returns true if the stack was previously unknown *or* it's a newer version
+    /// of a previously known stack.
     pub(super) fn add_stack(&mut self, stack: StackWithMetadata) -> bool {
         let stack_id = stack.id();
 
@@ -206,14 +208,20 @@ impl<'a> OccupiedOwnerEntry<'a> {
         }
 
         if self.0.stacks.contains_key(&stack_id) {
-            return false;
+            let existing = self.0.stacks.get(&stack_id).unwrap();
+            if existing.revision >= stack.revision {
+                return false;
+            }
+
+            self.0.stacks.insert(stack_id, stack);
+            true
+        } else {
+            let owner_data = self.0.owners.get_mut(&self.1).unwrap();
+            self.0.stacks.insert(stack_id, stack);
+            owner_data.stacks.insert(stack_id);
+
+            true
         }
-
-        let owner_data = self.0.owners.get_mut(&self.1).unwrap();
-        self.0.stacks.insert(stack_id, stack);
-        owner_data.stacks.insert(stack_id);
-
-        true
     }
 
     // We remove any and all info about owners once all their stacks are removed.

@@ -3,7 +3,7 @@ use mu_runtime::{AssemblyDefinition, Runtime};
 use reqwest::Url;
 use thiserror::Error;
 
-use mu_db::DbClient;
+use mu_db::DbManager;
 
 use mu_stack::{AssemblyID, HttpMethod, Stack, StackID};
 
@@ -50,15 +50,23 @@ pub enum StackDeploymentError {
 
     #[error("Failed to deploy databases due to: {0}")]
     FailedToDeployDatabases(anyhow::Error),
+
+    #[error("Failed to connect to muDB: {0}")]
+    FailedToConnectToDatabase(anyhow::Error),
 }
 
 pub(super) async fn deploy(
     id: StackID,
     stack: Stack,
     runtime: &dyn Runtime,
-    db_service: &dyn DbClient,
+    db: &dyn DbManager,
 ) -> Result<(), StackDeploymentError> {
     let stack = validate(stack).map_err(StackDeploymentError::ValidationError)?;
+
+    let db_client = db
+        .make_client()
+        .await
+        .map_err(StackDeploymentError::FailedToConnectToDatabase)?;
 
     // TODO: handle partial deployments
 
@@ -104,7 +112,7 @@ pub(super) async fn deploy(
             })?;
         tables.push(table_name);
     }
-    db_service
+    db_client
         .update_stack_tables(id, tables)
         .await
         .map_err(|e| StackDeploymentError::FailedToDeployDatabases(anyhow::anyhow!("{e}")))?;
@@ -141,6 +149,15 @@ async fn download_function(url: Url) -> Result<bytes::Bytes, StackDeploymentErro
         .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))
 }
 
+pub(super) async fn undeploy_stack(id: StackID, runtime: &dyn Runtime) -> anyhow::Result<()> {
+    // TODO: have a policy for deleting user data from the database
+    // It should handle deleted and suspended stacks differently
+
+    runtime.remove_all_functions(id).await?;
+
+    Ok(())
+}
+
 pub(super) async fn deploy_gateways(
     id: StackID,
     stack: &Stack,
@@ -174,4 +191,11 @@ pub(super) async fn deploy_gateways(
         .unwrap_or(());
 
     Ok(())
+}
+
+pub(super) async fn undeploy_gateways(
+    id: StackID,
+    gateway_manager: &dyn GatewayManager,
+) -> anyhow::Result<()> {
+    gateway_manager.delete_all_gateways(id).await
 }

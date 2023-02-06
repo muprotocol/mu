@@ -32,19 +32,25 @@ impl AssemblyProvider for DefaultAssemblyProvider {
             .and_then(|f| f.get(&id.assembly_name))
     }
 
-    fn add_function(&mut self, function: super::types::AssemblyDefinition) {
-        let id = &function.id;
+    fn add_function(&mut self, assembly: super::types::AssemblyDefinition) {
+        let id = &assembly.id;
         let stack_functions = self
             .functions
             .entry(id.stack_id)
             .or_insert_with(HashMap::new);
-        stack_functions.insert(id.assembly_name.clone(), function);
+        stack_functions.insert(id.assembly_name.clone(), assembly);
     }
 
     fn remove_function(&mut self, id: &AssemblyID) {
         self.functions
             .get_mut(&id.stack_id)
             .and_then(|f| f.remove(&id.assembly_name));
+    }
+
+    fn remove_all_functions(&mut self, stack_id: &StackID) -> Option<Vec<String>> {
+        self.functions
+            .remove(stack_id)
+            .map(|map| map.into_keys().collect::<Vec<_>>())
     }
 
     fn get_function_names(&self, stack_id: &StackID) -> Vec<String> {

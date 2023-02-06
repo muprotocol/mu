@@ -1,4 +1,5 @@
 use anchor_client::{
+    anchor_lang::{prelude::AnchorError, AccountDeserialize},
     solana_client::{
         client_error::ClientErrorKind,
         rpc_filter::{Memcmp, RpcFilterType},
@@ -7,7 +8,7 @@ use anchor_client::{
     solana_sdk::{program_pack::Pack, pubkey::Pubkey},
     Program,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use marketplace::MuState;
 use spl_token::state::Mint;
 
@@ -89,7 +90,7 @@ impl MarketplaceClient {
         escrow_pda
     }
 
-    pub fn get_stack_pda(&self, user_wallet: Pubkey, region_pda: Pubkey, seed: u64) -> Pubkey {
+    pub fn get_stack_pda(&self, user_wallet: &Pubkey, region_pda: &Pubkey, seed: u64) -> Pubkey {
         let (stack_pda, _) = Pubkey::find_program_address(
             &[
                 b"stack",
@@ -116,34 +117,45 @@ impl MarketplaceClient {
         }
     }
 
+    pub fn try_account<T: AccountDeserialize>(&self, pubkey: &Pubkey) -> Result<Option<T>> {
+        match self.program.rpc().get_account(pubkey) {
+            Ok(account) => match T::try_deserialize(&mut account.data.as_ref()) {
+                Ok(x) => Ok(Some(x)),
+
+                Err(anchor_client::anchor_lang::prelude::Error::AnchorError(AnchorError {
+                    // 3002 is "AccountDiscriminatorMismatch", which means we hit the wrong account type
+                    error_code_number: 3002,
+                    ..
+                })) => Ok(None),
+
+                Err(e) => Err(e.into()),
+            },
+            Err(client_error) => match client_error.kind {
+                ClientErrorKind::RpcError(RpcError::ForUser(s))
+                    if s.contains("AccountNotFound") =>
+                {
+                    Ok(None)
+                }
+                _ => Err(client_error.into()),
+            },
+        }
+    }
+
     pub fn get_token_account_balance(&self, pubkey: &Pubkey) -> Result<u64> {
         let info = self.program.rpc().get_token_account_balance(pubkey)?;
         Ok(info.amount.parse()?)
     }
 
     pub fn provider_name_exists(&self, name: &str) -> Result<bool> {
-        let name_len: u64 = name
-            .len()
-            .try_into()
-            .map_err(|e| anyhow!("provider name too long: {e}"))?;
-
         let filters = vec![
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-                8,
-                vec![marketplace::MuAccountType::Provider as u8],
+                8 + 32 + 1,
+                name.len().to_le_bytes().to_vec(),
             )),
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-                8 + 1 + 32 + 1 + 4, // 4 more bytes for the prefix length
+                8 + 32 + 1 + 4,
                 name.as_bytes().to_vec(),
             )),
-            RpcFilterType::DataSize(
-                // Account type and etc
-                8 + 1 + 32 + 1
-                // name: String Size + String length
-                + 4 + name_len
-                // End of account data
-                + 1,
-            ),
         ];
 
         let accounts = self.program.accounts::<marketplace::Provider>(filters)?;

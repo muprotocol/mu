@@ -25,6 +25,7 @@ pub trait GatewayManager: Clone + Send + Sync {
     async fn get_deployed_gateway_names(&self, stack_id: StackID) -> Result<Option<Vec<String>>>;
     async fn deploy_gateways(&self, stack_id: StackID, gateways: Vec<Gateway>) -> Result<()>;
     async fn delete_gateways(&self, stack_id: StackID, gateways: Vec<String>) -> Result<()>;
+    async fn delete_all_gateways(&self, stack_id: StackID) -> Result<()>;
     async fn stop(&self) -> Result<()>;
 }
 
@@ -83,6 +84,11 @@ impl GatewayManager for GatewayManagerImpl {
                 gateways.remove(&name);
             }
         }
+        Ok(())
+    }
+
+    async fn delete_all_gateways(&self, stack_id: StackID) -> Result<()> {
+        self.gateways.write().await.remove(&stack_id);
         Ok(())
     }
 
