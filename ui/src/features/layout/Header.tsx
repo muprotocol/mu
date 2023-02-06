@@ -1,6 +1,6 @@
 import Image from "next/image";
 
-
+import {Button} from "primereact/button"
 import { MuLogo } from "@/components/muLogo/muLogo";
 
 import Drawer from "@/features/layout/Drawer/Drawer/Drawer";
@@ -13,9 +13,7 @@ export default function Header() {
   return (
     <header className="flex! container mx-auto flex items-center gap-5 p-5">
       <Drawer isOpen={isOpen} closeDrawer={closeDrawer} />
-      <button className="lg:hidden" onClick={openDrawer}>
-          <p>lol</p>
-      </button>
+      <Button icon="pi pi-bars" className="p-button-rounded p-button-text lg:!hidden" onClick={openDrawer} />
       <div>
         <MuLogo />
       </div>
