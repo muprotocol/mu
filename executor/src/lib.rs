@@ -13,7 +13,6 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use log::*;
 use mailbox_processor::NotificationChannel;
-use mu_db::{DbManager, DbManagerImpl};
 use mu_runtime::Runtime;
 use network::rpc_handler::{self, RpcHandler, RpcRequestHandler};
 use stack::{
@@ -52,7 +51,7 @@ pub async fn run() -> Result<()> {
         connection_manager_config,
         gossip_config,
         mut known_nodes_config,
-        tikv_config,
+        db_config,
         gateway_manager_config,
         log_config,
         runtime_config,
@@ -145,9 +144,8 @@ pub async fn run() -> Result<()> {
     .context("Failed to start gossip")?;
 
     let function_provider = mu_runtime::providers::DefaultAssemblyProvider::new();
-    // TODO: don't leak this implementation
-    // @Hossein: remove this when implementing the external TiKV feature
-    let database_manager = DbManagerImpl::new_with_embedded_cluster(
+
+    let database_manager = mu_db::start(
         mu_db::NodeAddress {
             address: my_node.address,
             port: my_node.port,
@@ -160,12 +158,13 @@ pub async fn run() -> Result<()> {
                 pd_port: c.pd_port,
             })
             .collect(),
-        tikv_config,
+        db_config,
     )
     .await?;
+
     let (runtime, mut runtime_notification_receiver) = mu_runtime::start(
         Box::new(function_provider),
-        Box::new(database_manager.clone()),
+        database_manager.clone(),
         runtime_config,
     )
     .await
@@ -212,7 +211,7 @@ pub async fn run() -> Result<()> {
         scheduler_notification_channel,
         runtime.clone(),
         gateway_manager.clone(),
-        Box::new(database_manager.clone()),
+        database_manager.clone(),
     );
 
     *scheduler_ref.write().await = Some(scheduler.clone());
