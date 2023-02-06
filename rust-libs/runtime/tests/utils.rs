@@ -9,14 +9,9 @@ use std::{
 
 use anyhow::Result;
 
-use mu_db::{
-    DbManager, DbManagerImpl, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig,
-};
-use musdk_common::Header;
-
 use async_trait::async_trait;
 
-use mu_db::{DbManager, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig};
+use mu_db::{DbManager, IpAndPort, PdConfig, TikvConfig, TikvRunnerConfig};
 use mu_runtime::{
     start, AssemblyDefinition, AssemblyProvider, Notification, Runtime, RuntimeConfig, Usage,
 };
@@ -194,54 +189,27 @@ pub mod fixture {
     impl AsyncTestContext for DBManagerFixture {
         async fn setup() -> Self {
             let data_dir = TempDir::setup();
-            let localhost = IpAddr::V4(Ipv4Addr::LOCALHOST);
-
-            let node_address = NodeAddress {
-                address: localhost,
-                port: 12803,
+            let addr = |port| IpAndPort {
+                address: IpAddr::V4(Ipv4Addr::LOCALHOST),
+                port,
             };
 
             let tikv_config = TikvRunnerConfig {
                 pd: PdConfig {
-                    peer_url: IpAndPort {
-                        address: localhost,
-                        port: 12385,
-                    },
-                    client_url: IpAndPort {
-                        address: localhost,
-                        port: 12386,
-                    },
-                    data_dir: data_dir
-                        .get_rand_sub_dir(Some("pd_data_dir"))
-                        .display()
-                        .to_string(),
-                    log_file: Some(
-                        data_dir
-                            .get_rand_sub_dir(Some("pd_log"))
-                            .display()
-                            .to_string(),
-                    ),
+                    peer_url: addr(12385),
+                    client_url: addr(12386),
+                    data_dir: data_dir.get_rand_sub_dir(Some("pd_data_dir")),
+                    log_file: Some(data_dir.get_rand_sub_dir(Some("pd_log"))),
                 },
                 node: TikvConfig {
-                    cluster_url: IpAndPort {
-                        address: localhost,
-                        port: 20163,
-                    },
-                    data_dir: data_dir
-                        .get_rand_sub_dir(Some("tikv_data_dir"))
-                        .display()
-                        .to_string(),
-                    log_file: Some(
-                        data_dir
-                            .get_rand_sub_dir(Some("tikv_log"))
-                            .display()
-                            .to_string(),
-                    ),
+                    cluster_url: addr(20163),
+                    data_dir: data_dir.get_rand_sub_dir(Some("tikv_data_dir")),
+                    log_file: Some(data_dir.get_rand_sub_dir(Some("tikv_log"))),
                 },
             };
 
             Self {
-                db_manager: mu_db::new_with_embedded_cluster(node_address, vec![], tikv_config)
+                db_manager: mu_db::new_with_embedded_cluster(addr(12803), vec![], tikv_config)
                     .await
                     .unwrap(),
 
