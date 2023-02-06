@@ -43,6 +43,10 @@ jobs:
           components: rustfmt, clippy
           target: wasm32-wasi
 
+      - name: Install Docker 
+        uses: docker-practice/actions-setup-docker@master
+        timeout-minutes: 12
+
       - name: Check style
         run: cargo fmt -- --check
         working-directory: ${{ matrix.dir }}
