@@ -11,7 +11,7 @@ use std::{
     ops::{Add, AddAssign},
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::anyhow;
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::*;
@@ -27,7 +27,7 @@ use musdk_common::{Header, Request, Response};
 
 use instance::create_store;
 
-pub use error::{Error, FunctionLoadingError, FunctionRuntimeError};
+pub use error::{Error, FunctionLoadingError, FunctionRuntimeError, Result};
 pub use instance::{Instance, Loaded, Running};
 pub use types::{AssemblyDefinition, AssemblyProvider, InvokeFunctionRequest, RuntimeConfig};
 
@@ -40,12 +40,12 @@ pub trait Runtime: Clone + Send + Sync {
         request: Request<'a>,
     ) -> Result<Response<'static>, Error>;
 
-    async fn stop(&self) -> Result<(), Error>;
+    async fn stop(&self) -> Result<()>;
 
-    async fn add_functions(&self, functions: Vec<AssemblyDefinition>) -> Result<(), Error>;
-    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<(), Error>;
-    async fn remove_all_functions(&self, stack_id: StackID) -> Result<(), Error>;
-    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>, Error>;
+    async fn add_functions(&self, functions: Vec<AssemblyDefinition>) -> Result<()>;
+    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<()>;
+    async fn remove_all_functions(&self, stack_id: StackID) -> Result<()>;
+    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>>;
 }
 
 #[derive(Clone)]
@@ -129,7 +129,7 @@ impl RuntimeState {
 
         let hashkey_dict = HashMap::new();
         let mut cache =
-            FileSystemCache::new(&config.cache_path).context("failed to create cache")?;
+            FileSystemCache::new(&config.cache_path).map_err(|e| Error::CacheSetup(e))?;
         cache.set_cache_extension(Some("wasmu"));
 
         Ok((
@@ -162,14 +162,22 @@ impl RuntimeState {
                     warn!("cached module is corrupted: {}", e);
 
                     let definition = self.assembly_provider.get(assembly_id).ok_or_else(|| {
-                        Error::FunctionLoadingError(FunctionLoadingError::AssemblyNotFound(
-                            assembly_id.clone(),
+                        Error::FunctionLoadingError(Box::new(
+                            FunctionLoadingError::AssemblyNotFound(assembly_id.clone()),
                         ))
                     })?;
 
-                    let module = Module::new(&store, definition.source.clone())?;
+                    let module = Module::new(&store, definition.source.clone()).map_err(|e| {
+                        Error::FunctionLoadingError(Box::new(
+                            FunctionLoadingError::CompileWasmModule(e),
+                        ))
+                    })?;
 
-                    self.cache.store(*hash, &module)?;
+                    self.cache.store(*hash, &module).map_err(|e| {
+                        Error::FunctionLoadingError(Box::new(
+                            FunctionLoadingError::SerializeCachedWasmModule(e),
+                        ))
+                    })?;
 
                     Ok((store, module))
                 }
@@ -178,9 +186,9 @@ impl RuntimeState {
             let assembly_definition = match self.assembly_provider.get(assembly_id) {
                 Some(d) => d,
                 None => {
-                    return Err(Error::FunctionLoadingError(
+                    return Err(Error::FunctionLoadingError(Box::new(
                         FunctionLoadingError::AssemblyNotFound(assembly_id.clone()),
-                    )
+                    ))
                     .into());
                 }
             };
@@ -210,9 +218,9 @@ impl RuntimeState {
             } else {
                 error!("can not build wasm module for function: {}", assembly_id);
                 Err(
-                    Error::FunctionLoadingError(FunctionLoadingError::InvalidAssembly(
+                    Error::FunctionLoadingError(Box::new(FunctionLoadingError::InvalidAssembly(
                         assembly_id.clone(),
-                    ))
+                    )))
                     .into(),
                 )
             }
@@ -225,9 +233,9 @@ impl RuntimeState {
             .assembly_provider
             .get(&assembly_id)
             .ok_or_else(|| {
-                Error::FunctionLoadingError(FunctionLoadingError::AssemblyNotFound(
+                Error::FunctionLoadingError(Box::new(FunctionLoadingError::AssemblyNotFound(
                     assembly_id.clone(),
-                ))
+                )))
             })?
             .to_owned();
 
@@ -252,7 +260,7 @@ impl Runtime for RuntimeImpl {
         &self,
         function_id: FunctionID,
         request: Request<'a>,
-    ) -> Result<Response<'static>, Error> {
+    ) -> Result<Response<'static>> {
         // TODO: This is a rather ridiculous thing to do, but necessary
         // since we're sending the request to another thread. There has
         // to be a better way.
@@ -383,7 +391,7 @@ async fn mailbox_step(
                         }
                     });
                 }
-                Err(f) => req.reply.reply(Err(Error::Internal(f))),
+                Err(f) => req.reply.reply(Err(f)),
             }
         }
 

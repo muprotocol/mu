@@ -1,7 +1,8 @@
-use super::{error::Error, function::Pipe};
+use crate::Error;
+
+use super::{error::Result, function::Pipe};
 use mu_stack::{AssemblyID, AssemblyRuntime, StackID};
 
-use anyhow::Result;
 use bytes::Bytes;
 use mailbox_processor::ReplyChannel;
 use serde::Deserialize;
@@ -24,7 +25,7 @@ pub trait AssemblyProvider: Send {
 pub struct InvokeFunctionRequest {
     pub assembly_id: AssemblyID,
     pub request: ExecuteFunctionRequest<'static>,
-    pub reply: ReplyChannel<Result<ExecuteFunctionResponse, Error>>,
+    pub reply: ReplyChannel<Result<ExecuteFunctionResponse>>,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -81,7 +82,7 @@ pub struct FunctionIO {
 
 #[derive(Debug)]
 pub struct FunctionHandle {
-    pub join_handle: JoinHandle<Result<MeteringPoints, (super::error::Error, MeteringPoints)>>,
+    pub join_handle: JoinHandle<Result<MeteringPoints, (Error, MeteringPoints)>>,
     is_finished_rx: tokio::sync::oneshot::Receiver<()>,
     is_finished: bool,
     pub io: FunctionIO,
@@ -89,7 +90,7 @@ pub struct FunctionHandle {
 
 impl FunctionHandle {
     pub fn new(
-        join_handle: JoinHandle<Result<MeteringPoints, (super::error::Error, MeteringPoints)>>,
+        join_handle: JoinHandle<Result<MeteringPoints, (Error, MeteringPoints)>>,
         is_finished_rx: tokio::sync::oneshot::Receiver<()>,
         io: FunctionIO,
     ) -> Self {

@@ -29,7 +29,7 @@ pub fn create_store(memory_limit: byte_unit::Byte) -> Result<Store, Error> {
     compiler_config.push_middleware(metering);
 
     let memory = create_memory(memory_limit).map_err(|_| {
-        Error::FunctionLoadingError(FunctionLoadingError::RequestedMemorySizeTooBig)
+        Error::FunctionLoadingError(Box::new(FunctionLoadingError::RequestedMemorySizeTooBig))
     })?;
 
     Ok(Store::new_with_tunables(compiler_config, memory))

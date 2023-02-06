@@ -5,10 +5,9 @@ use std::{
 };
 
 use super::{
-    error::{Error, FunctionLoadingError, FunctionRuntimeError},
+    error::{Error, FunctionLoadingError, FunctionRuntimeError, Result},
     types::{FunctionHandle, FunctionIO},
 };
-use anyhow::Result;
 use bytes::Buf;
 use wasmer::{Instance, Module, Store};
 use wasmer_middlewares::metering::get_remaining_points;
@@ -19,7 +18,7 @@ pub fn start(
     mut store: Store,
     module: &Module,
     envs: HashMap<String, String>,
-) -> Result<FunctionHandle, Error> {
+) -> Result<FunctionHandle> {
     //TODO: Check wasi version specified in this module and if we can run it!
 
     let stdin = Pipe::new();
@@ -33,10 +32,12 @@ pub fn start(
         .stderr(Box::new(stderr.clone()))
         .envs(envs)
         .finalize(&mut store)
-        .map_err(|e| Error::FunctionLoadingError(FunctionLoadingError::FailedToBuildWasmEnv(e)))?;
+        .map_err(|e| {
+            Error::FunctionLoadingError(Box::new(FunctionLoadingError::FailedToBuildWasmEnv(e)))
+        })?;
 
     let import_object = wasi_env.import_object(&mut store, module).map_err(|e| {
-        Error::FunctionLoadingError(FunctionLoadingError::FailedToGetImportObject(e))
+        Error::FunctionLoadingError(Box::new(FunctionLoadingError::FailedToGetImportObject(e)))
     })?;
 
     let instance = Instance::new(&mut store, module, &import_object).map_err(|error| {
@@ -51,16 +52,15 @@ pub fn start(
 
                 Error::FunctionRuntimeError(FunctionRuntimeError::MaximumMemoryExceeded)
             }
-            e => {
-                Error::FunctionLoadingError(FunctionLoadingError::FailedToInstantiateWasmModule(e))
-            }
+            e => Error::FunctionLoadingError(Box::new(
+                FunctionLoadingError::FailedToInstantiateWasmModule(e),
+            )),
         }
     })?;
 
-    let memory = instance
-        .exports
-        .get_memory("memory")
-        .map_err(|e| Error::FunctionLoadingError(FunctionLoadingError::FailedToGetMemory(e)))?;
+    let memory = instance.exports.get_memory("memory").map_err(|e| {
+        Error::FunctionLoadingError(Box::new(FunctionLoadingError::FailedToGetMemory(e)))
+    })?;
 
     wasi_env.data_mut(&mut store).set_memory(memory.clone());
 
