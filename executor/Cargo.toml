@@ -60,7 +60,6 @@ mu-gateway = { path = "../rust-libs/gateway" }
 mu-db = { path = "../rust-libs/db" }
 
 [dev-dependencies]
-serial_test = "0.8"
 test-log = "0.2"
 
 [build-dependencies]
