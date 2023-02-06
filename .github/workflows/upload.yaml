@@ -52,19 +52,15 @@ jobs:
         run: cargo build --release
         working-directory: ${{ matrix.dir }}
       
-      - name: Install Docker
-        uses: docker/setup-docker@v2
-        with:
-          version: 20.10.5
-      
       - name: Upload to S3
         if: success()
-        uses: medlypharmacy/s3-artifacts-action@master
-        with:
-          aws_access_key_id: ${{ secrets.S3_BUILD_ARTIFACTS_ACCESS_KEY_ID}}
-          aws_secret_access_key: ${{ secrets.S3_BUILD_ARTIFACTS_SECRET_ACCESS_KEY}}
-          aws_s3_bucket_name: ${{ secrets.S3_BUCKET_NAME }}
-          source_path: 'executor/target/release/mu-executor'
+        uses: koraykoska/s3-upload-github-action@master
+        env:
+          FILE: executor/target/release/mu-executor
+          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
 
       - name: Save dependencies cache
         uses: actions/cache@v3
