@@ -104,8 +104,7 @@ pub fn deploy(
             .context("Failed to send stack update transaction")?;
 
         println!(
-            "Stack successfully updated to version {} with key: {stack_pda}",
-            stack_version
+            "Stack successfully updated to version {stack_version} with key: {stack_pda}"
         );
     } else {
         let accounts = marketplace::accounts::CreateStack {
@@ -132,8 +131,7 @@ pub fn deploy(
             .context("Failed to send stack creation transaction")?;
 
         println!(
-            "Stack deployed successfully with version {} and key: {stack_pda}",
-            stack_version
+            "Stack deployed successfully with version {stack_version} and key: {stack_pda}"
         );
     }
 

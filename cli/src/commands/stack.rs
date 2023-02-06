@@ -115,11 +115,11 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
     } else {
         for (key, stack) in stacks {
             if let StackState::Active { revision, name, .. } = stack.state {
-                println!("{}:", name);
-                println!("\tKey: {}", key);
+                println!("{name}:");
+                println!("\tKey: {key}");
                 println!("\tRegion: {}", stack.region); // TODO: print region name
                 println!("\tSeed: {}", stack.seed);
-                println!("\tRevision: {}", revision);
+                println!("\tRevision: {revision}");
             } else {
                 println!("Internal error: didn't expect to receive deleted stack")
             }
