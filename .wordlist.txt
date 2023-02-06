@@ -4,6 +4,7 @@ balancer
 Bincode
 Borsh
 bufread
+bcollect
 chrono
 clippy
 clonable
