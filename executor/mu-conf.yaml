@@ -43,18 +43,25 @@ blockchain_monitor:
 #   # Note, this value should not be under 1s
 #   usage_report_duration: 15m
 tikv:
-  pd:
-    data_dir: /var/lib/mu-executor/pd-data/
-    peer_url:
-      address: 0.0.0.0
-      port: 2380
-    client_url:
-      address: 0.0.0.0
-      port: 2379
-    log_file: /var/log/mu-executor/pd-server
-  node:
-    cluster_url:
-      address: 0.0.0.0
-      port: 20160
-    data_dir: /var/lib/mu-executor/tikv-data/
-    log_file: /var/log/mu-executor/tikv-server
+  # if you already have a db running use external template and remove the internal key.
+  # external:
+  # - address: 127.0.0.1
+  #   port: 8000
+  # - address: 127.0.0.1
+  #   port: 8000
+  internal:
+    pd:
+      data_dir: /var/lib/mu-executor/pd-data/
+      peer_url:
+        address: 0.0.0.0
+        port: 2380
+      client_url:
+        address: 0.0.0.0
+        port: 2379
+      log_file: /var/log/mu-executor/pd-server
+    node:
+      cluster_url:
+        address: 0.0.0.0
+        port: 20160
+      data_dir: /var/lib/mu-executor/tikv-data/
+      log_file: /var/log/mu-executor/tikv-server
