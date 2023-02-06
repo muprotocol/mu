@@ -63,6 +63,8 @@ mod hello_db {
         let is_atomic = false;
         let mut x = ctx.db();
         let mut y = x.table_list("a::").unwrap();
+        ctx.log(format!("{}", y.len()).as_str(), LogLevel::Info)
+            .unwrap();
         // let mut x = x.table(&req.table_name);
         // ctx.db()
         //     .table(&req.table_name)

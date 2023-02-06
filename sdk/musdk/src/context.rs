@@ -3,7 +3,7 @@ pub mod db;
 use std::{
     borrow::Cow,
     collections::HashMap,
-    io::{stdin, stdout, Stdin, Stdout},
+    io::{stdin, stdout, Stdin, Stdout, Write},
     rc::Rc,
 };
 
@@ -99,6 +99,9 @@ impl MuContext {
     fn write_message(&mut self, message: OutgoingMessage<'_>) -> Result<()> {
         message
             .write(&mut self.stdout)
+            .map_err(Error::CannotSerializeOutgoingMessage)?;
+        self.stdout
+            .flush()
             .map_err(Error::CannotSerializeOutgoingMessage)
     }
 }

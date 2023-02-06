@@ -2,7 +2,7 @@ use std::{borrow::Cow, thread::sleep};
 
 use musdk_common::{
     incoming_message::IncomingMessage as IM,
-    outgoing_message::{db::*, Log, LogLevel, OutgoingMessage as OM},
+    outgoing_message::{db::*, OutgoingMessage as OM},
 };
 
 use crate::{Error, Result};
@@ -97,11 +97,11 @@ impl<'a> DbHandle<'a> {
 
     pub fn batch_scan<'b, T: Into<&'b [u8]>>(
         &mut self,
-        table_key_prefixe_tuples: Vec<(&'b str, T)>,
+        table_key_prefix_tuples: Vec<(&'b str, T)>,
         each_limit: u32,
     ) -> Result<Vec<(Key, Value)>> {
         let req = BatchScan {
-            table_key_prefixe_tuples: vec_tuple_cow_u8_from(table_key_prefixe_tuples),
+            table_key_prefix_tuples: vec_tuple_cow_u8_from(table_key_prefix_tuples),
             each_limit,
         };
         let resp = self.request(OM::BatchScan(req))?;
@@ -110,38 +110,28 @@ impl<'a> DbHandle<'a> {
 
     pub fn batch_scan_keys<'b, T: Into<&'b [u8]>>(
         &mut self,
-        table_key_prefixe_tuples: Vec<(&'b str, T)>,
+        table_key_prefix_tuples: Vec<(&'b str, T)>,
         each_limit: u32,
     ) -> Result<Vec<Key>> {
         let req = BatchScanKeys {
-            table_key_prefixe_tuples: vec_tuple_cow_u8_from(table_key_prefixe_tuples),
+            table_key_prefix_tuples: vec_tuple_cow_u8_from(table_key_prefix_tuples),
             each_limit,
         };
         let resp = self.request(OM::BatchScanKeys(req))?;
         resp_to_vec_blob(resp, "BatchScan")
     }
 
-    pub fn table_list<'b>(&mut self, table_prefix: &'b str) -> Result<Vec<TableName>> {
+    pub fn table_list(&mut self, table_prefix: &str) -> Result<Vec<TableName>> {
         let req = TableList {
             table_prefix: Cow::Borrowed(table_prefix.as_bytes()),
         };
 
-        // let req = Log {
-        //     body: Cow::Borrowed("hello from table_list"),
-        //     level: LogLevel::Warn,
-        // };
-        // self.context.write_message(OM::Log(req))?;
-
-        self.context.write_message(OM::TableList(req))?;
-        sleep(std::time::Duration::from_millis(1000));
-        self.context.read_message()?;
-        // let resp = self.request(OM::Log(req))?;
-        Ok(vec![])
-        // resp_to_vec_blob(resp, "TableList")?
-        //     .into_iter()
-        //     .map(String::from_utf8)
-        //     .collect::<std::result::Result<_, _>>()
-        //     .map_err(|e| Error::DatabaseError(e.to_string()))
+        let resp = self.request(OM::TableList(req))?;
+        resp_to_vec_blob(resp, "TableList")?
+            .into_iter()
+            .map(String::from_utf8)
+            .collect::<std::result::Result<_, _>>()
+            .map_err(|e| Error::DatabaseError(e.to_string()))
     }
 }
 

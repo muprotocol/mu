@@ -398,7 +398,7 @@ impl Instance<Running> {
                         OutgoingMessage::BatchScan(req) => {
                             self.db_request(|db_client, stack_id| async move {
                                 let scans =
-                                    make_mu_db_scans(stack_id, req.table_key_prefixe_tuples)?;
+                                    make_mu_db_scans(stack_id, req.table_key_prefix_tuples)?;
                                 db_client
                                     .batch_scan(scans, req.each_limit)
                                     .await
@@ -409,7 +409,7 @@ impl Instance<Running> {
                         OutgoingMessage::BatchScanKeys(req) => {
                             self.db_request(|db_client, stack_id| async move {
                                 let scans =
-                                    make_mu_db_scans(stack_id, req.table_key_prefixe_tuples)?;
+                                    make_mu_db_scans(stack_id, req.table_key_prefix_tuples)?;
                                 db_client
                                     .batch_scan_keys(scans, req.each_limit)
                                     .await
@@ -418,7 +418,6 @@ impl Instance<Running> {
                         }
 
                         OutgoingMessage::TableList(req) => {
-                            panic!("before talbelist request");
                             self.db_request(|db_client, stack_id| async move {
                                 db_client
                                     .table_list(
@@ -463,6 +462,7 @@ impl Instance<Running> {
         tokio::runtime::Handle::current().block_on(async {
             let stack_id = self.id.function_id.stack_id;
             match self.db_manager.make_client().await {
+                // TODO: one client per function call
                 Ok(db_client) => {
                     let msg = f(db_client, stack_id).await.unwrap_or_else(|e| {
                         IncomingMessage::DbError(DbError {

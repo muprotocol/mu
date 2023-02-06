@@ -68,13 +68,13 @@ pub struct BatchDelete<'a> {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct BatchScan<'a> {
-    pub table_key_prefixe_tuples: Vec<(Cow<'a, [u8]>, Cow<'a, [u8]>)>,
+    pub table_key_prefix_tuples: Vec<(Cow<'a, [u8]>, Cow<'a, [u8]>)>,
     pub each_limit: u32,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct BatchScanKeys<'a> {
-    pub table_key_prefixe_tuples: Vec<(Cow<'a, [u8]>, Cow<'a, [u8]>)>,
+    pub table_key_prefix_tuples: Vec<(Cow<'a, [u8]>, Cow<'a, [u8]>)>,
     pub each_limit: u32,
 }
 
