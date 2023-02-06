@@ -1,7 +1,6 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
+import {render, screen} from "@testing-library/react";
+import {describe, test} from "vitest";
 
-import Home from "./index";
 import ProviderList from "./index";
 
 describe("ProviderList", () => {
