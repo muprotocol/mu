@@ -25,6 +25,7 @@ const TEST_PROJECTS: &[&str] = &[
     "calc-func",
     "multi-body",
     "unclean-termination",
+    "hello-db",
 ];
 
 #[derive(Default)]
@@ -55,6 +56,7 @@ impl AssemblyProvider for MapAssemblyProvider {
     }
 }
 
+#[derive(Debug)]
 pub struct Project<'a> {
     pub id: AssemblyID,
     pub name: &'a str,
@@ -256,7 +258,7 @@ pub mod fixture {
 
         async fn teardown(self) {
             self.db_manager.stop_embedded_cluster().await.unwrap();
-            self.data_dir.teardown()
+            self.data_dir.teardown();
         }
     }
 

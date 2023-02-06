@@ -1,8 +1,8 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, thread::sleep};
 
 use musdk_common::{
     incoming_message::IncomingMessage as IM,
-    outgoing_message::{db::*, OutgoingMessage as OM},
+    outgoing_message::{db::*, Log, LogLevel, OutgoingMessage as OM},
 };
 
 use crate::{Error, Result};
@@ -125,12 +125,23 @@ impl<'a> DbHandle<'a> {
         let req = TableList {
             table_prefix: Cow::Borrowed(table_prefix.as_bytes()),
         };
-        let resp = self.request(OM::TableList(req))?;
-        resp_to_vec_blob(resp, "TableList")?
-            .into_iter()
-            .map(String::from_utf8)
-            .collect::<std::result::Result<_, _>>()
-            .map_err(|e| Error::DatabaseError(e.to_string()))
+
+        // let req = Log {
+        //     body: Cow::Borrowed("hello from table_list"),
+        //     level: LogLevel::Warn,
+        // };
+        // self.context.write_message(OM::Log(req))?;
+
+        self.context.write_message(OM::TableList(req))?;
+        sleep(std::time::Duration::from_millis(1000));
+        self.context.read_message()?;
+        // let resp = self.request(OM::Log(req))?;
+        Ok(vec![])
+        // resp_to_vec_blob(resp, "TableList")?
+        //     .into_iter()
+        //     .map(String::from_utf8)
+        //     .collect::<std::result::Result<_, _>>()
+        //     .map_err(|e| Error::DatabaseError(e.to_string()))
     }
 }
 

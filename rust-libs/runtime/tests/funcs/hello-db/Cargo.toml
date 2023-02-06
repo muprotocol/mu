@@ -1,9 +1,9 @@
 [package]
-name = "hello-wasm"
+name = "hello-db"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-musdk = { path= "../../../../../sdk/musdk" }
-musdk-common = { path= "../../../../../sdk/common" }
-itertools = "0.10"
+musdk = { path= "../../../../../sdk/musdk", features = ["json"]}
+serde = { version = "1.0", features = ["derive"] }
+musdk-common = { path= "../../../../../sdk/common"}

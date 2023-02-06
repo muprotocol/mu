@@ -233,6 +233,9 @@ impl Instance<Running> {
             .map_err(|e| (e, Default::default()))?;
         self.state.io_state = IOState::Processing;
 
+        // TODO: debug
+        trace!("going 1");
+
         loop {
             // TODO: overall timeout for functions
 
@@ -415,6 +418,7 @@ impl Instance<Running> {
                         }
 
                         OutgoingMessage::TableList(req) => {
+                            panic!("before talbelist request");
                             self.db_request(|db_client, stack_id| async move {
                                 db_client
                                     .table_list(
@@ -423,7 +427,7 @@ impl Instance<Running> {
                                     )
                                     .await
                                     .map(list_to_incoming_msg)
-                            })?
+                            })?;
                         }
 
                         OutgoingMessage::CompareAndSwap(req) => {
