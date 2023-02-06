@@ -101,10 +101,10 @@ impl TryFrom<&str> for IpAndPort {
 
 #[derive(Deserialize, Clone)]
 pub struct PdConfig {
-    pub data_dir: String,
+    pub data_dir: PathBuf,
     pub peer_url: IpAndPort,
     pub client_url: IpAndPort,
-    pub log_file: Option<String>,
+    pub log_file: Option<PathBuf>,
 }
 
 fn unspecified_to_localhost(x: &IpAndPort) -> IpAndPort {
@@ -130,8 +130,8 @@ impl PdConfig {
 #[derive(Deserialize, Clone)]
 pub struct TikvConfig {
     pub cluster_url: IpAndPort,
-    pub data_dir: String,
-    pub log_file: Option<String>,
+    pub data_dir: PathBuf,
+    pub log_file: Option<PathBuf>,
 }
 
 impl TikvConfig {
@@ -157,11 +157,6 @@ struct TikvRunnerArgs {
     pub tikv_args: Vec<String>,
 }
 
-pub struct NodeAddress {
-    pub address: IpAddr,
-    pub port: u16,
-}
-
 pub struct RemoteNode {
     pub address: IpAddr,
     pub gossip_port: u16,
@@ -170,7 +165,7 @@ pub struct RemoteNode {
 
 enum Node<'a> {
     Known(&'a RemoteNode),
-    Address(&'a NodeAddress),
+    Address(&'a IpAndPort),
 }
 
 fn generate_pd_name(node: Node<'_>) -> String {
@@ -182,7 +177,7 @@ fn generate_pd_name(node: Node<'_>) -> String {
 }
 
 fn generate_arguments(
-    node_address: NodeAddress,
+    node_address: IpAndPort,
     known_node_config: Vec<RemoteNode>,
     config: TikvRunnerConfig,
 ) -> TikvRunnerArgs {
@@ -227,7 +222,7 @@ fn generate_arguments(
 
     let mut pd_args = vec![
         format!("--name={pd_name}"),
-        format!("--data-dir={}", config.pd.data_dir),
+        format!("--data-dir={}", config.pd.data_dir.display()),
         format!(
             "--client-urls=http://{}:{}",
             config.pd.client_url.address, config.pd.client_url.port
@@ -250,7 +245,7 @@ fn generate_arguments(
     ];
 
     if let Some(log_file) = config.pd.log_file.as_ref() {
-        pd_args.push(format!("--log-file={log_file}"))
+        pd_args.push(format!("--log-file={}", log_file.display()))
     }
 
     let mut tikv_args = vec![
@@ -268,11 +263,11 @@ fn generate_arguments(
             config.node.advertise_cluster_url().address,
             config.node.advertise_cluster_url().port
         ),
-        format!("--data-dir={}", config.node.data_dir),
+        format!("--data-dir={}", config.node.data_dir.display()),
     ];
 
     if let Some(log_file) = config.node.log_file {
-        tikv_args.push(format!("--log-file={log_file}"))
+        tikv_args.push(format!("--log-file={}", log_file.display()))
     }
 
     TikvRunnerArgs { pd_args, tikv_args }
@@ -288,7 +283,7 @@ struct TikvRunnerImpl {
 }
 
 pub async fn start(
-    node_address: NodeAddress,
+    node_address: IpAndPort,
     known_node_config: Vec<RemoteNode>,
     config: TikvRunnerConfig,
 ) -> Result<Box<dyn TikvRunner>> {
@@ -382,7 +377,7 @@ mod test {
     #[tokio::test]
     async fn generate_arguments_pd_args_and_tikv_args() {
         let local_host: IpAddr = "127.0.0.1".parse().unwrap();
-        let node_address = NodeAddress {
+        let node_address = IpAndPort {
             address: local_host,
             port: 2800,
         };
@@ -408,7 +403,7 @@ mod test {
                     address: local_host,
                     port: 2379,
                 },
-                data_dir: "./pd_test_dir".into(),
+                data_dir: PathBuf::from("./pd_test_dir"),
                 log_file: None,
             },
             node: TikvConfig {
@@ -416,7 +411,7 @@ mod test {
                     address: local_host,
                     port: 20160,
                 },
-                data_dir: "./tikv_test_dir".into(),
+                data_dir: PathBuf::from("./tikv_test_dir"),
                 log_file: None,
             },
         };

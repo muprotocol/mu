@@ -2,9 +2,7 @@ pub mod error;
 mod types;
 
 pub use self::types::{Blob, Key, Scan, TableName};
-pub use db_embedded_tikv::{
-    IpAndPort, NodeAddress, PdConfig, RemoteNode, TikvConfig, TikvRunnerConfig,
-};
+pub use db_embedded_tikv::{IpAndPort, PdConfig, RemoteNode, TikvConfig, TikvRunnerConfig};
 use dyn_clonable::clonable;
 use log::warn;
 
@@ -276,7 +274,7 @@ struct DbManagerImpl {
 }
 
 pub async fn new_with_embedded_cluster(
-    node_address: NodeAddress,
+    node_address: IpAndPort,
     known_node_config: Vec<RemoteNode>,
     config: TikvRunnerConfig,
 ) -> anyhow::Result<Box<dyn DbManager>> {
@@ -348,7 +346,7 @@ async fn ensure_cluster_healthy(
 }
 
 pub async fn start(
-    node: NodeAddress,
+    node: IpAndPort,
     remote_nodes: Vec<RemoteNode>,
     db_config: DbConfig,
 ) -> anyhow::Result<Box<dyn DbManager>> {

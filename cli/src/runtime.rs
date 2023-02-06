@@ -5,7 +5,7 @@ use std::{
     path::Path,
 };
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 
 use mu_gateway::{GatewayManager, GatewayManagerConfig};
@@ -13,12 +13,15 @@ use mu_runtime::{AssemblyDefinition, AssemblyProvider, Runtime, RuntimeConfig};
 use mu_stack::{AssemblyID, FunctionID, Gateway, Stack, StackID};
 use musdk_common::{Request, Response};
 
+use crate::database::Database;
+
 pub async fn start(
     stack: Stack,
     function_binary_path: &Path,
 ) -> Result<(
     Box<dyn Runtime>,
     Box<dyn GatewayManager>,
+    Database,
     Vec<Gateway>,
     StackID,
 )> {
@@ -31,8 +34,15 @@ pub async fn start(
         include_function_logs: true,
     };
 
+    let database = Database::start().await?;
+
     //TODO: Report usage using the notifications
-    let (runtime, _) = mu_runtime::start(Box::new(assembly_provider), runtime_config).await?;
+    let (runtime, _) = mu_runtime::start(
+        Box::new(assembly_provider),
+        database.db_manager(),
+        runtime_config,
+    )
+    .await?;
 
     let mut function_defs = vec![];
 
@@ -74,11 +84,30 @@ pub async fn start(
         .deploy_gateways(stack_id, stack.gateways().map(ToOwned::to_owned).collect())
         .await?;
 
-    //TODO: Add databases and setup them
+    let db_client = database
+        .db_manager()
+        .make_client()
+        .await
+        .context("couldn't create database client")?;
+
+    let mut tables = vec![];
+    for x in stack.databases() {
+        let table_name = x
+            .name
+            .to_owned()
+            .try_into()
+            .context("couldn't create table_name")?;
+        tables.push(table_name);
+    }
+
+    db_client
+        .update_stack_tables(stack_id, tables)
+        .await
+        .context("failed to setup database")?;
 
     let gateways = stack.gateways().map(ToOwned::to_owned).collect();
 
-    Ok((runtime, gateway, gateways, stack_id))
+    Ok((runtime, gateway, database, gateways, stack_id))
 }
 
 async fn handle_request(

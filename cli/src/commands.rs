@@ -1,6 +1,7 @@
 use std::{collections::HashMap, path::Path};
 
 use anyhow::{Context, Result};
+use beau_collector::BeauCollector;
 use clap::{Args, Parser};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
@@ -138,7 +139,7 @@ pub async fn execute_run(_config: Config) -> Result<()> {
 
     let stack = runtime::read_stack(None)?;
 
-    let (runtime, gateway, gateways, stack_id) =
+    let (runtime, gateway, database, gateways, stack_id) =
         runtime::start(stack, &manifest.wasm_module_path()).await?;
 
     let cancellation_token = CancellationToken::new();
@@ -169,15 +170,16 @@ pub async fn execute_run(_config: Config) -> Result<()> {
     println!("\nStack deployed at: http://localhost:12012/{stack_id}/");
 
     tokio::spawn({
-        let runtime = runtime.clone();
-        let gateway = gateway.clone();
         async move {
             loop {
                 select! {
                     () = cancellation_token.cancelled() => {
-                        runtime.stop().await.unwrap();
-                        gateway.stop().await.unwrap();
-                        break;
+                        [
+                            runtime.stop().await.map_err(Into::into),
+                            gateway.stop().await,
+                            database.stop().await
+                        ].into_iter().bcollect::<()>().unwrap();
+                        break
                     }
                 }
             }

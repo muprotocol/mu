@@ -1,5 +1,6 @@
 mod commands;
 pub mod config;
+mod database;
 mod error;
 mod marketplace_client;
 mod runtime;

@@ -239,8 +239,8 @@ async fn test_queries_on_single_node(db: Box<dyn DbClient>) {
     test_table_list(db.as_ref(), table_list().into()).await;
 }
 
-fn make_node_address(port: u16) -> NodeAddress {
-    NodeAddress {
+fn make_node_address(port: u16) -> IpAndPort {
+    IpAndPort {
         address: "127.0.0.1".parse().unwrap(),
         port,
     }
