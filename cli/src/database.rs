@@ -4,7 +4,7 @@ use std::{
 };
 
 use beau_collector::BeauCollector;
-use mu_db::{DbManager, DbManagerImpl, IpAndPort, PdConfig, TikvConfig, TikvRunnerConfig};
+use mu_db::{DbManager, IpAndPort, PdConfig, TikvConfig, TikvRunnerConfig};
 
 pub struct TempDir(PathBuf);
 
@@ -36,7 +36,7 @@ impl Default for TempDir {
 }
 
 pub struct Database {
-    db_manager: DbManagerImpl,
+    pub db_manager: Box<dyn DbManager>,
     data_dir: TempDir,
 }
 
@@ -66,19 +66,14 @@ impl Database {
         };
 
         Ok(Self {
-            db_manager: DbManagerImpl::new_with_embedded_cluster(node_address, vec![], tikv_config)
-                .await?,
+            db_manager: mu_db::new_with_embedded_cluster(node_address, vec![], tikv_config).await?,
             data_dir,
         })
     }
 
-    pub fn db_manager(&self) -> Box<dyn DbManager> {
-        Box::new(self.db_manager.clone())
-    }
-
     pub async fn stop(mut self) -> anyhow::Result<()> {
         [
-            DbManager::stop_embedded_cluster(&self.db_manager).await,
+            DbManager::stop_embedded_cluster(&*self.db_manager).await,
             self.data_dir.clean().map_err(Into::into),
         ]
         .into_iter()

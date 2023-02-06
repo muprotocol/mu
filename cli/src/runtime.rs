@@ -39,7 +39,7 @@ pub async fn start(
     //TODO: Report usage using the notifications
     let (runtime, _) = mu_runtime::start(
         Box::new(assembly_provider),
-        database.db_manager(),
+        database.db_manager.clone(),
         runtime_config,
     )
     .await?;
@@ -85,7 +85,8 @@ pub async fn start(
         .await?;
 
     let db_client = database
-        .db_manager()
+        .db_manager
+        .clone()
         .make_client()
         .await
         .context("couldn't create database client")?;

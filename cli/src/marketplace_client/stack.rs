@@ -103,9 +103,7 @@ pub fn deploy(
             .send_with_spinner_and_config(Default::default())
             .context("Failed to send stack update transaction")?;
 
-        println!(
-            "Stack successfully updated to version {stack_version} with key: {stack_pda}"
-        );
+        println!("Stack successfully updated to version {stack_version} with key: {stack_pda}");
     } else {
         let accounts = marketplace::accounts::CreateStack {
             region: *region_pda,
@@ -130,9 +128,7 @@ pub fn deploy(
             .send_with_spinner_and_config(Default::default())
             .context("Failed to send stack creation transaction")?;
 
-        println!(
-            "Stack deployed successfully with version {stack_version} and key: {stack_pda}"
-        );
+        println!("Stack deployed successfully with version {stack_version} and key: {stack_pda}");
     }
 
     Ok(())
