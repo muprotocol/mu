@@ -128,8 +128,7 @@ impl RuntimeState {
         let (tx, rx) = NotificationChannel::new();
 
         let hashkey_dict = HashMap::new();
-        let mut cache =
-            FileSystemCache::new(&config.cache_path).map_err(|e| Error::CacheSetup(e))?;
+        let mut cache = FileSystemCache::new(&config.cache_path).map_err(Error::CacheSetup)?;
         cache.set_cache_extension(Some("wasmu"));
 
         Ok((
@@ -188,8 +187,7 @@ impl RuntimeState {
                 None => {
                     return Err(Error::FunctionLoadingError(Box::new(
                         FunctionLoadingError::AssemblyNotFound(assembly_id.clone()),
-                    ))
-                    .into());
+                    )));
                 }
             };
 
@@ -217,12 +215,9 @@ impl RuntimeState {
                 Ok((store, module))
             } else {
                 error!("can not build wasm module for function: {}", assembly_id);
-                Err(
-                    Error::FunctionLoadingError(Box::new(FunctionLoadingError::InvalidAssembly(
-                        assembly_id.clone(),
-                    )))
-                    .into(),
-                )
+                Err(Error::FunctionLoadingError(Box::new(
+                    FunctionLoadingError::InvalidAssembly(assembly_id.clone()),
+                )))
             }
         }
     }
