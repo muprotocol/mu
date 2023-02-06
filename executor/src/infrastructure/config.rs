@@ -5,7 +5,7 @@ pub use serde_support::{ConfigDuration, ConfigLogLevelFilter, ConfigUri};
 use anyhow::{Context, Result};
 use config::{Config, Environment, File, FileFormat};
 
-use mu_db::TikvRunnerConfig;
+use mu_db::DbConfig;
 
 use mu_gateway::GatewayManagerConfig;
 use mu_runtime::RuntimeConfig;
@@ -100,7 +100,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
 
     let gossip_config = config.get("gossip").context("Invalid gossip config")?;
 
-    let initial_cluster_config = config.get("tikv").context("Invalid tikv_runner config")?;
+    let db_config = config.get("tikv").context("Invalid tikv_runner config")?;
 
     let known_node_config: Vec<KnownNodeConfig> = config
         .get("initial_cluster")
@@ -126,7 +126,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
         connection_manager_config,
         gossip_config,
         known_node_config,
-        initial_cluster_config,
+        db_config,
         gateway_config,
         log_config,
         runtime_config,

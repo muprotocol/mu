@@ -145,7 +145,7 @@ pub async fn run() -> Result<()> {
 
     let function_provider = mu_runtime::providers::DefaultAssemblyProvider::new();
 
-    let database_manager = mu_db::new_with_embedded_cluster(
+    let database_manager = mu_db::start(
         mu_db::IpAndPort {
             address: my_node.address,
             port: my_node.port,

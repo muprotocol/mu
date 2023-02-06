@@ -19,8 +19,8 @@ use std::{collections::HashSet, fmt::Debug};
 use tikv_client::{self, KvPair, RawClient, Value};
 use tokio::time::{sleep, Duration};
 
-// only one should be provided
-// used struct instead of enum, only for better visual structure in config
+// Only one of the fields should be provided
+// Used struct instead of enum, only for better visual structure in config
 #[derive(Deserialize, Clone)]
 pub struct DbConfig {
     external: Option<Vec<IpAndPort>>,
