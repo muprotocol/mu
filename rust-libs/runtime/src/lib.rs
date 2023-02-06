@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::*;
 use mu_db::DbManager;
+use providers::AssemblyProvider;
 use tokio::sync::mpsc;
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
@@ -29,7 +30,7 @@ use instance::create_store;
 
 pub use error::{Error, FunctionLoadingError, FunctionRuntimeError};
 pub use instance::{Instance, Loaded, Running};
-pub use types::{AssemblyDefinition, AssemblyProvider, InvokeFunctionRequest, RuntimeConfig};
+pub use types::{AssemblyDefinition, InvokeFunctionRequest, RuntimeConfig};
 
 #[async_trait]
 #[clonable]
@@ -111,17 +112,17 @@ struct CacheHashAndMemoryLimit {
 
 struct RuntimeState {
     config: RuntimeConfig,
-    assembly_provider: Box<dyn AssemblyProvider>,
+    assembly_provider: AssemblyProvider,
     db_manager: Box<dyn DbManager>,
     hashkey_dict: HashMap<AssemblyID, CacheHashAndMemoryLimit>,
     cache: FileSystemCache,
     next_instance_id: u64,
     notification_channel: NotificationChannel<Notification>,
+    is_shut_down: bool,
 }
 
 impl RuntimeState {
     pub async fn new(
-        assembly_provider: Box<dyn AssemblyProvider>,
         db_manager: Box<dyn DbManager>,
         config: RuntimeConfig,
     ) -> Result<(Self, mpsc::UnboundedReceiver<Notification>)> {
@@ -135,12 +136,13 @@ impl RuntimeState {
         Ok((
             Self {
                 config,
-                assembly_provider,
+                assembly_provider: Default::default(),
                 db_manager,
                 hashkey_dict,
                 cache,
                 next_instance_id: 0,
                 notification_channel: tx,
+                is_shut_down: false,
             },
             rx,
         ))
@@ -335,12 +337,10 @@ impl Runtime for RuntimeImpl {
 }
 
 pub async fn start(
-    assembly_provider: Box<dyn AssemblyProvider>,
     db_manager: Box<dyn DbManager>,
     config: RuntimeConfig,
 ) -> Result<(Box<dyn Runtime>, mpsc::UnboundedReceiver<Notification>)> {
-    let (state, notification_receiver) =
-        RuntimeState::new(assembly_provider, db_manager, config).await?;
+    let (state, notification_receiver) = RuntimeState::new(db_manager, config).await?;
     let mailbox = CallbackMailboxProcessor::start(mailbox_step, state, 10000);
     Ok((Box::new(RuntimeImpl { mailbox }), notification_receiver))
 }
@@ -350,45 +350,19 @@ async fn mailbox_step(
     msg: MailboxMessage,
     mut state: RuntimeState,
 ) -> RuntimeState {
-    let notification_channel = state.notification_channel.clone();
-
     match msg {
         MailboxMessage::InvokeFunction(req) => {
-            match state.instantiate_function(req.assembly_id.clone()).await {
-                Ok(instance) => {
-                    tokio::spawn(async move {
-                        match instance.start() {
-                            Err(e) => req.reply.reply(Err(e)),
-                            Ok(i) => {
-                                let result = i
-                                    .run_request(req.request)
-                                    .await
-                                    .map(|(resp, usages)| {
-                                        notification_channel.send(Notification::ReportUsage(
-                                            req.assembly_id.stack_id,
-                                            usages,
-                                        ));
-                                        resp
-                                    })
-                                    .map_err(|(error, usages)| {
-                                        notification_channel.send(Notification::ReportUsage(
-                                            req.assembly_id.stack_id,
-                                            usages,
-                                        ));
-                                        error
-                                    });
-
-                                req.reply.reply(result);
-                            }
-                        }
-                    });
-                }
-                Err(f) => req.reply.reply(Err(Error::Internal(f))),
+            if state.is_shut_down {
+                req.reply.reply(Err(Error::RuntimeIsShutDown));
+            } else {
+                execute_function(&mut state, req).await;
             }
         }
 
         MailboxMessage::Shutdown => {
-            //TODO: find a way to kill running functions
+            // We need to wait for running user functions, so we simply
+            // stop accepting new requests.
+            state.is_shut_down = true;
         }
 
         MailboxMessage::AddFunctions(functions) => {
@@ -426,4 +400,40 @@ async fn mailbox_step(
         }
     }
     state
+}
+
+async fn execute_function(state: &mut RuntimeState, req: InvokeFunctionRequest) {
+    match state.instantiate_function(req.assembly_id.clone()).await {
+        Ok(instance) => {
+            let notification_channel = state.notification_channel.clone();
+
+            tokio::spawn(async move {
+                match instance.start() {
+                    Err(e) => req.reply.reply(Err(e)),
+                    Ok(i) => {
+                        let result = i
+                            .run_request(req.request)
+                            .await
+                            .map(|(resp, usages)| {
+                                notification_channel.send(Notification::ReportUsage(
+                                    req.assembly_id.stack_id,
+                                    usages,
+                                ));
+                                resp
+                            })
+                            .map_err(|(error, usages)| {
+                                notification_channel.send(Notification::ReportUsage(
+                                    req.assembly_id.stack_id,
+                                    usages,
+                                ));
+                                error
+                            });
+
+                        req.reply.reply(result);
+                    }
+                }
+            });
+        }
+        Err(f) => req.reply.reply(Err(Error::Internal(f))),
+    }
 }

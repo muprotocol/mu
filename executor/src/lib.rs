@@ -142,7 +142,6 @@ pub async fn run() -> Result<()> {
     )
     .context("Failed to start gossip")?;
 
-    let function_provider = mu_runtime::providers::DefaultAssemblyProvider::new();
     // TODO: don't leak this implementation
     // @Hossein: remove this when implementing the external TiKV feature
     let database_manager = DbManagerImpl::new_with_embedded_cluster(
@@ -161,13 +160,10 @@ pub async fn run() -> Result<()> {
         tikv_config,
     )
     .await?;
-    let (runtime, mut runtime_notification_receiver) = mu_runtime::start(
-        Box::new(function_provider),
-        Box::new(database_manager.clone()),
-        runtime_config,
-    )
-    .await
-    .context("Failed to initiate runtime")?;
+    let (runtime, mut runtime_notification_receiver) =
+        mu_runtime::start(Box::new(database_manager.clone()), runtime_config)
+            .await
+            .context("Failed to initiate runtime")?;
 
     let rpc_handler = rpc_handler::new(
         connection_manager.clone(),
