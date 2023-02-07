@@ -11,7 +11,7 @@ export default function Header() {
   const { isOpen, openDrawer, closeDrawer } = useDrawer();
 
   return (
-    <header className="flex! container mx-auto flex items-center gap-5 p-5">
+    <header className="flex! container mx-auto flex items-center gap-5 py-5">
       <Drawer isOpen={isOpen} closeDrawer={closeDrawer} />
       <Button icon="pi pi-bars" className="p-button-rounded p-button-text lg:!hidden" onClick={openDrawer} />
       <div>
