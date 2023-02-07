@@ -8,7 +8,9 @@ type DrawerWrapperProps = {
 export default function Drawer({isOpen, closeDrawer}: DrawerWrapperProps) {
     return (
         <Sidebar visible={isOpen} onHide={closeDrawer}>
-            drawer content
+            <div data-testid="drawerContainer">
+                drawer content
+            </div>
         </Sidebar>
     );
 }

@@ -20,7 +20,7 @@ describe("Drawer", () => {
 
   it("should render #drawerContent on #isOpen being true", () => {
     render(<Drawer isOpen={true} closeDrawer={() => {}} />);
-    const drawerContent = screen.getByTestId("drawerContent");
+    const drawerContent = screen.getByTestId("drawerContainer");
     expect(drawerContent).toBeTruthy();
   });
 });

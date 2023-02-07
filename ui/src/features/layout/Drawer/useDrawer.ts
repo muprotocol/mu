@@ -1,6 +1,5 @@
 import {createContext, useState} from "react";
 
-
 export default function useDrawer() {
   const [isOpen, setIsOpen] = useState<boolean>(false);
 
