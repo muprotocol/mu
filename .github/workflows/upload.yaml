@@ -33,7 +33,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential curl libssl-dev libudev-dev pkg-config zlib1g-dev clang cmake make language-pack-en libclang-common-12-dev llvm-12-dev protobuf-compiler awscli
+          sudo apt-get install -y build-essential curl libssl-dev libudev-dev pkg-config zlib1g-dev clang cmake make language-pack-en libclang-common-12-dev llvm-12-dev protobuf-compiler unzip
       
       - name: Install rust stable
         uses: actions-rs/toolchain@v1
@@ -59,6 +59,14 @@ jobs:
         run: cargo build --release
         working-directory: ${{ matrix.dir }}
 
+      - name: Install aws
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+          unzip -q /tmp/awscliv2.zip -d /tmp
+          rm /tmp/awscliv2.zip
+          sudo /tmp/aws/install --update
+          rm -rf /tmp/aws/
+      
       - name: Upload to S3 
         run: aws s3 sync . s3://repo.030labs.org --delete
         working-directory: ${{ matrix.dir }}/target/release
