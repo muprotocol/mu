@@ -47,20 +47,21 @@ jobs:
         run: cargo fmt -- --check
         working-directory: ${{ matrix.dir }}
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}  
+
       - name: Build Release
         if: success()
         run: cargo build --release
         working-directory: ${{ matrix.dir }}
 
-      - name: Upload to S3
-        uses: koraykoska/s3-upload-github-action@0.1.3
-        env:
-          FILE: executor/target/release/mu-executor
-          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-          S3_BUCKET: ${{ secrets.S3_BUCKET }}
-          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-    
+      - name: Upload to S3 
+        run: aws s3 sync . s3://dev.metaroom.gg --delete
+        working-directory: ${{ matrix.dir }}/target/release
+      
       - name: Save dependencies cache
         uses: actions/cache@v3
         if: success()
