@@ -39,8 +39,6 @@ impl MuContext {
     }
 
     pub fn db(&mut self) -> db::DbHandle {
-        // TODO: debug
-        log::trace!("creating db started");
         db::DbHandle { context: self }
     }
 

@@ -1,14 +1,14 @@
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    io::{stdout, Write},
-};
+// use std::{
+//     borrow::Cow,
+//     collections::HashMap,
+//     io::{stdout, Write},
+// };
 
 use musdk::*;
-use musdk_common::{
-    incoming_message::{db::ListResult, ExecuteFunction, IncomingMessage},
-    outgoing_message::OutgoingMessage,
-};
+// use musdk_common::{
+//     incoming_message::{db::ListResult, ExecuteFunction, IncomingMessage},
+//     outgoing_message::OutgoingMessage,
+// };
 use serde::{Deserialize, Serialize};
 
 // fn main() {
@@ -57,21 +57,19 @@ mod hello_db {
     }
 
     #[mu_function]
-    fn create<'a>(ctx: &'a mut MuContext) {
-        ctx.log("started!", LogLevel::Debug).unwrap();
-        // let req = req.into_inner();
+    fn table_count<'a>(ctx: &'a mut MuContext) -> String {
+        ctx.db().table_list("").unwrap().len().to_string()
+    }
+
+    #[mu_function]
+    fn create<'a>(ctx: &'a mut MuContext, req: Json<Create>) {
+        let req = req.into_inner();
         let is_atomic = false;
-        let mut x = ctx.db();
-        let mut y = x.table_list("a::").unwrap();
-        ctx.log(format!("{}", y.len()).as_str(), LogLevel::Info)
+        ctx.db()
+            .table(&req.table_name)
+            .unwrap()
+            .put(req.key.as_bytes(), req.value.as_bytes(), is_atomic)
             .unwrap();
-        // let mut x = x.table(&req.table_name);
-        // ctx.db()
-        //     .table(&req.table_name)
-        //     .unwrap()
-        //     .put(req.key.as_bytes(), req.value.as_bytes(), is_atomic)
-        //     .unwrap();
-        ctx.log("done!", LogLevel::Debug).unwrap();
     }
 
     #[mu_function]

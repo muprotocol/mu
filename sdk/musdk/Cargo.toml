@@ -14,4 +14,3 @@ musdk-derive = { path = "../derive" }
 thiserror = "1.0"
 serde_json = { version = "1.0", optional = true }
 serde = { version = "1.0", optional = true }
-log = "0.4"

@@ -1,4 +1,4 @@
-use std::{borrow::Cow, thread::sleep};
+use std::borrow::Cow;
 
 use musdk_common::{
     incoming_message::IncomingMessage as IM,
@@ -232,7 +232,7 @@ impl<'a> TableHandle<'a> {
             } else {
                 (None, false)
             }),
-            tail => resp_tail_to_err(tail, "CompareAndSwap"),
+            left => resp_left_to_err(left, "CompareAndSwap"),
         }
     }
 }
@@ -240,7 +240,7 @@ impl<'a> TableHandle<'a> {
 fn resp_to_tuple_type(resp: IM, kind_name: &'static str) -> Result<()> {
     match resp {
         IM::EmptyResult(_) => Ok(()),
-        tail => resp_tail_to_err(tail, kind_name),
+        left => resp_left_to_err(left, kind_name),
     }
 }
 
@@ -248,14 +248,14 @@ fn resp_to_option_blob(resp: IM, kind_name: &'static str) -> Result<Option<Blob>
     match resp {
         IM::SingleResult(x) => Ok(Some(x.item.into_owned())),
         IM::EmptyResult(_) => Ok(None),
-        tail => resp_tail_to_err(tail, kind_name),
+        left => resp_left_to_err(left, kind_name),
     }
 }
 
 fn resp_to_vec_blob(resp: IM, kind_name: &'static str) -> Result<Vec<Blob>> {
     match resp {
         IM::ListResult(x) => Ok(x.items.into_iter().map(Into::into).collect()),
-        tail => resp_tail_to_err(tail, kind_name),
+        left => resp_left_to_err(left, kind_name),
     }
 }
 
@@ -266,12 +266,12 @@ fn resp_to_vec_tuple_blob(resp: IM, kind_name: &'static str) -> Result<Vec<(Blob
             .into_iter()
             .map(|pair| (pair.key.into(), pair.value.into()))
             .collect()),
-        tail => resp_tail_to_err(tail, kind_name),
+        left => resp_left_to_err(left, kind_name),
     }
 }
 
-fn resp_tail_to_err<T>(tail: IM, kind_name: &'static str) -> Result<T> {
-    match tail {
+fn resp_left_to_err<T>(left: IM, kind_name: &'static str) -> Result<T> {
+    match left {
         IM::DbError(e) => Err(Error::DatabaseError(e.error.into_owned())),
         _ => Err(Error::UnexpectedMessageKind(kind_name)),
     }

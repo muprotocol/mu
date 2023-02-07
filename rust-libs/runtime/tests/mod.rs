@@ -14,7 +14,6 @@ mod utils;
 #[test_context(RuntimeFixtureWithoutDB)]
 #[tokio::test]
 async fn test_simple_func(fixture: &mut RuntimeFixtureWithoutDB) {
-    env_logger::init();
     let projects = create_and_add_projects(
         vec![("hello-wasm", &["say_hello"], None)],
         &*fixture.runtime,
@@ -440,11 +439,7 @@ async fn json_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB) {
 #[tokio::test]
 async fn string_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB) {
     let projects = create_and_add_projects(
-        vec![(
-            "multi-body",
-            &["string_body"],
-            Some(byte_unit::Byte::from_unit(200.0, byte_unit::ByteUnit::MB).unwrap()),
-        )],
+        vec![("multi-body", &["string_body"], None)],
         &*fixture.runtime,
     )
     .await
@@ -574,20 +569,18 @@ async fn can_access_path_params(fixture: &mut RuntimeFixtureWithoutDB) {
 #[tokio::test]
 async fn db_crud(fixture: &mut RuntimeFixture) {
     use serde::{Deserialize, Serialize};
-    env_logger::builder().is_test(true).try_init().unwrap();
 
-    dbg!("s_1");
     let projects = create_and_add_projects(
-        vec![("hello-db", &["create" /* , "read", "delete" */], None)],
+        vec![("hello-db", &["table_count", "create", "read", "delete"], None)],
         &*fixture.runtime,
     )
     .await
     .unwrap();
 
-    dbg!("s_2");
-    const CREATE_ID: usize = 0;
-    // const READ_ID: usize = 1;
-    // const DELETE_ID: usize = 2;
+    const TABLE_COUNT: usize = 0;
+    const CREATE: usize = 1;
+    const READ: usize = 2;
+    const DELETE: usize = 3;
 
     const TABLE_NAME: &str = "table_1";
     const KEY: &str = "a::a";
@@ -605,7 +598,6 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
         .await
         .unwrap();
 
-    dbg!("s_3");
     let request = |x| {
         make_request(
             Cow::Borrowed(x),
@@ -625,6 +617,12 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
         pub value: String,
     }
 
+    #[derive(Deserialize, Serialize, Debug)]
+    pub struct Read {
+        pub table_name: String,
+        pub key: String,
+    }
+
     let create = serde_json::to_vec(&Create {
         table_name: TABLE_NAME.into(),
         key: KEY.into(),
@@ -632,56 +630,76 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
     })
     .unwrap();
 
+    // table count
     fixture
         .runtime
         .invoke_function(
-            projects[0].function_id(CREATE_ID).unwrap(),
+            projects[0].function_id(TABLE_COUNT).unwrap(),
             request(&create),
         )
         .then(|r| async move {
-            dbg!("s_3.5");
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(r.body.as_ref(), b"1");
+        })
+        .await;
+
+    // create
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(CREATE).unwrap(),
+            request(&create),
+        )
+        .then(|r| async move {
             let r = r.unwrap();
             assert_eq!(Status::Ok, r.status);
             assert!(r.body.as_ref().is_empty());
         })
         .await;
 
-    dbg!("s_4");
 
-    // #[derive(Deserialize, Serialize, Debug)]
-    // pub struct Read {
-    //     pub table_name: String,
-    //     pub key: String,
-    // }
+    let read = serde_json::to_vec(&Read {
+        table_name: TABLE_NAME.into(),
+        key: KEY.into(),
+    })
+    .unwrap();
 
-    // let read = serde_json::to_vec(&Read {
-    //     table_name: TABLE_NAME.into(),
-    //     key: KEY.into(),
-    // })
-    // .unwrap();
+    let delete = read.clone();
 
-    // let delete = read.clone();
+    // read
+    fixture
+        .runtime
+        .invoke_function(projects[0].function_id(READ).unwrap(), request(&read))
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(VALUE.as_bytes(), r.body.as_ref());
+        })
+        .await;
 
-    // fixture
-    //     .runtime
-    //     .invoke_function(projects[0].function_id(READ_ID).unwrap(), request(&read))
-    //     .then(|r| async move {
-    //         let r = r.unwrap();
-    //         assert_eq!(Status::Ok, r.status);
-    //         assert_eq!(VALUE.as_bytes(), r.body.as_ref());
-    //     })
-    //     .await;
+    // delete
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(DELETE).unwrap(),
+            request(&delete),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert!(r.body.as_ref().is_empty());
+        })
+        .await;
 
-    // fixture
-    //     .runtime
-    //     .invoke_function(
-    //         projects[0].function_id(DELETE_ID).unwrap(),
-    //         request(&delete),
-    //     )
-    //     .then(|r| async move {
-    //         let r = r.unwrap();
-    //         assert_eq!(Status::Ok, r.status);
-    //         assert!(r.body.as_ref().is_empty());
-    //     })
-    //     .await;
+    // read delete value and get nothing
+    fixture
+        .runtime
+        .invoke_function(projects[0].function_id(READ).unwrap(), request(&read))
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(b"", r.body.as_ref());
+        })
+        .await;
 }

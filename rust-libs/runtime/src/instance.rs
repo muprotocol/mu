@@ -92,6 +92,7 @@ pub struct Instance<S: InstanceState> {
     memory_limit: byte_unit::Byte,
     include_logs: bool,
     db_manager: Box<dyn DbManager>,
+    db_client: Option<Box<dyn DbClient>>,
 }
 
 impl Instance<Loaded> {
@@ -121,6 +122,7 @@ impl Instance<Loaded> {
             memory_limit,
             include_logs,
             db_manager,
+            db_client: None,
         }
     }
 
@@ -144,6 +146,7 @@ impl Instance<Loaded> {
             memory_limit: self.memory_limit,
             include_logs: self.include_logs,
             db_manager: self.db_manager,
+            db_client: None,
         })
     }
 }
@@ -232,9 +235,6 @@ impl Instance<Running> {
         self.write_message(IncomingMessage::ExecuteFunction(request))
             .map_err(|e| (e, Default::default()))?;
         self.state.io_state = IOState::Processing;
-
-        // TODO: debug
-        trace!("going 1");
 
         loop {
             // TODO: overall timeout for functions
@@ -461,8 +461,17 @@ impl Instance<Running> {
     {
         tokio::runtime::Handle::current().block_on(async {
             let stack_id = self.id.function_id.stack_id;
-            match self.db_manager.make_client().await {
-                // TODO: one client per function call
+            // lazy db_client creation
+            let db_client_res = match &self.db_client {
+                Some(x) => Ok(x.clone()),
+                None => {
+                    let x = self.db_manager.make_client().await;
+                    self.db_client = x.as_ref().ok().map(ToOwned::to_owned);
+                    x
+                }
+            };
+
+            match db_client_res {
                 Ok(db_client) => {
                     let msg = f(db_client, stack_id).await.unwrap_or_else(|e| {
                         IncomingMessage::DbError(DbError {
