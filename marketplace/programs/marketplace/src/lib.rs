@@ -17,16 +17,6 @@ fn calc_usage(rates: &ServiceRates, usage: &ServiceUsage) -> u64 {
         + (rates.gigabytes_gateway_traffic * usage.gateway_traffic_bytes / (1024 * 1024 * 1024))
 }
 
-pub enum MuAccountType {
-    MuState = 0,
-    Provider = 1,
-    ProviderRegion = 2,
-    UsageUpdate = 3,
-    AuthorizedUsageSigner = 4,
-    Stack = 5,
-    ProviderAuthorizer = 6,
-}
-
 #[error_code]
 pub enum Error {
     #[msg("Provider is not authorized")]
@@ -34,6 +24,9 @@ pub enum Error {
 
     #[msg("Commission rate is out of bounds")]
     CommissionRateOutOfBounds,
+
+    #[msg("Cannot operate on a deleted stack")]
+    CannotOperateOnDeletedStack,
 }
 
 #[program]
@@ -46,7 +39,6 @@ pub mod marketplace {
         }
 
         ctx.accounts.state.set_inner(MuState {
-            account_type: MuAccountType::MuState as u8,
             authority: ctx.accounts.authority.key(),
             mint: ctx.accounts.mint.key(),
             deposit_token: ctx.accounts.deposit_token.key(),
@@ -62,7 +54,6 @@ pub mod marketplace {
         ctx.accounts
             .provider_authorizer
             .set_inner(ProviderAuthorizer {
-                account_type: MuAccountType::ProviderAuthorizer as u8,
                 authorizer: ctx.accounts.authorizer.key(),
                 bump: *ctx.bumps.get("provider_authorizer").unwrap(),
             });
@@ -80,7 +71,6 @@ pub mod marketplace {
         anchor_spl::token::transfer(transfer_ctx, 100_000000)?; // TODO: make this configurable
 
         ctx.accounts.provider.set_inner(Provider {
-            account_type: MuAccountType::Provider as u8,
             name,
             authorized: false,
             owner: ctx.accounts.owner.key(),
@@ -107,7 +97,6 @@ pub mod marketplace {
         }
 
         ctx.accounts.region.set_inner(ProviderRegion {
-            account_type: MuAccountType::ProviderRegion as u8,
             name,
             region_num,
             rates,
@@ -130,16 +119,48 @@ pub mod marketplace {
         }
 
         ctx.accounts.stack.set_inner(Stack {
-            account_type: MuAccountType::Stack as u8,
-            stack: stack_data,
             user: ctx.accounts.user.key(),
             region: ctx.accounts.region.key(),
             seed: stack_seed,
-            revision: 1,
             bump: *ctx.bumps.get("stack").unwrap(),
-            name,
+            state: StackState::Active {
+                revision: 1,
+                name,
+                stack_data,
+            },
         });
 
+        Ok(())
+    }
+
+    pub fn update_stack(
+        ctx: Context<UpdateStack>,
+        _stack_seed: u64,
+        stack_data: Vec<u8>,
+        name: String,
+    ) -> Result<()> {
+        match ctx.accounts.stack.state {
+            StackState::Deleted => Err(Error::CannotOperateOnDeletedStack.into()),
+            StackState::Active {
+                ref mut revision,
+                name: ref mut name_ref,
+                stack_data: ref mut stack_data_ref,
+            } => {
+                *name_ref = name;
+                *stack_data_ref = stack_data;
+                *revision += 1;
+
+                Ok(())
+            }
+        }
+    }
+
+    pub fn delete_stack(ctx: Context<DeleteStack>, _stack_seed: u64) -> Result<()> {
+        if let StackState::Deleted = ctx.accounts.stack.state {
+            return Err(Error::CannotOperateOnDeletedStack.into());
+        }
+
+        ctx.accounts.stack.state = StackState::Deleted;
         Ok(())
     }
 
@@ -152,7 +173,6 @@ pub mod marketplace {
         ctx.accounts
             .authorized_signer
             .set_inner(AuthorizedUsageSigner {
-                account_type: MuAccountType::AuthorizedUsageSigner as u8,
                 signer,
                 token_account,
             });
@@ -192,6 +212,7 @@ pub mod marketplace {
         _escrow_bump: u8,
         usage: ServiceUsage,
     ) -> Result<()> {
+        // TODO: only allow usage updates up to a certain point in time after the stack was deleted
         let usage_tokens = calc_usage(&ctx.accounts.region.rates, &usage);
         let commission_tokens =
             usage_tokens * ctx.accounts.state.commission_rate_micros as u64 / 1_000_000;
@@ -232,7 +253,6 @@ pub mod marketplace {
         anchor_spl::token::transfer(transfer_ctx, commission_tokens)?;
 
         ctx.accounts.usage_update.set_inner(UsageUpdate {
-            account_type: MuAccountType::UsageUpdate as u8,
             region: ctx.accounts.region.key(),
             stack: ctx.accounts.stack.key(),
             seed: update_seed,
@@ -246,7 +266,6 @@ pub mod marketplace {
 #[account]
 #[derive(Default)]
 pub struct MuState {
-    pub account_type: u8, // See MuAccountType
     pub authority: Pubkey,
     pub mint: Pubkey,
     pub deposit_token: Pubkey,
@@ -261,7 +280,7 @@ pub struct Initialize<'info> {
         init,
         payer = authority,
         seeds = [b"state"],
-        space = 8 + 1 + 32 + 32 + 32 + 32 + 4 + 1,
+        space = 8 + 32 + 32 + 32 + 32 + 4 + 1,
         bump
     )]
     state: Account<'info, MuState>,
@@ -298,7 +317,6 @@ pub struct Initialize<'info> {
 #[account]
 #[derive(Default)]
 pub struct ProviderAuthorizer {
-    pub account_type: u8,
     pub authorizer: Pubkey,
     pub bump: u8,
 }
@@ -316,7 +334,7 @@ pub struct CreateProviderAuthorizer<'info> {
         init,
         payer = authority,
         seeds = [b"authorizer", authorizer.key().as_ref()],
-        space = 8 + 1 + 32 + 1,
+        space = 8 + 32 + 1,
         bump,
     )]
     pub provider_authorizer: Account<'info, ProviderAuthorizer>,
@@ -333,7 +351,6 @@ pub struct CreateProviderAuthorizer<'info> {
 
 #[account]
 pub struct Provider {
-    pub account_type: u8, // See MuAccountType
     pub owner: Pubkey,
     pub authorized: bool,
     pub name: String,
@@ -353,7 +370,7 @@ pub struct CreateProvider<'info> {
     #[account(
         init,
         payer = owner,
-        space = 8 + 1 + 32 + 1 + 4 + name.as_bytes().len() + 1,
+        space = 8 + 32 + 1 + 4 + name.as_bytes().len() + 1,
         seeds = [b"provider", owner.key().as_ref()],
         bump
     )]
@@ -422,7 +439,6 @@ pub struct ServiceUsage {
 
 #[account]
 pub struct ProviderRegion {
-    pub account_type: u8, // See MuAccountType
     pub provider: Pubkey,
     pub region_num: u32,
     pub rates: ServiceRates,
@@ -439,7 +455,7 @@ pub struct CreateRegion<'info> {
 
     #[account(
         init,
-        space = 8 + 1 + 32 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 8 + 1 + 4 + name.as_bytes().len(),
+        space = 8 + 32 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 8 + 1 + 4 + name.as_bytes().len(),
         payer = owner,
         seeds = [b"region", owner.key().as_ref(), region_num.to_le_bytes().as_ref()],
         bump
@@ -509,14 +525,29 @@ pub struct WithdrawEscrow<'info> {
 
 #[account]
 pub struct Stack {
-    pub account_type: u8, // See MuAccountType
     pub user: Pubkey,
     pub region: Pubkey,
     pub seed: u64,
-    pub revision: u32,
     pub bump: u8,
-    pub name: String,
-    pub stack: Vec<u8>,
+    pub state: StackState,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub enum StackState {
+    // I hate putting so many fields in an enum case, but if we declare a struct
+    // for the fields, the anchor TS client library will choke on it.
+    Active {
+        revision: u32,
+        name: String,
+        stack_data: Vec<u8>,
+    },
+    Deleted,
+}
+
+#[repr(u8)]
+pub enum StackStateDiscriminator {
+    Active = 0,
+    Deleted = 1,
 }
 
 #[derive(Accounts)]
@@ -530,7 +561,7 @@ pub struct CreateStack<'info> {
     #[account(
         init,
         payer = user,
-        space = 8 + 1 + 32 + 32 + 8 + 4 + 1 + 4 + name.len() + 4 + stack_data.len(),
+        space = 8 + 32 + 32 + 8 + 1 + 1 + 4 + 4 + name.len() + 4 + stack_data.len(),
         seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_le_bytes().as_ref()],
         bump
     )]
@@ -541,9 +572,50 @@ pub struct CreateStack<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+#[instruction(stack_seed: u64, stack_data: Vec<u8>, name: String)]
+pub struct UpdateStack<'info> {
+    pub region: Account<'info, ProviderRegion>,
+
+    #[account(
+        mut,
+        realloc = 8 + 32 + 32 + 8 + 1 + 1 + 4 + 4 + name.len() + 4 + stack_data.len(),
+        realloc::payer = user,
+        realloc::zero = false,
+        seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_le_bytes().as_ref()],
+        has_one = user,
+        bump = stack.bump,
+    )]
+    pub stack: Account<'info, Stack>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(stack_seed: u64)]
+pub struct DeleteStack<'info> {
+    pub region: Account<'info, ProviderRegion>,
+
+    #[account(
+        mut,
+        realloc = 8 + 32 + 32 + 8 + 1 + 1,
+        realloc::payer = user,
+        realloc::zero = false,
+        seeds = [b"stack", user.key().as_ref(), region.key().as_ref(), stack_seed.to_le_bytes().as_ref()],
+        has_one = user,
+        bump = stack.bump,
+    )]
+    pub stack: Account<'info, Stack>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
 #[account]
 pub struct AuthorizedUsageSigner {
-    pub account_type: u8, // See MuAccountType
     pub signer: Pubkey,
     pub token_account: Pubkey,
 }
@@ -563,7 +635,7 @@ pub struct CreateAuthorizedUsageSigner<'info> {
     #[account(
         init,
         payer = owner,
-        space = 8 + 1 + 32 + 32,
+        space = 8 + 32 + 32,
         seeds = [b"authorized_signer", region.key().as_ref()],
         bump
     )]
@@ -577,7 +649,6 @@ pub struct CreateAuthorizedUsageSigner<'info> {
 
 #[account]
 pub struct UsageUpdate {
-    pub account_type: u8, // See MuAccountType
     pub region: Pubkey,
     pub stack: Pubkey,
     pub seed: u128,
@@ -615,7 +686,7 @@ pub struct UpdateUsage<'info> {
     #[account(
         init,
         payer = signer,
-        space = 8 + 1 + 32 + 32 + 16 + (16 + 16 + 8 + 8 + 8 + 8),
+        space = 8 + 32 + 32 + 16 + (16 + 16 + 8 + 8 + 8 + 8),
         seeds = [
             b"update",
             stack.key().as_ref(),

@@ -10,6 +10,7 @@ pub mod usage_aggregator;
 #[derive(Clone, Debug)]
 pub struct StackWithMetadata {
     pub stack: Stack,
+    pub name: String,
     pub revision: u32,
     pub metadata: StackMetadata,
 }

@@ -19,8 +19,11 @@ jobs:
           - rust-libs/runtime
           - rust-libs/gateway
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v3
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Restore dependencies cache
+        uses: actions/cache@v3
+        if: success()
         with:
           path: |
             ~/.cargo/bin/
@@ -30,13 +33,20 @@ jobs:
             target/
             cli/target/
             executor/target/
-            mailbox_processor/target/
             marketplace/target/
-            mu_stack/target/
+            rust-libs/common/target/
+            rust-libs/db/target/
+            rust-libs/db-embedded-tikv/target/
+            rust-libs/gateway/target/
+            rust-libs/mailbox_processor/target/
+            rust-libs/mu_stack/target/
+            rust-libs/runtime/target/
             sdk/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential curl libssl-dev libudev-dev pkg-config zlib1g-dev clang cmake make language-pack-en libclang-common-12-dev llvm-12-dev protobuf-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl libssl-dev libudev-dev pkg-config zlib1g-dev clang cmake make language-pack-en libclang-common-12-dev llvm-12-dev protobuf-compiler
       - name: Install rust stable
         uses: actions-rs/toolchain@v1
         with:
@@ -55,3 +65,25 @@ jobs:
         working-directory: ${{ matrix.dir }}
         env:
           RUST_BACKTRACE: 1
+      - name: Save dependencies cache
+        uses: actions/cache@v3
+        if: success()
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+            cli/target/
+            executor/target/
+            marketplace/target/
+            rust-libs/common/target/
+            rust-libs/db/target/
+            rust-libs/db-embedded-tikv/target/
+            rust-libs/gateway/target/
+            rust-libs/mailbox_processor/target/
+            rust-libs/mu_stack/target/
+            rust-libs/runtime/target/
+            sdk/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
