@@ -42,7 +42,7 @@ export default function Provider({params}: ProviderProps) {
     )
 
     return (
-        <div className="container mx-auto flex flex-col gap-10">
+        <div data-testid="Provider" className="container mx-auto flex flex-col gap-10">
             <div className="flex items-start gap-5 !text-3xl font-bold">
                 <i className="pi pi-database !text-3xl"></i>
                 <h1>Provider {

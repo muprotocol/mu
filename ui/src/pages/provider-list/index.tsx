@@ -29,7 +29,7 @@ export default function ProviderList() {
     }
 
     return (
-        <div className="container mx-auto flex flex-col gap-10">
+        <div data-testid="ProviderList" className="container mx-auto flex flex-col gap-10">
             <div className="flex items-start gap-5 !text-3xl font-bold">
                 <i className="pi pi-database !text-3xl"></i>
                 <h1>Providers</h1>
