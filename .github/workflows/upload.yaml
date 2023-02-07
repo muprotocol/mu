@@ -59,7 +59,7 @@ jobs:
         working-directory: ${{ matrix.dir }}
 
       - name: Upload to S3 
-        run: aws s3 sync . s3://dev.metaroom.gg --delete
+        run: aws s3 sync . s3://repo.030labs.org --delete
         working-directory: ${{ matrix.dir }}/target/release
       
       - name: Save dependencies cache
