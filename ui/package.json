@@ -34,6 +34,7 @@
   },
   "devDependencies": {
     "@testing-library/react": "^13.4.0",
+    "@testing-library/react-hooks": "^8.0.1",
     "@testing-library/user-event": "^14.4.3",
     "@trivago/prettier-plugin-sort-imports": "^4.0.0",
     "@types/react-test-renderer": "^18.0.0",
@@ -41,6 +42,7 @@
     "@vitest/ui": "^0.27.2",
     "autoprefixer": "^10.4.13",
     "jsdom": "^21.0.0",
+    "next-router-mock": "^0.9.1",
     "postcss": "^8.4.21",
     "prettier": "^2.8.3",
     "prettier-plugin-tailwindcss": "^0.2.1",
