@@ -14,7 +14,10 @@ use mu_db::{error::Result as MudbResult, DbClient, DbManager, Key as MudbKey, Sc
 use mu_stack::{AssemblyID, StackID};
 use musdk_common::{
     incoming_message::{
-        db::{CasResult, DbError, EmptyResult, KvPair, KvPairsResult, ListResult, SingleResult},
+        db::{
+            CasResult, DbError, EmptyResult, KvPair, KvPairsResult, ListResult, SingleResult,
+            TkvTriple, TkvTriplesResult,
+        },
         IncomingMessage,
     },
     outgoing_message::{LogLevel, OutgoingMessage},
@@ -299,153 +302,146 @@ impl Instance<Running> {
 
                         OutgoingMessage::Put(req) => {
                             self.db_request(|db_client, stack_id| async move {
-                                let key = make_mu_db_key(stack_id, req.table, req.key)?;
+                                let key = make_mudb_key(stack_id, req.table, req.key)?;
                                 db_client
                                     .put(key, req.value.into_owned(), req.is_atomic)
                                     .await
-                                    .map(tuple_type_to_incoming_msg)
+                                    .map(into_empty_incoming_msg)
                             })?
                         }
 
                         OutgoingMessage::Get(req) => {
                             self.db_request(|db_client, stack_id| async move {
-                                let key = make_mu_db_key(stack_id, req.table, req.key)?;
-                                db_client.get(key).await.map(option_blob_to_incoming_msg)
+                                let key = make_mudb_key(stack_id, req.table, req.key)?;
+                                db_client
+                                    .get(key)
+                                    .await
+                                    .map(into_single_or_empty_incoming_msg)
                             })?
                         }
 
                         OutgoingMessage::Delete(req) => {
                             self.db_request(|db_client, stack_id| async move {
-                                let key = make_mu_db_key(stack_id, req.table, req.key)?;
+                                let key = make_mudb_key(stack_id, req.table, req.key)?;
                                 db_client
                                     .delete(key, req.is_atomic)
                                     .await
-                                    .map(tuple_type_to_incoming_msg)
+                                    .map(into_empty_incoming_msg)
                             })?
                         }
 
                         OutgoingMessage::DeleteByPrefix(req) => {
                             self.db_request(|db_client, stack_id| async move {
+                                let table_name = req.table.into_owned().try_into()?;
+                                let key_prefix = req.key_prefix.into_owned();
                                 db_client
-                                    .delete_by_prefix(
-                                        stack_id,
-                                        req.table.into_owned().try_into()?,
-                                        req.key_prefix.into_owned(),
-                                    )
+                                    .delete_by_prefix(stack_id, table_name, key_prefix)
                                     .await
-                                    .map(tuple_type_to_incoming_msg)
+                                    .map(into_empty_incoming_msg)
                             })?
                         }
 
                         OutgoingMessage::Scan(req) => {
                             self.db_request(|db_client, stack_id| async move {
-                                let db_key = make_mu_db_scan(stack_id, req.table, req.key_prefix)?;
+                                let db_key = make_mudb_scan(stack_id, req.table, req.key_prefix)?;
                                 db_client
                                     .scan(db_key, req.limit)
                                     .await
-                                    .map(kv_pairs_to_incoming_msg)
-                            })?
+                                    .map(into_kv_pairs_incoming_msg)
+                            })?;
                         }
 
                         OutgoingMessage::ScanKeys(req) => {
                             self.db_request(|db_client, stack_id| async move {
-                                let db_key = make_mu_db_scan(stack_id, req.table, req.key_prefix)?;
+                                let db_key = make_mudb_scan(stack_id, req.table, req.key_prefix)?;
                                 db_client
                                     .scan_keys(db_key, req.limit)
                                     .await
-                                    .map(list_to_incoming_msg)
+                                    .map(into_list_incoming_msg)
                             })?
                         }
 
                         OutgoingMessage::BatchPut(req) => {
                             self.db_request(|db_client, stack_id| async move {
+                                let into_mudb_kv_pair = |x: (_, _, Cow<[u8]>)| {
+                                    let table = x.0;
+                                    let key = x.1;
+                                    let value = x.2;
+                                    make_mudb_key(stack_id, table, key)
+                                        .map(|mudb_key| (mudb_key, value.into_owned()))
+                                };
+                                let mudb_kv_pairs = req
+                                    .table_key_value_triples
+                                    .into_iter()
+                                    .map(into_mudb_kv_pair)
+                                    .collect::<MudbResult<_>>()?;
                                 db_client
-                                    .batch_put(
-                                        req.table_key_value_triples
-                                            .into_iter()
-                                            .map(|(table, key, value)| {
-                                                make_mu_db_key(stack_id, table, key)
-                                                    .map(|db_key| (db_key, value.into_owned()))
-                                            })
-                                            .collect::<MudbResult<_>>()?,
-                                        req.is_atomic,
-                                    )
+                                    .batch_put(mudb_kv_pairs, req.is_atomic)
                                     .await
-                                    .map(tuple_type_to_incoming_msg)
+                                    .map(into_empty_incoming_msg)
                             })?
                         }
 
                         OutgoingMessage::BatchGet(req) => {
                             self.db_request(|db_client, stack_id| async move {
-                                let keys = make_mu_db_keys(stack_id, req.table_key_tuples)?;
+                                let keys = make_mudb_keys(stack_id, req.table_key_tuples)?;
                                 db_client
                                     .batch_get(keys)
                                     .await
-                                    .map(kv_pairs_to_incoming_msg)
-                            })?
+                                    .map(into_tkv_triples_incoming_msg)
+                            })?;
                         }
 
                         OutgoingMessage::BatchDelete(req) => {
                             self.db_request(|db_client, stack_id| async move {
-                                let keys = make_mu_db_keys(stack_id, req.table_key_tuples)?;
+                                let keys = make_mudb_keys(stack_id, req.table_key_tuples)?;
                                 db_client
                                     .batch_delete(keys)
                                     .await
-                                    .map(tuple_type_to_incoming_msg)
-                            })?
+                                    .map(into_empty_incoming_msg)
+                            })?;
                         }
 
                         OutgoingMessage::BatchScan(req) => {
                             self.db_request(|db_client, stack_id| async move {
-                                let scans =
-                                    make_mu_db_scans(stack_id, req.table_key_prefix_tuples)?;
+                                let scans = make_mudb_scans(stack_id, req.table_key_prefix_tuples)?;
                                 db_client
                                     .batch_scan(scans, req.each_limit)
                                     .await
-                                    .map(kv_pairs_to_incoming_msg)
+                                    .map(into_tkv_triples_incoming_msg)
                             })?
                         }
 
                         OutgoingMessage::BatchScanKeys(req) => {
                             self.db_request(|db_client, stack_id| async move {
-                                let scans =
-                                    make_mu_db_scans(stack_id, req.table_key_prefix_tuples)?;
+                                let scans = make_mudb_scans(stack_id, req.table_key_prefix_tuples)?;
                                 db_client
                                     .batch_scan_keys(scans, req.each_limit)
                                     .await
-                                    .map(list_to_incoming_msg)
+                                    .map(into_list_incoming_msg)
                             })?
                         }
 
                         OutgoingMessage::TableList(req) => {
                             self.db_request(|db_client, stack_id| async move {
+                                let table_name_prefix =
+                                    Some(req.table_prefix.into_owned().try_into()?);
                                 db_client
-                                    .table_list(
-                                        stack_id,
-                                        Some(req.table_prefix.into_owned().try_into()?),
-                                    )
+                                    .table_list(stack_id, table_name_prefix)
                                     .await
-                                    .map(list_to_incoming_msg)
+                                    .map(into_list_incoming_msg)
                             })?;
                         }
 
                         OutgoingMessage::CompareAndSwap(req) => {
                             self.db_request(|db_client, stack_id| async move {
-                                let key = make_mu_db_key(stack_id, req.table, req.key)?;
+                                let key = make_mudb_key(stack_id, req.table, req.key)?;
+                                let prev_value = Option::<Cow<[u8]>>::from(req.previous_value)
+                                    .map(|x| x.into_owned());
                                 db_client
-                                    .compare_and_swap(
-                                        key,
-                                        Some(req.previous_value.into_owned()),
-                                        req.new_value.into_owned(),
-                                    )
+                                    .compare_and_swap(key, prev_value, req.new_value.into_owned())
                                     .await
-                                    .map(|(x, is_swapped)| {
-                                        let y = if is_swapped { x.unwrap() } else { vec![] };
-                                        IncomingMessage::CasResult(CasResult {
-                                            previous_value: Cow::Owned(y),
-                                            is_swapped,
-                                        })
-                                    })
+                                    .map(into_cas_incoming_msg)
                             })?
                         }
                     }
@@ -489,7 +485,7 @@ impl Instance<Running> {
     }
 }
 
-fn make_mu_db_key(
+fn make_mudb_key(
     stack_id: StackID,
     cow_table: Cow<'_, [u8]>,
     cow_key: Cow<'_, [u8]>,
@@ -501,7 +497,7 @@ fn make_mu_db_key(
     })
 }
 
-fn make_mu_db_scan(
+fn make_mudb_scan(
     stack_id: StackID,
     cow_table: Cow<'_, [u8]>,
     cow_key_prefix: Cow<'_, [u8]>,
@@ -515,35 +511,21 @@ fn make_mu_db_scan(
 
 type TableKeyPairs<'a> = Vec<(Cow<'a, [u8]>, Cow<'a, [u8]>)>;
 
-fn make_mu_db_keys(
-    stack_id: StackID,
-    table_key_list: TableKeyPairs<'_>,
-) -> MudbResult<Vec<MudbKey>> {
+fn make_mudb_keys(stack_id: StackID, table_key_list: TableKeyPairs) -> MudbResult<Vec<MudbKey>> {
     table_key_list
         .into_iter()
-        .map(|(table, key)| make_mu_db_key(stack_id, table, key))
+        .map(|(table, key)| make_mudb_key(stack_id, table, key))
         .collect::<MudbResult<_>>()
 }
 
-fn make_mu_db_scans(
-    stack_id: StackID,
-    table_key_list: TableKeyPairs<'_>,
-) -> MudbResult<Vec<MudbScan>> {
+fn make_mudb_scans(stack_id: StackID, table_key_list: TableKeyPairs) -> MudbResult<Vec<MudbScan>> {
     table_key_list
         .into_iter()
-        .map(|(table, key)| make_mu_db_scan(stack_id, table, key))
+        .map(|(table, key)| make_mudb_scan(stack_id, table, key))
         .collect::<MudbResult<_>>()
 }
 
-#[derive(Copy, Clone)]
-enum IOState {
-    Idle,
-    Processing,
-    // InRuntimeCall,
-    // Closed,
-}
-
-fn option_blob_to_incoming_msg<'a>(x: Option<Vec<u8>>) -> IncomingMessage<'a> {
+fn into_single_or_empty_incoming_msg<'a>(x: Option<Vec<u8>>) -> IncomingMessage<'a> {
     match x {
         Some(xp) => IncomingMessage::SingleResult(SingleResult {
             item: Cow::Owned(xp),
@@ -552,29 +534,57 @@ fn option_blob_to_incoming_msg<'a>(x: Option<Vec<u8>>) -> IncomingMessage<'a> {
     }
 }
 
-fn tuple_type_to_incoming_msg<'a>(_: ()) -> IncomingMessage<'a> {
+fn into_empty_incoming_msg<'a>(_: ()) -> IncomingMessage<'a> {
     IncomingMessage::EmptyResult(EmptyResult)
 }
 
-fn kv_pairs_to_incoming_msg<'a>(x: Vec<(MudbKey, Vec<u8>)>) -> IncomingMessage<'a> {
+fn into_kv_pairs_incoming_msg<'a>(x: Vec<(MudbKey, Vec<u8>)>) -> IncomingMessage<'a> {
     IncomingMessage::KvPairsResult(KvPairsResult {
         kv_pairs: x
             .into_iter()
             .map(|(k, v)| KvPair {
-                key: Cow::Owned(Vec::from(k)),
+                key: Cow::Owned(Vec::from(k.inner_key)),
                 value: Cow::Owned(v),
             })
             .collect(),
     })
 }
 
-fn list_to_incoming_msg<'a, T>(x: Vec<T>) -> IncomingMessage<'a>
+fn into_tkv_triples_incoming_msg<'a>(x: Vec<(MudbKey, Vec<u8>)>) -> IncomingMessage<'a> {
+    IncomingMessage::TkvTriplesResult(TkvTriplesResult {
+        tkv_triples: x
+            .into_iter()
+            .map(|(k, v)| TkvTriple {
+                table: Cow::Owned(k.table_name.into()),
+                key: Cow::Owned(Vec::from(k.inner_key)),
+                value: Cow::Owned(v),
+            })
+            .collect(),
+    })
+}
+
+fn into_list_incoming_msg<'a, T>(x: Vec<T>) -> IncomingMessage<'a>
 where
     Vec<u8>: From<T>,
 {
     IncomingMessage::ListResult(ListResult {
         items: x.into_iter().map(Vec::<u8>::from).map(Cow::Owned).collect(),
     })
+}
+
+fn into_cas_incoming_msg<'a>(x: (Option<Vec<u8>>, bool)) -> IncomingMessage<'a> {
+    IncomingMessage::CasResult(CasResult {
+        previous_value: x.0.map(Cow::Owned).into(),
+        is_swapped: x.1,
+    })
+}
+
+#[derive(Copy, Clone)]
+enum IOState {
+    Idle,
+    Processing,
+    // InRuntimeCall,
+    // Closed,
 }
 
 mod utils {

@@ -1,3 +1,4 @@
+pub use super::super::OptionValue;
 use std::borrow::Cow;
 
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -16,6 +17,13 @@ pub struct ListResult<'a> {
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct TkvTriple<'a> {
+    pub table: Cow<'a, str>,
+    pub key: Cow<'a, [u8]>,
+    pub value: Cow<'a, [u8]>,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct KvPair<'a> {
     pub key: Cow<'a, [u8]>,
     pub value: Cow<'a, [u8]>,
@@ -27,8 +35,13 @@ pub struct KvPairsResult<'a> {
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct TkvTriplesResult<'a> {
+    pub tkv_triples: Vec<TkvTriple<'a>>,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct CasResult<'a> {
-    pub previous_value: Cow<'a, [u8]>,
+    pub previous_value: OptionValue<Cow<'a, [u8]>>,
     pub is_swapped: bool,
 }
 

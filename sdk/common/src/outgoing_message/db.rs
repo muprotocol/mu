@@ -1,3 +1,4 @@
+pub use super::super::OptionValue;
 use std::borrow::Cow;
 
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -46,8 +47,7 @@ query_struct!(ScanKeys<'a>{
 query_struct!(CompareAndSwap<'a>{
     key: Cow<'a, [u8]>,
     new_value: Cow<'a, [u8]>,
-    is_previous_value_exist: u8,
-    previous_value: Cow<'a, [u8]>
+    previous_value: OptionValue<Cow<'a, [u8]>>
 });
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]

@@ -61,3 +61,34 @@ impl<'a> Response<'a> {
         ResponseBuilder::default()
     }
 }
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct OptionValue<T> {
+    pub is_some: bool,
+    pub some: T,
+}
+
+impl<T: Default> From<Option<T>> for OptionValue<T> {
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Some(some) => Self {
+                is_some: true,
+                some,
+            },
+            None => Self {
+                is_some: false,
+                some: T::default(),
+            },
+        }
+    }
+}
+
+impl<T> From<OptionValue<T>> for Option<T> {
+    fn from(value: OptionValue<T>) -> Self {
+        if value.is_some {
+            Some(value.some)
+        } else {
+            None
+        }
+    }
+}

@@ -25,6 +25,7 @@ enum IncomingMessageKind {
     KvPairsResult = 1004,
     EmptyResult = 1005,
     CasResult = 1006,
+    TkvTriplesResult = 1007,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -45,6 +46,7 @@ pub enum IncomingMessage<'a> {
     KvPairsResult(KvPairsResult<'a>),
     EmptyResult(EmptyResult),
     CasResult(CasResult<'a>),
+    TkvTriplesResult(TkvTriplesResult<'a>),
 }
 
 macro_rules! read_cases {
@@ -88,7 +90,15 @@ impl<'a> IncomingMessage<'a> {
         read_cases!(
             kind,
             reader,
-            [ExecuteFunction, DbError, SingleResult, ListResult, KvPairsResult, CasResult] * 'static,
+            [
+                ExecuteFunction,
+                DbError,
+                SingleResult,
+                ListResult,
+                KvPairsResult,
+                CasResult,
+                TkvTriplesResult
+            ] * 'static,
             [EmptyResult]
         )
     }
@@ -104,7 +114,8 @@ impl<'a> IncomingMessage<'a> {
                 ListResult,
                 KvPairsResult,
                 EmptyResult,
-                CasResult
+                CasResult,
+                TkvTriplesResult
             ]
         );
 

@@ -36,3 +36,5 @@ itertools = "0.10"
 rand = "0.8"
 db-embedded-tikv = { path = "../db-embedded-tikv" }
 tikv-client = "0.1.0"
+env_logger = "0.10"
+serial_test = "0.8"

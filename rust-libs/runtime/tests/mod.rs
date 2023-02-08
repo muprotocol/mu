@@ -5,6 +5,7 @@ use itertools::Itertools;
 
 use mu_runtime::*;
 use musdk_common::{Header, Status};
+use serial_test::serial;
 use test_context::test_context;
 
 use crate::utils::{fixture::*, *};
@@ -567,11 +568,16 @@ async fn can_access_path_params(fixture: &mut RuntimeFixtureWithoutDB) {
 
 #[test_context(RuntimeFixture)]
 #[tokio::test]
+#[serial]
 async fn db_crud(fixture: &mut RuntimeFixture) {
     use serde::{Deserialize, Serialize};
 
     let projects = create_and_add_projects(
-        vec![("hello-db", &["table_count", "create", "read", "delete"], None)],
+        vec![(
+            "hello-db",
+            &["table_list", "create", "read", "update", "delete", "scan"],
+            None,
+        )],
         &*fixture.runtime,
     )
     .await
@@ -580,14 +586,20 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
     const TABLE_COUNT: usize = 0;
     const CREATE: usize = 1;
     const READ: usize = 2;
-    const DELETE: usize = 3;
+    const UPDATE: usize = 3;
+    const DELETE: usize = 4;
+    const SCAN: usize = 5;
 
     const TABLE_NAME: &str = "table_1";
+    const TABLE_NAME2: &str = "table_2";
     const KEY: &str = "a::a";
     const VALUE: &str = "112233";
 
     let stack_id = projects[0].id.stack_id;
-    let table_names = vec![TABLE_NAME.try_into().unwrap()];
+    let table_names = vec![
+        TABLE_NAME.try_into().unwrap(),
+        TABLE_NAME2.try_into().unwrap(),
+    ];
     fixture
         .db_manager
         .get_db_manager()
@@ -611,45 +623,101 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
     };
 
     #[derive(Deserialize, Serialize, Debug)]
-    pub struct Create {
+    struct CreateReq {
         pub table_name: String,
         pub key: String,
         pub value: String,
     }
 
+    type UpdateReq = CreateReq;
+
     #[derive(Deserialize, Serialize, Debug)]
-    pub struct Read {
+    struct ReadReq {
         pub table_name: String,
         pub key: String,
     }
 
-    let create = serde_json::to_vec(&Create {
-        table_name: TABLE_NAME.into(),
-        key: KEY.into(),
-        value: VALUE.into(),
-    })
-    .unwrap();
+    type DeleteReq = ReadReq;
 
-    // table count
+    // table list
     fixture
         .runtime
-        .invoke_function(
-            projects[0].function_id(TABLE_COUNT).unwrap(),
-            request(&create),
-        )
+        .invoke_function(projects[0].function_id(TABLE_COUNT).unwrap(), request(&[]))
         .then(|r| async move {
             let r = r.unwrap();
             assert_eq!(Status::Ok, r.status);
-            assert_eq!(r.body.as_ref(), b"1");
+            assert_eq!(
+                vec![TABLE_NAME.to_string(), TABLE_NAME2.to_string()],
+                serde_json::from_slice::<Vec<String>>(r.body.as_ref()).unwrap()
+            );
         })
         .await;
 
     // create
+
+    let make_create_req = |a: &str, b: &str, c: &str| {
+        serde_json::to_vec(&CreateReq {
+            table_name: a.into(),
+            key: b.into(),
+            value: c.into(),
+        })
+    };
+
+    macro_rules! create {
+        ($req: expr) => {
+            fixture
+                .runtime
+                .invoke_function(projects[0].function_id(CREATE).unwrap(), request($req))
+                .then(|r| async move {
+                    let r = r.unwrap();
+                    assert_eq!(Status::Ok, r.status);
+                    assert!(r.body.as_ref().is_empty());
+                })
+        };
+    }
+
+    let create_req = make_create_req(TABLE_NAME, KEY, VALUE).unwrap();
+    create!(&create_req).await;
+
+    // read
+
+    let make_read_req = |a: &str, b: &str| {
+        serde_json::to_vec(&ReadReq {
+            table_name: a.into(),
+            key: b.into(),
+        })
+    };
+
+    macro_rules! read {
+        ($req: expr, $expected_result: expr) => {
+            fixture
+                .runtime
+                .invoke_function(projects[0].function_id(READ).unwrap(), request($req))
+                .then(|r| async move {
+                    let r = r.unwrap();
+                    assert_eq!(Status::Ok, r.status);
+                    assert_eq!($expected_result, r.body.as_ref());
+                })
+        };
+    }
+
+    let read_req = make_read_req(TABLE_NAME, KEY).unwrap();
+    read!(&read_req, VALUE.as_bytes()).await;
+
+    // update
+    const NEW_VALUE: &str = "new_value";
+    let update_req = serde_json::to_vec(&UpdateReq {
+        table_name: TABLE_NAME.into(),
+        key: KEY.into(),
+        value: NEW_VALUE.into(),
+    })
+    .unwrap();
+
     fixture
         .runtime
         .invoke_function(
-            projects[0].function_id(CREATE).unwrap(),
-            request(&create),
+            projects[0].function_id(UPDATE).unwrap(),
+            request(&update_req),
         )
         .then(|r| async move {
             let r = r.unwrap();
@@ -658,32 +726,16 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
         })
         .await;
 
-
-    let read = serde_json::to_vec(&Read {
-        table_name: TABLE_NAME.into(),
-        key: KEY.into(),
-    })
-    .unwrap();
-
-    let delete = read.clone();
-
-    // read
-    fixture
-        .runtime
-        .invoke_function(projects[0].function_id(READ).unwrap(), request(&read))
-        .then(|r| async move {
-            let r = r.unwrap();
-            assert_eq!(Status::Ok, r.status);
-            assert_eq!(VALUE.as_bytes(), r.body.as_ref());
-        })
-        .await;
+    // read updated value
+    read!(&read_req, NEW_VALUE.as_bytes()).await;
 
     // delete
+    let delete_req = read_req.clone();
     fixture
         .runtime
         .invoke_function(
             projects[0].function_id(DELETE).unwrap(),
-            request(&delete),
+            request(&delete_req),
         )
         .then(|r| async move {
             let r = r.unwrap();
@@ -692,14 +744,265 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
         })
         .await;
 
-    // read delete value and get nothing
+    // read deleted value and get nothing
+    read!(&read_req, b"").await;
+
+    // scan test
+
+    let k1 = "a::b".to_string();
+    let k2 = "b::a".to_string();
+    let v1 = "value1".to_string();
+    let v2 = "value2".to_string();
+    let v3 = "value3".to_string();
+
+    let create_req = make_create_req(TABLE_NAME, &k1, &v1).unwrap();
+    create!(&create_req).await;
+
+    // it's not happen because k1 already exists, create will not change it. as should does.
+    let create_req = make_create_req(TABLE_NAME, &k1, &v2).unwrap();
+    create!(&create_req).await;
+
+    let create_req = make_create_req(TABLE_NAME, &k2, &v3).unwrap();
+    create!(&create_req).await;
+
+    let key_prefix = "".to_string();
+    let scan_req = (TABLE_NAME.to_string(), key_prefix);
+    let scan_req = serde_json::to_vec(&scan_req).unwrap();
     fixture
         .runtime
-        .invoke_function(projects[0].function_id(READ).unwrap(), request(&read))
+        .invoke_function(projects[0].function_id(SCAN).unwrap(), request(&scan_req))
         .then(|r| async move {
             let r = r.unwrap();
             assert_eq!(Status::Ok, r.status);
-            assert_eq!(b"", r.body.as_ref());
+            assert_eq!(
+                vec![(k1, v1), (k2, v3)],
+                serde_json::from_slice::<Vec<(_, _)>>(r.body.as_ref()).unwrap()
+            )
+        })
+        .await;
+}
+
+#[test_context(RuntimeFixture)]
+#[tokio::test]
+#[serial]
+async fn db_batch_crud(fixture: &mut RuntimeFixture) {
+    use serde::{Deserialize, Serialize};
+    env_logger::init();
+
+    let projects = create_and_add_projects(
+        vec![(
+            "hello-db",
+            &[
+                "table_list",
+                "batch_put",
+                "batch_get",
+                "batch_scan",
+                "batch_delete",
+            ],
+            None,
+        )],
+        &*fixture.runtime,
+    )
+    .await
+    .unwrap();
+
+    const TABLE_LIST: usize = 0;
+    const BATCH_PUT: usize = 1;
+    const BATCH_GET: usize = 2;
+    const BATCH_SCAN: usize = 3;
+    const BATCH_DELETE: usize = 4;
+
+    const TABLE_NAME: &str = "table_1";
+    const TABLE_NAME2: &str = "table_2";
+    const KEY: &str = "a::a";
+    const KEY2: &str = "a::b";
+    const KEY3: &str = "b::a";
+    const VALUE: &str = "value1";
+    const VALUE2: &str = "value2";
+    const VALUE3: &str = "value3";
+
+    let stack_id = projects[0].id.stack_id;
+    let table_names = vec![
+        TABLE_NAME.try_into().unwrap(),
+        TABLE_NAME2.try_into().unwrap(),
+    ];
+    fixture
+        .db_manager
+        .get_db_manager()
+        .make_client()
+        .await
+        .unwrap()
+        .update_stack_tables(stack_id, table_names)
+        .await
+        .unwrap();
+
+    let request = |x| {
+        make_request(
+            Cow::Borrowed(x),
+            vec![Header {
+                name: Cow::Borrowed("content-type"),
+                value: Cow::Borrowed("application/json; charset=utf-8"),
+            }],
+            HashMap::new(),
+            HashMap::new(),
+        )
+    };
+
+    #[derive(Deserialize, Serialize, Debug)]
+    struct CreateReq {
+        pub table_name: String,
+        pub key: String,
+        pub value: String,
+    }
+
+    type UpdateReq = CreateReq;
+
+    #[derive(Deserialize, Serialize, Debug)]
+    struct ReadReq {
+        pub table_name: String,
+        pub key: String,
+    }
+
+    type DeleteReq = ReadReq;
+
+    // table list
+    fixture
+        .runtime
+        .invoke_function(projects[0].function_id(TABLE_LIST).unwrap(), request(&[]))
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(
+                vec![TABLE_NAME.to_string(), TABLE_NAME2.to_string()],
+                serde_json::from_slice::<Vec<String>>(r.body.as_ref()).unwrap()
+            );
+        })
+        .await;
+
+    // batch put
+
+    let batch_put_req = serde_json::to_vec::<Vec<(String, String, String)>>(&vec![
+        (TABLE_NAME.into(), KEY.into(), VALUE.into()),
+        (TABLE_NAME.into(), KEY3.into(), VALUE3.into()),
+        (TABLE_NAME2.into(), KEY2.into(), VALUE2.into()),
+        (TABLE_NAME2.into(), KEY3.into(), VALUE3.into()),
+    ])
+    .unwrap();
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(BATCH_PUT).unwrap(),
+            request(&batch_put_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert!(r.body.as_ref().is_empty());
+        })
+        .await;
+
+    // batch get
+
+    let batch_get_req = serde_json::to_vec::<Vec<(String, String)>>(&vec![
+        (TABLE_NAME.into(), KEY.into()),
+        (TABLE_NAME.into(), KEY3.into()),
+        (TABLE_NAME2.into(), KEY2.into()),
+    ])
+    .unwrap();
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(BATCH_GET).unwrap(),
+            request(&batch_get_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(
+                vec![
+                    (TABLE_NAME.into(), KEY.into(), VALUE.into()),
+                    (TABLE_NAME.into(), KEY3.into(), VALUE3.into()),
+                    (TABLE_NAME2.into(), KEY2.into(), VALUE2.into()),
+                ],
+                serde_json::from_slice::<Vec<(String, String, String)>>(r.body.as_ref()).unwrap()
+            )
+        })
+        .await;
+
+    // batch scan
+
+    let batch_scan_req = serde_json::to_vec::<Vec<(String, String)>>(&vec![
+        (TABLE_NAME.into(), "a::".into()),
+        (TABLE_NAME2.into(), "b::".into()),
+    ])
+    .unwrap();
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(BATCH_SCAN).unwrap(),
+            request(&batch_scan_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(
+                vec![
+                    (TABLE_NAME.into(), KEY.into(), VALUE.into()),
+                    (TABLE_NAME2.into(), KEY3.into(), VALUE3.into()),
+                ],
+                serde_json::from_slice::<Vec<(String, String, String)>>(r.body.as_ref()).unwrap()
+            )
+        })
+        .await;
+
+    // batch delete
+
+    let batch_delete_req = serde_json::to_vec::<Vec<(String, String)>>(&vec![
+        (TABLE_NAME.into(), KEY.into()),
+        (TABLE_NAME2.into(), KEY2.into()),
+    ])
+    .unwrap();
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(BATCH_DELETE).unwrap(),
+            request(&batch_delete_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert!(r.body.as_ref().is_empty());
+        })
+        .await;
+
+    // batch scan after delete
+
+    let batch_scan_req = serde_json::to_vec::<Vec<(String, String)>>(&vec![
+        (TABLE_NAME.into(), "".into()),
+        (TABLE_NAME2.into(), "".into()),
+    ])
+    .unwrap();
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(BATCH_SCAN).unwrap(),
+            request(&batch_scan_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(
+                vec![
+                    (TABLE_NAME.into(), KEY3.into(), VALUE3.into()),
+                    (TABLE_NAME2.into(), KEY3.into(), VALUE3.into())
+                ],
+                serde_json::from_slice::<Vec<(String, String, String)>>(r.body.as_ref()).unwrap()
+            )
         })
         .await;
 }
