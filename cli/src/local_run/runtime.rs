@@ -1,23 +1,21 @@
 use std::{
-    borrow::Cow,
     collections::HashMap,
     net::{IpAddr, Ipv4Addr},
     path::Path,
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 
 use mu_gateway::{GatewayManager, GatewayManagerConfig};
 use mu_runtime::{AssemblyDefinition, AssemblyProvider, Runtime, RuntimeConfig};
-use mu_stack::{AssemblyID, FunctionID, Gateway, Stack, StackID};
+use mu_stack::{AssemblyID, FunctionID, Gateway, StackID};
 use musdk_common::{Request, Response};
 
-use crate::database::Database;
+use super::{database::Database, StackWithID};
 
 pub async fn start(
-    stack: Stack,
-    function_binary_path: &Path,
+    stack: StackWithID,
 ) -> Result<(
     Box<dyn Runtime>,
     Box<dyn GatewayManager>,
@@ -25,7 +23,7 @@ pub async fn start(
     Vec<Gateway>,
     StackID,
 )> {
-    let stack_id = StackID::SolanaPublicKey(rand::random());
+    let (stack, stack_id) = stack;
 
     let assembly_provider = MapAssemblyProvider::default();
 
@@ -47,19 +45,14 @@ pub async fn start(
     let mut function_defs = vec![];
 
     for func in stack.functions() {
-        //TODO: We are not reading function url from stack.yaml file, because it's not uploaded to
-        //the internet yet and can't download it.
-        //  But should be able to download it or use it's path when we have other options in
-        //stack.yaml
-
-        let assembly_source = std::fs::read(function_binary_path)?;
+        let assembly_source = reqwest::get(&func.binary).await?.bytes().await?;
 
         function_defs.push(AssemblyDefinition {
             id: AssemblyID {
                 stack_id,
                 assembly_name: func.name.clone(),
             },
-            source: assembly_source.into(),
+            source: assembly_source,
             runtime: func.runtime,
             envs: func.env.clone(),
             memory_limit: func.memory_limit,
@@ -148,19 +141,4 @@ impl AssemblyProvider for MapAssemblyProvider {
     fn remove_all_functions(&mut self, _stack_id: &StackID) -> Option<Vec<String>> {
         unimplemented!("Not needed")
     }
-}
-
-pub fn read_stack(project_directory: Option<&Path>) -> Result<Stack> {
-    let path = match project_directory {
-        Some(p) => Cow::Borrowed(p),
-        None => Cow::Owned(std::env::current_dir()?),
-    }
-    .join("stack.yaml");
-
-    if !path.try_exists()? {
-        bail!("Not in a mu project, stack.yaml not found.");
-    }
-
-    let file = std::fs::File::open(path)?;
-    serde_yaml::from_reader(file).map_err(Into::into)
 }

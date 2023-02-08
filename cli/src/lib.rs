@@ -1,9 +1,9 @@
 mod commands;
 pub mod config;
-mod database;
 mod error;
+mod local_run;
 mod marketplace_client;
-mod runtime;
+mod mu_manifest;
 mod signer;
 mod template;
 mod token_utils;

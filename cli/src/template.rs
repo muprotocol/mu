@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     collections::HashMap,
     fmt::Display,
     path::{Path, PathBuf},
@@ -10,12 +9,26 @@ use anyhow::{bail, Context, Result};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 
+use crate::mu_manifest::MUManifest;
+
 //TODO: Currently we embed the `templates` folder in our binary, but it's good to be able to read
 //other templates from user local system.
 
 #[derive(RustEmbed)]
 #[folder = "templates"]
-struct Templates;
+struct TemplateSets;
+
+#[derive(Deserialize)]
+pub struct TemplateSet {
+    pub name: String,
+    pub templates: Vec<Template>,
+}
+
+#[derive(Deserialize)]
+pub struct Template {
+    pub lang: Language,
+    files: Vec<File>,
+}
 
 #[derive(Deserialize, Serialize, Clone, Copy)]
 pub enum Language {
@@ -32,15 +45,6 @@ impl Display for Language {
 }
 
 #[derive(Deserialize)]
-pub struct Template {
-    pub name: String,
-    pub lang: Language,
-    files: Vec<File>,
-    //TODO: Check if order of commands is preserved or not.
-    commands: Vec<Command>,
-}
-
-#[derive(Deserialize)]
 pub struct File {
     pub path: PathBuf,
     pub contents: FileContent,
@@ -53,29 +57,18 @@ pub enum FileContent {
     File(PathBuf),
 }
 
-#[derive(Deserialize)]
-pub enum Command {
-    Prefix(String),
-    Postfix(String),
-}
+impl TemplateSet {
+    pub fn load_builtins() -> Result<Vec<TemplateSet>> {
+        let mut template_sets = vec![];
+        let template_set_files = TemplateSets::iter().filter_map(|i| TemplateSets::get(&i));
 
-impl Command {
-    pub fn is_prefix(&self) -> bool {
-        match self {
-            Command::Prefix(_) => true,
-            Command::Postfix(_) => false,
+        for template_set in template_set_files {
+            let template_set =
+                serde_yaml::from_slice(&template_set.data).context("reading template sets")?;
+            template_sets.push(template_set);
         }
-    }
 
-    pub fn is_postfix(&self) -> bool {
-        !self.is_prefix()
-    }
-
-    pub fn command(&self) -> &str {
-        match self {
-            Command::Prefix(ref s) => s,
-            Command::Postfix(ref s) => s,
-        }
+        Ok(template_sets)
     }
 }
 
@@ -87,10 +80,6 @@ impl Template {
         };
 
         std::fs::create_dir(path)?;
-
-        for cmd in self.commands.iter().filter(|c| c.is_prefix()) {
-            std::process::Command::new(cmd.command()).spawn()?;
-        }
 
         for file in self.files.iter() {
             let path = path.join(&file.path); //TODO: replace args in path too
@@ -114,10 +103,6 @@ impl Template {
             std::fs::write(path, contents)?;
         }
 
-        for cmd in self.commands.iter().filter(|c| c.is_postfix()) {
-            std::process::Command::new(cmd.command()).spawn()?;
-        }
-
         //TODO: create .gitignore file
         let git_result = std::process::Command::new("git")
             .arg("init")
@@ -130,102 +115,6 @@ impl Template {
             eprintln!("Failed to automatically initialize a new git repository");
         }
 
-        MUManifest::new(project_name.clone(), self.lang).create(path)
-    }
-}
-
-pub fn read_templates() -> Result<Vec<Template>> {
-    let mut templates = vec![];
-    let template_files = Templates::iter().filter_map(|i| Templates::get(&i));
-
-    for template in template_files {
-        let template = serde_yaml::from_slice(&template.data).context("reading template")?;
-        templates.push(template);
-    }
-
-    Ok(templates)
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct MUManifest {
-    pub name: String,
-    pub lang: Language,
-}
-
-impl MUManifest {
-    pub fn new(name: String, lang: Language) -> Self {
-        MUManifest { name, lang }
-    }
-
-    pub fn create(&self, path: &Path) -> Result<()> {
-        let file = std::fs::File::options()
-            .write(true)
-            .create_new(true)
-            .open(path.join("Mu.yaml"))?;
-
-        serde_yaml::to_writer(file, &self)?;
-        Ok(())
-    }
-
-    pub fn read_file(path: Option<&Path>) -> Result<Self> {
-        let path = match path {
-            Some(p) => Cow::Borrowed(p),
-            None => Cow::Owned(std::env::current_dir()?),
-        }
-        .join("Mu.yaml");
-
-        if !path.try_exists()? {
-            bail!("Not in a mu project, Mu.yaml not found.");
-        }
-
-        let file = std::fs::File::open(path)?;
-        serde_yaml::from_reader(file).map_err(Into::into)
-    }
-
-    pub fn wasm_module_path(&self) -> PathBuf {
-        let path = match self.lang {
-            Language::Rust => format!("target/wasm32-wasi/release/{}.wasm", self.name),
-        };
-
-        Path::new(&path).to_path_buf()
-    }
-
-    pub fn build_project(&self) -> Result<()> {
-        let create_cmd = |cmd, args: &[&str]| {
-            let mut cmd = std::process::Command::new(cmd);
-            for arg in args {
-                cmd.arg(arg);
-            }
-            cmd
-        };
-
-        let (mut pre_build, mut build) = match self.lang {
-            Language::Rust => (
-                create_cmd("rustup", &["target", "add", "wasm32-wasi"]),
-                create_cmd("cargo", &["build", "--release", "--target", "wasm32-wasi"]),
-            ),
-        };
-
-        let exit = pre_build
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .output()
-            .map_err(|e| anyhow::format_err!("{}", e.to_string()))?;
-
-        if !exit.status.success() {
-            eprintln!("pre-build command failed");
-        }
-
-        let exit = build
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .output()
-            .map_err(|e| anyhow::format_err!("{}", e.to_string()))?;
-
-        if !exit.status.success() {
-            eprintln!("build command failed");
-        }
-
-        Ok(())
+        MUManifest::new(project_name.clone(), self.lang).write(path)
     }
 }

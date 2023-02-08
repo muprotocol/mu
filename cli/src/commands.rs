@@ -1,14 +1,13 @@
 use std::{collections::HashMap, path::Path};
 
-use anyhow::{Context, Result};
-use beau_collector::BeauCollector;
+use anyhow::{bail, Context, Result};
 use clap::{Args, Parser};
-use tokio::select;
-use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::{Config, ConfigOverride},
-    runtime, template,
+    local_run,
+    mu_manifest::{self, BuildMode, MUManifest},
+    template::TemplateSet,
 };
 
 pub mod escrow;
@@ -45,10 +44,10 @@ pub enum Command {
     Init(InitCommand),
 
     /// Build mu project
-    Build,
+    Build(BuildCommand),
 
     /// Run mu project
-    Run,
+    Run(RunCommand),
 }
 
 #[derive(Debug, Args)]
@@ -60,12 +59,26 @@ pub struct InitCommand {
     path: Option<String>,
 
     #[arg(short, long)]
-    /// Template to use for new project.
-    template: String,
+    /// Template to use for new project. Defaults to `empty` template
+    template: Option<String>,
 
     #[arg(short, long)]
-    /// Language.
+    /// Language. Defaults to Rust
     language: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct BuildCommand {
+    #[arg(long)]
+    /// Build artifacts in release mode, with optimizations
+    release: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct RunCommand {
+    #[arg(long)]
+    /// Build artifacts in release mode, with optimizations
+    release: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -86,13 +99,13 @@ pub async fn execute(args: Arguments) -> Result<()> {
         Command::Stack { sub_command } => stack::execute(config, sub_command),
 
         Command::Init(sub_command) => execute_init(config, sub_command),
-        Command::Build => execute_build(config),
-        Command::Run => execute_run(config).await,
+        Command::Build(sub_command) => execute_build(config, sub_command),
+        Command::Run(sub_command) => execute_run(config, sub_command).await,
     }
 }
 
 pub fn execute_init(_config: Config, cmd: InitCommand) -> Result<()> {
-    let templates = template::read_templates()?;
+    let template_sets = TemplateSet::load_builtins()?;
 
     match templates.iter().find(|t| {
         t.name == cmd.template && {
@@ -129,63 +142,45 @@ pub fn execute_init(_config: Config, cmd: InitCommand) -> Result<()> {
     Ok(())
 }
 
-pub fn execute_build(_config: Config) -> Result<()> {
-    template::MUManifest::read_file(None)?.build_project()
+pub fn execute_build(_config: Config, cmd: BuildCommand) -> Result<()> {
+    let build_mode = if cmd.release {
+        BuildMode::Release
+    } else {
+        BuildMode::Debug
+    };
+
+    read_manifest()?.build_project(build_mode)
 }
 
-pub async fn execute_run(_config: Config) -> Result<()> {
-    let manifest = template::MUManifest::read_file(None)?;
-    manifest.build_project()?; //TODO: should we build on run or not?
+pub async fn execute_run(_config: Config, cmd: RunCommand) -> Result<()> {
+    let manifest = read_manifest()?;
 
-    let stack = runtime::read_stack(None)?;
+    let build_mode = if cmd.release {
+        BuildMode::Release
+    } else {
+        BuildMode::Debug
+    };
 
-    let (runtime, gateway, database, gateways, stack_id) =
-        runtime::start(stack, &manifest.wasm_module_path()).await?;
+    manifest.build_project(build_mode)?;
 
-    let cancellation_token = CancellationToken::new();
-    ctrlc::set_handler({
-        let cancellation_token = cancellation_token.clone();
-        move || {
-            println!("Received SIGINT, stopping ...");
-            cancellation_token.cancel()
-        }
-    })
-    .context("Failed to initialize Ctrl+C handler")?;
+    let stack = manifest
+        .generate_stack_manifest(mu_manifest::ArtifactGenerationMode::LocalRun)
+        .context("failed to generate stack.")?;
 
-    println!("Following endpoints are deployed:");
-    for gateway in gateways {
-        for (path, endpoints) in gateway.endpoints {
-            for endpoint in endpoints {
-                println!(
-                    "- {}:{} : {} {}/{path}",
-                    endpoint.route_to.assembly,
-                    endpoint.route_to.function,
-                    endpoint.method,
-                    gateway.name
-                );
-            }
-        }
+    local_run::start_local_node((stack, manifest.id)).await
+}
+
+fn read_manifest() -> Result<MUManifest> {
+    let path = std::env::current_dir()?.join(mu_manifest::MU_MANIFEST_FILE_NAME);
+
+    if !path.try_exists()? {
+        bail!(
+            "Not in a mu project, `{}` file not found.",
+            mu_manifest::MU_MANIFEST_FILE_NAME
+        );
     }
 
-    println!("\nStack deployed at: http://localhost:12012/{stack_id}/");
+    let file = std::fs::File::open(path)?;
 
-    tokio::spawn({
-        async move {
-            loop {
-                select! {
-                    () = cancellation_token.cancelled() => {
-                        [
-                            runtime.stop().await.map_err(Into::into),
-                            gateway.stop().await,
-                            database.stop().await
-                        ].into_iter().bcollect::<()>().unwrap();
-                        break
-                    }
-                }
-            }
-        }
-    })
-    .await?;
-
-    Ok(())
+    mu_manifest::MUManifest::read(&mut file)
 }

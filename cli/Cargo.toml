@@ -27,6 +27,10 @@ rand = "0.8"
 tokio = "1.0"
 tokio-util = "0.7"
 ctrlc = "3.2"
+uriparse = "0.6"
+beau_collector = "0.2"
+byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
+reqwest = "0.11"
 
 anchor-client = "0.26"
 spl-token = "3"
@@ -35,7 +39,6 @@ solana-cli-config = "1"
 solana-account-decoder = "1"
 solana-remote-wallet = "1"
 spl-associated-token-account = "1"
-uriparse = "0.6"
 
 marketplace = { path = "../marketplace/programs/marketplace/", features = [ "no-entrypoint"] }
 mu-runtime = { path = "../rust-libs/runtime" }
@@ -43,4 +46,3 @@ mu-gateway = { path = "../rust-libs/gateway" }
 mu_stack = { path = "../rust-libs/mu_stack" }
 musdk-common = { path = "../sdk/common" }
 mu-db = { path = "../rust-libs/db" }
-beau_collector = "0.2"
