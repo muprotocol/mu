@@ -103,13 +103,13 @@ impl<'a> DbHandle<'a> {
         &mut self,
         table_key_prefix_tuples: Vec<(&'b str, T)>,
         each_limit: u32,
-    ) -> Result<Vec<Key>> {
+    ) -> Result<Vec<(TableName, Key)>> {
         let req = BatchScanKeys {
             table_key_prefix_tuples: vec_tuple_cow_u8_from(table_key_prefix_tuples),
             each_limit,
         };
         let resp = self.request(OM::BatchScanKeys(req))?;
-        resp_to_blobs(resp, "BatchScan")
+        resp_to_pairs2(resp, "BatchScan")
     }
 
     pub fn table_list(&mut self, table_prefix: &str) -> Result<Vec<TableName>> {
@@ -268,6 +268,17 @@ fn resp_to_pairs(resp: IM, kind_name: &'static str) -> Result<Vec<(Blob, Blob)>>
     }
 }
 
+fn resp_to_pairs2(resp: IM, kind_name: &'static str) -> Result<Vec<(String, Blob)>> {
+    match resp {
+        IM::TkPairsResult(x) => Ok(x
+            .tk_pairs
+            .into_iter()
+            .map(|pair| (pair.table.into(), pair.key.into()))
+            .collect()),
+        left => resp_to_err(left, kind_name),
+    }
+}
+
 fn resp_to_triples(resp: IM, kind_name: &'static str) -> Result<Vec<(String, Blob, Blob)>> {
     match resp {
         IM::TkvTriplesResult(x) => Ok(x
@@ -286,6 +297,7 @@ fn resp_to_err<T>(left: IM, kind_name: &'static str) -> Result<T> {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn vec_tuple_cow_u8_from<'a, T>(pairs: Vec<(&'a str, T)>) -> Vec<(Cow<[u8]>, Cow<[u8]>)>
 where
     T: Into<&'a [u8]>,

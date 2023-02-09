@@ -47,12 +47,12 @@ pub struct Read {
 
 pub type Delete = Read;
 
+fn blob_to_string(x: Vec<u8>) -> String {
+    String::from_utf8_lossy(x.as_ref()).into_owned()
+}
+
 fn into_string_triple(x: (String, Vec<u8>, Vec<u8>)) -> (String, String, String) {
-    (
-        x.0,
-        String::from_utf8_lossy(&x.1).into_owned(),
-        String::from_utf8_lossy(&x.2).into_owned(),
-    )
+    (x.0, blob_to_string(x.1), blob_to_string(x.2))
 }
 
 #[mu_functions]
@@ -85,7 +85,7 @@ mod hello_db {
         ctx.db()
             .get(&req.table_name, req.key.as_bytes())
             .unwrap()
-            .map(|x| String::from_utf8_lossy(x.as_ref()).into_owned())
+            .map(blob_to_string)
             .unwrap_or("".into())
     }
 
@@ -114,7 +114,6 @@ mod hello_db {
         req: Json<(String, String)>,
     ) -> Json<Vec<(String, String)>> {
         let req = req.into_inner();
-        let blob_to_string = |x: Vec<u8>| String::from_utf8_lossy(x.as_ref()).into_owned();
         let limit = 15;
         let key_prefix = req.1.as_bytes();
         let table_name = &req.0;
@@ -124,6 +123,23 @@ mod hello_db {
             .unwrap()
             .into_iter()
             .map(|(k, v)| (blob_to_string(k), blob_to_string(v)))
+            .collect();
+
+        Json(res)
+    }
+
+    #[mu_function]
+    fn scan_keys<'a>(ctx: &'a mut MuContext, req: Json<(String, String)>) -> Json<Vec<String>> {
+        let req = req.into_inner();
+        let limit = 15;
+        let key_prefix = req.1.as_bytes();
+        let table_name = &req.0;
+        let res = ctx
+            .db()
+            .scan_keys(table_name, key_prefix, limit)
+            .unwrap()
+            .into_iter()
+            .map(blob_to_string)
             .collect();
 
         Json(res)
@@ -179,6 +195,27 @@ mod hello_db {
             .unwrap()
             .into_iter()
             .map(into_string_triple)
+            .collect();
+        Json(res)
+    }
+
+    #[mu_function]
+    fn batch_scan_keys<'a>(
+        ctx: &'a mut MuContext,
+        req: Json<Vec<(String, String)>>,
+    ) -> Json<Vec<(String, String)>> {
+        let req = req.into_inner();
+        let table_key_prefix_tuples = req
+            .iter()
+            .map(|(x, y)| (x.as_str(), y.as_bytes()))
+            .collect();
+        let each_limit = 32;
+        let res = ctx
+            .db()
+            .batch_scan_keys(table_key_prefix_tuples, each_limit)
+            .unwrap()
+            .into_iter()
+            .map(|(t, k)| (t, blob_to_string(k)))
             .collect();
         Json(res)
     }

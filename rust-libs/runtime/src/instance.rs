@@ -16,7 +16,7 @@ use musdk_common::{
     incoming_message::{
         db::{
             CasResult, DbError, EmptyResult, KvPair, KvPairsResult, ListResult, SingleResult,
-            TkvTriple, TkvTriplesResult,
+            TkPair, TkPairsResult, TkvTriple, TkvTriplesResult,
         },
         IncomingMessage,
     },
@@ -353,10 +353,14 @@ impl Instance<Running> {
 
                         OutgoingMessage::ScanKeys(req) => {
                             self.db_request(|db_client, stack_id| async move {
-                                let db_key = make_mudb_scan(stack_id, req.table, req.key_prefix)?;
+                                let mudb_scan =
+                                    make_mudb_scan(stack_id, req.table, req.key_prefix)?;
+                                let mudb_keys_to_inner_keys =
+                                    |k: Vec<MudbKey>| k.into_iter().map(|k| k.inner_key);
                                 db_client
-                                    .scan_keys(db_key, req.limit)
+                                    .scan_keys(mudb_scan, req.limit)
                                     .await
+                                    .map(mudb_keys_to_inner_keys)
                                     .map(into_list_incoming_msg)
                             })?
                         }
@@ -418,7 +422,7 @@ impl Instance<Running> {
                                 db_client
                                     .batch_scan_keys(scans, req.each_limit)
                                     .await
-                                    .map(into_list_incoming_msg)
+                                    .map(into_tk_pairs_incoming_msg)
                             })?
                         }
 
@@ -550,6 +554,18 @@ fn into_kv_pairs_incoming_msg<'a>(x: Vec<(MudbKey, Vec<u8>)>) -> IncomingMessage
     })
 }
 
+fn into_tk_pairs_incoming_msg<'a>(x: Vec<MudbKey>) -> IncomingMessage<'a> {
+    IncomingMessage::TkPairsResult(TkPairsResult {
+        tk_pairs: x
+            .into_iter()
+            .map(|k| TkPair {
+                table: Cow::Owned(k.table_name.into()),
+                key: Cow::Owned(k.inner_key),
+            })
+            .collect(),
+    })
+}
+
 fn into_tkv_triples_incoming_msg<'a>(x: Vec<(MudbKey, Vec<u8>)>) -> IncomingMessage<'a> {
     IncomingMessage::TkvTriplesResult(TkvTriplesResult {
         tkv_triples: x
@@ -563,8 +579,9 @@ fn into_tkv_triples_incoming_msg<'a>(x: Vec<(MudbKey, Vec<u8>)>) -> IncomingMess
     })
 }
 
-fn into_list_incoming_msg<'a, T>(x: Vec<T>) -> IncomingMessage<'a>
+fn into_list_incoming_msg<'a, I, T>(x: I) -> IncomingMessage<'a>
 where
+    I: IntoIterator<Item = T>,
     Vec<u8>: From<T>,
 {
     IncomingMessage::ListResult(ListResult {

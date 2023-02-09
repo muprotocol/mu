@@ -575,7 +575,15 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
     let projects = create_and_add_projects(
         vec![(
             "hello-db",
-            &["table_list", "create", "read", "update", "delete", "scan"],
+            &[
+                "table_list",
+                "create",
+                "read",
+                "update",
+                "delete",
+                "scan",
+                "scan_keys",
+            ],
             None,
         )],
         &*fixture.runtime,
@@ -589,17 +597,25 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
     const UPDATE: usize = 3;
     const DELETE: usize = 4;
     const SCAN: usize = 5;
+    const SCAN_KEYS: usize = 6;
 
     const TABLE_NAME: &str = "table_1";
-    const TABLE_NAME2: &str = "table_2";
     const KEY: &str = "a::a";
-    const VALUE: &str = "112233";
+    const KEY2: &str = "a::b";
+    const KEY3: &str = "b::a";
+    const VALUE: &str = "1111";
+    const VALUE2: &str = "2222";
+    const VALUE3: &str = "3333";
+    const VALUE4: &str = "4444";
+
+    // let k1 = "a::b".to_string();
+    // let k2 = "b::a".to_string();
+    // let v1 = "value1".to_string();
+    // let v2 = "value2".to_string();
+    // let v3 = "value3".to_string();
 
     let stack_id = projects[0].id.stack_id;
-    let table_names = vec![
-        TABLE_NAME.try_into().unwrap(),
-        TABLE_NAME2.try_into().unwrap(),
-    ];
+    let table_names = vec![TABLE_NAME.try_into().unwrap()];
     fixture
         .db_manager
         .get_db_manager()
@@ -638,20 +654,6 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
     }
 
     type DeleteReq = ReadReq;
-
-    // table list
-    fixture
-        .runtime
-        .invoke_function(projects[0].function_id(TABLE_COUNT).unwrap(), request(&[]))
-        .then(|r| async move {
-            let r = r.unwrap();
-            assert_eq!(Status::Ok, r.status);
-            assert_eq!(
-                vec![TABLE_NAME.to_string(), TABLE_NAME2.to_string()],
-                serde_json::from_slice::<Vec<String>>(r.body.as_ref()).unwrap()
-            );
-        })
-        .await;
 
     // create
 
@@ -749,25 +751,22 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
 
     // scan test
 
-    let k1 = "a::b".to_string();
-    let k2 = "b::a".to_string();
-    let v1 = "value1".to_string();
-    let v2 = "value2".to_string();
-    let v3 = "value3".to_string();
-
-    let create_req = make_create_req(TABLE_NAME, &k1, &v1).unwrap();
+    let create_req = make_create_req(TABLE_NAME, KEY2, VALUE2).unwrap();
     create!(&create_req).await;
 
-    // it's not happen because k1 already exists, create will not change it. as should does.
-    let create_req = make_create_req(TABLE_NAME, &k1, &v2).unwrap();
+    // it's not happen because KEY2 already exists, create will not change it as should does.
+    let create_req = make_create_req(TABLE_NAME, KEY2, VALUE3).unwrap();
     create!(&create_req).await;
 
-    let create_req = make_create_req(TABLE_NAME, &k2, &v3).unwrap();
+    let create_req = make_create_req(TABLE_NAME, KEY3, VALUE4).unwrap();
     create!(&create_req).await;
 
     let key_prefix = "".to_string();
     let scan_req = (TABLE_NAME.to_string(), key_prefix);
     let scan_req = serde_json::to_vec(&scan_req).unwrap();
+
+    // scan
+
     fixture
         .runtime
         .invoke_function(projects[0].function_id(SCAN).unwrap(), request(&scan_req))
@@ -775,8 +774,26 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
             let r = r.unwrap();
             assert_eq!(Status::Ok, r.status);
             assert_eq!(
-                vec![(k1, v1), (k2, v3)],
-                serde_json::from_slice::<Vec<(_, _)>>(r.body.as_ref()).unwrap()
+                vec![(KEY2.into(), VALUE2.into()), (KEY3.into(), VALUE4.into())],
+                serde_json::from_slice::<Vec<(String, String)>>(r.body.as_ref()).unwrap()
+            )
+        })
+        .await;
+
+    // scan keys
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(SCAN_KEYS).unwrap(),
+            request(&scan_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(
+                vec![KEY2, KEY3],
+                serde_json::from_slice::<Vec<String>>(r.body.as_ref()).unwrap()
             )
         })
         .await;
@@ -797,6 +814,7 @@ async fn db_batch_crud(fixture: &mut RuntimeFixture) {
                 "batch_put",
                 "batch_get",
                 "batch_scan",
+                "batch_scan_keys",
                 "batch_delete",
             ],
             None,
@@ -810,7 +828,8 @@ async fn db_batch_crud(fixture: &mut RuntimeFixture) {
     const BATCH_PUT: usize = 1;
     const BATCH_GET: usize = 2;
     const BATCH_SCAN: usize = 3;
-    const BATCH_DELETE: usize = 4;
+    const BATCH_SCAN_KEYS: usize = 4;
+    const BATCH_DELETE: usize = 5;
 
     const TABLE_NAME: &str = "table_1";
     const TABLE_NAME2: &str = "table_2";
@@ -954,6 +973,34 @@ async fn db_batch_crud(fixture: &mut RuntimeFixture) {
                     (TABLE_NAME2.into(), KEY3.into(), VALUE3.into()),
                 ],
                 serde_json::from_slice::<Vec<(String, String, String)>>(r.body.as_ref()).unwrap()
+            )
+        })
+        .await;
+
+    // batch scan keys
+
+    let batch_scan_req = serde_json::to_vec::<Vec<(String, String)>>(&vec![
+        (TABLE_NAME.into(), "".into()),
+        (TABLE_NAME2.into(), "b::".into()),
+    ])
+    .unwrap();
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(BATCH_SCAN_KEYS).unwrap(),
+            request(&batch_scan_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(
+                vec![
+                    (TABLE_NAME.into(), KEY.into()),
+                    (TABLE_NAME.into(), KEY3.into()),
+                    (TABLE_NAME2.into(), KEY3.into()),
+                ],
+                serde_json::from_slice::<Vec<(String, String)>>(r.body.as_ref()).unwrap()
             )
         })
         .await;

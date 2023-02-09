@@ -24,6 +24,12 @@ pub struct TkvTriple<'a> {
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct TkPair<'a> {
+    pub table: Cow<'a, str>,
+    pub key: Cow<'a, [u8]>,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct KvPair<'a> {
     pub key: Cow<'a, [u8]>,
     pub value: Cow<'a, [u8]>,
@@ -32,6 +38,11 @@ pub struct KvPair<'a> {
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct KvPairsResult<'a> {
     pub kv_pairs: Vec<KvPair<'a>>,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct TkPairsResult<'a> {
+    pub tk_pairs: Vec<TkPair<'a>>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
