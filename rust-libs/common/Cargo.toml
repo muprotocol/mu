@@ -5,6 +5,9 @@ edition = "2021"
 
 [dependencies]
 num = "0.4"
+serde = { version = "1", features = ["derive"] }
+anyhow = "1.0"
+hostname-validator = "1.1.1"
 
 [lib]
 name = "mu_common"

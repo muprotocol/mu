@@ -2,6 +2,16 @@
 //! due to the embedded resources. We moved it to a separate crate to improve
 //! type check times when developing the DB module.
 
+use anyhow::{bail, Context, Result};
+use async_trait::async_trait;
+use dyn_clonable::clonable;
+use log::{error, warn};
+use mailbox_processor::callback::CallbackMailboxProcessor;
+use mu_common::serde_supporter::IpOrHostname;
+use nix::sys::signal::{self, Signal};
+use nix::unistd::Pid;
+use rust_embed::RustEmbed;
+use serde::Deserialize;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr},
@@ -9,16 +19,6 @@ use std::{
     path::PathBuf,
     process,
 };
-
-use anyhow::{bail, Context, Result};
-use async_trait::async_trait;
-use dyn_clonable::clonable;
-use log::{error, warn};
-use mailbox_processor::callback::CallbackMailboxProcessor;
-use nix::sys::signal::{self, Signal};
-use nix::unistd::Pid;
-use rust_embed::RustEmbed;
-use serde::Deserialize;
 use tokio::{fs::File, io::AsyncWriteExt};
 
 #[derive(RustEmbed)]
@@ -71,15 +71,16 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
 
 // TODO: support hostname (also in gossip as well)
 /// # IpAndPort
-#[derive(Deserialize, Clone, PartialEq, Eq)]
+
+#[derive(Deserialize, Clone)]
 pub struct IpAndPort {
-    pub address: IpAddr,
+    pub address: IpOrHostname,
     pub port: u16,
 }
 
 impl From<IpAndPort> for String {
     fn from(value: IpAndPort) -> Self {
-        format!("{}:{}", value.address, value.port)
+        format!("{}:{}", String::from(value.address), value.port)
     }
 }
 
@@ -92,7 +93,7 @@ impl TryFrom<&str> for IpAndPort {
             bail!("Can't parse, expected string in this format: ip_addr:port");
         } else {
             Ok(IpAndPort {
-                address: x[0].parse()?,
+                address: IpOrHostname::try_from(x[0])?,
                 port: x[1].parse()?,
             })
         }
@@ -109,8 +110,8 @@ pub struct PdConfig {
 
 fn unspecified_to_localhost(x: &IpAndPort) -> IpAndPort {
     IpAndPort {
-        address: match x.address {
-            xp if xp.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
+        address: match x.address.clone() {
+            xp if xp.is_unspecified() => IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
             xp => xp,
         },
         port: x.port,
@@ -401,11 +402,11 @@ mod test {
         let tikv_runner_conf = TikvRunnerConfig {
             pd: PdConfig {
                 peer_url: IpAndPort {
-                    address: local_host,
+                    address: IpOrHostname::Ip(local_host),
                     port: 2380,
                 },
                 client_url: IpAndPort {
-                    address: local_host,
+                    address: IpOrHostname::Ip(local_host),
                     port: 2379,
                 },
                 data_dir: "./pd_test_dir".into(),
@@ -413,7 +414,7 @@ mod test {
             },
             node: TikvConfig {
                 cluster_url: IpAndPort {
-                    address: local_host,
+                    address: IpOrHostname::Ip(local_host),
                     port: 20160,
                 },
                 data_dir: "./tikv_test_dir".into(),

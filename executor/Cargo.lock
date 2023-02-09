@@ -1551,6 +1551,7 @@ dependencies = [
  "flate2",
  "log",
  "mailbox_processor",
+ "mu-common",
  "nix 0.26.2",
  "reqwest",
  "rust-embed",
@@ -2470,6 +2471,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hostname-validator"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f558a64ac9af88b5ba400d99b579451af0d39c6d360980045b91aac966d705e2"
+
+[[package]]
 name = "http"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3101,7 +3108,10 @@ checksum = "7843ec2de400bcbc6a6328c958dc38e5359da6e93e72e37bc5246bf1ae776389"
 name = "mu-common"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "hostname-validator",
  "num 0.4.0",
+ "serde",
 ]
 
 [[package]]

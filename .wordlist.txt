@@ -84,6 +84,7 @@ Ryzen
 scans
 scts
 secretkey
+serde
 serverless
 Serverless
 shellexpand
