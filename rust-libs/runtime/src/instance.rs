@@ -543,7 +543,7 @@ fn into_kv_pairs_incoming_msg<'a>(x: Vec<(MudbKey, Vec<u8>)>) -> IncomingMessage
         kv_pairs: x
             .into_iter()
             .map(|(k, v)| KvPair {
-                key: Cow::Owned(Vec::from(k.inner_key)),
+                key: Cow::Owned(k.inner_key),
                 value: Cow::Owned(v),
             })
             .collect(),
@@ -556,7 +556,7 @@ fn into_tkv_triples_incoming_msg<'a>(x: Vec<(MudbKey, Vec<u8>)>) -> IncomingMess
             .into_iter()
             .map(|(k, v)| TkvTriple {
                 table: Cow::Owned(k.table_name.into()),
-                key: Cow::Owned(Vec::from(k.inner_key)),
+                key: Cow::Owned(k.inner_key),
                 value: Cow::Owned(v),
             })
             .collect(),
