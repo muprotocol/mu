@@ -151,8 +151,8 @@ pub enum GossipNotification {
     // Notifications
     NodeDiscovered(NodeAddress),
     NodeDied(NodeAddress, NodeDiedCleanly),
-    NodeDeployedStacks(NodeAddress, Vec<StackID>), // TODO
-    NodeUndeployedStacks(NodeAddress, Vec<StackID>), // TODO
+    NodeDeployedStacks(NodeAddress, Vec<StackID>),
+    NodeUndeployedStacks(NodeAddress, Vec<StackID>),
 
     // Requests
     Connect(ConnectionRequestID, IpAddr, u16),

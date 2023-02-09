@@ -141,7 +141,7 @@ pub(super) async fn deploy(
 }
 
 fn validate(stack: Stack) -> Result<Stack, StackValidationError> {
-    // TODO
+    // TODO - implement this in mu_stack, use it in CLI too
     Ok(stack)
 }
 

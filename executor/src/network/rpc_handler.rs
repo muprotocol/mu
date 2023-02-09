@@ -17,9 +17,6 @@ use super::{
     ConnectionID,
 };
 
-// TODO: bad design, we receive the request from glue code, but access the
-// connection manager directly to send requests and replies. Should use one
-// approach across entire code.
 #[clonable]
 pub trait RpcHandler: Send + Sync + Clone {
     fn request_received(

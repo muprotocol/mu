@@ -360,7 +360,7 @@ impl<'a> OccupiedBySameGeneration<'a> {
                 let hash = remote.0;
                 self.inner.insert(Node::Peer(Peer::Permanent(PermanentPeer(
                     hash,
-                    remote.1.clone(), // TODO: can't we move this?
+                    remote.1.clone(),
                     connection_id,
                 ))));
                 self.peers.insert(hash);
@@ -375,7 +375,7 @@ impl<'a> OccupiedBySameGeneration<'a> {
             Node::Peer(Peer::Temporary(temp)) => {
                 self.inner.insert(Node::Peer(Peer::Permanent(PermanentPeer(
                     temp.0,
-                    temp.1.clone(), // TODO: can't we move this?
+                    temp.1.clone(),
                     temp.2,
                 ))));
                 Ok(())
