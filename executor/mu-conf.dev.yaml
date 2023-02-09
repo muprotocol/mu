@@ -23,9 +23,10 @@ runtime:
   cache_path: runtime-cache
   include_function_logs: true
 tikv:
-  pd:
-    data_dir: ./db/pd-data/
-    log_file: ./db/log/pd-server
-  node:
-    data_dir: ./db/tikv-data/
-    log_file: ./db/log/tikv-server
+  internal:
+    pd:
+      data_dir: ./db/pd-data/
+      log_file: ./db/log/pd-server
+    node:
+      data_dir: ./db/tikv-data/
+      log_file: ./db/log/tikv-server

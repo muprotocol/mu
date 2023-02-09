@@ -16,9 +16,18 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use db_embedded_tikv::*;
 use mu_stack::StackID;
+use serde::Deserialize;
 use std::{collections::HashSet, fmt::Debug};
 use tikv_client::{self, KvPair, RawClient, Value};
 use tokio::time::{sleep, Duration};
+
+// only one should be provided
+// used struct instead of enum, only for better visual structure in config
+#[derive(Deserialize, Clone)]
+pub struct DbConfig {
+    external: Option<Vec<IpAndPort>>,
+    internal: Option<TikvRunnerConfig>,
+}
 
 #[async_trait]
 #[clonable]
@@ -261,80 +270,96 @@ impl DbClient for DbClientImpl {
 }
 
 #[derive(Clone)]
-pub struct DbManagerImpl {
+struct DbManagerImpl {
     inner: Option<Box<dyn TikvRunner>>,
     endpoints: Vec<IpAndPort>,
 }
 
-impl DbManagerImpl {
-    pub async fn new_with_embedded_cluster(
-        node_address: NodeAddress,
-        known_node_config: Vec<RemoteNode>,
-        config: TikvRunnerConfig,
-    ) -> anyhow::Result<Self> {
-        let endpoints = vec![config.pd.advertise_client_url()];
-        let inner = db_embedded_tikv::start(node_address, known_node_config, config).await?;
+pub async fn new_with_embedded_cluster(
+    node_address: NodeAddress,
+    known_node_config: Vec<RemoteNode>,
+    config: TikvRunnerConfig,
+) -> anyhow::Result<Box<dyn DbManager>> {
+    let endpoints = vec![config.pd.advertise_client_url()];
+    let inner = db_embedded_tikv::start(node_address, known_node_config, config).await?;
 
-        match Self::ensure_cluster_healthy(&endpoints, 10)
-            .await
-            .context("Timed out while trying to connect to TiKV cluster")
-        {
-            Err(e) => {
-                inner
-                    .stop()
-                    .await
-                    .context("Failed to stop cluster after it failed to bootstrap")?;
-                Err(e)
-            }
-            Ok(()) => Ok(Self {
-                endpoints,
-                inner: Some(inner),
-            }),
+    match ensure_cluster_healthy(&endpoints, 10)
+        .await
+        .context("Timed out while trying to connect to TiKV cluster")
+    {
+        Err(e) => {
+            inner
+                .stop()
+                .await
+                .context("Failed to stop cluster after it failed to bootstrap")?;
+            Err(e)
         }
-    }
-
-    pub async fn new_with_external_cluster(endpoints: Vec<IpAndPort>) -> anyhow::Result<Self> {
-        Self::ensure_cluster_healthy(&endpoints, 5).await?;
-        Ok(Self {
-            inner: None,
+        Ok(()) => Ok(Box::new(DbManagerImpl {
             endpoints,
-        })
+            inner: Some(inner),
+        })),
     }
+}
 
-    async fn ensure_cluster_healthy(
+pub async fn new_with_external_cluster(
+    endpoints: Vec<IpAndPort>,
+) -> anyhow::Result<Box<dyn DbManager>> {
+    ensure_cluster_healthy(&endpoints, 5).await?;
+    Ok(Box::new(DbManagerImpl {
+        inner: None,
+        endpoints,
+    }))
+}
+
+async fn ensure_cluster_healthy(
+    endpoints: &Vec<IpAndPort>,
+    max_try_count: u32,
+) -> anyhow::Result<()> {
+    #[tailcall::tailcall]
+    async fn helper(
         endpoints: &Vec<IpAndPort>,
+        try_count: u32,
         max_try_count: u32,
     ) -> anyhow::Result<()> {
-        #[tailcall::tailcall]
-        async fn helper(
-            endpoints: &Vec<IpAndPort>,
-            try_count: u32,
-            max_try_count: u32,
-        ) -> anyhow::Result<()> {
-            // This call will not succeed unless the cluster is reachable and at least
-            // N/2+1 PD nodes are already clustered.
+        // This call will not succeed unless the cluster is reachable and at least
+        // N/2+1 PD nodes are already clustered.
 
-            let check_cluster_health = || async {
-                let client = DbClientImpl::new(endpoints.clone()).await?;
-                client.inner.get(vec![]).await?;
-                Result::Ok(())
-            };
+        let check_cluster_health = || async {
+            let client = DbClientImpl::new(endpoints.clone()).await?;
+            client.inner.get(vec![]).await?;
+            Result::Ok(())
+        };
 
-            match check_cluster_health().await {
-                Err(e) if try_count < max_try_count => {
-                    warn!("Failed to reach TiKV cluster due to: {e:?}");
-                    sleep(Duration::from_millis(
-                        (1.5_f64.powf(try_count as f64) * 1000.0).round() as u64,
-                    ))
-                    .await;
-                    helper(endpoints, try_count + 1, max_try_count)
-                }
-                Err(e) => bail!(e),
-                Ok(_) => Ok(()),
+        match check_cluster_health().await {
+            Err(e) if try_count < max_try_count => {
+                warn!("Failed to reach TiKV cluster due to: {e:?}");
+                sleep(Duration::from_millis(
+                    (1.5_f64.powf(try_count as f64) * 1000.0).round() as u64,
+                ))
+                .await;
+                helper(endpoints, try_count + 1, max_try_count)
             }
+            Err(e) => bail!(e),
+            Ok(_) => Ok(()),
         }
+    }
 
-        helper(endpoints, 0, max_try_count).await
+    helper(endpoints, 0, max_try_count).await
+}
+
+pub async fn start(
+    node: NodeAddress,
+    remote_nodes: Vec<RemoteNode>,
+    db_config: DbConfig,
+) -> anyhow::Result<Box<dyn DbManager>> {
+    match (db_config.internal, db_config.external) {
+        (Some(tikv_config), None) => {
+            new_with_embedded_cluster(node, remote_nodes, tikv_config).await
+        }
+        (None, Some(endpoints)) => new_with_external_cluster(endpoints).await,
+        _ => bail!(
+            "Exactly one of external or internal keys should be present in TiKV configuration"
+        ),
     }
 }
 

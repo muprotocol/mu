@@ -8,14 +8,11 @@ use std::{
 };
 
 use anyhow::Result;
-use mu_db::{
-    DbManager, DbManagerImpl, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig,
-};
-use musdk_common::Header;
-
 use async_trait::async_trait;
+use mu_db::{DbManager, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig};
 use mu_runtime::{start, AssemblyDefinition, Notification, Runtime, RuntimeConfig, Usage};
 use mu_stack::{AssemblyID, AssemblyRuntime, FunctionID, StackID};
+use musdk_common::Header;
 
 // Add test project names (directory name) in this array to build them when testing
 const TEST_PROJECTS: &[&str] = &[
@@ -152,14 +149,8 @@ pub mod fixture {
     }
 
     pub struct DBManagerFixture {
-        db_manager: DbManagerImpl,
+        db_manager: Box<dyn DbManager>,
         data_dir: TempDir,
-    }
-
-    impl DBManagerFixture {
-        pub fn get_db_manager(&self) -> Box<dyn DbManager> {
-            Box::new(self.db_manager.clone())
-        }
     }
 
     #[async_trait]
@@ -213,13 +204,10 @@ pub mod fixture {
             };
 
             Self {
-                db_manager: DbManagerImpl::new_with_embedded_cluster(
-                    node_address,
-                    vec![],
-                    tikv_config,
-                )
-                .await
-                .unwrap(),
+                db_manager: mu_db::new_with_embedded_cluster(node_address, vec![], tikv_config)
+                    .await
+                    .unwrap(),
+
                 data_dir,
             }
         }
@@ -252,7 +240,7 @@ pub mod fixture {
             };
 
             let (runtime, mut notifications) =
-                start(db_manager.get_db_manager(), config).await.unwrap();
+                start(db_manager.db_manager.clone(), config).await.unwrap();
 
             let usages = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 

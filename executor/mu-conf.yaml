@@ -43,7 +43,7 @@ blockchain_monitor:
 #   # Note, this value should not be under 1s
 #   usage_report_duration: 15m
 tikv:
-  # if you already have a db running use external template and remove the internal key.
+  # if you already have a db running use the external template and remove the internal key.
   # external:
   # - address: 127.0.0.1
   #   port: 8000
