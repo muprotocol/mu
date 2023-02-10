@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::{error, warn};
 use mailbox_processor::callback::CallbackMailboxProcessor;
-use mu_common::serde_supporter::IpOrHostname;
+use mu_common::serde_support::IpOrHostname;
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
 use rust_embed::RustEmbed;
@@ -80,7 +80,7 @@ pub struct IpAndPort {
 
 impl From<IpAndPort> for String {
     fn from(value: IpAndPort) -> Self {
-        format!("{}:{}", String::from(value.address), value.port)
+        format!("{}:{}", value.address, value.port)
     }
 }
 
@@ -93,7 +93,7 @@ impl TryFrom<&str> for IpAndPort {
             bail!("Can't parse, expected string in this format: ip_addr:port");
         } else {
             Ok(IpAndPort {
-                address: IpOrHostname::try_from(x[0])?,
+                address: x[0].parse()?,
                 port: x[1].parse()?,
             })
         }
@@ -159,12 +159,12 @@ struct TikvRunnerArgs {
 }
 
 pub struct NodeAddress {
-    pub address: IpAddr,
+    pub address: IpOrHostname,
     pub port: u16,
 }
 
 pub struct RemoteNode {
-    pub address: IpAddr,
+    pub address: IpOrHostname,
     pub gossip_port: u16,
     pub pd_port: u16,
 }
@@ -384,17 +384,17 @@ mod test {
     async fn generate_arguments_pd_args_and_tikv_args() {
         let local_host: IpAddr = "127.0.0.1".parse().unwrap();
         let node_address = NodeAddress {
-            address: local_host,
+            address: IpOrHostname::Ip(local_host),
             port: 2800,
         };
         let known_node_conf = vec![
             RemoteNode {
-                address: local_host,
+                address: IpOrHostname::Ip(local_host),
                 gossip_port: 2801,
                 pd_port: 2381,
             },
             RemoteNode {
-                address: local_host,
+                address: IpOrHostname::Ip(local_host),
                 gossip_port: 2802,
                 pd_port: 2383,
             },

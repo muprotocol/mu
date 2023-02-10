@@ -1,10 +1,80 @@
-use std::{ops::Deref, str::FromStr, time::Duration};
+use std::{fmt, net::IpAddr};
 
-use http::Uri;
+use anyhow::bail;
 use serde::{
     de::{self, Visitor},
     Deserialize, Deserializer,
 };
+use std::{ops::Deref, str::FromStr, time::Duration};
+
+use http::Uri;
+
+#[derive(Debug, Clone)]
+pub enum IpOrHostname {
+    Ip(IpAddr),
+    Hostname(String),
+}
+
+impl IpOrHostname {
+    pub fn is_unspecified(&self) -> bool {
+        match self {
+            IpOrHostname::Ip(ip) => ip.is_unspecified(),
+            IpOrHostname::Hostname(_) => false,
+        }
+    }
+}
+
+impl FromStr for IpOrHostname {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.parse::<IpAddr>() {
+            Ok(ip) => Ok(IpOrHostname::Ip(ip)),
+            Err(_) => {
+                if hostname_validator::is_valid(s) {
+                    return Ok(IpOrHostname::Hostname(s.to_owned()));
+                }
+                bail!("string is not a valid hostname or IP address")
+            }
+        }
+    }
+}
+
+impl fmt::Display for IpOrHostname {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            IpOrHostname::Hostname(h) => h.fmt(f),
+            IpOrHostname::Ip(ip) => ip.fmt(f),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for IpOrHostname {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(HumanReadableIpOrHostnameVisitor)
+    }
+}
+
+struct HumanReadableIpOrHostnameVisitor;
+
+impl<'de> Visitor<'de> for HumanReadableIpOrHostnameVisitor {
+    type Value = IpOrHostname;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "A string containing either a hostname or an IP")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        v.parse::<IpOrHostname>()
+            .map_err(|_| E::invalid_value(de::Unexpected::Str(v), &self))
+    }
+}
 
 // Wrapper type to support human-readable duration deserialization with serde
 #[derive(Debug, Clone)]

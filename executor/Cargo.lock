@@ -3110,6 +3110,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hostname-validator",
+ "http",
+ "log",
  "num 0.4.0",
  "serde",
 ]
@@ -3127,6 +3129,7 @@ dependencies = [
  "dyn-clone",
  "log",
  "mailbox_processor",
+ "mu-common",
  "mu_stack",
  "nix 0.26.2",
  "serde",

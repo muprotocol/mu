@@ -1,3 +1,3 @@
 pub mod id;
 pub mod replace_with;
-pub mod serde_supporter;
+pub mod serde_support;

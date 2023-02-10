@@ -13,6 +13,7 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use log::*;
 use mailbox_processor::NotificationChannel;
+use mu_common::serde_support::IpOrHostname;
 use mu_runtime::Runtime;
 use network::rpc_handler::{self, RpcHandler, RpcRequestHandler};
 use stack::{
@@ -147,13 +148,13 @@ pub async fn run() -> Result<()> {
 
     let database_manager = mu_db::start(
         mu_db::NodeAddress {
-            address: my_node.address,
+            address: IpOrHostname::Ip(my_node.address),
             port: my_node.port,
         },
         known_nodes_config
             .iter()
             .map(|c| mu_db::RemoteNode {
-                address: c.address,
+                address: IpOrHostname::Ip(c.address),
                 gossip_port: c.gossip_port,
                 pd_port: c.pd_port,
             })

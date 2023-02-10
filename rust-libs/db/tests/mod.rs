@@ -1,6 +1,7 @@
 use anyhow::Result;
 use assert_matches::assert_matches;
 use futures::Future;
+use mu_common::serde_support::IpOrHostname;
 use mu_db::{error::*, *};
 use mu_stack::StackID;
 use rand::Rng;
@@ -251,11 +252,11 @@ fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> Ti
     TikvRunnerConfig {
         pd: PdConfig {
             peer_url: IpAndPort {
-                address: any,
+                address: IpOrHostname::Ip(any),
                 port: peer_port,
             },
             client_url: IpAndPort {
-                address: any,
+                address: IpOrHostname::Ip(any),
                 port: client_port,
             },
             data_dir: format!("{TEST_DATA_DIR}/pd_data_dir_{peer_port}"),
@@ -263,7 +264,7 @@ fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> Ti
         },
         node: TikvConfig {
             cluster_url: IpAndPort {
-                address: any,
+                address: IpOrHostname::Ip(any),
                 port: tikv_port,
             },
             data_dir: format!("{TEST_DATA_DIR}/tikv_data_dir_{tikv_port}"),
