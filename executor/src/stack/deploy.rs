@@ -42,6 +42,9 @@ pub enum StackDeploymentError {
     #[error("Validation error: {0}")]
     ValidationError(StackValidationError),
 
+    #[error("Bad assembly definition")]
+    BadAssemblyDefinition,
+
     #[error("Failed to deploy functions due to: {0}")]
     FailedToDeployFunctions(anyhow::Error),
 
@@ -86,16 +89,19 @@ pub(super) async fn deploy(
             .await
             .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
 
-        function_defs.push(AssemblyDefinition {
-            id: AssemblyID {
-                stack_id: id,
-                assembly_name: func.name.clone(),
-            },
-            source: function_source,
-            runtime: func.runtime,
-            envs: func.env.clone(),
-            memory_limit: func.memory_limit,
-        });
+        function_defs.push(
+            AssemblyDefinition::try_new(
+                AssemblyID {
+                    stack_id: id,
+                    assembly_name: func.name.clone(),
+                },
+                function_source,
+                func.runtime,
+                func.env.clone(),
+                func.memory_limit,
+            )
+            .map_err(|_| StackDeploymentError::BadAssemblyDefinition)?,
+        );
         function_names.push(&func.name);
     }
     runtime
@@ -135,7 +141,7 @@ pub(super) async fn deploy(
 }
 
 fn validate(stack: Stack) -> Result<Stack, StackValidationError> {
-    // TODO
+    // TODO - implement this in mu_stack, use it in CLI too
     Ok(stack)
 }
 

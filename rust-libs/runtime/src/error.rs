@@ -1,6 +1,3 @@
-//TODO
-#![allow(dead_code)]
-
 use mu_stack::AssemblyID;
 use thiserror::Error;
 use wasmer::{ExportError, InstantiationError, RuntimeError};
@@ -25,6 +22,9 @@ pub enum Error {
 
     #[error("Function didn't terminate cleanly")]
     FunctionDidntTerminateCleanly,
+
+    #[error("The runtime was shut down")]
+    RuntimeIsShutDown,
 }
 
 #[derive(Error, Debug)]

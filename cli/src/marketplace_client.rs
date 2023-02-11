@@ -34,7 +34,7 @@ impl MarketplaceClient {
         let payer = config.get_signer()?;
         Ok(Self {
             program: anchor_client::Client::new(config.cluster.clone(), payer)
-                .program(config.program_id), // TODO: use program ID from marketplace package, handle dev v.s. prod there
+                .program(config.program_id),
         })
     }
 

@@ -40,6 +40,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("gossip.max_peers", "6"),
         ("gossip.peer_update_interval", "10s"),
         ("gossip.liveness_check_interval", "1s"),
+        ("gossip.network_stabilization_wait_time", "5s"),
         ("initial_cluster.ip", "127.0.0.1"),
         ("initial_cluster.gossip_port", "12012"),
         ("initial_cluster.pd_port", "2380"),
