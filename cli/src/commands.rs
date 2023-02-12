@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, str::FromStr};
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser};
@@ -7,7 +7,7 @@ use crate::{
     config::{Config, ConfigOverride},
     local_run,
     mu_manifest::{self, BuildMode, MUManifest},
-    template::TemplateSet,
+    template::{Language, TemplateSet},
 };
 
 pub mod escrow;
@@ -105,39 +105,34 @@ pub async fn execute(args: Arguments) -> Result<()> {
 }
 
 pub fn execute_init(_config: Config, cmd: InitCommand) -> Result<()> {
-    let template_sets = TemplateSet::load_builtins()?;
+    let template_sets =
+        TemplateSet::load_builtins().context("Can not deserialize builtin template sets")?;
 
-    match templates.iter().find(|t| {
-        t.name == cmd.template && {
-            match &cmd.language {
-                Some(lang) => t.lang.to_string().to_lowercase() == lang.to_lowercase(),
-                None => true,
-            }
-        }
-    }) {
-        None => {
-            println!(
-                "Template `{}` not found, select one of these templates:",
-                cmd.template
-            );
+    let lang = cmd
+        .language
+        .map(|s| Language::from_str(&s))
+        .unwrap_or(Ok(Language::Rust))
+        .context("Invalid language")?;
+    let template_name = cmd.template.unwrap_or("empty".to_string());
 
-            //TODO: Use a TUI library or print in table format
-            if !templates.is_empty() {
-                println!("- Name, Lang");
-                println!("===================");
-            }
-            for template in templates {
-                println!("- {},  {}", template.name, template.lang);
-            }
-        }
-        Some(template) => {
-            let mut args = HashMap::new();
-            args.insert("name".to_string(), cmd.name.clone());
-            let path = cmd.path.unwrap_or(format!("./{}", cmd.name));
-            let path = Path::new(&path);
+    if let Some(template_set) = template_sets.iter().find(|t| t.name == template_name) {
+        let mut args = HashMap::new();
+        args.insert("name".to_string(), cmd.name.clone());
+        let path = cmd.path.unwrap_or(format!("./{}", cmd.name));
+        let path = Path::new(&path);
 
-            template.create(path, args)?;
+        if path
+            .try_exists()
+            .context("Failed to check the destination directory")?
+        {
+            bail!("Destination `{}` already exists", path.display());
         }
+
+        template_set.create(lang, path, args)?;
+        println!("Created new project ({}) `{}`", template_set.name, cmd.name);
+    } else {
+        println!("Template `{template_name}` not found");
+        TemplateSet::print_all(&template_sets);
     }
     Ok(())
 }
@@ -167,7 +162,7 @@ pub async fn execute_run(_config: Config, cmd: RunCommand) -> Result<()> {
         .generate_stack_manifest(mu_manifest::ArtifactGenerationMode::LocalRun)
         .context("failed to generate stack.")?;
 
-    local_run::start_local_node((stack, manifest.id)).await
+    local_run::start_local_node((stack, manifest.test_id)).await
 }
 
 fn read_manifest() -> Result<MUManifest> {
@@ -180,7 +175,6 @@ fn read_manifest() -> Result<MUManifest> {
         );
     }
 
-    let file = std::fs::File::open(path)?;
-
+    let mut file = std::fs::File::open(path)?;
     mu_manifest::MUManifest::read(&mut file)
 }

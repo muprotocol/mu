@@ -1,0 +1,45 @@
+name: empty
+services:
+  - type: Function
+    name: greeting
+    runtime: wasi1.0
+    memory_limit: 100MB
+    env: {}
+    test_env: {}
+  - type: Gateway
+    name: my_gateway
+    endpoints:
+      /greet/{name}:
+        - method: get
+          route_to: greeting.greet_path_user
+templates:
+  - lang: Rust
+    files:
+      - path: Cargo.toml
+        #TODO: replace `musdk` path with published one on Crates.io
+        contents: !String |-
+            [package]
+            name = "{{name}}"
+            version = "0.1.0"
+            edition = "2021"
+
+            [dependencies]
+            musdk = "0.1" 
+        args:
+          - name
+      - path: src/main.rs
+        contents: !String |-
+            use musdk::*;
+
+            #[mu_functions]
+            mod greeting {
+                use super::*;
+
+                #[mu_function]
+                fn greet_user<'a>(_ctx: &'a MuContext, path: PathParams<'a>) -> String {
+                    let name = path.get("name").expect("Expected to have name path param");
+                    format!("Hello, {name}!")
+                }
+            }
+        args:
+          - name

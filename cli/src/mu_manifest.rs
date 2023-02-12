@@ -7,17 +7,22 @@ use std::{
 
 use anyhow::{Context, Result};
 use beau_collector::BeauCollector;
-use mu_stack::{AssemblyRuntime, Database, Gateway, Stack, StackID, STACK_ID_SIZE};
+use mu_stack::{AssemblyRuntime, Database, Gateway, Stack, StackID};
 use serde::{Deserialize, Serialize};
 
 use crate::template::Language;
 
 pub const MU_MANIFEST_FILE_NAME: &str = "mu.yaml";
+#[allow(dead_code)]
 pub const STACK_MANIFEST_FILE_NAME: &str = "stack.yaml";
 
 #[derive(Serialize, Deserialize)]
 pub struct MUManifest {
-    pub id: StackID,
+    #[serde(
+        serialize_with = "custom_stack_id_serialization::serialize",
+        deserialize_with = "custom_stack_id_serialization::deserialize"
+    )]
+    pub test_id: StackID,
     name: String,
     lang: Language,
     version: String,
@@ -25,26 +30,26 @@ pub struct MUManifest {
 }
 
 impl MUManifest {
-    pub fn new(name: String, lang: Language) -> Result<Self> {
-        let id = StackID::try_from_bytes(&rand::random::<[u8; STACK_ID_SIZE]>())
-            .context("failed to generate new id")?;
+    pub fn new(name: String, lang: Language) -> Self {
+        let bytes = rand::random::<[u8; 32]>();
+        let test_id = StackID::SolanaPublicKey(bytes);
 
-        Ok(MUManifest {
-            id,
+        MUManifest {
+            test_id,
             name,
             lang,
             version: "0.1".to_string(),
             services: vec![],
-        })
+        }
     }
 
     pub fn write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        serde_yaml::to_writer(writer, &self)?;
+        serde_yaml::to_writer(writer, &self).context("Failed to write mu manifest")?;
         Ok(())
     }
 
     pub fn read<R: Read>(reader: &mut R) -> Result<Self> {
-        serde_yaml::from_reader(reader).map_err(Into::into)
+        serde_yaml::from_reader(reader).context("Invalid mu manifest file")
     }
 
     //TODO: support multiple function in a single manifest
@@ -126,10 +131,15 @@ impl MUManifest {
             .bcollect()?;
 
         Ok(Stack {
-            name: self.name,
-            version: self.version,
+            name: self.name.clone(),
+            version: self.version.clone(),
             services,
         })
+    }
+
+    pub fn add_services(mut self, services: &mut Vec<Service>) -> Self {
+        self.services.append(services);
+        self
     }
 
     fn upload_function(
@@ -185,5 +195,28 @@ impl Default for BuildMode {
 impl Default for ArtifactGenerationMode {
     fn default() -> Self {
         Self::LocalRun
+    }
+}
+
+mod custom_stack_id_serialization {
+    use std::str::FromStr;
+
+    use mu_stack::StackID;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(item: &StackID, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s = item.to_string();
+        serializer.serialize_str(&s)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<StackID, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        StackID::from_str(&s).map_err(|_| serde::de::Error::custom("invalid StackID"))
     }
 }
