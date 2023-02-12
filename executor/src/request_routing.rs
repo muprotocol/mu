@@ -91,8 +91,6 @@ pub async fn route_request(
             let (connection_id, new_connection) = match node_connection {
                 NodeConnection::Established(id) => (id, false),
                 NodeConnection::NotEstablished(address) => {
-                    // TODO! Does connecting to the target node here cause the gossip module to expect heartbeats?
-
                     // TODO should pool these connections so we don't do a connection handshake
                     // for each user request. QUIC is faster only if you're using an already open
                     // connection.

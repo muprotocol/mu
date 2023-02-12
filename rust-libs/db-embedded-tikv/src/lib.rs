@@ -140,13 +140,6 @@ impl TikvConfig {
     }
 }
 
-// TODO: this should go in the DB crate.
-#[derive(Deserialize, Clone)]
-pub enum DbConfig {
-    External(Vec<IpAndPort>),
-    Internal(TikvRunnerConfig),
-}
-
 #[derive(Deserialize, Clone)]
 pub struct TikvRunnerConfig {
     pub pd: PdConfig,

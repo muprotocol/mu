@@ -132,7 +132,7 @@ fn match_path_and_extract_path_params<'a, 'ep>(
         match (request_path_segments.next(), endpoint_path_segments.next()) {
             (Some(req_segment), Some(ep_segment)) => {
                 //TODO: Check for cases like `/get/{a}{b}/` which is invalid, since there
-                //is two variables in one segment.
+                //is two variables in one segment -> should happen during stack validation
 
                 if req_segment == ep_segment {
                     continue;
@@ -219,19 +219,15 @@ where
 
     Ok((Box::new(gateway_manager_impl), rx))
 }
-fn calculate_request_size(r: &Request) -> u64 {
-    //let mut size = r.path.as_bytes().len() as u64; //TODO: check if we can calculate this
-    let mut size = r
-        .query_params
-        .iter()
-        .map(|x| x.0.as_bytes().len() as u64 + x.1.as_bytes().len() as u64)
-        .sum::<u64>();
+fn calculate_request_size(r: &HttpRequest, payload: &Option<web::Bytes>) -> u64 {
+    let mut size = r.path().len() as u64;
+    size += r.query_string().len() as u64;
     size += r
-        .headers
+        .headers()
         .iter()
-        .map(|x| x.name.as_bytes().len() as u64 + x.value.as_bytes().len() as u64)
+        .map(|x| x.0.as_str().as_bytes().len() as u64 + x.1.as_bytes().len() as u64)
         .sum::<u64>();
-    size += r.body.len() as u64;
+    size += payload.as_ref().map(|p| p.len() as u64).unwrap_or(0u64);
     size
 }
 
@@ -344,6 +340,8 @@ where
         + Sync
         + 'static,
 {
+    let mut traffic = calculate_request_size(&request, &payload);
+
     let Ok(stack_id) = request.match_info().get("stack_id").unwrap().parse() else {
         return ResponseWrapper::not_found();
     };
@@ -405,8 +403,6 @@ where
         body: Cow::Borrowed(payload.as_ref().map(AsRef::as_ref).unwrap_or(&[])),
     };
 
-    let mut traffic = calculate_request_size(&request);
-
     let response = match (dependency_accessor.handle_request)(
         FunctionID {
             assembly_id: AssemblyID {
@@ -423,7 +419,8 @@ where
             traffic += calculate_response_size(&r);
             ResponseWrapper(r)
         }
-        // TODO: Generate meaningful error messages (propagate user function failure?)
+        // TODO: Only report a "user function failure" if the failure was in the user function
+        // TODO: Implement X-REQUEST-ID in responses and logs to enable debugging
         Err(f) => {
             error!("Failed to run user function: {f:?}");
             ResponseWrapper::internal_error("User function failure")

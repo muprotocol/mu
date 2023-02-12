@@ -6,7 +6,6 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use tikv_client::{BoundRange, Key as TikvKey};
 
-// TODO: add constraint to Key (actually key.stack_id) to avoid this name
 const TABLE_LIST_METADATA: &str = "__tlm";
 
 pub type Blob = Vec<u8>;
@@ -192,7 +191,6 @@ impl Deref for TableName {
     }
 }
 
-// TODO : consider empty inner_key
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Key {
     pub stack_id: StackID,

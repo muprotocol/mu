@@ -1,4 +1,8 @@
-use std::{fs, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::PathBuf,
+};
 
 use anchor_client::{
     solana_client::rpc_filter::{Memcmp, RpcFilterType},
@@ -83,28 +87,24 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
     let mut filters = vec![
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
             8,
-            vec![marketplace::MuAccountType::Stack as u8],
-        )),
-        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1,
             user_wallet.pubkey().to_bytes().to_vec(),
         )),
         RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1 + 32 + 32 + 8 + 1,
+            8 + 32 + 32 + 8 + 1,
             vec![marketplace::StackStateDiscriminator::Active as u8],
         )),
     ];
 
     if let Some(region) = cmd.region {
         filters.push(RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1 + 32,
+            8 + 32,
             region.to_bytes().to_vec(),
         )));
     }
 
     if let Some(name_prefix) = cmd.name_prefix {
         filters.push(RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            8 + 1 + 32 + 32 + 8 + 4 + 1 + 4,
+            8 + 32 + 32 + 8 + 4 + 1 + 4,
             name_prefix.as_bytes().to_vec(),
         )))
     }
@@ -114,14 +114,49 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
         .accounts::<marketplace::Stack>(filters)
         .context("Failed to fetch stacks from blockchain")?;
 
+    let regions = stacks
+        .iter()
+        .map(|s| s.1.region)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .map(|id| {
+            client
+                .program
+                .account::<marketplace::ProviderRegion>(id)
+                .map(|r| (id, r))
+                .map_err(Into::into)
+        })
+        .collect::<Result<HashMap<_, _>>>()
+        .context("Failed to fetch regions")?;
+
+    let providers = regions
+        .iter()
+        .map(|s| s.1.provider)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .map(|id| {
+            client
+                .program
+                .account::<marketplace::Provider>(id)
+                .map(|r| (id, r))
+                .map_err(Into::into)
+        })
+        .collect::<Result<HashMap<_, _>>>()
+        .context("Failed to fetch providers")?;
+
     if stacks.is_empty() {
         println!("No stacks found");
     } else {
         for (key, stack) in stacks {
             if let StackState::Active { revision, name, .. } = stack.state {
+                let region = regions.get(&stack.region).unwrap();
+                let provider = providers.get(&region.provider).unwrap();
                 println!("{}:", name);
                 println!("\tKey: {}", key);
-                println!("\tRegion: {}", stack.region); // TODO: print region name
+                println!("\tProvider ID: {}", region.provider);
+                println!("\tProvider Name: {}", provider.name);
+                println!("\tRegion ID: {}", stack.region);
+                println!("\tRegion Name: {}", region.name);
                 println!("\tSeed: {}", stack.seed);
                 println!("\tRevision: {}", revision);
             } else {

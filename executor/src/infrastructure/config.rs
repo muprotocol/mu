@@ -4,7 +4,7 @@ pub use serde_support::{ConfigDuration, ConfigLogLevelFilter, ConfigUri};
 
 use anyhow::{Context, Result};
 use config::{Config, Environment, File, FileFormat};
-use mu_db::TikvRunnerConfig;
+use mu_db::DbConfig;
 use mu_gateway::GatewayManagerConfig;
 use mu_runtime::RuntimeConfig;
 
@@ -21,7 +21,7 @@ pub struct SystemConfig(
     pub ConnectionManagerConfig,
     pub GossipConfig,
     pub Vec<KnownNodeConfig>,
-    pub TikvRunnerConfig,
+    pub DbConfig,
     pub GatewayManagerConfig,
     pub LogConfig,
     pub RuntimeConfig,
@@ -40,19 +40,10 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("gossip.max_peers", "6"),
         ("gossip.peer_update_interval", "10s"),
         ("gossip.liveness_check_interval", "1s"),
+        ("gossip.network_stabilization_wait_time", "5s"),
         ("initial_cluster.ip", "127.0.0.1"),
         ("initial_cluster.gossip_port", "12012"),
         ("initial_cluster.pd_port", "2380"),
-        ("tikv.pd.data_dir", "/var/lib/mu-executor/pd-data/"),
-        ("tikv.pd.peer_url.address", "127.0.0.1"),
-        ("tikv.pd.peer_url.port", "2380"),
-        ("tikv.pd.client_url.address", "127.0.0.1"),
-        ("tikv.pd.client_url.port", "2379"),
-        ("tikv.pd.log_file", "/var/log/mu-executor/pd-server"),
-        ("tikv.node.cluster_url.address", "127.0.0.1"),
-        ("tikv.node.cluster_url.port", "20160"),
-        ("tikv.node.data_dir", "/var/lib/mu-executor/tikv-data/"),
-        ("tikv.node.log_file", "/var/log/mu-executor/tikv-server"),
         ("gateway_manager.listen_ip", "0.0.0.0"),
         ("gateway_manager.listen_port", "12012"),
         ("scheduler.tick_interval", "1s"),

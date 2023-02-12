@@ -575,15 +575,7 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
     let projects = create_and_add_projects(
         vec![(
             "hello-db",
-            &[
-                "table_list",
-                "create",
-                "read",
-                "update",
-                "delete",
-                "scan",
-                "scan_keys",
-            ],
+            &["create", "read", "update", "delete", "scan", "scan_keys"],
             None,
         )],
         &*fixture.runtime,
@@ -591,13 +583,12 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
     .await
     .unwrap();
 
-    const TABLE_COUNT: usize = 0;
-    const CREATE: usize = 1;
-    const READ: usize = 2;
-    const UPDATE: usize = 3;
-    const DELETE: usize = 4;
-    const SCAN: usize = 5;
-    const SCAN_KEYS: usize = 6;
+    const CREATE: usize = 0;
+    const READ: usize = 1;
+    const UPDATE: usize = 2;
+    const DELETE: usize = 3;
+    const SCAN: usize = 4;
+    const SCAN_KEYS: usize = 5;
 
     const TABLE_NAME: &str = "table_1";
     const KEY: &str = "a::a";

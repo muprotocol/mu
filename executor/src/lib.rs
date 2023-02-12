@@ -3,17 +3,12 @@ pub mod network;
 mod request_routing;
 pub mod stack;
 
-use std::{
-    process,
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{process, sync::Arc, time::SystemTime};
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use log::*;
 use mailbox_processor::NotificationChannel;
-use mu_db::{DbManager, DbManagerImpl};
 use mu_runtime::Runtime;
 use network::rpc_handler::{self, RpcHandler, RpcRequestHandler};
 use stack::{
@@ -52,13 +47,15 @@ pub async fn run() -> Result<()> {
         connection_manager_config,
         gossip_config,
         mut known_nodes_config,
-        tikv_config,
+        db_config,
         gateway_manager_config,
         log_config,
         runtime_config,
         scheduler_config,
         blockchain_monitor_config,
     ) = config::initialize_config()?;
+
+    let stabilization_wait_time = *gossip_config.network_stabilization_wait_time;
 
     let my_node = NodeAddress {
         address: connection_manager_config.listen_address,
@@ -144,10 +141,7 @@ pub async fn run() -> Result<()> {
     )
     .context("Failed to start gossip")?;
 
-    let function_provider = mu_runtime::providers::DefaultAssemblyProvider::new();
-    // TODO: don't leak this implementation
-    // @Hossein: remove this when implementing the external TiKV feature
-    let database_manager = DbManagerImpl::new_with_embedded_cluster(
+    let database_manager = mu_db::start(
         mu_db::NodeAddress {
             address: my_node.address,
             port: my_node.port,
@@ -160,16 +154,14 @@ pub async fn run() -> Result<()> {
                 pd_port: c.pd_port,
             })
             .collect(),
-        tikv_config,
+        db_config,
     )
     .await?;
-    let (runtime, mut runtime_notification_receiver) = mu_runtime::start(
-        Box::new(function_provider),
-        Box::new(database_manager.clone()),
-        runtime_config,
-    )
-    .await
-    .context("Failed to initiate runtime")?;
+
+    let (runtime, mut runtime_notification_receiver) =
+        mu_runtime::start(database_manager.clone(), runtime_config)
+            .await
+            .context("Failed to initiate runtime")?;
 
     let rpc_handler = rpc_handler::new(
         connection_manager.clone(),
@@ -178,7 +170,6 @@ pub async fn run() -> Result<()> {
         },
     );
 
-    // TODO: no notification channel for now, requests are sent straight to runtime
     let connection_manager_clone = connection_manager.clone();
     let gossip_clone = gossip.clone();
     let rpc_handler_clone = rpc_handler.clone();
@@ -212,7 +203,7 @@ pub async fn run() -> Result<()> {
         scheduler_notification_channel,
         runtime.clone(),
         gateway_manager.clone(),
-        Box::new(database_manager.clone()),
+        database_manager.clone(),
     );
 
     *scheduler_ref.write().await = Some(scheduler.clone());
@@ -293,10 +284,12 @@ pub async fn run() -> Result<()> {
         Result::<()>::Ok(())
     });
 
-    // TODO make the wait configurable
     {
-        info!("Waiting 4 seconds for node discovery to complete");
-        tokio::time::sleep(Duration::from_secs(4)).await;
+        info!(
+            "Waiting {} seconds for gossip state to stabilize",
+            stabilization_wait_time.as_secs()
+        );
+        tokio::time::sleep(stabilization_wait_time).await;
 
         info!("Will start to schedule stacks now");
         scheduler_clone.ready_to_schedule_stacks().await?;
