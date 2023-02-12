@@ -585,7 +585,7 @@ where
 
 fn into_cas_incoming_msg<'a>(x: (Option<Vec<u8>>, bool)) -> IncomingMessage<'a> {
     IncomingMessage::CasResult(CasResult {
-        previous_value: x.0.map(Cow::Owned).into(),
+        previous_value: x.0.map(Cow::Owned),
         is_swapped: x.1,
     })
 }

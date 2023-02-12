@@ -62,7 +62,7 @@ pub enum FunctionLoadingError {
     FailedToGetImportObject(WasiError),
 
     #[error("Failed to instantiate wasm module: {0}")]
-    FailedToInstantiateWasmModule(InstantiationError),
+    FailedToInstantiateWasmModule(Box<InstantiationError>),
 
     #[error("Failed to get memory: {0}")]
     FailedToGetMemory(ExportError),
