@@ -118,9 +118,9 @@ where
     }
 }
 
-fn match_path_and_extract_path_params<'a, 'ep>(
+fn match_path_and_extract_path_params<'a>(
     request_path: &'a str,
-    endpoint_path: &'ep str,
+    endpoint_path: &str,
 ) -> Option<PathParams<'a>> {
     //TODO: Cache `endpoint_path` path segments for future matches
     let mut request_path_segments = request_path.split('/');
