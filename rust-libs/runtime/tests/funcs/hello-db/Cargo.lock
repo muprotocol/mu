@@ -91,7 +91,6 @@ name = "hello-db"
 version = "0.1.0"
 dependencies = [
  "musdk",
- "musdk-common",
  "serde",
 ]
 

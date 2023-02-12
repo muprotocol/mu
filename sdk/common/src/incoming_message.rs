@@ -22,9 +22,9 @@ enum IncomingMessageKind {
     DbError = 1001,
     SingleResult = 1002,
     ListResult = 1003,
-    KvPairsResult = 1004,
-    TkPairsResult = 1005,
-    TkvTriplesResult = 1006,
+    KvPairListResult = 1004,
+    TableKeyListResult = 1005,
+    TableKeyValueListResult = 1006,
     EmptyResult = 1007,
     CasResult = 1008,
 }
@@ -44,9 +44,9 @@ pub enum IncomingMessage<'a> {
     DbError(DbError<'a>),
     SingleResult(SingleResult<'a>),
     ListResult(ListResult<'a>),
-    KvPairsResult(KvPairsResult<'a>),
-    TkPairsResult(TkPairsResult<'a>),
-    TkvTriplesResult(TkvTriplesResult<'a>),
+    KvPairListResult(KvPairListResult<'a>),
+    TableKeyListResult(TableKeyListResult<'a>),
+    TableKeyValueListResult(TableKeyValueListResult<'a>),
     EmptyResult(EmptyResult),
     CasResult(CasResult<'a>),
 }
@@ -97,9 +97,9 @@ impl<'a> IncomingMessage<'a> {
                 DbError,
                 SingleResult,
                 ListResult,
-                KvPairsResult,
-                TkPairsResult,
-                TkvTriplesResult,
+                KvPairListResult,
+                TableKeyListResult,
+                TableKeyValueListResult,
                 CasResult
             ] * 'static,
             [EmptyResult]
@@ -115,9 +115,9 @@ impl<'a> IncomingMessage<'a> {
                 DbError,
                 SingleResult,
                 ListResult,
-                KvPairsResult,
-                TkPairsResult,
-                TkvTriplesResult,
+                KvPairListResult,
+                TableKeyListResult,
+                TableKeyValueListResult,
                 EmptyResult,
                 CasResult
             ]

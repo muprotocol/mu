@@ -13,13 +13,7 @@ use log::{error, log, trace, Level};
 use mu_db::{error::Result as MudbResult, DbClient, DbManager, Key as MudbKey, Scan as MudbScan};
 use mu_stack::{AssemblyID, StackID};
 use musdk_common::{
-    incoming_message::{
-        db::{
-            CasResult, DbError, EmptyResult, KvPair, KvPairsResult, ListResult, SingleResult,
-            TkPair, TkPairsResult, TkvTriple, TkvTriplesResult,
-        },
-        IncomingMessage,
-    },
+    incoming_message::{db::*, IncomingMessage},
     outgoing_message::{LogLevel, OutgoingMessage},
 };
 use wasmer::{CompilerConfig, Module, RuntimeError, Store};
@@ -543,8 +537,8 @@ fn into_empty_incoming_msg<'a>(_: ()) -> IncomingMessage<'a> {
 }
 
 fn into_kv_pairs_incoming_msg<'a>(x: Vec<(MudbKey, Vec<u8>)>) -> IncomingMessage<'a> {
-    IncomingMessage::KvPairsResult(KvPairsResult {
-        kv_pairs: x
+    IncomingMessage::KvPairListResult(KvPairListResult {
+        list: x
             .into_iter()
             .map(|(k, v)| KvPair {
                 key: Cow::Owned(k.inner_key),
@@ -555,10 +549,10 @@ fn into_kv_pairs_incoming_msg<'a>(x: Vec<(MudbKey, Vec<u8>)>) -> IncomingMessage
 }
 
 fn into_tk_pairs_incoming_msg<'a>(x: Vec<MudbKey>) -> IncomingMessage<'a> {
-    IncomingMessage::TkPairsResult(TkPairsResult {
-        tk_pairs: x
+    IncomingMessage::TableKeyListResult(TableKeyListResult {
+        list: x
             .into_iter()
-            .map(|k| TkPair {
+            .map(|k| TableKey {
                 table: Cow::Owned(k.table_name.into()),
                 key: Cow::Owned(k.inner_key),
             })
@@ -567,10 +561,10 @@ fn into_tk_pairs_incoming_msg<'a>(x: Vec<MudbKey>) -> IncomingMessage<'a> {
 }
 
 fn into_tkv_triples_incoming_msg<'a>(x: Vec<(MudbKey, Vec<u8>)>) -> IncomingMessage<'a> {
-    IncomingMessage::TkvTriplesResult(TkvTriplesResult {
-        tkv_triples: x
+    IncomingMessage::TableKeyValueListResult(TableKeyValueListResult {
+        list: x
             .into_iter()
-            .map(|(k, v)| TkvTriple {
+            .map(|(k, v)| TableKeyValue {
                 table: Cow::Owned(k.table_name.into()),
                 key: Cow::Owned(k.inner_key),
                 value: Cow::Owned(v),
@@ -585,7 +579,7 @@ where
     Vec<u8>: From<T>,
 {
     IncomingMessage::ListResult(ListResult {
-        items: x.into_iter().map(Vec::<u8>::from).map(Cow::Owned).collect(),
+        list: x.into_iter().map(Vec::<u8>::from).map(Cow::Owned).collect(),
     })
 }
 

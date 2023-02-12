@@ -13,18 +13,18 @@ pub struct SingleResult<'a> {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct ListResult<'a> {
-    pub items: Vec<Cow<'a, [u8]>>,
+    pub list: Vec<Cow<'a, [u8]>>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct TkvTriple<'a> {
+pub struct TableKeyValue<'a> {
     pub table: Cow<'a, str>,
     pub key: Cow<'a, [u8]>,
     pub value: Cow<'a, [u8]>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct TkPair<'a> {
+pub struct TableKey<'a> {
     pub table: Cow<'a, str>,
     pub key: Cow<'a, [u8]>,
 }
@@ -36,18 +36,18 @@ pub struct KvPair<'a> {
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct KvPairsResult<'a> {
-    pub kv_pairs: Vec<KvPair<'a>>,
+pub struct KvPairListResult<'a> {
+    pub list: Vec<KvPair<'a>>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct TkPairsResult<'a> {
-    pub tk_pairs: Vec<TkPair<'a>>,
+pub struct TableKeyListResult<'a> {
+    pub list: Vec<TableKey<'a>>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct TkvTriplesResult<'a> {
-    pub tkv_triples: Vec<TkvTriple<'a>>,
+pub struct TableKeyValueListResult<'a> {
+    pub list: Vec<TableKeyValue<'a>>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]

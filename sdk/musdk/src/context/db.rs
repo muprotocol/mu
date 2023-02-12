@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, ops::Deref};
 
 use musdk_common::{
     incoming_message::IncomingMessage as IM,
@@ -8,29 +8,60 @@ use musdk_common::{
 use crate::{Error, Result};
 
 type Blob = Vec<u8>;
-// TODO: make these strong type
-type Key = Vec<u8>;
-type Value = Vec<u8>;
-type TableName = String;
 
-// TODO
-// struct Key<'a>(Cow<'a, [u8]>);
-//
-// impl<'a> Deref for Key<'a> {
-//     type Target = Cow<'a, [u8]>;
-//     fn deref(&self) -> &Self::Target {
-//         &self.0
-//     }
-// }
-//
-// impl<'a, T> From<T> for Key<'a>
-// where
-//     T: Into<&'a [u8]>,
-// {
-//     fn from(value: T) -> Self {
-//         Self(Cow::Borrowed(value.into()))
-//     }
-// }
+pub struct TableName(String);
+
+impl Deref for TableName {
+    type Target = String;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> From<T> for TableName
+where
+    T: Into<String>,
+{
+    fn from(v: T) -> Self {
+        Self(v.into())
+    }
+}
+
+pub struct Key(Blob);
+
+impl Deref for Key {
+    type Target = Blob;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> From<T> for Key
+where
+    T: Into<Blob>,
+{
+    fn from(v: T) -> Self {
+        Self(v.into())
+    }
+}
+
+pub struct Value(Blob);
+
+impl Deref for Value {
+    type Target = Blob;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> From<T> for Value
+where
+    T: Into<Blob>,
+{
+    fn from(v: T) -> Self {
+        Self(v.into())
+    }
+}
 
 pub struct DbHandle<'a> {
     pub(super) context: &'a mut super::MuContext,
@@ -61,7 +92,7 @@ impl<'a> DbHandle<'a> {
             is_atomic,
         };
         let resp = self.request(OM::BatchPut(req))?;
-        resp_to_tuple_type(resp, "BatchPut")
+        from_empty_resp(resp, "BatchPut")
     }
 
     pub fn batch_get<'b, T: Into<&'b [u8]>>(
@@ -72,7 +103,7 @@ impl<'a> DbHandle<'a> {
             table_key_tuples: vec_tuple_cow_u8_from(table_key_tuples),
         };
         let resp = self.request(OM::BatchGet(req))?;
-        resp_to_triples(resp, "BatchGet")
+        from_table_key_value_list_resp(resp, "BatchGet")
     }
 
     pub fn batch_delete<'b, T: Into<&'b [u8]>>(
@@ -83,7 +114,7 @@ impl<'a> DbHandle<'a> {
             table_key_tuples: vec_tuple_cow_u8_from(table_key_tuples),
         };
         let resp = self.request(OM::BatchDelete(req))?;
-        resp_to_tuple_type(resp, "BatchDelete")
+        from_empty_resp(resp, "BatchDelete")
     }
 
     pub fn batch_scan<'b, T: Into<&'b [u8]>>(
@@ -96,7 +127,7 @@ impl<'a> DbHandle<'a> {
             each_limit,
         };
         let resp = self.request(OM::BatchScan(req))?;
-        resp_to_triples(resp, "BatchScan")
+        from_table_key_value_list_resp(resp, "BatchScan")
     }
 
     pub fn batch_scan_keys<'b, T: Into<&'b [u8]>>(
@@ -109,7 +140,7 @@ impl<'a> DbHandle<'a> {
             each_limit,
         };
         let resp = self.request(OM::BatchScanKeys(req))?;
-        resp_to_pairs2(resp, "BatchScan")
+        from_table_key_list_resp(resp, "BatchScan")
     }
 
     pub fn table_list(&mut self, table_prefix: &str) -> Result<Vec<TableName>> {
@@ -118,9 +149,10 @@ impl<'a> DbHandle<'a> {
         };
 
         let resp = self.request(OM::TableList(req))?;
-        resp_to_blobs(resp, "TableList")?
-            .into_iter()
+        from_list_resp(resp, "TableList")?
+            .map(Vec::from)
             .map(String::from_utf8)
+            .map(|x| x.map(TableName::from))
             .collect::<std::result::Result<_, _>>()
             .map_err(|e| Error::DatabaseError(e.to_string()))
     }
@@ -141,7 +173,7 @@ impl<'a> DbHandle<'a> {
             is_atomic,
         };
         let resp = self.request(OM::Put(req))?;
-        resp_to_tuple_type(resp, "Put")
+        from_empty_resp(resp, "Put")
     }
 
     pub fn get<'b>(&mut self, table: &str, key: impl Into<&'b [u8]>) -> Result<Option<Value>> {
@@ -150,7 +182,7 @@ impl<'a> DbHandle<'a> {
             key: Cow::Borrowed(key.into()),
         };
         let resp = self.request(OM::Get(req))?;
-        resp_to_option_blob(resp, "Get")
+        from_maybe_single_or_empty_resp(resp, "Get")
     }
 
     pub fn delete<'b>(
@@ -165,7 +197,7 @@ impl<'a> DbHandle<'a> {
             is_atomic,
         };
         let resp = self.request(OM::Delete(req))?;
-        resp_to_tuple_type(resp, "Delete")
+        from_empty_resp(resp, "Delete")
     }
 
     pub fn delete_by_prefix<'b>(
@@ -178,7 +210,7 @@ impl<'a> DbHandle<'a> {
             key_prefix: Cow::Borrowed(key_prefix.into()),
         };
         let resp = self.request(OM::DeleteByPrefix(req))?;
-        resp_to_tuple_type(resp, "DeleteByPrefix")
+        from_empty_resp(resp, "DeleteByPrefix")
     }
 
     pub fn scan<'b>(
@@ -193,7 +225,7 @@ impl<'a> DbHandle<'a> {
             limit,
         };
         let resp = self.request(OM::Scan(req))?;
-        resp_to_pairs(resp, "Scan")
+        from_kv_pairs_resp(resp, "Scan")
     }
 
     pub fn scan_keys<'b>(
@@ -208,7 +240,7 @@ impl<'a> DbHandle<'a> {
             limit,
         };
         let resp = self.request(OM::ScanKeys(req))?;
-        resp_to_blobs(resp, "ScanKeys")
+        Ok(from_list_resp(resp, "ScanKeys")?.map(Key::from).collect())
     }
 
     pub fn compare_and_swap<'b, T: Into<&'b [u8]>>(
@@ -227,7 +259,7 @@ impl<'a> DbHandle<'a> {
         let resp = self.request(OM::CompareAndSwap(req))?;
         match resp {
             IM::CasResult(x) => Ok((
-                Option::<Cow<[u8]>>::from(x.previous_value).map(|x| x.into_owned()),
+                Option::<Cow<[u8]>>::from(x.previous_value).map(Value::from),
                 x.is_swapped,
             )),
             left => resp_to_err(left, "CompareAndSwap"),
@@ -235,32 +267,35 @@ impl<'a> DbHandle<'a> {
     }
 }
 
-fn resp_to_tuple_type(resp: IM, kind_name: &'static str) -> Result<()> {
+fn from_empty_resp(resp: IM, kind_name: &'static str) -> Result<()> {
     match resp {
         IM::EmptyResult(_) => Ok(()),
         left => resp_to_err(left, kind_name),
     }
 }
 
-fn resp_to_option_blob(resp: IM, kind_name: &'static str) -> Result<Option<Blob>> {
+fn from_maybe_single_or_empty_resp(resp: IM, kind_name: &'static str) -> Result<Option<Value>> {
     match resp {
-        IM::SingleResult(x) => Ok(Some(x.item.into_owned())),
+        IM::SingleResult(x) => Ok(Some(x.item.into())),
         IM::EmptyResult(_) => Ok(None),
         left => resp_to_err(left, kind_name),
     }
 }
 
-fn resp_to_blobs(resp: IM, kind_name: &'static str) -> Result<Vec<Blob>> {
+fn from_list_resp<'a>(
+    resp: IM<'a>,
+    kind_name: &'static str,
+) -> Result<impl Iterator<Item = Cow<'a, [u8]>>> {
     match resp {
-        IM::ListResult(x) => Ok(x.items.into_iter().map(Into::into).collect()),
+        IM::ListResult(x) => Ok(x.list.into_iter()),
         left => resp_to_err(left, kind_name),
     }
 }
 
-fn resp_to_pairs(resp: IM, kind_name: &'static str) -> Result<Vec<(Blob, Blob)>> {
+fn from_kv_pairs_resp(resp: IM, kind_name: &'static str) -> Result<Vec<(Key, Value)>> {
     match resp {
-        IM::KvPairsResult(x) => Ok(x
-            .kv_pairs
+        IM::KvPairListResult(x) => Ok(x
+            .list
             .into_iter()
             .map(|pair| (pair.key.into(), pair.value.into()))
             .collect()),
@@ -268,10 +303,10 @@ fn resp_to_pairs(resp: IM, kind_name: &'static str) -> Result<Vec<(Blob, Blob)>>
     }
 }
 
-fn resp_to_pairs2(resp: IM, kind_name: &'static str) -> Result<Vec<(String, Blob)>> {
+fn from_table_key_list_resp(resp: IM, kind_name: &'static str) -> Result<Vec<(TableName, Key)>> {
     match resp {
-        IM::TkPairsResult(x) => Ok(x
-            .tk_pairs
+        IM::TableKeyListResult(x) => Ok(x
+            .list
             .into_iter()
             .map(|pair| (pair.table.into(), pair.key.into()))
             .collect()),
@@ -279,10 +314,13 @@ fn resp_to_pairs2(resp: IM, kind_name: &'static str) -> Result<Vec<(String, Blob
     }
 }
 
-fn resp_to_triples(resp: IM, kind_name: &'static str) -> Result<Vec<(String, Blob, Blob)>> {
+fn from_table_key_value_list_resp(
+    resp: IM,
+    kind_name: &'static str,
+) -> Result<Vec<(TableName, Key, Value)>> {
     match resp {
-        IM::TkvTriplesResult(x) => Ok(x
-            .tkv_triples
+        IM::TableKeyValueListResult(x) => Ok(x
+            .list
             .into_iter()
             .map(|triple| (triple.table.into(), triple.key.into(), triple.value.into()))
             .collect()),
@@ -290,8 +328,8 @@ fn resp_to_triples(resp: IM, kind_name: &'static str) -> Result<Vec<(String, Blo
     }
 }
 
-fn resp_to_err<T>(left: IM, kind_name: &'static str) -> Result<T> {
-    match left {
+fn resp_to_err<T>(resp: IM, kind_name: &'static str) -> Result<T> {
+    match resp {
         IM::DbError(e) => Err(Error::DatabaseError(e.error.into_owned())),
         _ => Err(Error::UnexpectedMessageKind(kind_name)),
     }

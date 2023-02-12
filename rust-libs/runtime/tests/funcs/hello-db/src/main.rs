@@ -27,7 +27,10 @@
 //     resp.write(&mut stdout()).unwrap();
 // }
 
-use musdk::*;
+use musdk::{
+    db::{Key, TableName, Value},
+    *,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -47,12 +50,16 @@ pub struct Read {
 
 pub type Delete = Read;
 
-fn blob_to_string(x: Vec<u8>) -> String {
-    String::from_utf8_lossy(x.as_ref()).into_owned()
+fn blob_to_string(x: &[u8]) -> String {
+    String::from_utf8_lossy(x).into_owned()
 }
 
-fn into_string_triple(x: (String, Vec<u8>, Vec<u8>)) -> (String, String, String) {
-    (x.0, blob_to_string(x.1), blob_to_string(x.2))
+fn into_string_triple(x: (TableName, Key, Value)) -> (String, String, String) {
+    (
+        x.0.to_string(),
+        blob_to_string(x.1.as_ref()),
+        blob_to_string(x.2.as_ref()),
+    )
 }
 
 #[mu_functions]
@@ -61,7 +68,14 @@ mod hello_db {
 
     #[mu_function]
     fn table_list<'a>(ctx: &'a mut MuContext) -> Json<Vec<String>> {
-        let x = ctx.db().table_list("").unwrap();
+        let x = ctx
+            .db()
+            .table_list("")
+            .unwrap()
+            .into_iter()
+            .map(|x| x.to_string())
+            .collect();
+
         Json(x)
     }
 
@@ -85,7 +99,7 @@ mod hello_db {
         ctx.db()
             .get(&req.table_name, req.key.as_bytes())
             .unwrap()
-            .map(blob_to_string)
+            .map(|x| blob_to_string(x.as_ref()))
             .unwrap_or("".into())
     }
 
@@ -122,7 +136,7 @@ mod hello_db {
             .scan(table_name, key_prefix, limit)
             .unwrap()
             .into_iter()
-            .map(|(k, v)| (blob_to_string(k), blob_to_string(v)))
+            .map(|(k, v)| (blob_to_string(k.as_ref()), blob_to_string(v.as_ref())))
             .collect();
 
         Json(res)
@@ -139,7 +153,7 @@ mod hello_db {
             .scan_keys(table_name, key_prefix, limit)
             .unwrap()
             .into_iter()
-            .map(blob_to_string)
+            .map(|x| blob_to_string(x.as_ref()))
             .collect();
 
         Json(res)
@@ -215,7 +229,7 @@ mod hello_db {
             .batch_scan_keys(table_key_prefix_tuples, each_limit)
             .unwrap()
             .into_iter()
-            .map(|(t, k)| (t, blob_to_string(k)))
+            .map(|(t, k)| (t.to_string(), blob_to_string(k.as_ref())))
             .collect();
         Json(res)
     }
