@@ -1,32 +1,3 @@
-// for debugging
-// use std::{
-//     borrow::Cow,
-//     collections::HashMap,
-//     io::{stdout, Write},
-// };
-// use musdk_common::{
-//     incoming_message::{db::ListResult, ExecuteFunction, IncomingMessage},
-//     outgoing_message::OutgoingMessage,
-// };
-// fn main() {
-//     let request = Request {
-//         method: HttpMethod::Get,
-//         path_params: HashMap::new(),
-//         query_params: HashMap::new(),
-//         headers: vec![],
-//         body: Cow::Borrowed(&[]),
-//     };
-//     let request = IncomingMessage::ExecuteFunction(ExecuteFunction {
-//         function: Cow::Borrowed("create"),
-//         request,
-//     });
-//     request.write(&mut stdout()).unwrap();
-//     let resp = IncomingMessage::ListResult(ListResult {
-//         items: vec![Cow::Borrowed(b"table_xxx")],
-//     });
-//     resp.write(&mut stdout()).unwrap();
-// }
-
 use musdk::{
     db::{Key, TableName, Value},
     *,

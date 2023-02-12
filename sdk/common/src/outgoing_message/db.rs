@@ -1,4 +1,3 @@
-pub use super::super::OptionValue;
 use std::borrow::Cow;
 
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -49,7 +48,7 @@ pub struct CompareAndSwap<'a> {
     pub table: Cow<'a, [u8]>,
     pub key: Cow<'a, [u8]>,
     pub new_value: Cow<'a, [u8]>,
-    pub previous_value: OptionValue<Cow<'a, [u8]>>,
+    pub previous_value: Option<Cow<'a, [u8]>>,
 }
 
 type TableName<'a> = Cow<'a, [u8]>;

@@ -1,4 +1,3 @@
-pub use super::super::OptionValue;
 use std::borrow::Cow;
 
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -30,14 +29,14 @@ pub struct TableKey<'a> {
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct KvPair<'a> {
+pub struct KeyValue<'a> {
     pub key: Cow<'a, [u8]>,
     pub value: Cow<'a, [u8]>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct KvPairListResult<'a> {
-    pub list: Vec<KvPair<'a>>,
+pub struct KeyValueListResult<'a> {
+    pub list: Vec<KeyValue<'a>>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -52,7 +51,7 @@ pub struct TableKeyValueListResult<'a> {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct CasResult<'a> {
-    pub previous_value: OptionValue<Cow<'a, [u8]>>,
+    pub previous_value: Option<Cow<'a, [u8]>>,
     pub is_swapped: bool,
 }
 

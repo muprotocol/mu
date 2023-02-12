@@ -182,7 +182,7 @@ pub mod fixture {
     }
 
     pub struct DBManagerFixture {
-        db_manager: Box<dyn DbManager>,
+        pub db_manager: Box<dyn DbManager>,
         data_dir: TempDir,
     }
 
@@ -253,9 +253,9 @@ pub mod fixture {
 
     pub struct RuntimeFixture {
         pub runtime: Box<dyn Runtime>,
-        pub db_manager: DBManagerFixture,
+        pub db_manager_fixture: DBManagerFixture,
         pub usages: Arc<tokio::sync::Mutex<HashMap<StackID, Usage>>>,
-        pub data_dir: TempDir,
+        data_dir: TempDir,
     }
 
     #[async_trait]
@@ -299,14 +299,14 @@ pub mod fixture {
 
             RuntimeFixture {
                 runtime,
-                db_manager,
+                db_manager_fixture: db_manager,
                 usages,
                 data_dir,
             }
         }
         async fn teardown(self) {
             self.runtime.stop().await.unwrap();
-            AsyncTestContext::teardown(self.db_manager).await;
+            AsyncTestContext::teardown(self.db_manager_fixture).await;
             self.data_dir.teardown();
         }
     }

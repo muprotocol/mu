@@ -209,6 +209,7 @@ impl Instance<Running> {
             })?
     }
 
+    // TODO @hamidrezakp: Refactor this into smaller pieces!
     fn inner_run_request(
         mut self,
         request: ExecuteFunctionRequest<'static>,
@@ -434,8 +435,7 @@ impl Instance<Running> {
                         OutgoingMessage::CompareAndSwap(req) => {
                             self.db_request(|db_client, stack_id| async move {
                                 let key = make_mudb_key(stack_id, req.table, req.key)?;
-                                let prev_value = Option::<Cow<[u8]>>::from(req.previous_value)
-                                    .map(|x| x.into_owned());
+                                let prev_value = req.previous_value.map(|x| x.into_owned());
                                 db_client
                                     .compare_and_swap(key, prev_value, req.new_value.into_owned())
                                     .await
@@ -537,10 +537,10 @@ fn into_empty_incoming_msg<'a>(_: ()) -> IncomingMessage<'a> {
 }
 
 fn into_kv_pairs_incoming_msg<'a>(x: Vec<(MudbKey, Vec<u8>)>) -> IncomingMessage<'a> {
-    IncomingMessage::KvPairListResult(KvPairListResult {
+    IncomingMessage::KeyValueListResult(KeyValueListResult {
         list: x
             .into_iter()
-            .map(|(k, v)| KvPair {
+            .map(|(k, v)| KeyValue {
                 key: Cow::Owned(k.inner_key),
                 value: Cow::Owned(v),
             })

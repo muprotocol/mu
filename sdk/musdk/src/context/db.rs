@@ -9,7 +9,7 @@ use crate::{Error, Result};
 
 type Blob = Vec<u8>;
 
-pub struct TableName(String);
+pub struct TableName(pub String);
 
 impl Deref for TableName {
     type Target = String;
@@ -27,7 +27,7 @@ where
     }
 }
 
-pub struct Key(Blob);
+pub struct Key(pub Blob);
 
 impl Deref for Key {
     type Target = Blob;
@@ -45,7 +45,7 @@ where
     }
 }
 
-pub struct Value(Blob);
+pub struct Value(pub Blob);
 
 impl Deref for Value {
     type Target = Blob;
@@ -254,14 +254,11 @@ impl<'a> DbHandle<'a> {
             table: Cow::Borrowed(table.as_bytes()),
             key: Cow::Borrowed(key.into()),
             new_value: Cow::Borrowed(new_value.into()),
-            previous_value: previous_value.map(Into::into).map(Cow::Borrowed).into(),
+            previous_value: previous_value.map(Into::into).map(Cow::Borrowed),
         };
         let resp = self.request(OM::CompareAndSwap(req))?;
         match resp {
-            IM::CasResult(x) => Ok((
-                Option::<Cow<[u8]>>::from(x.previous_value).map(Value::from),
-                x.is_swapped,
-            )),
+            IM::CasResult(x) => Ok((x.previous_value.map(Value::from), x.is_swapped)),
             left => resp_to_err(left, "CompareAndSwap"),
         }
     }
@@ -294,7 +291,7 @@ fn from_list_resp<'a>(
 
 fn from_kv_pairs_resp(resp: IM, kind_name: &'static str) -> Result<Vec<(Key, Value)>> {
     match resp {
-        IM::KvPairListResult(x) => Ok(x
+        IM::KeyValueListResult(x) => Ok(x
             .list
             .into_iter()
             .map(|pair| (pair.key.into(), pair.value.into()))

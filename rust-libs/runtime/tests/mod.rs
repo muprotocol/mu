@@ -608,8 +608,8 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
     let stack_id = projects[0].id.stack_id;
     let table_names = vec![TABLE_NAME.try_into().unwrap()];
     fixture
+        .db_manager_fixture
         .db_manager
-        .get_db_manager()
         .make_client()
         .await
         .unwrap()
@@ -837,8 +837,8 @@ async fn db_batch_crud(fixture: &mut RuntimeFixture) {
         TABLE_NAME2.try_into().unwrap(),
     ];
     fixture
+        .db_manager_fixture
         .db_manager
-        .get_db_manager()
         .make_client()
         .await
         .unwrap()
