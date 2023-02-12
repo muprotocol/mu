@@ -2,6 +2,16 @@
 //! due to the embedded resources. We moved it to a separate crate to improve
 //! type check times when developing the DB module.
 
+use anyhow::{bail, Context, Result};
+use async_trait::async_trait;
+use dyn_clonable::clonable;
+use log::{error, warn};
+use mailbox_processor::callback::CallbackMailboxProcessor;
+use mu_common::serde_support::IpOrHostname;
+use nix::sys::signal::{self, Signal};
+use nix::unistd::Pid;
+use rust_embed::RustEmbed;
+use serde::Deserialize;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr},
@@ -9,16 +19,6 @@ use std::{
     path::PathBuf,
     process,
 };
-
-use anyhow::{bail, Context, Result};
-use async_trait::async_trait;
-use dyn_clonable::clonable;
-use log::{error, warn};
-use mailbox_processor::callback::CallbackMailboxProcessor;
-use nix::sys::signal::{self, Signal};
-use nix::unistd::Pid;
-use rust_embed::RustEmbed;
-use serde::Deserialize;
 use tokio::{fs::File, io::AsyncWriteExt};
 
 #[derive(RustEmbed)]
@@ -71,9 +71,10 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
 
 // TODO: support hostname (also in gossip as well)
 /// # IpAndPort
-#[derive(Deserialize, Clone, PartialEq, Eq)]
+
+#[derive(Deserialize, Clone)]
 pub struct IpAndPort {
-    pub address: IpAddr,
+    pub address: IpOrHostname,
     pub port: u16,
 }
 
@@ -109,8 +110,8 @@ pub struct PdConfig {
 
 fn unspecified_to_localhost(x: &IpAndPort) -> IpAndPort {
     IpAndPort {
-        address: match x.address {
-            xp if xp.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
+        address: match x.address.clone() {
+            xp if xp.is_unspecified() => IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
             xp => xp,
         },
         port: x.port,
@@ -158,12 +159,12 @@ struct TikvRunnerArgs {
 }
 
 pub struct NodeAddress {
-    pub address: IpAddr,
+    pub address: IpOrHostname,
     pub port: u16,
 }
 
 pub struct RemoteNode {
-    pub address: IpAddr,
+    pub address: IpOrHostname,
     pub gossip_port: u16,
     pub pd_port: u16,
 }
@@ -383,17 +384,17 @@ mod test {
     async fn generate_arguments_pd_args_and_tikv_args() {
         let local_host: IpAddr = "127.0.0.1".parse().unwrap();
         let node_address = NodeAddress {
-            address: local_host,
+            address: IpOrHostname::Ip(local_host),
             port: 2800,
         };
         let known_node_conf = vec![
             RemoteNode {
-                address: local_host,
+                address: IpOrHostname::Ip(local_host),
                 gossip_port: 2801,
                 pd_port: 2381,
             },
             RemoteNode {
-                address: local_host,
+                address: IpOrHostname::Ip(local_host),
                 gossip_port: 2802,
                 pd_port: 2383,
             },
@@ -401,11 +402,11 @@ mod test {
         let tikv_runner_conf = TikvRunnerConfig {
             pd: PdConfig {
                 peer_url: IpAndPort {
-                    address: local_host,
+                    address: IpOrHostname::Ip(local_host),
                     port: 2380,
                 },
                 client_url: IpAndPort {
-                    address: local_host,
+                    address: IpOrHostname::Ip(local_host),
                     port: 2379,
                 },
                 data_dir: "./pd_test_dir".into(),
@@ -413,7 +414,7 @@ mod test {
             },
             node: TikvConfig {
                 cluster_url: IpAndPort {
-                    address: local_host,
+                    address: IpOrHostname::Ip(local_host),
                     port: 20160,
                 },
                 data_dir: "./tikv_test_dir".into(),

@@ -76,6 +76,7 @@ pub mod fixture {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
+    use mu_common::serde_support::IpOrHostname;
     use test_context::{AsyncTestContext, TestContext};
 
     pub static DID_INSTALL_WASM32_TARGET_RUN: AtomicBool = AtomicBool::new(false);
@@ -160,18 +161,18 @@ pub mod fixture {
             let localhost = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
             let node_address = NodeAddress {
-                address: localhost,
+                address: IpOrHostname::Ip(localhost),
                 port: 12803,
             };
 
             let tikv_config = TikvRunnerConfig {
                 pd: PdConfig {
                     peer_url: IpAndPort {
-                        address: localhost,
+                        address: IpOrHostname::Ip(localhost),
                         port: 12385,
                     },
                     client_url: IpAndPort {
-                        address: localhost,
+                        address: IpOrHostname::Ip(localhost),
                         port: 12386,
                     },
                     data_dir: data_dir
@@ -187,7 +188,7 @@ pub mod fixture {
                 },
                 node: TikvConfig {
                     cluster_url: IpAndPort {
-                        address: localhost,
+                        address: IpOrHostname::Ip(localhost),
                         port: 20163,
                     },
                     data_dir: data_dir

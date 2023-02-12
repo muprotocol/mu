@@ -565,6 +565,7 @@ dependencies = [
  "flate2",
  "log",
  "mailbox_processor",
+ "mu-common",
  "nix",
  "reqwest",
  "rust-embed",
@@ -1115,6 +1116,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hostname-validator"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f558a64ac9af88b5ba400d99b579451af0d39c6d360980045b91aac966d705e2"
+
+[[package]]
 name = "http"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1395,6 +1402,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
 dependencies = [
  "cfg-if 1.0.0",
+ "serde",
 ]
 
 [[package]]
@@ -1484,7 +1492,12 @@ checksum = "7843ec2de400bcbc6a6328c958dc38e5359da6e93e72e37bc5246bf1ae776389"
 name = "mu-common"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "hostname-validator",
+ "http",
+ "log",
  "num",
+ "serde",
 ]
 
 [[package]]
@@ -1500,6 +1513,7 @@ dependencies = [
  "dyn-clone",
  "log",
  "mailbox_processor",
+ "mu-common",
  "mu_stack",
  "nix",
  "serde",
