@@ -3,12 +3,7 @@ pub mod network;
 mod request_routing;
 pub mod stack;
 
-use std::{
-    net::IpAddr,
-    process,
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{net::IpAddr, process, sync::Arc, time::SystemTime};
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
