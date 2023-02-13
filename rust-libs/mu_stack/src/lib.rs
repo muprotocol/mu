@@ -142,9 +142,9 @@ impl Stack {
         crate::protos::stack::Stack::parse_from_bytes(bytes.as_ref())?.try_into()
     }
 
-    pub fn databases(&self) -> impl Iterator<Item = &Database> {
+    pub fn key_value_tables(&self) -> impl Iterator<Item = &KeyValueTable> {
         self.services.iter().filter_map(|s| match s {
-            Service::Database(db) => Some(db),
+            Service::KeyValueTable(db) => Some(db),
             _ => None,
         })
     }
@@ -167,13 +167,13 @@ impl Stack {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum Service {
-    Database(Database),
+    KeyValueTable(KeyValueTable),
     Gateway(Gateway),
     Function(Function),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Database {
+pub struct KeyValueTable {
     pub name: String,
 }
 
