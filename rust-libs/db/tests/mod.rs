@@ -7,12 +7,17 @@ use rand::Rng;
 use serial_test::serial;
 use std::fs;
 use std::net::IpAddr;
+use std::path::Path;
 
 const TEST_DATA_DIR: &str = "tests/mudb/test_data";
 
 fn clean_data_dir() {
     fs::remove_dir_all(TEST_DATA_DIR).unwrap_or_else(|why| {
-        println!("{} {:?}", TEST_DATA_DIR, why.kind());
+        println!(
+            "can not remove directory {}: {:?}",
+            TEST_DATA_DIR,
+            why.kind()
+        );
     });
 }
 
@@ -246,6 +251,8 @@ fn make_node_address(port: u16) -> IpAndPort {
     }
 }
 fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> TikvRunnerConfig {
+    let data_dir = Path::new(TEST_DATA_DIR);
+
     let any: IpAddr = "0.0.0.0".parse().unwrap();
     let _localhost: IpAddr = "127.0.0.1".parse().unwrap();
     TikvRunnerConfig {
@@ -258,16 +265,16 @@ fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> Ti
                 address: any,
                 port: client_port,
             },
-            data_dir: format!("{TEST_DATA_DIR}/pd_data_dir_{peer_port}"),
-            log_file: Some(format!("{TEST_DATA_DIR}/pd_log_{peer_port}")),
+            data_dir: data_dir.join(format!("pd_data_dir_{peer_port}")),
+            log_file: Some(data_dir.join(format!("pd_log_{peer_port}"))),
         },
         node: TikvConfig {
             cluster_url: IpAndPort {
                 address: any,
                 port: tikv_port,
             },
-            data_dir: format!("{TEST_DATA_DIR}/tikv_data_dir_{tikv_port}"),
-            log_file: Some(format!("{TEST_DATA_DIR}/tikv_log_{tikv_port}")),
+            data_dir: data_dir.join(format!("tikv_data_dir_{tikv_port}")),
+            log_file: Some(data_dir.join(format!("tikv_log_{tikv_port}"))),
         },
     }
 }
@@ -341,7 +348,7 @@ async fn start_and_query_nodes_with_same_stackids_different_tables(dbs: Vec<Box<
     let mut handles = vec![];
     for (i, db) in dbs.into_iter().enumerate() {
         let tl = [
-            format!("{}", i).try_into().unwrap(),
+            format!("{i}").try_into().unwrap(),
             format!("{}", 100 + i).try_into().unwrap(),
         ];
         let db_clone = db.clone();
@@ -375,7 +382,7 @@ async fn start_and_query_nodes_with_different_stackids_and_tables(dbs: Vec<Box<d
         let i = i as u8;
         let si = StackID::SolanaPublicKey([i; 32]);
         let tl = [
-            format!("{}", i).try_into().unwrap(),
+            format!("{i}").try_into().unwrap(),
             format!("{}", 100 + i).try_into().unwrap(),
         ];
         let db_clone = db.clone();

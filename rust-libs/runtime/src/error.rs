@@ -1,10 +1,10 @@
-//TODO
-#![allow(dead_code)]
-
 use mu_stack::AssemblyID;
 use thiserror::Error;
 use wasmer::{CompileError, ExportError, InstantiationError, RuntimeError, SerializeError};
 use wasmer_wasi::{WasiError, WasiStateCreationError};
+
+//TODO: This enum is a mess, convert it to a struct with some kind and other fields to explain
+//them.
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -12,10 +12,10 @@ pub enum Error {
     FunctionRuntimeError(FunctionRuntimeError),
 
     #[error("Function Loading Error: {0:?}")]
-    FunctionLoadingError(Box<FunctionLoadingError>),
+    FunctionLoadingError(FunctionLoadingError),
 
-    #[error("Error in DB")]
-    DBError(&'static str),
+    #[error("Error in DB: {0:?}")]
+    DBError(anyhow::Error),
 
     #[error("Failed to read message from function: {0:?}")]
     FailedToReadMessage(std::io::Error),
@@ -28,6 +28,9 @@ pub enum Error {
 
     #[error("Failed to setup runtime cache: {0:?}")]
     CacheSetup(std::io::Error),
+
+    #[error("The runtime was shut down")]
+    RuntimeIsShutDown,
 }
 
 #[derive(Error, Debug)]
@@ -52,10 +55,13 @@ pub enum FunctionRuntimeError {
 }
 #[derive(Error, Debug)]
 pub enum FunctionLoadingError {
-    #[error("Can not find assembly with id {0:?}")]
+    #[error("Can not find assembly with id: {0:?}")]
     AssemblyNotFound(AssemblyID),
 
-    #[error("WASM module for assembly {0:?} is corrupted or invalid ")]
+    #[error("Invalid assembly definition: {0}")]
+    InvalidAssemblyDefinition(String),
+
+    #[error("WASM module for assembly {0:?} is corrupted or invalid")]
     InvalidAssembly(AssemblyID),
 
     #[error("Failed to build Wasi Env: {0:?}")]
@@ -65,7 +71,7 @@ pub enum FunctionLoadingError {
     FailedToGetImportObject(WasiError),
 
     #[error("Failed to instantiate wasm module: {0:?}")]
-    FailedToInstantiateWasmModule(InstantiationError),
+    FailedToInstantiateWasmModule(Box<InstantiationError>),
 
     #[error("Failed to get memory: {0:?}")]
     FailedToGetMemory(ExportError),

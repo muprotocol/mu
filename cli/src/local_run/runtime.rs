@@ -1,14 +1,12 @@
 use std::{
-    collections::HashMap,
     net::{IpAddr, Ipv4Addr},
     path::Path,
 };
 
 use anyhow::{Context, Result};
-use async_trait::async_trait;
 
 use mu_gateway::{GatewayManager, GatewayManagerConfig};
-use mu_runtime::{AssemblyDefinition, AssemblyProvider, Runtime, RuntimeConfig};
+use mu_runtime::{AssemblyDefinition, Runtime, RuntimeConfig};
 use mu_stack::{AssemblyID, FunctionID, Gateway, StackID};
 use musdk_common::{Request, Response};
 
@@ -25,8 +23,6 @@ pub async fn start(
 )> {
     let (stack, stack_id) = stack;
 
-    let assembly_provider = MapAssemblyProvider::default();
-
     let runtime_config = RuntimeConfig {
         cache_path: Path::new("target/runtime-cache").to_path_buf(),
         include_function_logs: true,
@@ -35,31 +31,30 @@ pub async fn start(
     let database = Database::start().await?;
 
     //TODO: Report usage using the notifications
-    let (runtime, _) = mu_runtime::start(
-        Box::new(assembly_provider),
-        database.db_manager.clone(),
-        runtime_config,
-    )
-    .await?;
+    let (runtime, _) = mu_runtime::start(database.db_manager.clone(), runtime_config).await?;
 
     let mut function_defs = vec![];
 
     for func in stack.functions() {
         let assembly_source = reqwest::get(&func.binary).await?.bytes().await?;
 
-        function_defs.push(AssemblyDefinition {
-            id: AssemblyID {
+        function_defs.push(AssemblyDefinition::try_new(
+            AssemblyID {
                 stack_id,
                 assembly_name: func.name.clone(),
             },
-            source: assembly_source,
-            runtime: func.runtime,
-            envs: func.env.clone(),
-            memory_limit: func.memory_limit,
-        });
+            assembly_source,
+            func.runtime,
+            func.env.clone(),
+            func.memory_limit,
+        ));
     }
 
-    runtime.add_functions(function_defs.clone()).await?;
+    let function_defs = function_defs
+        .into_iter()
+        .collect::<Result<Vec<AssemblyDefinition>, mu_runtime::Error>>()?;
+
+    runtime.add_functions(function_defs).await?;
 
     let gateway_config = GatewayManagerConfig {
         listen_address: IpAddr::V4(Ipv4Addr::LOCALHOST),
@@ -113,32 +108,4 @@ async fn handle_request(
         .invoke_function(function_id, request)
         .await
         .map_err(Into::into)
-}
-
-#[derive(Default)]
-pub struct MapAssemblyProvider {
-    inner: HashMap<AssemblyID, AssemblyDefinition>,
-}
-
-#[async_trait]
-impl AssemblyProvider for MapAssemblyProvider {
-    fn get(&self, id: &AssemblyID) -> Option<&AssemblyDefinition> {
-        Some(self.inner.get(id).unwrap())
-    }
-
-    fn add_function(&mut self, assembly: AssemblyDefinition) {
-        self.inner.insert(assembly.id.clone(), assembly);
-    }
-
-    fn remove_function(&mut self, id: &AssemblyID) {
-        self.inner.remove(id);
-    }
-
-    fn get_function_names(&self, _stack_id: &StackID) -> Vec<String> {
-        unimplemented!("Not needed")
-    }
-
-    fn remove_all_functions(&mut self, _stack_id: &StackID) -> Option<Vec<String>> {
-        unimplemented!("Not needed")
-    }
 }

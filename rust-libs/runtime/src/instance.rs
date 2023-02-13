@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, future::Future, sync::Arc};
 
 use super::{
     error::{Error, FunctionLoadingError},
@@ -10,10 +10,10 @@ use crate::{error::FunctionRuntimeError, Usage};
 
 use anyhow::anyhow;
 use log::{error, log, trace, Level};
-use mu_db::DbManager;
-use mu_stack::AssemblyID;
+use mu_db::{error::Result as MudbResult, DbClient, DbManager, Key as MudbKey, Scan as MudbScan};
+use mu_stack::{AssemblyID, StackID};
 use musdk_common::{
-    incoming_message::IncomingMessage,
+    incoming_message::{db::*, IncomingMessage},
     outgoing_message::{LogLevel, OutgoingMessage},
 };
 use wasmer::{CompilerConfig, Module, RuntimeError, Store};
@@ -29,7 +29,7 @@ pub fn create_store(memory_limit: byte_unit::Byte) -> Result<Store, Error> {
     compiler_config.push_middleware(metering);
 
     let memory = create_memory(memory_limit).map_err(|_| {
-        Error::FunctionLoadingError(Box::new(FunctionLoadingError::RequestedMemorySizeTooBig))
+        Error::FunctionLoadingError(FunctionLoadingError::RequestedMemorySizeTooBig)
     })?;
 
     Ok(Store::new_with_tunables(compiler_config, memory))
@@ -89,6 +89,7 @@ pub struct Instance<S: InstanceState> {
     memory_limit: byte_unit::Byte,
     include_logs: bool,
     db_manager: Box<dyn DbManager>,
+    db_client: Option<Box<dyn DbClient>>,
 }
 
 impl Instance<Loaded> {
@@ -118,6 +119,7 @@ impl Instance<Loaded> {
             memory_limit,
             include_logs,
             db_manager,
+            db_client: None,
         }
     }
 
@@ -141,6 +143,7 @@ impl Instance<Loaded> {
             memory_limit: self.memory_limit,
             include_logs: self.include_logs,
             db_manager: self.db_manager,
+            db_client: None,
         })
     }
 }
@@ -206,6 +209,7 @@ impl Instance<Running> {
             })?
     }
 
+    // TODO @hamidrezakp: Refactor this into smaller pieces!
     fn inner_run_request(
         mut self,
         request: ExecuteFunctionRequest<'static>,
@@ -289,148 +293,301 @@ impl Instance<Running> {
                                     log.body
                                 );
                             }
-                        } // OutgoingMessage::DatabaseRequest(request) => {
-                          //     let resp = match request {
-                          //         DatabaseRequest::CreateTable(req) => {
-                          //             let res = tokio::runtime::Handle::current()
-                          //                 .block_on(self.database_service.create_table(
-                          //                     create_database_id(
-                          //                         &self.id.function_id.stack_id,
-                          //                         req.db_name.into_owned(),
-                          //                     ),
-                          //                     req.table_name.into_owned(),
-                          //                 ))
-                          //                 .map_err(|e| e.to_string())
-                          //                 .map(|d| musdk_common::database::TableDescription {
-                          //                     table_name: Cow::Owned(d.table_name),
-                          //                 });
+                        }
 
-                          //             self.state.database_write_count += 1;
+                        OutgoingMessage::Put(req) => {
+                            self.db_request(|db_client, stack_id| async move {
+                                let key = make_mudb_key(stack_id, req.table, req.key)?;
+                                db_client
+                                    .put(key, req.value.into_owned(), req.is_atomic)
+                                    .await
+                                    .map(into_empty_incoming_msg)
+                            })?
+                        }
 
-                          //             DatabaseResponse::CreateTable(res)
-                          //         }
+                        OutgoingMessage::Get(req) => {
+                            self.db_request(|db_client, stack_id| async move {
+                                let key = make_mudb_key(stack_id, req.table, req.key)?;
+                                db_client
+                                    .get(key)
+                                    .await
+                                    .map(into_single_or_empty_incoming_msg)
+                            })?
+                        }
 
-                          //         DatabaseRequest::DropTable(req) => {
-                          //             let res = tokio::runtime::Handle::current()
-                          //                 .block_on(self.database_service.delete_table(
-                          //                     create_database_id(
-                          //                         &self.id.function_id.stack_id,
-                          //                         req.db_name.into_owned(),
-                          //                     ),
-                          //                     req.table_name.into_owned(),
-                          //                 ))
-                          //                 .map_err(|e| e.to_string())
-                          //                 .map(|r| {
-                          //                     r.map(|d| musdk_common::database::TableDescription {
-                          //                         table_name: Cow::Owned(d.table_name),
-                          //                     })
-                          //                 });
+                        OutgoingMessage::Delete(req) => {
+                            self.db_request(|db_client, stack_id| async move {
+                                let key = make_mudb_key(stack_id, req.table, req.key)?;
+                                db_client
+                                    .delete(key, req.is_atomic)
+                                    .await
+                                    .map(into_empty_incoming_msg)
+                            })?
+                        }
 
-                          //             self.state.database_write_count += 1;
+                        OutgoingMessage::DeleteByPrefix(req) => {
+                            self.db_request(|db_client, stack_id| async move {
+                                let table_name = req.table.into_owned().try_into()?;
+                                let key_prefix = req.key_prefix.into_owned();
+                                db_client
+                                    .delete_by_prefix(stack_id, table_name, key_prefix)
+                                    .await
+                                    .map(into_empty_incoming_msg)
+                            })?
+                        }
 
-                          //             DatabaseResponse::DropTable(res)
-                          //         }
+                        OutgoingMessage::Scan(req) => {
+                            self.db_request(|db_client, stack_id| async move {
+                                let db_key = make_mudb_scan(stack_id, req.table, req.key_prefix)?;
+                                db_client
+                                    .scan(db_key, req.limit)
+                                    .await
+                                    .map(into_kv_pairs_incoming_msg)
+                            })?;
+                        }
 
-                          //         DatabaseRequest::Find(req) => {
-                          //             let res = tokio::runtime::Handle::current()
-                          //                 .block_on(self.database_service.find_item(
-                          //                     create_database_id(
-                          //                         &self.id.function_id.stack_id,
-                          //                         req.db_name.into_owned(),
-                          //                     ),
-                          //                     req.table_name.into_owned(),
-                          //                     key_filter_to_mudb(req.key_filter),
-                          //                     req.value_filter.to_string().try_into().map_err(
-                          //                         |_| {
-                          //                             (
-                          //                                 Error::DBError(
-                          //                                     "failed to parse value filter",
-                          //                                 ),
-                          //                                 vec![],
-                          //                             )
-                          //                         },
-                          //                     )?,
-                          //                 ))
-                          //                 .map_err(|e| e.to_string())
-                          //                 .map(|r| {
-                          //                     r.into_iter()
-                          //                         .map(|(k, v)| musdk_common::database::Item {
-                          //                             key: Cow::Owned(k),
-                          //                             value: Cow::Owned(v),
-                          //                         })
-                          //                         .collect()
-                          //                 });
+                        OutgoingMessage::ScanKeys(req) => {
+                            self.db_request(|db_client, stack_id| async move {
+                                let mudb_scan =
+                                    make_mudb_scan(stack_id, req.table, req.key_prefix)?;
+                                let mudb_keys_to_inner_keys =
+                                    |k: Vec<MudbKey>| k.into_iter().map(|k| k.inner_key);
+                                db_client
+                                    .scan_keys(mudb_scan, req.limit)
+                                    .await
+                                    .map(mudb_keys_to_inner_keys)
+                                    .map(into_list_incoming_msg)
+                            })?
+                        }
 
-                          //             self.state.database_read_count += 1;
+                        OutgoingMessage::BatchPut(req) => {
+                            self.db_request(|db_client, stack_id| async move {
+                                let into_mudb_kv_pair = |x: (_, _, Cow<[u8]>)| {
+                                    let table = x.0;
+                                    let key = x.1;
+                                    let value = x.2;
+                                    make_mudb_key(stack_id, table, key)
+                                        .map(|mudb_key| (mudb_key, value.into_owned()))
+                                };
+                                let mudb_kv_pairs = req
+                                    .table_key_value_triples
+                                    .into_iter()
+                                    .map(into_mudb_kv_pair)
+                                    .collect::<MudbResult<_>>()?;
+                                db_client
+                                    .batch_put(mudb_kv_pairs, req.is_atomic)
+                                    .await
+                                    .map(into_empty_incoming_msg)
+                            })?
+                        }
 
-                          //             DatabaseResponse::Find(res)
-                          //         }
-                          //         DatabaseRequest::Insert(req) => {
-                          //             let res = tokio::runtime::Handle::current()
-                          //                 .block_on({
-                          //                     self.database_service.insert_one_item(
-                          //                         create_database_id(
-                          //                             &self.id.function_id.stack_id,
-                          //                             req.db_name.into_owned(),
-                          //                         ),
-                          //                         req.table_name.into_owned(),
-                          //                         req.key.into_owned(),
-                          //                         req.value.into_owned(),
-                          //                     )
-                          //                 })
-                          //                 .map_err(|e| e.to_string())
-                          //                 .map(Cow::Owned);
+                        OutgoingMessage::BatchGet(req) => {
+                            self.db_request(|db_client, stack_id| async move {
+                                let keys = make_mudb_keys(stack_id, req.table_key_tuples)?;
+                                db_client
+                                    .batch_get(keys)
+                                    .await
+                                    .map(into_tkv_triples_incoming_msg)
+                            })?;
+                        }
 
-                          //             self.state.database_write_count += 1;
+                        OutgoingMessage::BatchDelete(req) => {
+                            self.db_request(|db_client, stack_id| async move {
+                                let keys = make_mudb_keys(stack_id, req.table_key_tuples)?;
+                                db_client
+                                    .batch_delete(keys)
+                                    .await
+                                    .map(into_empty_incoming_msg)
+                            })?;
+                        }
 
-                          //             DatabaseResponse::Insert(res)
-                          //         }
-                          //         DatabaseRequest::Update(req) => {
-                          //             let res = tokio::runtime::Handle::current()
-                          //                 .block_on(self.database_service.update_item(
-                          //                     create_database_id(
-                          //                         &self.id.function_id.stack_id,
-                          //                         req.db_name.into_owned(),
-                          //                     ),
-                          //                     req.table_name.into_owned(),
-                          //                     key_filter_to_mudb(req.key_filter),
-                          //                     req.value_filter.to_string().try_into().map_err(
-                          //                         |_| {
-                          //                             (
-                          //                                 Error::DBError(
-                          //                                     "failed to parse value filter",
-                          //                                 ),
-                          //                                 vec![],
-                          //                             )
-                          //                         },
-                          //                     )?,
-                          //                     req.update.to_string().try_into().map_err(|_| {
-                          //                         (Error::DBError("failed to parse updater"), vec![])
-                          //                     })?,
-                          //                 ))
-                          //                 .map_err(|e| e.to_string())
-                          //                 .map(|r| {
-                          //                     r.into_iter()
-                          //                         .map(|(k, v)| musdk_common::database::Item {
-                          //                             key: Cow::Owned(k),
-                          //                             value: Cow::Owned(v),
-                          //                         })
-                          //                         .collect()
-                          //                 });
+                        OutgoingMessage::BatchScan(req) => {
+                            self.db_request(|db_client, stack_id| async move {
+                                let scans = make_mudb_scans(stack_id, req.table_key_prefix_tuples)?;
+                                db_client
+                                    .batch_scan(scans, req.each_limit)
+                                    .await
+                                    .map(into_tkv_triples_incoming_msg)
+                            })?
+                        }
 
-                          //             self.state.database_write_count += 1;
+                        OutgoingMessage::BatchScanKeys(req) => {
+                            self.db_request(|db_client, stack_id| async move {
+                                let scans = make_mudb_scans(stack_id, req.table_key_prefix_tuples)?;
+                                db_client
+                                    .batch_scan_keys(scans, req.each_limit)
+                                    .await
+                                    .map(into_tk_pairs_incoming_msg)
+                            })?
+                        }
 
-                          //             DatabaseResponse::Update(res)
-                          //         }
-                          //     };
-                          //     self.write_message(IncomingMessage::DatabaseResponse(resp))
-                          //         .map_err(|e| (e, vec![]))?;
-                          // }
+                        OutgoingMessage::TableList(req) => {
+                            self.db_request(|db_client, stack_id| async move {
+                                let table_name_prefix =
+                                    Some(req.table_prefix.into_owned().try_into()?);
+                                db_client
+                                    .table_list(stack_id, table_name_prefix)
+                                    .await
+                                    .map(into_list_incoming_msg)
+                            })?;
+                        }
+
+                        OutgoingMessage::CompareAndSwap(req) => {
+                            self.db_request(|db_client, stack_id| async move {
+                                let key = make_mudb_key(stack_id, req.table, req.key)?;
+                                let prev_value = req.previous_value.map(|x| x.into_owned());
+                                db_client
+                                    .compare_and_swap(key, prev_value, req.new_value.into_owned())
+                                    .await
+                                    .map(into_cas_incoming_msg)
+                            })?
+                        }
                     }
                 }
             }
         }
     }
+
+    fn db_request<'a, A, B>(&mut self, f: A) -> Result<(), (Error, Usage)>
+    where
+        A: FnOnce(Box<dyn DbClient>, StackID) -> B,
+        B: Future<Output = MudbResult<IncomingMessage<'a>>>,
+    {
+        tokio::runtime::Handle::current().block_on(async {
+            let stack_id = self.id.function_id.stack_id;
+            // lazy db_client creation
+            let db_client_res = match &self.db_client {
+                Some(x) => Ok(x.clone()),
+                None => {
+                    let x = self.db_manager.make_client().await;
+                    self.db_client = x.as_ref().ok().map(ToOwned::to_owned);
+                    x
+                }
+            };
+
+            match db_client_res {
+                Ok(db_client) => {
+                    let msg = f(db_client, stack_id).await.unwrap_or_else(|e| {
+                        IncomingMessage::DbError(DbError {
+                            error: Cow::from(format!("{e:?}")),
+                        })
+                    });
+                    self.write_message(msg)
+                }
+                Err(e) => self.write_message(IncomingMessage::DbError(DbError {
+                    error: Cow::from(format!("{e:?}")),
+                })),
+            }
+            .map_err(|e| (e, Usage::default()))
+        })
+    }
+}
+
+fn make_mudb_key(
+    stack_id: StackID,
+    cow_table: Cow<'_, [u8]>,
+    cow_key: Cow<'_, [u8]>,
+) -> MudbResult<MudbKey> {
+    Ok(MudbKey {
+        stack_id,
+        table_name: cow_table.into_owned().try_into()?,
+        inner_key: cow_key.into_owned(),
+    })
+}
+
+fn make_mudb_scan(
+    stack_id: StackID,
+    cow_table: Cow<'_, [u8]>,
+    cow_key_prefix: Cow<'_, [u8]>,
+) -> MudbResult<MudbScan> {
+    Ok(MudbScan::ByInnerKeyPrefix(
+        stack_id,
+        cow_table.into_owned().try_into()?,
+        cow_key_prefix.into_owned(),
+    ))
+}
+
+type TableKeyPairs<'a> = Vec<(Cow<'a, [u8]>, Cow<'a, [u8]>)>;
+
+fn make_mudb_keys(stack_id: StackID, table_key_list: TableKeyPairs) -> MudbResult<Vec<MudbKey>> {
+    table_key_list
+        .into_iter()
+        .map(|(table, key)| make_mudb_key(stack_id, table, key))
+        .collect::<MudbResult<_>>()
+}
+
+fn make_mudb_scans(stack_id: StackID, table_key_list: TableKeyPairs) -> MudbResult<Vec<MudbScan>> {
+    table_key_list
+        .into_iter()
+        .map(|(table, key)| make_mudb_scan(stack_id, table, key))
+        .collect::<MudbResult<_>>()
+}
+
+fn into_single_or_empty_incoming_msg<'a>(x: Option<Vec<u8>>) -> IncomingMessage<'a> {
+    match x {
+        Some(xp) => IncomingMessage::SingleResult(SingleResult {
+            item: Cow::Owned(xp),
+        }),
+        None => IncomingMessage::EmptyResult(EmptyResult),
+    }
+}
+
+fn into_empty_incoming_msg<'a>(_: ()) -> IncomingMessage<'a> {
+    IncomingMessage::EmptyResult(EmptyResult)
+}
+
+fn into_kv_pairs_incoming_msg<'a>(x: Vec<(MudbKey, Vec<u8>)>) -> IncomingMessage<'a> {
+    IncomingMessage::KeyValueListResult(KeyValueListResult {
+        list: x
+            .into_iter()
+            .map(|(k, v)| KeyValue {
+                key: Cow::Owned(k.inner_key),
+                value: Cow::Owned(v),
+            })
+            .collect(),
+    })
+}
+
+fn into_tk_pairs_incoming_msg<'a>(x: Vec<MudbKey>) -> IncomingMessage<'a> {
+    IncomingMessage::TableKeyListResult(TableKeyListResult {
+        list: x
+            .into_iter()
+            .map(|k| TableKey {
+                table: Cow::Owned(k.table_name.into()),
+                key: Cow::Owned(k.inner_key),
+            })
+            .collect(),
+    })
+}
+
+fn into_tkv_triples_incoming_msg<'a>(x: Vec<(MudbKey, Vec<u8>)>) -> IncomingMessage<'a> {
+    IncomingMessage::TableKeyValueListResult(TableKeyValueListResult {
+        list: x
+            .into_iter()
+            .map(|(k, v)| TableKeyValue {
+                table: Cow::Owned(k.table_name.into()),
+                key: Cow::Owned(k.inner_key),
+                value: Cow::Owned(v),
+            })
+            .collect(),
+    })
+}
+
+fn into_list_incoming_msg<'a, I, T>(x: I) -> IncomingMessage<'a>
+where
+    I: IntoIterator<Item = T>,
+    Vec<u8>: From<T>,
+{
+    IncomingMessage::ListResult(ListResult {
+        list: x.into_iter().map(Vec::<u8>::from).map(Cow::Owned).collect(),
+    })
+}
+
+fn into_cas_incoming_msg<'a>(x: (Option<Vec<u8>>, bool)) -> IncomingMessage<'a> {
+    IncomingMessage::CasResult(CasResult {
+        previous_value: x.0.map(Cow::Owned),
+        is_swapped: x.1,
+    })
 }
 
 #[derive(Copy, Clone)]

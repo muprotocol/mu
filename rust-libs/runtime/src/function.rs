@@ -32,12 +32,10 @@ pub fn start(
         .stderr(Box::new(stderr.clone()))
         .envs(envs)
         .finalize(&mut store)
-        .map_err(|e| {
-            Error::FunctionLoadingError(Box::new(FunctionLoadingError::FailedToBuildWasmEnv(e)))
-        })?;
+        .map_err(|e| Error::FunctionLoadingError(FunctionLoadingError::FailedToBuildWasmEnv(e)))?;
 
     let import_object = wasi_env.import_object(&mut store, module).map_err(|e| {
-        Error::FunctionLoadingError(Box::new(FunctionLoadingError::FailedToGetImportObject(e)))
+        Error::FunctionLoadingError(FunctionLoadingError::FailedToGetImportObject(e))
     })?;
 
     let instance = Instance::new(&mut store, module, &import_object).map_err(|error| {
@@ -52,15 +50,16 @@ pub fn start(
 
                 Error::FunctionRuntimeError(FunctionRuntimeError::MaximumMemoryExceeded)
             }
-            e => Error::FunctionLoadingError(Box::new(
-                FunctionLoadingError::FailedToInstantiateWasmModule(e),
+            e => Error::FunctionLoadingError(FunctionLoadingError::FailedToInstantiateWasmModule(
+                Box::new(e),
             )),
         }
     })?;
 
-    let memory = instance.exports.get_memory("memory").map_err(|e| {
-        Error::FunctionLoadingError(Box::new(FunctionLoadingError::FailedToGetMemory(e)))
-    })?;
+    let memory = instance
+        .exports
+        .get_memory("memory")
+        .map_err(|e| Error::FunctionLoadingError(FunctionLoadingError::FailedToGetMemory(e)))?;
 
     wasi_env.data_mut(&mut store).set_memory(memory.clone());
 

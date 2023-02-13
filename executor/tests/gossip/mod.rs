@@ -24,6 +24,7 @@ async fn test_node_discovery() {
         liveness_check_interval: ConfigDuration::new(Duration::from_millis(10)),
         heartbeat_interval: ConfigDuration::new(Duration::from_millis(10)),
         assume_dead_after_missed_heartbeats: 10,
+        network_stabilization_wait_time: ConfigDuration::new(Duration::from_secs(1)),
     };
 
     const SEED_COUNT: u16 = 2;

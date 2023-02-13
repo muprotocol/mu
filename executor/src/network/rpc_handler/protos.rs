@@ -64,7 +64,7 @@ fn header_from_proto(h: rpc::KeyValuePair) -> musdk_common::Header<'static> {
 
 impl<'a> From<musdk_common::Request<'a>> for rpc::Request {
     fn from(request: musdk_common::Request<'a>) -> Self {
-        // TODO: we have the same code in the mu_stack crate as well. We could
+        // we have the same code in the mu_stack crate as well. We could
         // unify the two sources if we set up a really complex scenario in which
         // the proto files in this crate reference those of the mu_stack crate,
         // and then we'd have to make the codegen look in the other crate's code,

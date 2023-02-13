@@ -26,10 +26,11 @@ use mu_stack::{AssemblyID, FunctionID, StackID};
 use musdk_common::{Header, Request, Response};
 
 use instance::create_store;
+use providers::AssemblyProvider;
 
 pub use error::{Error, FunctionLoadingError, FunctionRuntimeError, Result};
 pub use instance::{Instance, Loaded, Running};
-pub use types::{AssemblyDefinition, AssemblyProvider, InvokeFunctionRequest, RuntimeConfig};
+pub use types::{AssemblyDefinition, InvokeFunctionRequest, RuntimeConfig};
 
 #[async_trait]
 #[clonable]
@@ -38,7 +39,7 @@ pub trait Runtime: Clone + Send + Sync {
         &self,
         function_id: FunctionID,
         request: Request<'a>,
-    ) -> Result<Response<'static>, Error>;
+    ) -> Result<Response<'static>>;
 
     async fn stop(&self) -> Result<()>;
 
@@ -111,17 +112,17 @@ struct CacheHashAndMemoryLimit {
 
 struct RuntimeState {
     config: RuntimeConfig,
-    assembly_provider: Box<dyn AssemblyProvider>,
+    assembly_provider: AssemblyProvider,
     db_manager: Box<dyn DbManager>,
     hashkey_dict: HashMap<AssemblyID, CacheHashAndMemoryLimit>,
     cache: FileSystemCache,
     next_instance_id: u64,
     notification_channel: NotificationChannel<Notification>,
+    is_shut_down: bool,
 }
 
 impl RuntimeState {
     pub async fn new(
-        assembly_provider: Box<dyn AssemblyProvider>,
         db_manager: Box<dyn DbManager>,
         config: RuntimeConfig,
     ) -> Result<(Self, mpsc::UnboundedReceiver<Notification>)> {
@@ -134,12 +135,13 @@ impl RuntimeState {
         Ok((
             Self {
                 config,
-                assembly_provider,
+                assembly_provider: Default::default(),
                 db_manager,
                 hashkey_dict,
                 cache,
                 next_instance_id: 0,
                 notification_channel: tx,
+                is_shut_down: false,
             },
             rx,
         ))
@@ -161,21 +163,19 @@ impl RuntimeState {
                     warn!("cached module is corrupted: {}", e);
 
                     let definition = self.assembly_provider.get(assembly_id).ok_or_else(|| {
-                        Error::FunctionLoadingError(Box::new(
-                            FunctionLoadingError::AssemblyNotFound(assembly_id.clone()),
+                        Error::FunctionLoadingError(FunctionLoadingError::AssemblyNotFound(
+                            assembly_id.clone(),
                         ))
                     })?;
 
                     let module = Module::new(&store, definition.source.clone()).map_err(|e| {
-                        Error::FunctionLoadingError(Box::new(
-                            FunctionLoadingError::CompileWasmModule(e),
-                        ))
+                        Error::FunctionLoadingError(FunctionLoadingError::CompileWasmModule(e))
                     })?;
 
                     self.cache.store(*hash, &module).map_err(|e| {
-                        Error::FunctionLoadingError(Box::new(
+                        Error::FunctionLoadingError(
                             FunctionLoadingError::SerializeCachedWasmModule(e),
-                        ))
+                        )
                     })?;
 
                     Ok((store, module))
@@ -185,9 +185,9 @@ impl RuntimeState {
             let assembly_definition = match self.assembly_provider.get(assembly_id) {
                 Some(d) => d,
                 None => {
-                    return Err(Error::FunctionLoadingError(Box::new(
+                    return Err(Error::FunctionLoadingError(
                         FunctionLoadingError::AssemblyNotFound(assembly_id.clone()),
-                    )));
+                    ));
                 }
             };
 
@@ -215,9 +215,9 @@ impl RuntimeState {
                 Ok((store, module))
             } else {
                 error!("can not build wasm module for function: {}", assembly_id);
-                Err(Error::FunctionLoadingError(Box::new(
+                Err(Error::FunctionLoadingError(
                     FunctionLoadingError::InvalidAssembly(assembly_id.clone()),
-                )))
+                ))
             }
         }
     }
@@ -228,9 +228,9 @@ impl RuntimeState {
             .assembly_provider
             .get(&assembly_id)
             .ok_or_else(|| {
-                Error::FunctionLoadingError(Box::new(FunctionLoadingError::AssemblyNotFound(
+                Error::FunctionLoadingError(FunctionLoadingError::AssemblyNotFound(
                     assembly_id.clone(),
-                )))
+                ))
             })?
             .to_owned();
 
@@ -299,7 +299,7 @@ impl Runtime for RuntimeImpl {
         Ok(response.response)
     }
 
-    async fn stop(&self) -> Result<(), Error> {
+    async fn stop(&self) -> Result<()> {
         self.mailbox
             .post(MailboxMessage::Shutdown)
             .await
@@ -308,28 +308,28 @@ impl Runtime for RuntimeImpl {
         Ok(())
     }
 
-    async fn add_functions(&self, functions: Vec<AssemblyDefinition>) -> Result<(), Error> {
+    async fn add_functions(&self, functions: Vec<AssemblyDefinition>) -> Result<()> {
         self.mailbox
             .post(MailboxMessage::AddFunctions(functions))
             .await
             .map_err(|e| Error::Internal(e.into()))
     }
 
-    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<(), Error> {
+    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<()> {
         self.mailbox
             .post(MailboxMessage::RemoveFunctions(stack_id, names))
             .await
             .map_err(|e| Error::Internal(e.into()))
     }
 
-    async fn remove_all_functions(&self, stack_id: StackID) -> Result<(), Error> {
+    async fn remove_all_functions(&self, stack_id: StackID) -> Result<()> {
         self.mailbox
             .post(MailboxMessage::RemoveAllFunctions(stack_id))
             .await
             .map_err(|e| Error::Internal(e.into()))
     }
 
-    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>, Error> {
+    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>> {
         self.mailbox
             .post_and_reply(|r| MailboxMessage::GetFunctionNames(stack_id, r))
             .await
@@ -338,12 +338,10 @@ impl Runtime for RuntimeImpl {
 }
 
 pub async fn start(
-    assembly_provider: Box<dyn AssemblyProvider>,
     db_manager: Box<dyn DbManager>,
     config: RuntimeConfig,
 ) -> Result<(Box<dyn Runtime>, mpsc::UnboundedReceiver<Notification>)> {
-    let (state, notification_receiver) =
-        RuntimeState::new(assembly_provider, db_manager, config).await?;
+    let (state, notification_receiver) = RuntimeState::new(db_manager, config).await?;
     let mailbox = CallbackMailboxProcessor::start(mailbox_step, state, 10000);
     Ok((Box::new(RuntimeImpl { mailbox }), notification_receiver))
 }
@@ -353,45 +351,19 @@ async fn mailbox_step(
     msg: MailboxMessage,
     mut state: RuntimeState,
 ) -> RuntimeState {
-    let notification_channel = state.notification_channel.clone();
-
     match msg {
         MailboxMessage::InvokeFunction(req) => {
-            match state.instantiate_function(req.assembly_id.clone()).await {
-                Ok(instance) => {
-                    tokio::spawn(async move {
-                        match instance.start() {
-                            Err(e) => req.reply.reply(Err(e)),
-                            Ok(i) => {
-                                let result = i
-                                    .run_request(req.request)
-                                    .await
-                                    .map(|(resp, usages)| {
-                                        notification_channel.send(Notification::ReportUsage(
-                                            req.assembly_id.stack_id,
-                                            usages,
-                                        ));
-                                        resp
-                                    })
-                                    .map_err(|(error, usages)| {
-                                        notification_channel.send(Notification::ReportUsage(
-                                            req.assembly_id.stack_id,
-                                            usages,
-                                        ));
-                                        error
-                                    });
-
-                                req.reply.reply(result);
-                            }
-                        }
-                    });
-                }
-                Err(f) => req.reply.reply(Err(f)),
+            if state.is_shut_down {
+                req.reply.reply(Err(Error::RuntimeIsShutDown));
+            } else {
+                execute_function(&mut state, req).await;
             }
         }
 
         MailboxMessage::Shutdown => {
-            //TODO: find a way to kill running functions
+            // We need to wait for running user functions, so we simply
+            // stop accepting new requests.
+            state.is_shut_down = true;
         }
 
         MailboxMessage::AddFunctions(functions) => {
@@ -429,4 +401,40 @@ async fn mailbox_step(
         }
     }
     state
+}
+
+async fn execute_function(state: &mut RuntimeState, req: InvokeFunctionRequest) {
+    match state.instantiate_function(req.assembly_id.clone()).await {
+        Ok(instance) => {
+            let notification_channel = state.notification_channel.clone();
+
+            tokio::spawn(async move {
+                match instance.start() {
+                    Err(e) => req.reply.reply(Err(e)),
+                    Ok(i) => {
+                        let result = i
+                            .run_request(req.request)
+                            .await
+                            .map(|(resp, usages)| {
+                                notification_channel.send(Notification::ReportUsage(
+                                    req.assembly_id.stack_id,
+                                    usages,
+                                ));
+                                resp
+                            })
+                            .map_err(|(error, usages)| {
+                                notification_channel.send(Notification::ReportUsage(
+                                    req.assembly_id.stack_id,
+                                    usages,
+                                ));
+                                error
+                            });
+
+                        req.reply.reply(result);
+                    }
+                }
+            });
+        }
+        Err(f) => req.reply.reply(Err(f)),
+    }
 }

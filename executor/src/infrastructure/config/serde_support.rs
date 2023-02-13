@@ -134,7 +134,7 @@ impl<'de> Visitor<'de> for ConfigLogLevelFilterDeserializeVisitor {
 }
 
 #[derive(Clone, Debug)]
-pub struct ConfigUri(Uri);
+pub struct ConfigUri(pub Uri);
 
 impl<'de> Deserialize<'de> for ConfigUri {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

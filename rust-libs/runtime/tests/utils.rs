@@ -12,9 +12,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use mu_db::{DbManager, IpAndPort, PdConfig, TikvConfig, TikvRunnerConfig};
-use mu_runtime::{
-    start, AssemblyDefinition, AssemblyProvider, Notification, Runtime, RuntimeConfig, Usage,
-};
+use mu_runtime::{start, AssemblyDefinition, Notification, Runtime, RuntimeConfig, Usage};
 use mu_stack::{AssemblyID, AssemblyRuntime, FunctionID, StackID};
 use musdk_common::Header;
 
@@ -24,36 +22,10 @@ const TEST_PROJECTS: &[&str] = &[
     "calc-func",
     "multi-body",
     "unclean-termination",
+    "hello-db",
 ];
 
-#[derive(Default)]
-pub struct MapAssemblyProvider {
-    inner: HashMap<AssemblyID, AssemblyDefinition>,
-}
-
-#[async_trait]
-impl AssemblyProvider for MapAssemblyProvider {
-    fn get(&self, id: &AssemblyID) -> Option<&AssemblyDefinition> {
-        Some(self.inner.get(id).unwrap())
-    }
-
-    fn add_function(&mut self, function: AssemblyDefinition) {
-        self.inner.insert(function.id.clone(), function);
-    }
-
-    fn remove_function(&mut self, id: &AssemblyID) {
-        self.inner.remove(id);
-    }
-
-    fn remove_all_functions(&mut self, _stack_id: &StackID) -> Option<Vec<String>> {
-        unimplemented!("Not needed for tests")
-    }
-
-    fn get_function_names(&self, _stack_id: &StackID) -> Vec<String> {
-        unimplemented!("Not needed")
-    }
-}
-
+#[derive(Debug)]
 pub struct Project<'a> {
     pub id: AssemblyID,
     pub name: &'a str,
@@ -91,13 +63,13 @@ pub async fn read_wasm_functions<'a>(
 
         results.insert(
             project.id.clone(),
-            AssemblyDefinition::new(
+            AssemblyDefinition::try_new(
                 project.id.clone(),
                 source.into(),
                 AssemblyRuntime::Wasi1_0,
                 [],
                 project.memory_limit,
-            ),
+            )?,
         );
     }
 
@@ -181,7 +153,7 @@ pub mod fixture {
     }
 
     pub struct DBManagerFixture {
-        db_manager: Box<dyn DbManager>,
+        pub db_manager: Box<dyn DbManager>,
         data_dir: TempDir,
     }
 
@@ -219,15 +191,15 @@ pub mod fixture {
 
         async fn teardown(self) {
             self.db_manager.stop_embedded_cluster().await.unwrap();
-            self.data_dir.teardown()
+            self.data_dir.teardown();
         }
     }
 
     pub struct RuntimeFixture {
         pub runtime: Box<dyn Runtime>,
-        pub db_manager: DBManagerFixture,
+        pub db_manager_fixture: DBManagerFixture,
         pub usages: Arc<tokio::sync::Mutex<HashMap<StackID, Usage>>>,
-        pub data_dir: TempDir,
+        data_dir: TempDir,
     }
 
     #[async_trait]
@@ -236,7 +208,6 @@ pub mod fixture {
             install_wasm32_target();
             build_test_funcs();
 
-            let assembly_provider = Box::<MapAssemblyProvider>::default();
             let db_manager = <DBManagerFixture as AsyncTestContext>::setup().await;
             let data_dir = TempDir::setup();
 
@@ -246,9 +217,7 @@ pub mod fixture {
             };
 
             let (runtime, mut notifications) =
-                start(assembly_provider, db_manager.db_manager.clone(), config)
-                    .await
-                    .unwrap();
+                start(db_manager.db_manager.clone(), config).await.unwrap();
 
             let usages = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
@@ -274,14 +243,14 @@ pub mod fixture {
 
             RuntimeFixture {
                 runtime,
-                db_manager,
+                db_manager_fixture: db_manager,
                 usages,
                 data_dir,
             }
         }
         async fn teardown(self) {
             self.runtime.stop().await.unwrap();
-            AsyncTestContext::teardown(self.db_manager).await;
+            AsyncTestContext::teardown(self.db_manager_fixture).await;
             self.data_dir.teardown();
         }
     }
@@ -298,7 +267,6 @@ pub mod fixture {
             install_wasm32_target();
             build_test_funcs();
 
-            let assembly_provider = Box::<MapAssemblyProvider>::default();
             let db_manager = mock_db::EmptyDBManager;
             let data_dir = TempDir::setup();
 
@@ -307,10 +275,7 @@ pub mod fixture {
                 include_function_logs: true,
             };
 
-            let (runtime, mut notifications) =
-                start(assembly_provider, Box::new(db_manager), config)
-                    .await
-                    .unwrap();
+            let (runtime, mut notifications) = start(Box::new(db_manager), config).await.unwrap();
 
             let usages = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 

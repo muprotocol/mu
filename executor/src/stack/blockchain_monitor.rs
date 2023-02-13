@@ -36,13 +36,11 @@ use solana_sdk::{
 use tokio::{select, sync::mpsc::UnboundedReceiver, task::spawn_blocking};
 
 use super::{config_types::Base58PublicKey, StackMetadata, StackWithMetadata};
-use crate::infrastructure::config::ConfigDuration;
+use crate::infrastructure::config::{ConfigDuration, ConfigUri};
 use crate::stack::blockchain_monitor::stack_collection::{OwnerEntry, OwnerState, StackCollection};
 use crate::stack::config_types::Base58PrivateKey;
 use crate::stack::usage_aggregator::{UsageAggregator, UsageCategory};
 use crate::stack::StackOwner;
-
-// TODO: monitor for removed/undeployed stacks
 
 #[async_trait]
 #[clonable]
@@ -59,8 +57,8 @@ pub enum BlockchainMonitorNotification {
 
 #[derive(Deserialize)]
 pub struct BlockchainMonitorConfig {
-    solana_cluster_rpc_url: String, // TODO: Use ConfigUri
-    solana_cluster_pub_sub_url: String,
+    solana_cluster_rpc_url: ConfigUri,
+    solana_cluster_pub_sub_url: ConfigUri,
     solana_provider_public_key: Base58PublicKey,
     solana_region_number: u32,
     solana_usage_signer_private_key: Base58PrivateKey,
@@ -179,11 +177,12 @@ pub async fn start(
 
     debug!(
         "Solana cluster URLs: {}, {}",
-        config.solana_cluster_rpc_url, config.solana_cluster_pub_sub_url
+        config.solana_cluster_rpc_url.0,
+        config.solana_cluster_pub_sub_url.0.to_string()
     );
 
     let rpc_client = RpcClient::new_with_commitment(
-        config.solana_cluster_rpc_url.clone(),
+        config.solana_cluster_rpc_url.0.to_string(),
         CommitmentConfig::finalized(),
     );
 
@@ -217,7 +216,7 @@ pub async fn start(
 
     let mut solana_pub_sub = {
         let client_wrapper = Box::pin(SolanaPubSubClientWrapper {
-            client: PubsubClient::new(&config.solana_cluster_pub_sub_url)
+            client: PubsubClient::new(&config.solana_cluster_pub_sub_url.0.to_string())
                 .await
                 .context("Failed to start Solana pub-sub client")?,
             _phantom_pinned: PhantomPinned,
@@ -489,7 +488,6 @@ async fn mailbox_body(
                         stack,
                         &notification_channel
                     ).await {
-                        // TODO: retry
                         warn!("Failed to process new stack: {f}");
                     }
                 } else {
@@ -639,8 +637,8 @@ async fn report_usages<'a>(state: &mut State<'a>, config: &BlockchainMonitorConf
     let usages = state.usage_aggregator.get_and_reset_usages().await?;
     let region_pda = state.solana.region_pda;
     let provider_pubkey = config.solana_provider_public_key.public_key;
-    let rpc_url = config.solana_cluster_rpc_url.clone();
-    let pub_sub_url = config.solana_cluster_pub_sub_url.clone();
+    let rpc_url = config.solana_cluster_rpc_url.0.to_string();
+    let pub_sub_url = config.solana_cluster_pub_sub_url.0.to_string();
     let signer_private_key = Keypair::from_bytes(
         config
             .solana_usage_signer_private_key

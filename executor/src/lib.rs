@@ -3,11 +3,7 @@ pub mod network;
 mod request_routing;
 pub mod stack;
 
-use std::{
-    process,
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{process, sync::Arc, time::SystemTime};
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
@@ -58,6 +54,8 @@ pub async fn run() -> Result<()> {
         scheduler_config,
         blockchain_monitor_config,
     ) = config::initialize_config()?;
+
+    let stabilization_wait_time = *gossip_config.network_stabilization_wait_time;
 
     let my_node = NodeAddress {
         address: connection_manager_config.listen_address,
@@ -143,8 +141,6 @@ pub async fn run() -> Result<()> {
     )
     .context("Failed to start gossip")?;
 
-    let function_provider = mu_runtime::providers::DefaultAssemblyProvider::new();
-
     let database_manager = mu_db::start(
         mu_db::IpAndPort {
             address: my_node.address,
@@ -162,13 +158,10 @@ pub async fn run() -> Result<()> {
     )
     .await?;
 
-    let (runtime, mut runtime_notification_receiver) = mu_runtime::start(
-        Box::new(function_provider),
-        database_manager.clone(),
-        runtime_config,
-    )
-    .await
-    .context("Failed to initiate runtime")?;
+    let (runtime, mut runtime_notification_receiver) =
+        mu_runtime::start(database_manager.clone(), runtime_config)
+            .await
+            .context("Failed to initiate runtime")?;
 
     let rpc_handler = rpc_handler::new(
         connection_manager.clone(),
@@ -294,10 +287,12 @@ pub async fn run() -> Result<()> {
         Result::<()>::Ok(())
     });
 
-    // TODO make the wait configurable
     {
-        info!("Waiting 4 seconds for node discovery to complete");
-        tokio::time::sleep(Duration::from_secs(4)).await;
+        info!(
+            "Waiting {} seconds for gossip state to stabilize",
+            stabilization_wait_time.as_secs()
+        );
+        tokio::time::sleep(stabilization_wait_time).await;
 
         info!("Will start to schedule stacks now");
         scheduler_clone.ready_to_schedule_stacks().await?;
