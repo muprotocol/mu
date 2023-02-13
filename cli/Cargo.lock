@@ -2076,6 +2076,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-client",
  "anyhow",
+ "base64 0.21.0",
  "clap 4.1.4",
  "dirs",
  "marketplace",

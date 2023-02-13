@@ -6,6 +6,7 @@ use crate::config::{Config, ConfigOverride};
 pub mod escrow;
 pub mod list;
 pub mod provider;
+pub mod sign_request;
 pub mod stack;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -32,6 +33,8 @@ pub enum Command {
         #[command(subcommand)]
         sub_command: stack::Command,
     },
+
+    SignRequest(sign_request::Command),
 }
 
 #[derive(Debug, Parser)]
@@ -50,5 +53,6 @@ pub fn execute(args: Args) -> Result<()> {
         Command::List { sub_command } => list::execute(config, sub_command),
         Command::Escrow { sub_command } => escrow::execute(config, sub_command),
         Command::Stack { sub_command } => stack::execute(config, sub_command),
+        Command::SignRequest(command) => sign_request::execute(config, command),
     }
 }

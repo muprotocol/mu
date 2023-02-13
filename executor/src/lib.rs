@@ -1,6 +1,7 @@
+pub mod api;
 pub mod infrastructure;
 pub mod network;
-mod request_routing;
+pub mod request_routing;
 pub mod stack;
 
 use std::{process, sync::Arc, time::SystemTime};
@@ -177,8 +178,11 @@ pub async fn run() -> Result<()> {
 
     let scheduler_ref = Arc::new(RwLock::new(None));
     let scheduler_ref_clone = scheduler_ref.clone();
-    let (gateway_manager, mut gateway_notification_receiver) =
-        mu_gateway::start(gateway_manager_config, move |f, r| {
+    let (gateway_manager, mut gateway_notification_receiver) = mu_gateway::start(
+        gateway_manager_config,
+        api::service_factory(),
+        Some(api::DependencyAccessor {}),
+        move |f, r| {
             Box::pin(request_routing::route_request(
                 f,
                 r,
@@ -188,9 +192,10 @@ pub async fn run() -> Result<()> {
                 rpc_handler_clone.clone(),
                 runtime_clone.clone(),
             ))
-        })
-        .await
-        .context("Failed to start gateway manager")?;
+        },
+    )
+    .await
+    .context("Failed to start gateway manager")?;
 
     // TODO: fetch stacks from blockchain before starting scheduler
     let (scheduler_notification_channel, mut scheduler_notification_receiver) =
