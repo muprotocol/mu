@@ -119,6 +119,16 @@ impl MUManifest {
         build_mode: BuildMode,
         generation_mode: ArtifactGenerationMode,
     ) -> Result<Stack> {
+        let overridden_envs = std::env::vars()
+            .filter_map(|(k, v)| {
+                if k.len() > 3 && k.starts_with("MU_") {
+                    Some((k[3..].to_string(), v))
+                } else {
+                    None
+                }
+            })
+            .collect::<HashMap<String, String>>();
+
         let services = self
             .services
             .clone()
@@ -127,14 +137,22 @@ impl MUManifest {
                 anyhow::Ok(match s {
                     Service::Database(d) => mu_stack::Service::Database(d),
                     Service::Gateway(g) => mu_stack::Service::Gateway(g),
-                    Service::Function(f) => mu_stack::Service::Function(mu_stack::Function {
-                        name: f.name,
-                        binary: self
-                            .upload_function(self.wasm_module_path(build_mode), generation_mode)?,
-                        runtime: f.runtime,
-                        env: f.env,
-                        memory_limit: f.memory_limit,
-                    }),
+                    Service::Function(f) => {
+                        let mut env = f.env;
+                        env.extend(f.test_env);
+                        env.extend(overridden_envs.clone());
+
+                        mu_stack::Service::Function(mu_stack::Function {
+                            name: f.name,
+                            binary: self.upload_function(
+                                self.wasm_module_path(build_mode),
+                                generation_mode,
+                            )?,
+                            runtime: f.runtime,
+                            env,
+                            memory_limit: f.memory_limit,
+                        })
+                    }
                 })
             })
             .bcollect()?;
