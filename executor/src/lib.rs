@@ -7,6 +7,7 @@ use std::{net::IpAddr, process, sync::Arc, time::SystemTime};
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
+use futures::{stream::FuturesUnordered, StreamExt};
 use log::*;
 use mailbox_processor::NotificationChannel;
 use mu_common::serde_support::IpOrHostname;
@@ -35,11 +36,13 @@ use crate::{
     },
 };
 
-fn get_ip(ip_or_hostname: &IpOrHostname) -> Result<IpAddr, std::io::Error> {
+async fn get_ip(ip_or_hostname: &IpOrHostname) -> Result<IpAddr, std::io::Error> {
     match ip_or_hostname {
         IpOrHostname::Ip(ip) => Ok(*ip),
         IpOrHostname::Hostname(hostname) => {
-            let resolved = dns_lookup::lookup_host(hostname);
+            let host = hostname.clone();
+            let resolved =
+                tokio::task::spawn_blocking(move || dns_lookup::lookup_host(&host)).await?;
             resolved.map(|ip| ip[0]) // ip[0] is the ipv4 and ip[1] is the ipv6 resolution
         }
     }
@@ -78,26 +81,26 @@ pub async fn run() -> Result<()> {
     };
     let my_hash = my_node.get_hash();
 
-    let is_seed = known_nodes_config
+    let mut known_nodes_config_with_ip = known_nodes_config
         .iter()
-        .map(|n| is_same_node_as_me(n, &my_node))
-        .collect::<Result<Vec<bool>>>()?
-        .iter()
-        .any(|b| *b);
-
-    let retained_known_nodes_config = known_nodes_config
-        .iter()
-        .filter_map(|n| match is_same_node_as_me(n, &my_node) {
-            Ok(same) => {
-                if !same {
-                    Some(Ok(n))
-                } else {
-                    None
-                }
+        .map(|n| async move {
+            match get_ip(&n.address).await {
+                Ok(ip) => Ok((n, ip)),
+                Err(e) => Err(e.into()),
             }
-            Err(e) => Some(Err(e)),
         })
+        .collect::<FuturesUnordered<_>>()
+        .take(known_nodes_config.len())
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
         .collect::<Result<Vec<_>>>()?;
+
+    let is_seed = known_nodes_config_with_ip
+        .iter()
+        .any(|(n, ip)| is_same_node_as_me(n, ip, &my_node));
+
+    known_nodes_config_with_ip.retain(|(n, ip)| !is_same_node_as_me(n, ip, &my_node));
 
     log_setup::setup(log_config)?;
 
@@ -123,13 +126,11 @@ pub async fn run() -> Result<()> {
 
     info!("Establishing connection to seeds");
 
-    for node in &retained_known_nodes_config {
-        let node_ip = get_ip(&node.address)?;
-
-        match connection_manager.connect(node_ip, node.gossip_port).await {
+    for (node, node_ip) in &known_nodes_config_with_ip {
+        match connection_manager.connect(*node_ip, node.gossip_port).await {
             Ok(connection_id) => known_nodes.push((
                 NodeAddress {
-                    address: node_ip,
+                    address: node_ip.clone(),
                     port: node.gossip_port,
                     generation: 0,
                 },
@@ -172,9 +173,9 @@ pub async fn run() -> Result<()> {
             address: IpOrHostname::Ip(my_node.address),
             port: my_node.port,
         },
-        retained_known_nodes_config
+        known_nodes_config_with_ip
             .iter()
-            .map(|c| mu_db::RemoteNode {
+            .map(|(c, _)| mu_db::RemoteNode {
                 address: c.address.clone(),
                 gossip_port: c.gossip_port,
                 pd_port: c.pd_port,
@@ -328,9 +329,8 @@ pub async fn run() -> Result<()> {
     Ok(())
 }
 
-fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> Result<bool> {
-    let node_ip = get_ip(&node.address)?;
-    Ok(node.gossip_port == me.port && (node_ip == me.address || node_ip.is_loopback()))
+fn is_same_node_as_me(node: &KnownNodeConfig, node_ip: &IpAddr, me: &NodeAddress) -> bool {
+    node.gossip_port == me.port && (node_ip.clone() == me.address || node_ip.is_loopback())
 }
 
 #[derive(Clone)]

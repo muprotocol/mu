@@ -110,9 +110,9 @@ pub struct PdConfig {
 
 fn unspecified_to_localhost(x: &IpAndPort) -> IpAndPort {
     IpAndPort {
-        address: match x.address.clone() {
+        address: match &x.address {
             xp if xp.is_unspecified() => IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-            xp => xp,
+            xp => xp.clone(),
         },
         port: x.port,
     }
