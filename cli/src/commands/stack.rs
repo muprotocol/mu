@@ -151,8 +151,8 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
             if let StackState::Active { revision, name, .. } = stack.state {
                 let region = regions.get(&stack.region).unwrap();
                 let provider = providers.get(&region.provider).unwrap();
-                println!("{}:", name);
-                println!("\tKey: {}", key);
+                println!("{name}:");
+                println!("\tKey: {key}");
                 println!("\tProvider ID: {}", region.provider);
                 println!("\tProvider Name: {}", provider.name);
                 println!("\tRegion ID: {}", stack.region);

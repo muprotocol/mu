@@ -72,7 +72,7 @@ pub enum FileContent {
 }
 
 impl TemplateSet {
-    pub fn load_builtins() -> Result<Vec<TemplateSet>> {
+    pub fn load_builtin() -> Result<Vec<TemplateSet>> {
         TemplateSets::iter()
             .filter_map(|i| TemplateSets::get(&i))
             .map(|t| serde_yaml::from_slice(&t.data).map_err(Into::into))

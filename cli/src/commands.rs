@@ -106,7 +106,7 @@ pub async fn execute(args: Arguments) -> Result<()> {
 
 pub fn execute_init(_config: Config, cmd: InitCommand) -> Result<()> {
     let template_sets =
-        TemplateSet::load_builtins().context("Can not deserialize builtin template sets")?;
+        TemplateSet::load_builtin().context("Can not deserialize builtin template sets")?;
 
     let lang = cmd
         .language

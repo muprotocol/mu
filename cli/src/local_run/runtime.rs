@@ -12,7 +12,7 @@ use musdk_common::{Request, Response};
 
 use super::{database::Database, StackWithID};
 
-pub const CACHE_PATH: &'static str = "target/runtime-cache";
+pub const CACHE_PATH: &str = "target/runtime-cache";
 
 pub async fn start(
     stack: StackWithID,
