@@ -1,11 +1,11 @@
 use std::{
     collections::HashMap,
     io::{Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Stdio,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use beau_collector::BeauCollector;
 use mu_stack::{AssemblyRuntime, Database, Gateway, Stack, StackID};
 use serde::{Deserialize, Serialize};
@@ -53,14 +53,21 @@ impl MUManifest {
     }
 
     //TODO: support multiple function in a single manifest
-    pub fn wasm_module_path(&self) -> PathBuf {
-        let path = match self.lang {
+    pub fn wasm_module_path(&self, build_mode: BuildMode) -> PathBuf {
+        match self.lang {
             Language::Rust => {
-                format!("target/wasm32-wasi/release/{}.wasm", self.name)
-            }
-        };
+                let cargo_target_dir =
+                    std::env::var_os("CARGO_TARGET_DIR").unwrap_or("target".into());
+                let cargo_target_dir = Path::new(&cargo_target_dir);
 
-        PathBuf::from(path)
+                let build_mode = match build_mode {
+                    BuildMode::Debug => "debug",
+                    BuildMode::Release => "release",
+                };
+
+                cargo_target_dir.join(format!("wasm32-wasi/{build_mode}/{}.wasm", self.name))
+            }
+        }
     }
 
     pub fn build_project(&self, build_mode: BuildMode) -> Result<()> {
@@ -91,7 +98,7 @@ impl MUManifest {
             .map_err(|e| anyhow::format_err!("{}", e.to_string()))?;
 
         if !exit.status.success() {
-            eprintln!("pre-build command failed");
+            bail!("Failed to run pre-build script")
         }
 
         let exit = build
@@ -101,7 +108,7 @@ impl MUManifest {
             .map_err(|e| anyhow::format_err!("{}", e.to_string()))?;
 
         if !exit.status.success() {
-            eprintln!("build command failed");
+            bail!("Failed to build the project")
         }
 
         Ok(())
@@ -109,6 +116,7 @@ impl MUManifest {
 
     pub fn generate_stack_manifest(
         &self,
+        build_mode: BuildMode,
         generation_mode: ArtifactGenerationMode,
     ) -> Result<Stack> {
         let services = self
@@ -121,7 +129,8 @@ impl MUManifest {
                     Service::Gateway(g) => mu_stack::Service::Gateway(g),
                     Service::Function(f) => mu_stack::Service::Function(mu_stack::Function {
                         name: f.name,
-                        binary: self.upload_function(self.wasm_module_path(), generation_mode)?,
+                        binary: self
+                            .upload_function(self.wasm_module_path(build_mode), generation_mode)?,
                         runtime: f.runtime,
                         env: f.env,
                         memory_limit: f.memory_limit,
@@ -144,15 +153,12 @@ impl MUManifest {
 
     fn upload_function(
         &self,
-        _wasm_module_path: PathBuf,
+        wasm_module_path: PathBuf,
         generation_mode: ArtifactGenerationMode,
     ) -> Result<String> {
         match generation_mode {
-            ArtifactGenerationMode::LocalRun => {
-                //TODO: copy wasm file to http server serving directory
-                Ok(format!("http://localhost:8080/{}.wasm", self.name))
-            }
-            ArtifactGenerationMode::Publish => unimplemented!(),
+            ArtifactGenerationMode::LocalRun => Ok(wasm_module_path.display().to_string()),
+            ArtifactGenerationMode::Publish => unimplemented!("don't have storage service yet"),
         }
     }
 }

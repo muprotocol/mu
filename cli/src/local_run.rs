@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::{Context, Result};
 
 use beau_collector::BeauCollector;
@@ -8,7 +10,12 @@ use tokio_util::sync::CancellationToken;
 mod database;
 mod runtime;
 
+pub type StackWithID = (Stack, StackID);
+
 pub async fn start_local_node(stack: StackWithID) -> Result<()> {
+    //TODO: make this configurable
+    env_logger::init();
+
     let (runtime, gateway, database, gateways, stack_id) = runtime::start(stack).await?;
 
     let cancellation_token = CancellationToken::new();
@@ -46,7 +53,8 @@ pub async fn start_local_node(stack: StackWithID) -> Result<()> {
                         [
                             runtime.stop().await.map_err(Into::into),
                             gateway.stop().await,
-                            database.stop().await
+                            database.stop().await,
+                            clean_runtime_cache_dir()
                         ].into_iter().bcollect::<()>().unwrap();
                         break
                     }
@@ -58,4 +66,6 @@ pub async fn start_local_node(stack: StackWithID) -> Result<()> {
     Ok(())
 }
 
-pub type StackWithID = (Stack, StackID);
+pub fn clean_runtime_cache_dir() -> Result<()> {
+    std::fs::remove_dir_all(Path::new(runtime::CACHE_PATH)).map_err(Into::into)
+}

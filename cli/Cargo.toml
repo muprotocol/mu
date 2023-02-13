@@ -31,6 +31,7 @@ uriparse = "0.6"
 beau_collector = "0.2"
 byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
 reqwest = "0.11"
+env_logger = "0.10"
 
 anchor-client = "0.26"
 spl-token = "3"

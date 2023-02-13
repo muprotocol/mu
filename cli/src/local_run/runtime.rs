@@ -1,6 +1,6 @@
 use std::{
     net::{IpAddr, Ipv4Addr},
-    path::Path,
+    path::PathBuf,
 };
 
 use anyhow::{Context, Result};
@@ -11,6 +11,8 @@ use mu_stack::{AssemblyID, FunctionID, Gateway, StackID};
 use musdk_common::{Request, Response};
 
 use super::{database::Database, StackWithID};
+
+pub const CACHE_PATH: &'static str = "target/runtime-cache";
 
 pub async fn start(
     stack: StackWithID,
@@ -24,7 +26,7 @@ pub async fn start(
     let (stack, stack_id) = stack;
 
     let runtime_config = RuntimeConfig {
-        cache_path: Path::new("target/runtime-cache").to_path_buf(),
+        cache_path: PathBuf::from(CACHE_PATH),
         include_function_logs: true,
     };
 
@@ -36,14 +38,16 @@ pub async fn start(
     let mut function_defs = vec![];
 
     for func in stack.functions() {
-        let assembly_source = reqwest::get(&func.binary).await?.bytes().await?;
+        let assembly_source = tokio::fs::read(&func.binary)
+            .await
+            .context("Failed to get function source")?;
 
         function_defs.push(AssemblyDefinition::try_new(
             AssemblyID {
                 stack_id,
                 assembly_name: func.name.clone(),
             },
-            assembly_source,
+            assembly_source.into(),
             func.runtime,
             func.env.clone(),
             func.memory_limit,

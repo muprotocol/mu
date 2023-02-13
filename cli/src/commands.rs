@@ -159,7 +159,7 @@ pub async fn execute_run(_config: Config, cmd: RunCommand) -> Result<()> {
     manifest.build_project(build_mode)?;
 
     let stack = manifest
-        .generate_stack_manifest(mu_manifest::ArtifactGenerationMode::LocalRun)
+        .generate_stack_manifest(build_mode, mu_manifest::ArtifactGenerationMode::LocalRun)
         .context("failed to generate stack.")?;
 
     local_run::start_local_node((stack, manifest.test_id)).await

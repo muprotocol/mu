@@ -9,7 +9,7 @@ services:
   - type: Gateway
     name: my_gateway
     endpoints:
-      /greet/{name}:
+      greet/{name}:
         - method: get
           route_to: greeting.greet_path_user
 templates:
@@ -36,7 +36,7 @@ templates:
                 use super::*;
 
                 #[mu_function]
-                fn greet_user<'a>(_ctx: &'a MuContext, path: PathParams<'a>) -> String {
+                fn greet_path_user<'a>(_ctx: &'a MuContext, path: PathParams<'a>) -> String {
                     let name = path.get("name").expect("Expected to have name path param");
                     format!("Hello, {name}!")
                 }
