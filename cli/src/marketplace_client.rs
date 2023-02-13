@@ -17,6 +17,7 @@ use crate::config::Config;
 pub mod escrow;
 pub mod provider;
 pub mod region;
+pub mod request_signer;
 pub mod signer;
 pub mod stack;
 
@@ -80,6 +81,24 @@ impl MarketplaceClient {
             &self.program.id(),
         );
         region_pda
+    }
+
+    pub fn get_request_signer_pda(
+        &self,
+        user_wallet: &Pubkey,
+        signer: &Pubkey,
+        region_pda: &Pubkey,
+    ) -> Pubkey {
+        let (pda, _) = Pubkey::find_program_address(
+            &[
+                b"request_signer",
+                &user_wallet.to_bytes(),
+                &signer.to_bytes(),
+                &region_pda.to_bytes(),
+            ],
+            &self.program.id(),
+        );
+        pda
     }
 
     pub fn get_escrow_pda(&self, user_wallet: &Pubkey, provider_pda: &Pubkey) -> Pubkey {
