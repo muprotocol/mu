@@ -130,7 +130,7 @@ pub async fn run() -> Result<()> {
         match connection_manager.connect(*node_ip, node.gossip_port).await {
             Ok(connection_id) => known_nodes.push((
                 NodeAddress {
-                    address: node_ip.clone(),
+                    address: *node_ip,
                     port: node.gossip_port,
                     generation: 0,
                 },
@@ -330,7 +330,7 @@ pub async fn run() -> Result<()> {
 }
 
 fn is_same_node_as_me(node: &KnownNodeConfig, node_ip: &IpAddr, me: &NodeAddress) -> bool {
-    node.gossip_port == me.port && (node_ip.clone() == me.address || node_ip.is_loopback())
+    node.gossip_port == me.port && (*node_ip == me.address || node_ip.is_loopback())
 }
 
 #[derive(Clone)]
