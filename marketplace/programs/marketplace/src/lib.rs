@@ -168,6 +168,7 @@ pub mod marketplace {
         ctx.accounts.request_signer.set_inner(ApiRequestSigner {
             signer: ctx.accounts.signer.key(),
             user: ctx.accounts.user.key(),
+            region: ctx.accounts.region.key(),
             bump: *ctx.bumps.get("request_signer").unwrap(),
             active: true,
         });
@@ -639,6 +640,7 @@ pub struct DeleteStack<'info> {
 pub struct ApiRequestSigner {
     pub signer: Pubkey,
     pub user: Pubkey,
+    pub region: Pubkey,
     pub bump: u8,
     pub active: bool,
 }
@@ -648,8 +650,8 @@ pub struct CreateApiRequestSigner<'info> {
     #[account(
         init,
         payer = user,
-        space = 8 + 32 + 32 + 1 + 1,
-        seeds = [b"request_signer", user.key.as_ref(), signer.key.as_ref()],
+        space = 8 + 32 + 32 + 32 + 1 + 1,
+        seeds = [b"request_signer", user.key.as_ref(), signer.key.as_ref(), region.key().as_ref()],
         bump
     )]
     request_signer: Account<'info, ApiRequestSigner>,
@@ -660,6 +662,9 @@ pub struct CreateApiRequestSigner<'info> {
     #[account()]
     signer: Signer<'info>,
 
+    #[account()]
+    region: Account<'info, ProviderRegion>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -669,7 +674,13 @@ pub struct ActivateApiRequestSigner<'info> {
         mut,
         has_one = user,
         has_one = signer,
-        seeds = [b"request_signer", request_signer.user.as_ref(), request_signer.signer.as_ref()],
+        has_one = region,
+        seeds = [
+            b"request_signer",
+            request_signer.user.as_ref(),
+            request_signer.signer.as_ref(),
+            request_signer.region.as_ref()
+        ],
         bump = request_signer.bump
     )]
     request_signer: Account<'info, ApiRequestSigner>,
@@ -679,6 +690,9 @@ pub struct ActivateApiRequestSigner<'info> {
 
     #[account()]
     signer: Signer<'info>,
+
+    #[account()]
+    region: Account<'info, ProviderRegion>,
 }
 
 #[derive(Accounts)]
@@ -687,7 +701,13 @@ pub struct DeactivateApiRequestSigner<'info> {
         mut,
         has_one = user,
         has_one = signer,
-        seeds = [b"request_signer", request_signer.user.as_ref(), request_signer.signer.as_ref()],
+        has_one = region,
+        seeds = [
+            b"request_signer",
+            request_signer.user.as_ref(),
+            request_signer.signer.as_ref(),
+            request_signer.region.as_ref()
+        ],
         bump = request_signer.bump
     )]
     request_signer: Account<'info, ApiRequestSigner>,
@@ -699,6 +719,9 @@ pub struct DeactivateApiRequestSigner<'info> {
     /// CHECK: The signer itself is not required to deactivate, so users can
     /// deactivate signers in case they lose the private key.
     signer: AccountInfo<'info>,
+
+    #[account()]
+    region: Account<'info, ProviderRegion>,
 }
 
 #[account]

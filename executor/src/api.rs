@@ -3,11 +3,15 @@ use actix_web::{
     web::{self, Json},
     HttpRequest,
 };
-use anyhow::Context;
+use anyhow::{bail, Context, Result};
+use log::error;
 use mu_gateway::HttpServiceFactoryBuilder;
 use mu_stack::StackID;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use solana_sdk::pubkey::Pubkey;
+
+use crate::stack::{request_signer_cache::RequestSignerCache, ApiRequestSigner};
 
 const PUBLIC_KEY_HEADER_NAME: &str = "X-MU-PUBLIC-KEY";
 const SIGNATURE_HEADER_NAME: &str = "X-MU-SIGNATURE";
@@ -22,13 +26,14 @@ pub fn service_factory() -> impl HttpServiceFactoryBuilder {
                         && headers.contains_key(SIGNATURE_HEADER_NAME)
                 })))
                 .to(handle_request),
-            web::resource("/api").to(bad_request)
+            web::resource("/api").to(handle_bad_request)
         ]
     }
 }
 
+#[derive(Clone)]
 pub struct DependencyAccessor {
-    api_signer_cache: todo,
+    pub request_signer_cache: Box<dyn RequestSignerCache>,
 }
 
 #[derive(Deserialize)]
@@ -43,16 +48,17 @@ pub struct ApiResponseTemplate {
     params: serde_json::Value,
 }
 
-// TODO: bad idea.
+// TODO: probably a bad idea.
 macro_rules! ok_or_bad_request {
     ([$($var:ident = $e:expr,)+]) => {
-        $(let Ok($var) = $e else { return (actix_web::web::Json(serde_json::Value::String("bad_request".into())), http::StatusCode::BAD_REQUEST); };)*
+        $(let Ok($var) = $e else { return (actix_web::web::Json(serde_json::json!("bad_request")), http::StatusCode::BAD_REQUEST); };)*
     };
 }
 
 pub async fn handle_request(
     request: HttpRequest,
     payload: String,
+    dependency_accessor: web::Data<DependencyAccessor>,
 ) -> (Json<serde_json::Value>, http::StatusCode) {
     let headers = request.headers();
     ok_or_bad_request!([
@@ -65,21 +71,61 @@ pub async fn handle_request(
         _verify_signature_result = pubkey.verify_strict(payload.as_bytes(), &signature),
         request = serde_json::from_str::<ApiRequestTemplate>(payload.as_str()),
         stack_id = request.stack.parse::<StackID>(),
-        _verify_stack_ownership_result = verify_stack_ownership(&stack_id, &pubkey),
+        _verify_stack_ownership_result =
+            verify_stack_ownership(&stack_id, &pubkey, &dependency_accessor).await,
     ]);
-    (Json(request.params), http::StatusCode::OK)
+
+    match execute_request(stack_id, request) {
+        Ok(response) => (Json(response), http::StatusCode::OK),
+        Err((response, status_code)) => (Json(response), status_code),
+    }
 }
 
-pub async fn bad_request() -> (Json<serde_json::Value>, http::StatusCode) {
-    (
-        Json(serde_json::Value::String("bad request".into())),
-        http::StatusCode::BAD_REQUEST,
-    )
+pub async fn handle_bad_request() -> (Json<serde_json::Value>, http::StatusCode) {
+    let (j, s) = bad_request("bad request");
+    (Json(j), s)
 }
 
 async fn verify_stack_ownership(
     stack_id: &StackID,
     pubkey: &ed25519_dalek::PublicKey,
+    dependency_accessor: &DependencyAccessor,
 ) -> Result<()> {
-    let requester_key = Pubkey::new_from_array(pubkey.as_bytes());
+    let signer_key = Pubkey::new_from_array(*pubkey.as_bytes());
+    match dependency_accessor
+        .request_signer_cache
+        .validate_signer(*stack_id, ApiRequestSigner::Solana(signer_key))
+        .await
+    {
+        Err(e) => {
+            error!("Failed to validate request signer: {e:?}");
+            Err(e)
+        }
+        Ok(valid) => {
+            if valid {
+                Ok(())
+            } else {
+                bail!("Invalid request signer key")
+            }
+        }
+    }
+}
+
+type ExecutionError = (serde_json::Value, http::StatusCode);
+type ExecutionResult = std::result::Result<serde_json::Value, ExecutionError>;
+
+fn bad_request(description: &'static str) -> ExecutionError {
+    (json!(description), http::StatusCode::BAD_REQUEST)
+}
+
+fn execute_request(_stack_id: StackID, request: ApiRequestTemplate) -> ExecutionResult {
+    match request.request.as_str() {
+        "echo" => execute_echo(request.params),
+        _ => Err(bad_request("unknown request")),
+    }
+}
+
+fn execute_echo(params: serde_json::Value) -> ExecutionResult {
+    let req = serde_json::from_value::<String>(params).map_err(|_| bad_request("invalid input"))?;
+    Ok(json!(req))
 }

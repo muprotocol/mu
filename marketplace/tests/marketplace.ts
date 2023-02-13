@@ -260,21 +260,21 @@ describe("marketplace", () => {
 
     it("Creates an API request signer", async () => {
         let signer = Keypair.generate(); // Note: can, but doesn't need to be an account on the blockchain
-        requestSigner = await createApiRequestSigner(mu, userWallet, signer);
+        requestSigner = await createApiRequestSigner(mu, userWallet, signer, region);
 
         let signerAccount = await mu.program.account.apiRequestSigner.fetch(requestSigner.pda);
         expect(signerAccount.active).to.be.true;
     });
 
     it("Deactivates an API request signer", async () => {
-        await deactivateApiRequestSigner(mu, userWallet, requestSigner);
+        await deactivateApiRequestSigner(mu, userWallet, requestSigner, region);
 
         let signerAccount = await mu.program.account.apiRequestSigner.fetch(requestSigner.pda);
         expect(signerAccount.active).to.be.false;
     });
 
     it("Re-activates an API request signer", async () => {
-        await activateApiRequestSigner(mu, userWallet, requestSigner);
+        await activateApiRequestSigner(mu, userWallet, requestSigner, region);
 
         let signerAccount = await mu.program.account.apiRequestSigner.fetch(requestSigner.pda);
         expect(signerAccount.active).to.be.true;
