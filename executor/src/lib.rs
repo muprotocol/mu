@@ -89,12 +89,11 @@ pub async fn run() -> Result<()> {
                 Err(e) => Err(e.into()),
             }
         })
-        .collect::<FuturesUnordered<_>>()
-        .take(known_nodes_config.len())
-        .collect::<Vec<_>>()
+        .collect::<FuturesUnordered<_>>() // Turn futures into parallel stream
+        .collect::<Vec<_>>() // Wait for them to finish
         .await
         .into_iter()
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Result<Vec<_>>>()?; // Traverse the results into one result
 
     let is_seed = known_nodes_config_with_ip
         .iter()
