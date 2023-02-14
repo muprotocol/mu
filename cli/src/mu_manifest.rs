@@ -18,27 +18,27 @@ pub const STACK_MANIFEST_FILE_NAME: &str = "stack.yaml";
 
 #[derive(Serialize, Deserialize)]
 pub struct MUManifest {
+    name: String,
+    lang: Language,
+    version: String,
     #[serde(
         serialize_with = "custom_stack_id_serialization::serialize",
         deserialize_with = "custom_stack_id_serialization::deserialize"
     )]
-    pub test_id: StackID,
-    name: String,
-    lang: Language,
-    version: String,
+    pub dev_id: StackID,
     services: Vec<Service>,
 }
 
 impl MUManifest {
     pub fn new(name: String, lang: Language) -> Self {
         let bytes = rand::random::<[u8; 32]>();
-        let test_id = StackID::SolanaPublicKey(bytes);
+        let dev_id = StackID::SolanaPublicKey(bytes);
 
         MUManifest {
-            test_id,
             name,
             lang,
             version: "0.1".to_string(),
+            dev_id,
             services: vec![],
         }
     }
@@ -139,8 +139,11 @@ impl MUManifest {
                     Service::Gateway(g) => mu_stack::Service::Gateway(g),
                     Service::Function(f) => {
                         let mut env = f.env;
-                        env.extend(f.test_env);
-                        env.extend(overridden_envs.clone());
+
+                        if let ArtifactGenerationMode::LocalRun = generation_mode {
+                            env.extend(f.env_dev);
+                            env.extend(overridden_envs.clone());
+                        }
 
                         mu_stack::Service::Function(mu_stack::Function {
                             name: f.name,
@@ -194,7 +197,8 @@ pub struct Function {
     pub name: String,
     pub runtime: AssemblyRuntime,
     pub env: HashMap<String, String>,
-    pub test_env: HashMap<String, String>,
+    pub env_dev: HashMap<String, String>,
+    #[serde(serialize_with = "custom_byte_unit_serialization::serialize")]
     pub memory_limit: byte_unit::Byte,
 }
 
@@ -242,5 +246,17 @@ mod custom_stack_id_serialization {
     {
         let s = String::deserialize(deserializer)?;
         StackID::from_str(&s).map_err(|_| serde::de::Error::custom("invalid StackID"))
+    }
+}
+
+mod custom_byte_unit_serialization {
+    use serde::Serializer;
+
+    pub fn serialize<S>(item: &byte_unit::Byte, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s = item.get_appropriate_unit(true).to_string();
+        serializer.serialize_str(&s)
     }
 }

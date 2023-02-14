@@ -162,19 +162,23 @@ pub async fn execute_run(_config: Config, cmd: RunCommand) -> Result<()> {
         .generate_stack_manifest(build_mode, mu_manifest::ArtifactGenerationMode::LocalRun)
         .context("failed to generate stack.")?;
 
-    local_run::start_local_node((stack, manifest.test_id)).await
+    local_run::start_local_node((stack, manifest.dev_id)).await
 }
 
 fn read_manifest() -> Result<MUManifest> {
-    let path = std::env::current_dir()?.join(mu_manifest::MU_MANIFEST_FILE_NAME);
+    let mut path = std::env::current_dir()?;
 
-    if !path.try_exists()? {
-        bail!(
-            "Not in a mu project, `{}` file not found.",
-            mu_manifest::MU_MANIFEST_FILE_NAME
-        );
+    while let Some(parent) = path.parent() {
+        let manifest_path = path.join(mu_manifest::MU_MANIFEST_FILE_NAME);
+        if manifest_path.try_exists()? {
+            let mut file = std::fs::File::open(manifest_path)?;
+            return mu_manifest::MUManifest::read(&mut file);
+        }
+        path = parent.into();
     }
 
-    let mut file = std::fs::File::open(path)?;
-    mu_manifest::MUManifest::read(&mut file)
+    bail!(
+        "Not in a mu project, `{}` file not found.",
+        mu_manifest::MU_MANIFEST_FILE_NAME
+    );
 }

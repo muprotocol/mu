@@ -3,9 +3,9 @@ services:
   - type: Function
     name: greeting
     runtime: wasi1.0
-    memory_limit: 100MB
+    memory_limit: 64MiB
     env: {}
-    test_env: {}
+    env_dev: {}
   - type: Gateway
     name: my_gateway
     endpoints:

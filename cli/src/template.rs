@@ -7,6 +7,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
+use itertools::Itertools;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -79,20 +80,22 @@ impl TemplateSet {
             .collect::<Result<Vec<TemplateSet>>>()
     }
 
+    #[allow(unstable_name_collisions)]
     pub fn print(&self) {
         let langs = self
             .templates
             .iter()
-            .map(|t| t.lang)
-            .fold(String::new(), |acc, item| format!("{acc}, {item}"));
+            .map(|t| t.lang.to_string())
+            .intersperse(", ".to_string())
+            .collect::<String>();
 
-        println!("{: <10}|{: <10}", self.name, langs);
+        println!("{: ^10}|{: ^15}", self.name, langs);
     }
 
     pub fn print_all(sets: &[Self]) {
         println!("Available templates:\n");
-        println!("{: ^10}|{: ^10}", "Name", "Languages");
-        println!("{}", "-".repeat(20));
+        println!("{: ^10}|{: ^15}", "Name", "Languages");
+        println!("{}", "-".repeat(25));
 
         sets.iter().for_each(Self::print);
     }

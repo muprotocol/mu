@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 
 use beau_collector::BeauCollector;
 use mu_stack::{Stack, StackID};
-use tokio::select;
 use tokio_util::sync::CancellationToken;
 
 mod database;
@@ -45,25 +44,15 @@ pub async fn start_local_node(stack: StackWithID) -> Result<()> {
 
     println!("\nStack deployed at: http://localhost:12012/{stack_id}/");
 
-    tokio::spawn({
-        async move {
-            loop {
-                select! {
-                    () = cancellation_token.cancelled() => {
-                        [
-                            runtime.stop().await.map_err(Into::into),
-                            gateway.stop().await,
-                            database.stop().await,
-                            clean_runtime_cache_dir()
-                        ].into_iter().bcollect::<()>().unwrap();
-                        break
-                    }
-                }
-            }
-        }
-    })
-    .await?;
-    Ok(())
+    cancellation_token.cancelled().await;
+    [
+        runtime.stop().await.map_err(Into::into),
+        gateway.stop().await,
+        database.stop().await,
+        clean_runtime_cache_dir(),
+    ]
+    .into_iter()
+    .bcollect::<()>()
 }
 
 pub fn clean_runtime_cache_dir() -> Result<()> {

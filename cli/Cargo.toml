@@ -47,3 +47,4 @@ mu-gateway = { path = "../rust-libs/gateway" }
 mu_stack = { path = "../rust-libs/mu_stack" }
 musdk-common = { path = "../sdk/common" }
 mu-db = { path = "../rust-libs/db" }
+itertools = "0.10.5"
