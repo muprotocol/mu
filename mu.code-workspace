@@ -36,6 +36,9 @@
 		},
 		{
 			"path": "sdk"
+		},
+		{
+			"path": "rust-libs/s3-storage"
 		}
 	]
 }
