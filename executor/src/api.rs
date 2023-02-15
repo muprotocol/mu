@@ -101,7 +101,7 @@ async fn verify_stack_ownership(
             error!("Failed to validate request signer: {e:?}");
             Err(e)
         }
-        Ok(true)  => Ok(()),
+        Ok(true) => Ok(()),
         Ok(false) => bail!("Invalid request signer key"),
     }
 }
