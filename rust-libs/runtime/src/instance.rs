@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{error::FunctionRuntimeError, Usage};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use log::{error, log, trace, Level};
 use mu_db::{error::Result as MudbResult, DbClient, DbManager, Key as MudbKey, Scan as MudbScan};
 use mu_stack::{AssemblyID, StackID};
@@ -36,8 +36,10 @@ pub fn create_store(memory_limit: byte_unit::Byte) -> Result<Store, Error> {
 }
 
 fn create_usage(
-    db_read: u64,
-    db_write: u64,
+    db_weak_reads: u64,
+    db_weak_writes: u64,
+    db_strong_reads: u64,
+    db_strong_writes: u64,
     instructions_count: u64,
     memory: byte_unit::Byte,
 ) -> Usage {
@@ -47,10 +49,10 @@ fn create_usage(
     let memory_megabytes = memory_megabytes.floor() as u64;
 
     Usage {
-        db_strong_reads: 0,
-        db_strong_writes: 0,
-        db_weak_reads: db_read,
-        db_weak_writes: db_write,
+        db_strong_reads,
+        db_strong_writes,
+        db_weak_reads,
+        db_weak_writes,
         function_instructions: instructions_count,
         memory_megabytes,
     }
@@ -76,9 +78,10 @@ pub struct Running {
     handle: FunctionHandle,
     io_state: IOState,
 
-    //TODO: Refactor these to `week` and `strong` when we had database replication
-    database_write_count: u64,
-    database_read_count: u64,
+    db_weak_write_count: u64,
+    db_weak_read_count: u64,
+    db_strong_write_count: u64,
+    db_strong_read_count: u64,
 }
 
 impl InstanceState for Running {}
@@ -134,8 +137,10 @@ impl Instance<Loaded> {
         let state = Running {
             handle,
             io_state: IOState::Idle,
-            database_write_count: 0,
-            database_read_count: 0,
+            db_weak_write_count: 0,
+            db_weak_read_count: 0,
+            db_strong_write_count: 0,
+            db_strong_read_count: 0,
         };
         Ok(Instance {
             id: self.id,
@@ -189,8 +194,10 @@ impl Instance<Running> {
             .map(move |metering_points| {
                 let usage = |m| {
                     create_usage(
-                        self.state.database_read_count,
-                        self.state.database_write_count,
+                        self.state.db_weak_read_count,
+                        self.state.db_weak_write_count,
+                        self.state.db_strong_read_count,
+                        self.state.db_strong_write_count,
                         metering_point_to_instructions_count(m),
                         self.memory_limit,
                     )
@@ -302,6 +309,7 @@ impl Instance<Running> {
                                     .put(key, req.value.into_owned(), req.is_atomic)
                                     .await
                                     .map(into_empty_incoming_msg)
+                                    .map(|x| (x, DbUsage::new(Read(0), Write(1), req.is_atomic)))
                             })?
                         }
 
@@ -312,6 +320,7 @@ impl Instance<Running> {
                                     .get(key)
                                     .await
                                     .map(into_single_or_empty_incoming_msg)
+                                    .map(|x| (x, DbUsage::Weak { read: 1, write: 0 }))
                             })?
                         }
 
@@ -322,6 +331,7 @@ impl Instance<Running> {
                                     .delete(key, req.is_atomic)
                                     .await
                                     .map(into_empty_incoming_msg)
+                                    .map(|x| (x, DbUsage::new(Read(0), Write(1), req.is_atomic)))
                             })?
                         }
 
@@ -333,16 +343,19 @@ impl Instance<Running> {
                                     .delete_by_prefix(stack_id, table_name, key_prefix)
                                     .await
                                     .map(into_empty_incoming_msg)
+                                    // TODO: consideration
+                                    .map(|x| (x, DbUsage::Weak { read: 0, write: 1 }))
                             })?
                         }
 
                         OutgoingMessage::Scan(req) => {
                             self.db_request(|db_client, stack_id| async move {
                                 let db_key = make_mudb_scan(stack_id, req.table, req.key_prefix)?;
-                                db_client
-                                    .scan(db_key, req.limit)
-                                    .await
-                                    .map(into_kv_pairs_incoming_msg)
+                                db_client.scan(db_key, req.limit).await.map(|kv_pairs| {
+                                    let read = kv_pairs.len().try_into().context("")?;
+                                    let incoming = into_kv_pairs_incoming_msg(kv_pairs);
+                                    Ok((incoming, DbUsage::Weak { read, write: 0 }))
+                                })?
                             })?;
                         }
 
@@ -350,13 +363,15 @@ impl Instance<Running> {
                             self.db_request(|db_client, stack_id| async move {
                                 let mudb_scan =
                                     make_mudb_scan(stack_id, req.table, req.key_prefix)?;
-                                let mudb_keys_to_inner_keys =
-                                    |k: Vec<MudbKey>| k.into_iter().map(|k| k.inner_key);
                                 db_client
                                     .scan_keys(mudb_scan, req.limit)
                                     .await
-                                    .map(mudb_keys_to_inner_keys)
-                                    .map(into_list_incoming_msg)
+                                    .map(|keys| {
+                                        let read = keys.len().try_into().context("")?;
+                                        let x = keys.into_iter().map(|k| k.inner_key);
+                                        let incoming = into_list_incoming_msg(x);
+                                        Ok((incoming, DbUsage::Weak { read, write: 0 }))
+                                    })?
                             })?
                         }
 
@@ -373,51 +388,65 @@ impl Instance<Running> {
                                     .table_key_value_triples
                                     .into_iter()
                                     .map(into_mudb_kv_pair)
-                                    .collect::<MudbResult<_>>()?;
+                                    .collect::<MudbResult<Vec<_>>>()?;
+                                let write = Write(mudb_kv_pairs.len().try_into().context("")?);
                                 db_client
                                     .batch_put(mudb_kv_pairs, req.is_atomic)
                                     .await
                                     .map(into_empty_incoming_msg)
+                                    .map(|x| (x, DbUsage::new(Read(0), write, req.is_atomic)))
                             })?
                         }
 
                         OutgoingMessage::BatchGet(req) => {
                             self.db_request(|db_client, stack_id| async move {
                                 let keys = make_mudb_keys(stack_id, req.table_key_tuples)?;
+                                let read = keys.len().try_into().context("")?;
                                 db_client
                                     .batch_get(keys)
                                     .await
                                     .map(into_tkv_triples_incoming_msg)
+                                    // TODO: count all requested or just fetched
+                                    .map(|x| (x, DbUsage::Weak { read, write: 0 }))
                             })?;
                         }
 
                         OutgoingMessage::BatchDelete(req) => {
                             self.db_request(|db_client, stack_id| async move {
                                 let keys = make_mudb_keys(stack_id, req.table_key_tuples)?;
+                                let write = keys.len().try_into().context("")?;
                                 db_client
                                     .batch_delete(keys)
                                     .await
                                     .map(into_empty_incoming_msg)
+                                    // TODO: count all requested or just deleted
+                                    .map(|x| (x, DbUsage::Weak { read: 0, write }))
                             })?;
                         }
 
                         OutgoingMessage::BatchScan(req) => {
                             self.db_request(|db_client, stack_id| async move {
                                 let scans = make_mudb_scans(stack_id, req.table_key_prefix_tuples)?;
-                                db_client
-                                    .batch_scan(scans, req.each_limit)
-                                    .await
-                                    .map(into_tkv_triples_incoming_msg)
+                                db_client.batch_scan(scans, req.each_limit).await.map(
+                                    |kv_pairs| {
+                                        let read = kv_pairs.len().try_into().context("")?;
+                                        let incoming = into_tkv_triples_incoming_msg(kv_pairs);
+                                        Ok((incoming, DbUsage::Weak { read, write: 0 }))
+                                    },
+                                )?
                             })?
                         }
 
                         OutgoingMessage::BatchScanKeys(req) => {
                             self.db_request(|db_client, stack_id| async move {
                                 let scans = make_mudb_scans(stack_id, req.table_key_prefix_tuples)?;
-                                db_client
-                                    .batch_scan_keys(scans, req.each_limit)
-                                    .await
-                                    .map(into_tk_pairs_incoming_msg)
+                                db_client.batch_scan_keys(scans, req.each_limit).await.map(
+                                    |keys| {
+                                        let read = keys.len().try_into().context("")?;
+                                        let incoming = into_tk_pairs_incoming_msg(keys);
+                                        Ok((incoming, DbUsage::Weak { read, write: 0 }))
+                                    },
+                                )?
                             })?
                         }
 
@@ -428,7 +457,11 @@ impl Instance<Running> {
                                 db_client
                                     .table_list(stack_id, table_name_prefix)
                                     .await
-                                    .map(into_list_incoming_msg)
+                                    .map(|table_list| {
+                                        let read = table_list.len().try_into().context("")?;
+                                        let incoming = into_list_incoming_msg(table_list);
+                                        Ok((incoming, DbUsage::Weak { read, write: 0 }))
+                                    })?
                             })?;
                         }
 
@@ -439,7 +472,12 @@ impl Instance<Running> {
                                 db_client
                                     .compare_and_swap(key, prev_value, req.new_value.into_owned())
                                     .await
-                                    .map(into_cas_incoming_msg)
+                                    .map(|(prev, is_swapped)| {
+                                        let read = prev.is_some().into();
+                                        let write = is_swapped.into();
+                                        let incoming = into_cas_incoming_msg((prev, is_swapped));
+                                        (incoming, DbUsage::Strong { read, write })
+                                    })
                             })?
                         }
                     }
@@ -451,7 +489,7 @@ impl Instance<Running> {
     fn db_request<'a, A, B>(&mut self, f: A) -> Result<(), (Error, Usage)>
     where
         A: FnOnce(Box<dyn DbClient>, StackID) -> B,
-        B: Future<Output = MudbResult<IncomingMessage<'a>>>,
+        B: Future<Output = MudbResult<(IncomingMessage<'a>, DbUsage)>>,
     {
         tokio::runtime::Handle::current().block_on(async {
             let stack_id = self.id.function_id.stack_id;
@@ -467,11 +505,25 @@ impl Instance<Running> {
 
             match db_client_res {
                 Ok(db_client) => {
-                    let msg = f(db_client, stack_id).await.unwrap_or_else(|e| {
-                        IncomingMessage::DbError(DbError {
-                            error: Cow::from(format!("{e:?}")),
-                        })
+                    let (msg, db_usage) = f(db_client, stack_id).await.unwrap_or_else(|e| {
+                        (
+                            IncomingMessage::DbError(DbError {
+                                error: Cow::from(format!("{e:?}")),
+                            }),
+                            DbUsage::None,
+                        )
                     });
+                    match db_usage {
+                        DbUsage::Weak { read, write } => {
+                            self.state.db_weak_read_count += read;
+                            self.state.db_weak_write_count += write;
+                        }
+                        DbUsage::Strong { read, write } => {
+                            self.state.db_strong_read_count += read;
+                            self.state.db_strong_write_count += write;
+                        }
+                        DbUsage::None => (),
+                    }
                     self.write_message(msg)
                 }
                 Err(e) => self.write_message(IncomingMessage::DbError(DbError {
@@ -482,6 +534,27 @@ impl Instance<Running> {
         })
     }
 }
+
+enum DbUsage {
+    Weak { read: u64, write: u64 },
+    Strong { read: u64, write: u64 },
+    None,
+}
+
+impl DbUsage {
+    fn new(read: Read, write: Write, is_strong: bool) -> Self {
+        let read = read.0;
+        let write = write.0;
+        if is_strong {
+            DbUsage::Strong { read, write }
+        } else {
+            DbUsage::Weak { read, write }
+        }
+    }
+}
+
+struct Read(u64);
+struct Write(u64);
 
 fn make_mudb_key(
     stack_id: StackID,
