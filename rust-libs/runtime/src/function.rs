@@ -51,9 +51,9 @@ pub fn start(
 
                 Error::FunctionRuntimeError(FunctionRuntimeError::MaximumMemoryExceeded)
             }
-            e => {
-                Error::FunctionLoadingError(FunctionLoadingError::FailedToInstantiateWasmModule(e))
-            }
+            e => Error::FunctionLoadingError(FunctionLoadingError::FailedToInstantiateWasmModule(
+                Box::new(e),
+            )),
         }
     })?;
 

@@ -1,3 +1,5 @@
+pub mod db;
+
 use std::{
     borrow::Cow,
     io::{Read, Write},
@@ -8,13 +10,30 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
 use crate::Response;
+use db::*;
 
 #[repr(u16)]
 #[derive(FromPrimitive)]
 pub enum OutgoingMessageKind {
+    // Runtime messages
     FatalError = 1,
     FunctionResult = 2,
     Log = 3,
+
+    // DB messages
+    Put = 1001,
+    Get = 1002,
+    Delete = 1003,
+    DeleteByPrefix = 1004,
+    Scan = 1005,
+    ScanKeys = 1006,
+    TableList = 1007,
+    BatchPut = 1008,
+    BatchGet = 1009,
+    BatchDelete = 1010,
+    BatchScan = 1011,
+    BatchScanKeys = 1012,
+    CompareAndSwap = 1013,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -45,9 +64,25 @@ pub enum LogLevel {
 
 #[derive(Debug)]
 pub enum OutgoingMessage<'a> {
+    // Runtime messages
     FatalError(FatalError<'a>),
     FunctionResult(FunctionResult<'a>),
     Log(Log<'a>),
+
+    // DB messages
+    Put(Put<'a>),
+    Get(Get<'a>),
+    Delete(Delete<'a>),
+    DeleteByPrefix(DeleteByPrefix<'a>),
+    Scan(Scan<'a>),
+    ScanKeys(ScanKeys<'a>),
+    TableList(TableList<'a>),
+    BatchPut(BatchPut<'a>),
+    BatchGet(BatchGet<'a>),
+    BatchDelete(BatchDelete<'a>),
+    BatchScan(BatchScan<'a>),
+    BatchScanKeys(BatchScanKeys<'a>),
+    CompareAndSwap(CompareAndSwap<'a>),
 }
 
 macro_rules! read_cases {
@@ -83,11 +118,53 @@ impl<'a> OutgoingMessage<'a> {
     pub fn read(reader: &mut impl Read) -> std::io::Result<Self> {
         let kind: u16 = BorshDeserialize::deserialize_reader(reader)?;
 
-        read_cases!(kind, reader, [FatalError, FunctionResult, Log])
+        read_cases!(
+            kind,
+            reader,
+            [
+                FatalError,
+                FunctionResult,
+                Log,
+                Put,
+                Get,
+                Delete,
+                DeleteByPrefix,
+                Scan,
+                ScanKeys,
+                TableList,
+                BatchPut,
+                BatchGet,
+                BatchDelete,
+                BatchScan,
+                BatchScanKeys,
+                CompareAndSwap
+            ]
+        )
     }
 
     pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        write_cases!(self, writer, [FatalError, FunctionResult, Log]);
+        write_cases!(
+            self,
+            writer,
+            [
+                FatalError,
+                FunctionResult,
+                Log,
+                Put,
+                Get,
+                Delete,
+                DeleteByPrefix,
+                Scan,
+                ScanKeys,
+                TableList,
+                BatchPut,
+                BatchGet,
+                BatchDelete,
+                BatchScan,
+                BatchScanKeys,
+                CompareAndSwap
+            ]
+        );
 
         Ok(())
     }
