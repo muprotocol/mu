@@ -1,5 +1,7 @@
+use std::io::{stdin, Read};
+
 use anchor_client::solana_sdk::pubkey::Pubkey;
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose, Engine};
 use clap::Parser;
 
@@ -31,7 +33,8 @@ pub struct SignerSpecificationCommand {
 #[derive(Debug, Parser)]
 pub struct SignRequestCommand {
     #[arg(long)]
-    pub signer_keypair: String,
+    /// The keypair to sign with. If not specified, the user's wallet will be used
+    pub signer_keypair: Option<String>,
 
     #[arg(long)]
     pub signer_skip_seed_phrase_validation: bool,
@@ -115,13 +118,27 @@ fn execute_deactivate(config: Config, args: SignerSpecificationCommand) -> Resul
 }
 
 fn execute_sign_request(args: SignRequestCommand) -> Result<()> {
+    let payload = if args.payload == "-" {
+        let mut buf = vec![];
+        stdin()
+            .read_to_end(&mut buf)
+            .context("Failed to read from stdin")?;
+        String::from_utf8(buf).map_err(|_| anyhow!("Input is not valid unicode"))?
+    } else {
+        args.payload
+    };
+
     let (signer, wallet_manager) = Config::read_keypair_from_url(
-        Some(&args.signer_keypair),
+        args.signer_keypair.as_ref(),
         args.signer_skip_seed_phrase_validation,
         args.signer_confirm_key,
     )?;
 
-    let signature = signer.try_sign_message(args.payload.as_bytes())?;
+    let signature = signer.try_sign_message(
+        payload
+            .trim_end_matches(|c: char| c.is_ascii_control())
+            .as_bytes(),
+    )?;
     let sig_base64 = general_purpose::STANDARD.encode(signature.as_ref());
     let pubkey = signer.pubkey();
     let pk_base64 = general_purpose::STANDARD.encode(pubkey.to_bytes());
