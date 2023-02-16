@@ -1,19 +1,23 @@
-import { Keypair, PublicKey } from '@solana/web3.js'
+import { Keypair } from '@solana/web3.js'
 import * as spl from '@solana/spl-token';
 import chai, { expect } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import {
+    activateApiRequestSigner,
     authorizeProvider,
+    createApiRequestSigner,
     createAuthorizedUsageSigner,
     createEscrowAccount,
     createMint,
     createProvider,
     createProviderAuthorizer,
     createRegion,
+    deactivateApiRequestSigner,
     deleteStack,
     deployStack,
     initializeMu,
     mintToAccount,
+    MuApiRequestSigner,
     MuAuthorizedSignerInfo,
     MuEscrowAccountInfo,
     MuProgram,
@@ -41,6 +45,7 @@ describe("marketplace", () => {
     let authSigner: MuAuthorizedSignerInfo;
 
     let userWallet: Keypair;
+    let requestSigner: MuApiRequestSigner;
     let escrow: MuEscrowAccountInfo;
     let stack: MuStackInfo;
 
@@ -252,6 +257,28 @@ describe("marketplace", () => {
         );
         expect(escrowAccount.amount).to.equals(10_000_000n - 2n * usagePrice);
     })
+
+    it("Creates an API request signer", async () => {
+        let signer = Keypair.generate(); // Note: can, but doesn't need to be an account on the blockchain
+        requestSigner = await createApiRequestSigner(mu, userWallet, signer, region);
+
+        let signerAccount = await mu.program.account.apiRequestSigner.fetch(requestSigner.pda);
+        expect(signerAccount.active).to.be.true;
+    });
+
+    it("Deactivates an API request signer", async () => {
+        await deactivateApiRequestSigner(mu, userWallet, requestSigner, region);
+
+        let signerAccount = await mu.program.account.apiRequestSigner.fetch(requestSigner.pda);
+        expect(signerAccount.active).to.be.false;
+    });
+
+    it("Re-activates an API request signer", async () => {
+        await activateApiRequestSigner(mu, userWallet, requestSigner, region);
+
+        let signerAccount = await mu.program.account.apiRequestSigner.fetch(requestSigner.pda);
+        expect(signerAccount.active).to.be.true;
+    });
 
     it("Withdraws escrow balance", async () => {
         let tempWallet = await readOrCreateWallet(mu);

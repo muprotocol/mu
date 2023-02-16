@@ -40,7 +40,6 @@ blockchain_monitor:
   solana_usage_report_interval: 1d
 # TODO
 # db_manager:
-#   # Note, this value should not be under 1s
 #   usage_report_duration: 15m
 tikv:
   # if you already have a db running use the external template and remove the internal key.
