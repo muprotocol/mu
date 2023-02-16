@@ -1,7 +1,21 @@
-use std::fmt;
+pub mod request;
+pub mod response;
+pub mod status;
+
+use core::fmt;
+use std::borrow::Cow;
+
+use borsh::{BorshDeserialize, BorshSerialize};
+pub use request::Request;
+pub use response::{Response, ResponseBuilder};
+pub use status::Status;
+
+//TODO: Use concrete type
+pub type Url = String;
+pub type Body<'a> = Cow<'a, [u8]>;
 
 /// Represents a version of the HTTP spec.
-#[derive(PartialEq, PartialOrd, Copy, Clone, Eq, Ord, Hash)]
+#[derive(PartialEq, PartialOrd, Copy, Clone, Eq, Ord, Hash, BorshSerialize, BorshDeserialize)]
 pub struct Version(Http);
 
 impl Version {
@@ -21,7 +35,7 @@ impl Version {
     pub const HTTP_3: Version = Version(Http::H3);
 }
 
-#[derive(PartialEq, PartialOrd, Copy, Clone, Eq, Ord, Hash)]
+#[derive(PartialEq, PartialOrd, Copy, Clone, Eq, Ord, Hash, BorshSerialize, BorshDeserialize)]
 enum Http {
     Http09,
     Http10,
@@ -51,4 +65,21 @@ impl fmt::Debug for Version {
             __NonExhaustive => unreachable!(),
         })
     }
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize, Clone)]
+pub enum HttpMethod {
+    Get,
+    Head,
+    Post,
+    Put,
+    Patch,
+    Delete,
+    Options,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize, Clone)]
+pub struct Header<'a> {
+    pub name: Cow<'a, str>,
+    pub value: Cow<'a, str>,
 }

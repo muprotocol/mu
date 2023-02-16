@@ -20,12 +20,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
-name = "base64"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4a4ddaa51a5bc52a6948f74c06d20aaaddb71924eab79b8c97a8c556e942d6a"
-
-[[package]]
 name = "borsh"
 version = "0.0.0"
 source = "git+https://github.com/near/borsh-rs?rev=e82b47bdc14f65d464e9efa1237195a6b9770830#e82b47bdc14f65d464e9efa1237195a6b9770830"
@@ -117,10 +111,8 @@ checksum = "201de327520df007757c1f0adce6e827fe8562fbc28bfd9c15571c66ca1f5f79"
 name = "musdk"
 version = "0.1.0"
 dependencies = [
- "base64",
  "musdk-common",
  "musdk-derive",
- "percent-encoding",
  "serde",
  "serde_json",
  "serde_urlencoded",

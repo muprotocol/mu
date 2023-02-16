@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 default = ["json", "http"]
 json = ["serde", "serde_json"]
-http = ["base64", "serde_urlencoded", "percent-encoding"]
+http = ["serde_urlencoded"]
 
 
 [dependencies]
@@ -16,6 +16,4 @@ musdk-derive = { path = "../derive" }
 thiserror = "1.0"
 serde_json = { version = "1.0", optional = true }
 serde = { version = "1.0", optional = true }
-base64 = { version = "0.21", optional = true }
 serde_urlencoded = { version = "0.7", optional = true }
-percent-encoding = { version = "2.2", optional = true }

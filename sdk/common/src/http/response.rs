@@ -1,10 +1,26 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use crate::{Header, Response, Status};
+use borsh::{BorshDeserialize, BorshSerialize};
+
+use crate::{Header, Status};
 
 const CONTENT_TYPE_HEADER: &str = "content-type";
 const BINARY_CONTENT_TYPE: &str = "application/octet-stream";
 const STRING_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct Response<'a> {
+    pub status: Status,
+    pub headers: Vec<Header<'a>>,
+    pub body: Cow<'a, [u8]>,
+}
+
+impl<'a> Response<'a> {
+    /// Create a [`ResponseBuilder`]
+    pub fn builder() -> ResponseBuilder<'a> {
+        ResponseBuilder::default()
+    }
+}
 
 pub struct ResponseBuilder<'a> {
     status: Status,

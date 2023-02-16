@@ -9,7 +9,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-use crate::Request;
+use crate::{Request, Response as HttpResponse};
 use db::*;
 
 #[repr(u16)]
@@ -27,6 +27,9 @@ enum IncomingMessageKind {
     TableKeyValueListResult = 1006,
     EmptyResult = 1007,
     CasResult = 1008,
+
+    // Http Client
+    HttpResponse,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -49,6 +52,9 @@ pub enum IncomingMessage<'a> {
     TableKeyValueListResult(TableKeyValueListResult<'a>),
     EmptyResult(EmptyResult),
     CasResult(CasResult<'a>),
+
+    // Http client
+    HttpResponse(HttpResponse<'a>),
 }
 
 macro_rules! read_cases {
@@ -100,7 +106,8 @@ impl<'a> IncomingMessage<'a> {
                 KeyValueListResult,
                 TableKeyListResult,
                 TableKeyValueListResult,
-                CasResult
+                CasResult,
+                HttpResponse
             ] * 'static,
             [EmptyResult]
         )
@@ -119,7 +126,8 @@ impl<'a> IncomingMessage<'a> {
                 TableKeyListResult,
                 TableKeyValueListResult,
                 EmptyResult,
-                CasResult
+                CasResult,
+                HttpResponse
             ]
         );
 
