@@ -88,7 +88,8 @@ async fn test_queries_on_a_node_with<T>(
     T: Future + Send + 'static,
 {
     // db
-    db.update_stack_tables(stack_id, table_list.clone().into())
+    let table_action_tuples = table_list.clone().into_iter().map(|x| (x, false)).collect();
+    db.update_stack_tables(stack_id, table_action_tuples)
         .await
         .unwrap();
     let key = Key {
@@ -664,8 +665,12 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     .await
     .unwrap();
 
+    let table_action_tuples = table_list()
+        .into_iter()
+        .map(|x| (x, false))
+        .collect::<Vec<_>>();
     for x in [&db, &db2, &db3] {
-        x.update_stack_tables(STACK_ID, table_list().into())
+        x.update_stack_tables(STACK_ID, table_action_tuples.clone())
             .await
             .unwrap();
     }

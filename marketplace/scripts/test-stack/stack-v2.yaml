@@ -3,6 +3,7 @@ version: 0.2
 services:
   - type: KeyValueTable
     name: my_db
+    delete: false
   - type: Function
     name: my_function_v2
     binary: http://localhost:8080/test-function-v2.wasm

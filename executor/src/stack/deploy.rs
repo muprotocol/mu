@@ -110,15 +110,16 @@ pub(super) async fn deploy(
         .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
 
     // Step 2: Value-key-tables of Database
-    let mut tables = vec![];
+    let mut table_action_tuples = vec![];
     for x in stack.key_value_tables() {
         let table_name = x.name.to_owned().try_into().map_err(|e| {
             StackDeploymentError::FailedToDeployKeyValueTables(anyhow::anyhow!("{e}"))
         })?;
-        tables.push(table_name);
+        let delete = x.delete;
+        table_action_tuples.push((table_name, delete));
     }
     db_client
-        .update_stack_tables(id, tables)
+        .update_stack_tables(id, table_action_tuples)
         .await
         .map_err(|e| StackDeploymentError::FailedToDeployKeyValueTables(anyhow::anyhow!("{e}")))?;
 
