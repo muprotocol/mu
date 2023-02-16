@@ -1,5 +1,7 @@
 use actix_web::{
-    guard, services,
+    guard,
+    http::header::HeaderMap,
+    services,
     web::{self, Json},
     HttpRequest,
 };
@@ -26,7 +28,7 @@ pub fn service_factory() -> impl HttpServiceFactoryBuilder {
                         && headers.contains_key(SIGNATURE_HEADER_NAME)
                 })))
                 .to(handle_request),
-            web::resource("/api").to(handle_bad_request)
+            web::resource("/api").to(|| async { handle_bad_request() })
         ]
     }
 }
@@ -48,40 +50,45 @@ pub struct ApiResponseTemplate {
     params: serde_json::Value,
 }
 
-// TODO: probably a bad idea.
-macro_rules! ok_or_bad_request {
-    ([$($var:ident = $e:expr,)+]) => {
-        $(let Ok($var) = $e else { return (actix_web::web::Json(serde_json::json!("bad_request")), http::StatusCode::BAD_REQUEST); };)*
-    };
-}
-
-pub async fn handle_request(
+async fn handle_request(
     request: HttpRequest,
     payload: String,
     dependency_accessor: web::Data<DependencyAccessor>,
 ) -> (Json<serde_json::Value>, http::StatusCode) {
-    let headers = request.headers();
-    ok_or_bad_request!([
-        pubkey_header = headers.get(PUBLIC_KEY_HEADER_NAME).context(""),
-        pubkey_bytes = base64::decode(pubkey_header),
-        pubkey = ed25519_dalek::PublicKey::from_bytes(&pubkey_bytes[..]),
-        signature_header = headers.get(SIGNATURE_HEADER_NAME).context(""),
-        signature_bytes = base64::decode(signature_header),
-        signature = ed25519_dalek::Signature::from_bytes(&signature_bytes[..]),
-        _verify_signature_result = pubkey.verify_strict(payload.as_bytes(), &signature),
-        request = serde_json::from_str::<ApiRequestTemplate>(payload.as_str()),
-        stack_id = request.stack.parse::<StackID>(),
-        _verify_stack_ownership_result =
-            verify_stack_ownership(&stack_id, &pubkey, &dependency_accessor).await,
-    ]);
+    async fn helper(
+        request: HttpRequest,
+        payload: String,
+        dependency_accessor: web::Data<DependencyAccessor>,
+    ) -> Result<(Json<serde_json::Value>, http::StatusCode)> {
+        let headers = request.headers();
+        let pubkey = verify_signature(headers, &payload)?;
+        let request = serde_json::from_str::<ApiRequestTemplate>(payload.as_str())?;
+        let stack_id = request.stack.parse::<StackID>()?;
+        verify_stack_ownership(&stack_id, &pubkey, &dependency_accessor).await?;
 
-    match execute_request(stack_id, request) {
-        Ok(response) => (Json(response), http::StatusCode::OK),
-        Err((response, status_code)) => (Json(response), status_code),
+        match execute_request(stack_id, request) {
+            Ok(response) => Ok((Json(response), http::StatusCode::OK)),
+            Err((response, status_code)) => Ok((Json(response), status_code)),
+        }
     }
+
+    helper(request, payload, dependency_accessor)
+        .await
+        .unwrap_or_else(|_| handle_bad_request())
 }
 
-pub async fn handle_bad_request() -> (Json<serde_json::Value>, http::StatusCode) {
+fn verify_signature(headers: &HeaderMap, payload: &String) -> Result<ed25519_dalek::PublicKey> {
+    let pubkey_header = headers.get(PUBLIC_KEY_HEADER_NAME).context("")?;
+    let pubkey_bytes = base64::decode(pubkey_header)?;
+    let pubkey = ed25519_dalek::PublicKey::from_bytes(&pubkey_bytes[..])?;
+    let signature_header = headers.get(SIGNATURE_HEADER_NAME).context("")?;
+    let signature_bytes = base64::decode(signature_header)?;
+    let signature = ed25519_dalek::Signature::from_bytes(&signature_bytes[..])?;
+    pubkey.verify_strict(payload.as_bytes(), &signature)?;
+    Ok(pubkey)
+}
+
+fn handle_bad_request() -> (Json<serde_json::Value>, http::StatusCode) {
     let (j, s) = bad_request("bad request");
     (Json(j), s)
 }
