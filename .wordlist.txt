@@ -1,10 +1,11 @@
 absl
 actix
 balancer
+bcollect
 Bincode
 Borsh
 bufread
-bcollect
+canonicalize
 chrono
 clippy
 clonable

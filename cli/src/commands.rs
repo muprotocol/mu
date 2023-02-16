@@ -1,15 +1,9 @@
-use std::{collections::HashMap, path::Path, str::FromStr};
+use anyhow::Result;
+use clap::Parser;
 
-use anyhow::{bail, Context, Result};
-use clap::{Args, Parser};
+use crate::config::{Config, ConfigOverride};
 
-use crate::{
-    config::{Config, ConfigOverride},
-    local_run,
-    mu_manifest::{self, BuildMode, MUManifest},
-    template::{Language, TemplateSet},
-};
-
+pub mod dev_env;
 pub mod escrow;
 pub mod list;
 pub mod provider;
@@ -41,44 +35,13 @@ pub enum Command {
     },
 
     /// Initialize a new mu project
-    Init(InitCommand),
+    Init(dev_env::InitCommand),
 
     /// Build mu project
-    Build(BuildCommand),
+    Build(dev_env::BuildCommand),
 
     /// Run mu project
-    Run(RunCommand),
-}
-
-#[derive(Debug, Args)]
-pub struct InitCommand {
-    /// Initialize a new mu project.
-    name: String,
-
-    /// The directory to create new project in.
-    path: Option<String>,
-
-    #[arg(short, long)]
-    /// Template to use for new project. Defaults to `empty` template
-    template: Option<String>,
-
-    #[arg(short, long)]
-    /// Language. Defaults to Rust
-    language: Option<String>,
-}
-
-#[derive(Debug, Args)]
-pub struct BuildCommand {
-    #[arg(long)]
-    /// Build artifacts in release mode, with optimizations
-    release: bool,
-}
-
-#[derive(Debug, Args)]
-pub struct RunCommand {
-    #[arg(long)]
-    /// Build artifacts in release mode, with optimizations
-    release: bool,
+    Run(dev_env::RunCommand),
 }
 
 #[derive(Debug, Parser)]
@@ -90,7 +53,7 @@ pub struct Arguments {
     pub command: Command,
 }
 
-pub async fn execute(args: Arguments) -> Result<()> {
+pub fn execute(args: Arguments) -> Result<()> {
     let config = Config::discover(args.cfg_override)?;
     match args.command {
         Command::Provider { sub_command } => provider::execute(config, sub_command),
@@ -98,87 +61,8 @@ pub async fn execute(args: Arguments) -> Result<()> {
         Command::Escrow { sub_command } => escrow::execute(config, sub_command),
         Command::Stack { sub_command } => stack::execute(config, sub_command),
 
-        Command::Init(sub_command) => execute_init(config, sub_command),
-        Command::Build(sub_command) => execute_build(config, sub_command),
-        Command::Run(sub_command) => execute_run(config, sub_command).await,
+        Command::Init(sub_command) => dev_env::execute_init(sub_command),
+        Command::Build(sub_command) => dev_env::execute_build(sub_command),
+        Command::Run(sub_command) => dev_env::execute_run(sub_command),
     }
-}
-
-pub fn execute_init(_config: Config, cmd: InitCommand) -> Result<()> {
-    let template_sets =
-        TemplateSet::load_builtin().context("Can not deserialize builtin template sets")?;
-
-    let lang = cmd
-        .language
-        .map(|s| Language::from_str(&s))
-        .unwrap_or(Ok(Language::Rust))
-        .context("Invalid language")?;
-    let template_name = cmd.template.unwrap_or("empty".to_string());
-
-    if let Some(template_set) = template_sets.iter().find(|t| t.name == template_name) {
-        let mut args = HashMap::new();
-        args.insert("name".to_string(), cmd.name.clone());
-        let path = cmd.path.unwrap_or(format!("./{}", cmd.name));
-        let path = Path::new(&path);
-
-        if path
-            .try_exists()
-            .context("Failed to check the destination directory")?
-        {
-            bail!("Destination `{}` already exists", path.display());
-        }
-
-        template_set.create(lang, path, args)?;
-        println!("Created new project ({}) `{}`", template_set.name, cmd.name);
-    } else {
-        println!("Template `{template_name}` not found");
-        TemplateSet::print_all(&template_sets);
-    }
-    Ok(())
-}
-
-pub fn execute_build(_config: Config, cmd: BuildCommand) -> Result<()> {
-    let build_mode = if cmd.release {
-        BuildMode::Release
-    } else {
-        BuildMode::Debug
-    };
-
-    read_manifest()?.build_project(build_mode)
-}
-
-pub async fn execute_run(_config: Config, cmd: RunCommand) -> Result<()> {
-    let manifest = read_manifest()?;
-
-    let build_mode = if cmd.release {
-        BuildMode::Release
-    } else {
-        BuildMode::Debug
-    };
-
-    manifest.build_project(build_mode)?;
-
-    let stack = manifest
-        .generate_stack_manifest(build_mode, mu_manifest::ArtifactGenerationMode::LocalRun)
-        .context("failed to generate stack.")?;
-
-    local_run::start_local_node((stack, manifest.dev_id)).await
-}
-
-fn read_manifest() -> Result<MUManifest> {
-    let mut path = std::env::current_dir()?;
-
-    while let Some(parent) = path.parent() {
-        let manifest_path = path.join(mu_manifest::MU_MANIFEST_FILE_NAME);
-        if manifest_path.try_exists()? {
-            let mut file = std::fs::File::open(manifest_path)?;
-            return mu_manifest::MUManifest::read(&mut file);
-        }
-        path = parent.into();
-    }
-
-    bail!(
-        "Not in a mu project, `{}` file not found.",
-        mu_manifest::MU_MANIFEST_FILE_NAME
-    );
 }

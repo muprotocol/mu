@@ -4,9 +4,9 @@ use clap::Parser;
 use mu_cli::{execute, Arguments};
 use utils::create_wallet_and_associated_token_account;
 
-#[tokio::test]
+#[test]
 #[ignore = "Need fully functional Solana environment to run this test, not available in CI"]
-async fn can_create_provider() {
+fn can_create_provider() {
     let (provider_wallet, _) = create_wallet_and_associated_token_account().unwrap();
     let provider_wallet_path = provider_wallet.path.display().to_string();
 
@@ -25,7 +25,7 @@ async fn can_create_provider() {
     ];
 
     let opts = Arguments::try_parse_from(args).unwrap();
-    execute(opts).await.unwrap();
+    execute(opts).unwrap();
 
     //TODO: check if provider is created successfully.
 }
