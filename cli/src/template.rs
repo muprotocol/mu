@@ -111,7 +111,7 @@ impl TemplateSet {
             return Err(TemplateError::ArgumentMissing("name".to_string()));
         };
 
-        std::fs::create_dir(path)
+        std::fs::create_dir_all(path)
             .map_err(|e| TemplateError::FailedToCreateDirectory(path.to_path_buf(), e))?;
 
         if let Some(template) = self.templates.iter().find(|t| t.lang == lang) {

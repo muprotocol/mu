@@ -15,6 +15,7 @@ pub struct InitCommand {
     path: Option<String>,
 
     /// The name of the project. Will use the name of the parent directory if left out
+    #[arg(short, long)]
     name: Option<String>,
 
     #[arg(short, long)]
@@ -63,43 +64,31 @@ pub fn execute_init(cmd: InitCommand) -> Result<()> {
             .unwrap_or(Cow::Borrowed("."))
             .as_ref(),
     )
-    .canonicalize()
-    .context("Failed to get full path to destination directory")?;
+    .to_path_buf();
+
+    fs::create_dir_all(&path).context("Failed to create destination directory")?;
+
+    path = path
+        .canonicalize()
+        .context("Failed to get full path to destination directory")?;
+
+    if fs::read_dir(&path)
+        .context("Failed to read destination directory")?
+        .next()
+        .is_some()
+    {
+        bail!("Destination directory is not empty");
+    }
 
     let name = match cmd.name {
-        Some(n) => {
-            path.push(&n);
-            if path
-                .try_exists()
-                .context("Failed to check destination directory")?
-            {
-                bail!("Destination `{}` already exists", path.display());
-            }
-            n
-        }
-        None => {
-            if !path
-                .try_exists()
-                .context("Failed to check destination directory")?
-            {
-                fs::create_dir(&path).context("Failed to create destination directory")?;
-            }
-
-            if fs::read_dir(&path)
-                .context("Failed to read destination directory")?
-                .next()
-                .is_some()
-            {
-                bail!("Destination directory is not empty");
-            }
-
-            path.components()
-                .last()
-                .context("Empty path")?
-                .as_os_str()
-                .to_string_lossy()
-                .into_owned()
-        }
+        Some(n) => n,
+        None => path
+            .components()
+            .last()
+            .context("Empty path")?
+            .as_os_str()
+            .to_string_lossy()
+            .into_owned(),
     };
 
     let mut args = HashMap::new();
