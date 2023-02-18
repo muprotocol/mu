@@ -190,7 +190,7 @@ pub mod fixture {
         }
 
         async fn teardown(self) {
-            self.db_manager.stop_embedded_cluster().await.unwrap();
+            self.db_manager.stop().await.unwrap();
             self.data_dir.teardown();
         }
     }
@@ -469,7 +469,7 @@ mod mock_db {
             Ok(Box::new(EmptyDBClient))
         }
 
-        async fn stop_embedded_cluster(&self) -> anyhow::Result<()> {
+        async fn stop(&self) -> anyhow::Result<()> {
             Ok(())
         }
     }

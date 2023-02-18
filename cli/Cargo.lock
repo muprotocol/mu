@@ -3122,6 +3122,7 @@ dependencies = [
  "dirs",
  "env_logger 0.10.0",
  "itertools 0.10.5",
+ "log",
  "marketplace",
  "mu-db",
  "mu-gateway",

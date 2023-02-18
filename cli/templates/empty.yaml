@@ -11,35 +11,38 @@ services:
     endpoints:
       greet/{name}:
         - method: get
-          route_to: greeting.greet_path_user
+          route_to: greeting.greet_user
 templates:
   - lang: Rust
     files:
       - path: Cargo.toml
         #TODO: replace `musdk` path with published one on Crates.io
         contents: !String |-
-            [package]
-            name = "{{name}}"
-            version = "0.1.0"
-            edition = "2021"
+          [package]
+          name = "{{name}}"
+          version = "0.1.0"
+          edition = "2021"
 
-            [dependencies]
-            musdk = "0.1" 
+          [dependencies]
+          musdk = "0.1"
         args:
           - name
       - path: src/main.rs
         contents: !String |-
-            use musdk::*;
+          use musdk::*;
 
-            #[mu_functions]
-            mod greeting {
-                use super::*;
+          #[mu_functions]
+          mod greeting {
+              use super::*;
 
-                #[mu_function]
-                fn greet_path_user<'a>(_ctx: &'a MuContext, path: PathParams<'a>) -> String {
-                    let name = path.get("name").expect("Expected to have name path param");
-                    format!("Hello, {name}!")
-                }
-            }
+              #[mu_function]
+              fn greet_user<'a>(_ctx: &'a MuContext, path: PathParams<'a>) -> String {
+                  let name = path.get("name").expect("Expected to have name path param");
+                  format!("Hello, {name}!")
+              }
+          }
+      - path: .gitignore
+        contents: !String |-
+          /target
         args:
           - name

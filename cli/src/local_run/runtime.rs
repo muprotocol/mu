@@ -5,35 +5,40 @@ use std::{
 
 use anyhow::{Context, Result};
 
+use mu_db::DbManager;
 use mu_gateway::{GatewayManager, GatewayManagerConfig};
 use mu_runtime::{AssemblyDefinition, Runtime, RuntimeConfig};
 use mu_stack::{AssemblyID, FunctionID, Gateway, StackID};
 use musdk_common::{Request, Response};
 
-use super::{database::Database, StackWithID};
+use super::StackWithID;
 
-pub const CACHE_PATH: &str = "target/runtime-cache";
+pub const CACHE_SUBDIR: &str = "target/mu-temp/runtime-cache";
 
 pub async fn start(
     stack: StackWithID,
+    project_root: PathBuf,
 ) -> Result<(
     Box<dyn Runtime>,
     Box<dyn GatewayManager>,
-    Database,
+    Box<dyn DbManager>,
     Vec<Gateway>,
     StackID,
 )> {
     let (stack, stack_id) = stack;
 
+    let mut cache_path = project_root.clone();
+    cache_path.push(CACHE_SUBDIR);
+
     let runtime_config = RuntimeConfig {
-        cache_path: PathBuf::from(CACHE_PATH),
+        cache_path,
         include_function_logs: true,
     };
 
-    let database = Database::start().await?;
+    let db_manager = super::database::start(project_root).await?;
 
     //TODO: Report usage using the notifications
-    let (runtime, _) = mu_runtime::start(database.db_manager.clone(), runtime_config).await?;
+    let (runtime, _) = mu_runtime::start(db_manager.clone(), runtime_config).await?;
 
     let mut function_defs = vec![];
 
@@ -76,9 +81,7 @@ pub async fn start(
         .deploy_gateways(stack_id, stack.gateways().map(ToOwned::to_owned).collect())
         .await?;
 
-    let db_client = database
-        .db_manager
-        .clone()
+    let db_client = db_manager
         .make_client()
         .await
         .context("couldn't create database client")?;
@@ -89,7 +92,7 @@ pub async fn start(
             .name
             .to_owned()
             .try_into()
-            .context("couldn't create table_name")?;
+            .with_context(|| format!("Invalid table name: {}", x.name))?;
         tables.push(table_name);
     }
 
@@ -100,7 +103,7 @@ pub async fn start(
 
     let gateways = stack.gateways().map(ToOwned::to_owned).collect();
 
-    Ok((runtime, gateway, database, gateways, stack_id))
+    Ok((runtime, gateway, db_manager, gateways, stack_id))
 }
 
 async fn handle_request(

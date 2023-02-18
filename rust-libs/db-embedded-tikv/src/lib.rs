@@ -7,7 +7,7 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     os::unix::prelude::PermissionsExt,
     path::PathBuf,
-    process,
+    process::{self, Stdio},
 };
 
 use anyhow::{bail, Context, Result};
@@ -297,13 +297,18 @@ pub async fn start(
 
     let args = generate_arguments(node_address, known_node_config, config);
 
+    // TODO: capture stdio logs
     let pd_process = std::process::Command::new(pd_exe)
         .args(args.pd_args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .context("Failed to spawn process pd")?;
 
     let tikv_process = std::process::Command::new(tikv_exe)
         .args(args.tikv_args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .context("Failed to spawn process tikv")?;
 

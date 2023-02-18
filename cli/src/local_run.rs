@@ -1,8 +1,10 @@
-use std::path::Path;
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
 use beau_collector::BeauCollector;
+use env_logger::Builder;
+use log::LevelFilter;
 use mu_stack::{Stack, StackID};
 use tokio_util::sync::CancellationToken;
 
@@ -11,11 +13,14 @@ mod runtime;
 
 pub type StackWithID = (Stack, StackID);
 
-pub async fn start_local_node(stack: StackWithID) -> Result<()> {
-    //TODO: make this configurable
-    env_logger::init();
+pub async fn start_local_node(stack: StackWithID, project_root: PathBuf) -> Result<()> {
+    println!("Starting local mu runtime . . .");
 
-    let (runtime, gateway, database, gateways, stack_id) = runtime::start(stack).await?;
+    //TODO: make this configurable
+    setup_logging();
+
+    let (runtime, gateway, database, gateways, stack_id) =
+        runtime::start(stack, project_root).await?;
 
     let cancellation_token = CancellationToken::new();
     ctrlc::set_handler({
@@ -27,16 +32,16 @@ pub async fn start_local_node(stack: StackWithID) -> Result<()> {
     })
     .context("Failed to initialize Ctrl+C handler")?;
 
-    println!("Following endpoints are deployed:");
+    println!("Done. The following endpoints are deployed:");
     for gateway in gateways {
         for (path, endpoints) in gateway.endpoints {
             for endpoint in endpoints {
                 println!(
-                    "- {}:{} : {} {}/{path}",
+                    "\t- {} {}/{path} -> {}:{}",
+                    endpoint.method,
+                    gateway.name,
                     endpoint.route_to.assembly,
                     endpoint.route_to.function,
-                    endpoint.method,
-                    gateway.name
                 );
             }
         }
@@ -49,12 +54,17 @@ pub async fn start_local_node(stack: StackWithID) -> Result<()> {
         runtime.stop().await.map_err(Into::into),
         gateway.stop().await,
         database.stop().await,
-        clean_runtime_cache_dir(),
     ]
     .into_iter()
     .bcollect::<()>()
 }
 
-pub fn clean_runtime_cache_dir() -> Result<()> {
-    std::fs::remove_dir_all(Path::new(runtime::CACHE_PATH)).map_err(Into::into)
+fn setup_logging() {
+    let mut builder = Builder::new();
+
+    builder.filter_level(LevelFilter::Off);
+
+    builder.filter(Some("mu_function"), LevelFilter::Trace);
+
+    builder.init();
 }

@@ -23,8 +23,8 @@ use tokio::time::{sleep, Duration};
 // Used struct instead of enum, only for better visual structure in config
 #[derive(Deserialize, Clone)]
 pub struct DbConfig {
-    external: Option<Vec<IpAndPort>>,
-    internal: Option<TikvRunnerConfig>,
+    pub external: Option<Vec<IpAndPort>>,
+    pub internal: Option<TikvRunnerConfig>,
 }
 
 #[async_trait]
@@ -74,7 +74,7 @@ pub trait DbClient: Send + Sync + Debug + Clone {
 #[clonable]
 pub trait DbManager: Send + Sync + Clone {
     async fn make_client(&self) -> anyhow::Result<Box<dyn DbClient>>;
-    async fn stop_embedded_cluster(&self) -> anyhow::Result<()>;
+    async fn stop(&self) -> anyhow::Result<()>;
 }
 
 // TODO: caching
@@ -369,7 +369,7 @@ impl DbManager for DbManagerImpl {
         Ok(Box::new(DbClientImpl::new(self.endpoints.clone()).await?))
     }
 
-    async fn stop_embedded_cluster(&self) -> anyhow::Result<()> {
+    async fn stop(&self) -> anyhow::Result<()> {
         match &self.inner {
             Some(r) => r.stop().await,
             None => Ok(()),

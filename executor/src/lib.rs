@@ -245,7 +245,7 @@ pub async fn run() -> Result<()> {
 
         trace!("Stopping database manager");
         database_manager
-            .stop_embedded_cluster()
+            .stop()
             .await
             .context("Failed to stop runtime")?;
 

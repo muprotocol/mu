@@ -213,7 +213,7 @@ async fn try_to_make_client_or_stop_cluster(
     match db_manager.make_client().await {
         Ok(x) => Ok(x),
         Err(e) => {
-            db_manager.stop_embedded_cluster().await?;
+            db_manager.stop().await?;
             Err(e)
         }
     }
@@ -428,7 +428,7 @@ async fn make_3_dbs() -> (Vec<Box<dyn DbManager>>, Vec<Box<dyn DbClient>>) {
     )
     .await
     .unwrap()
-    .stop_embedded_cluster()
+    .stop()
     .await
     .unwrap();
 
@@ -527,7 +527,7 @@ async fn success_to_start_and_query_single_embedded_clustered_node() {
         .unwrap();
 
     test_queries_on_single_node(db_client).await;
-    db_manager.stop_embedded_cluster().await.unwrap();
+    db_manager.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -540,7 +540,7 @@ async fn success_to_start_and_query_3_embedded_clustered_nodes_with_same_stackid
     start_and_query_nodes_with_same_stackids_and_tables(dbs).await;
 
     for x in db_managers {
-        x.stop_embedded_cluster().await.unwrap();
+        x.stop().await.unwrap();
     }
 }
 
@@ -555,7 +555,7 @@ async fn success_to_start_and_query_3_embedded_clustered_nodes_with_same_stackid
     start_and_query_nodes_with_same_stackids_different_tables(dbs).await;
 
     for x in db_managers {
-        x.stop_embedded_cluster().await.unwrap();
+        x.stop().await.unwrap();
     }
 }
 
@@ -570,7 +570,7 @@ async fn success_to_start_and_query_3_embedded_clustered_nodes_with_different_st
     start_and_query_nodes_with_different_stackids_and_tables(dbs).await;
 
     for x in db_managers {
-        x.stop_embedded_cluster().await.unwrap();
+        x.stop().await.unwrap();
     }
 }
 

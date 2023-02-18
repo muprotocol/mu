@@ -98,6 +98,7 @@ stackids
 stateful
 struct
 subcommands
+SUBDIR
 sysvar
 tailcall
 thiserror

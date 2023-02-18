@@ -1,4 +1,11 @@
-use std::{borrow::Cow, collections::HashMap, fs, path::Path, process::exit, str::FromStr};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    process::exit,
+    str::FromStr,
+};
 
 use anyhow::{bail, Context, Result};
 use clap::Args;
@@ -107,11 +114,11 @@ pub fn execute_build(cmd: BuildCommand) -> Result<()> {
         BuildMode::Debug
     };
 
-    read_manifest()?.build_project(build_mode)
+    read_manifest()?.0.build_project(build_mode)
 }
 
 pub fn execute_run(cmd: RunCommand) -> Result<()> {
-    let manifest = read_manifest()?;
+    let (manifest, project_root) = read_manifest()?;
 
     let build_mode = if cmd.release {
         BuildMode::Release
@@ -125,17 +132,20 @@ pub fn execute_run(cmd: RunCommand) -> Result<()> {
         .generate_stack_manifest(build_mode, mu_manifest::ArtifactGenerationMode::LocalRun)
         .context("failed to generate stack definition")?;
 
-    tokio::runtime::Runtime::new()?.block_on(local_run::start_local_node((stack, manifest.dev_id)))
+    tokio::runtime::Runtime::new()?.block_on(local_run::start_local_node(
+        (stack, manifest.dev_id),
+        project_root,
+    ))
 }
 
-fn read_manifest() -> Result<MUManifest> {
+fn read_manifest() -> Result<(MUManifest, PathBuf)> {
     let mut path = std::env::current_dir()?;
 
     loop {
         let manifest_path = path.join(mu_manifest::MU_MANIFEST_FILE_NAME);
         if manifest_path.try_exists()? {
-            let mut file = std::fs::File::open(manifest_path)?;
-            return mu_manifest::MUManifest::read(&mut file);
+            let mut file = std::fs::File::open(&manifest_path)?;
+            return Ok((mu_manifest::MUManifest::read(&mut file)?, path));
         }
         let Some(parent) = path.parent() else {
             break
