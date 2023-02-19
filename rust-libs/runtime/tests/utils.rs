@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use mu_db::{DbManager, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig};
 use mu_runtime::{start, AssemblyDefinition, Notification, Runtime, RuntimeConfig, Usage};
 use mu_stack::{AssemblyID, AssemblyRuntime, FunctionID, StackID};
-use musdk_common::Header;
+use musdk_common::{Body, Header, Version};
 
 // Add test project names (directory name) in this array to build them when testing
 const TEST_PROJECTS: &[&str] = &[
@@ -21,6 +21,7 @@ const TEST_PROJECTS: &[&str] = &[
     "multi-body",
     "unclean-termination",
     "hello-db",
+    "http-client",
 ];
 
 // <<<<<<< HEAD
@@ -406,7 +407,7 @@ pub async fn create_and_add_projects<'a>(
 }
 
 pub fn make_request<'a>(
-    body: Cow<'a, [u8]>,
+    body: Option<Body<'a>>,
     headers: Vec<Header<'a>>,
     path_params: HashMap<Cow<'a, str>, Cow<'a, str>>,
     query_params: HashMap<Cow<'a, str>, Cow<'a, str>>,
@@ -414,9 +415,11 @@ pub fn make_request<'a>(
     musdk_common::Request {
         method: musdk_common::HttpMethod::Get,
         headers,
-        body,
+        body: body.unwrap_or(Cow::Borrowed(&[])),
         path_params,
         query_params,
+        url: "".to_string(),
+        version: Version::HTTP_2,
     }
 }
 

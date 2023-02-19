@@ -23,7 +23,7 @@ async fn test_simple_func(fixture: &mut RuntimeFixtureWithoutDB) {
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Chappy"),
+        Some(Cow::Borrowed(b"Chappy")),
         vec![],
         HashMap::new(),
         HashMap::new(),
@@ -84,7 +84,7 @@ async fn can_run_multiple_instance_of_the_same_function(fixture: &mut RuntimeFix
 
     let make_request = |name: &'static str| {
         make_request(
-            Cow::Borrowed(name.as_bytes()),
+            Some(Cow::Borrowed(name.as_bytes())),
             vec![],
             HashMap::new(),
             HashMap::new(),
@@ -139,7 +139,7 @@ async fn can_run_instances_of_different_functions(fixture: &mut RuntimeFixtureWi
     .await
     .unwrap();
 
-    let make_request = |body| make_request(body, vec![], HashMap::new(), HashMap::new());
+    let make_request = |body| make_request(Some(body), vec![], HashMap::new(), HashMap::new());
 
     let instance_1 = fixture
         .runtime
@@ -184,7 +184,7 @@ async fn unclean_termination_is_handled(fixture: &mut RuntimeFixtureWithoutDB) {
     .await
     .unwrap();
 
-    let request = make_request(Cow::Borrowed(b""), vec![], HashMap::new(), HashMap::new());
+    let request = make_request(None, vec![], HashMap::new(), HashMap::new());
 
     match fixture
         .runtime
@@ -213,7 +213,7 @@ async fn functions_with_limited_memory_wont_run(fixture: &mut RuntimeFixtureWith
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Fred"),
+        Some(Cow::Borrowed(b"Fred")),
         vec![],
         HashMap::new(),
         HashMap::new(),
@@ -247,7 +247,7 @@ async fn functions_with_limited_memory_will_run_with_enough_memory(
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Fred"),
+        Some(Cow::Borrowed(b"Fred")),
         vec![],
         HashMap::new(),
         HashMap::new(),
@@ -271,7 +271,7 @@ async fn function_usage_is_reported_correctly_1(fixture: &mut RuntimeFixtureWith
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Chappy"),
+        Some(Cow::Borrowed(b"Chappy")),
         vec![],
         HashMap::new(),
         HashMap::new(),
@@ -360,7 +360,7 @@ async fn failing_function_should_not_hang(fixture: &mut RuntimeFixtureWithoutDB)
             .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Chappy"),
+        Some(Cow::Borrowed(b"Chappy")),
         vec![],
         HashMap::new(),
         HashMap::new(),
@@ -413,7 +413,7 @@ async fn json_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB) {
     };
 
     let request = make_request(
-        Cow::Borrowed(&form),
+        Some(Cow::Borrowed(&form)),
         vec![Header {
             name: Cow::Borrowed("content-type"),
             value: Cow::Borrowed("application/json; charset=utf-8"),
@@ -447,7 +447,7 @@ async fn string_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB)
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Due"),
+        Some(Cow::Borrowed(b"Due")),
         vec![],
         HashMap::new(),
         HashMap::new(),
@@ -477,7 +477,7 @@ async fn string_body_request_and_response_fails_with_incorrect_charset(
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Due"),
+        Some(Cow::Borrowed(b"Due")),
         vec![Header {
             name: Cow::Borrowed("content-type"),
             value: Cow::Borrowed("text/plain; charset=windows-12345"),
@@ -510,7 +510,7 @@ async fn string_body_request_and_response_do_not_care_for_content_type(
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Due"),
+        Some(Cow::Borrowed(b"Due")),
         vec![Header {
             name: Cow::Borrowed("content-type"),
             value: Cow::Borrowed("application/json; charset=utf-8"),
@@ -541,7 +541,7 @@ async fn can_access_path_params(fixture: &mut RuntimeFixtureWithoutDB) {
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Due"),
+        Some(Cow::Borrowed(b"Due")),
         vec![],
         [("type".into(), "users".into()), ("id".into(), "13".into())].into(),
         HashMap::new(),
@@ -619,7 +619,7 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
 
     let request = |x| {
         make_request(
-            Cow::Borrowed(x),
+            Some(Cow::Borrowed(x)),
             vec![Header {
                 name: Cow::Borrowed("content-type"),
                 value: Cow::Borrowed("application/json; charset=utf-8"),
@@ -848,7 +848,7 @@ async fn db_batch_crud(fixture: &mut RuntimeFixture) {
 
     let request = |x| {
         make_request(
-            Cow::Borrowed(x),
+            Some(Cow::Borrowed(x)),
             vec![Header {
                 name: Cow::Borrowed("content-type"),
                 value: Cow::Borrowed("application/json; charset=utf-8"),
@@ -1041,6 +1041,77 @@ async fn db_batch_crud(fixture: &mut RuntimeFixture) {
                 ],
                 serde_json::from_slice::<Vec<(String, String, String)>>(r.body.as_ref()).unwrap()
             )
+        })
+        .await;
+}
+
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn can_send_http_requests_with_http_client(fixture: &mut RuntimeFixtureWithoutDB) {
+    let projects = create_and_add_projects(
+        vec![("http-client", &["test_download"], None)],
+        &*fixture.runtime,
+    )
+    .await
+    .unwrap();
+
+    let request = make_request(None, vec![], HashMap::new(), HashMap::new());
+
+    let expected_response = br#"<!doctype html>
+<html>
+<head>
+    <title>Example Domain</title>
+
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type="text/css">
+    body {
+        background-color: #f0f0f2;
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        
+    }
+    div {
+        width: 600px;
+        margin: 5em auto;
+        padding: 2em;
+        background-color: #fdfdff;
+        border-radius: 0.5em;
+        box-shadow: 2px 3px 7px 2px rgba(0,0,0,0.02);
+    }
+    a:link, a:visited {
+        color: #38488f;
+        text-decoration: none;
+    }
+    @media (max-width: 700px) {
+        div {
+            margin: 0 auto;
+            width: auto;
+        }
+    }
+    </style>    
+</head>
+
+<body>
+<div>
+    <h1>Example Domain</h1>
+    <p>This domain is for use in illustrative examples in documents. You may use this
+    domain in literature without prior coordination or asking for permission.</p>
+    <p><a href="https://www.iana.org/domains/example">More information...</a></p>
+</div>
+</body>
+</html>
+"#;
+
+    fixture
+        .runtime
+        .invoke_function(projects[0].function_id(0).unwrap(), request)
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(expected_response, r.body.as_ref());
         })
         .await;
 }

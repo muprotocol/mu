@@ -46,7 +46,7 @@ impl MuContext {
     }
 
     pub fn http_client(&mut self) -> HttpClient {
-        HttpClient { ctx: self }
+        HttpClient::new(self)
     }
 
     fn read_and_execute_function(&mut self) {
@@ -72,11 +72,11 @@ impl MuContext {
         }
     }
 
-    pub fn log(&mut self, message: &str, level: LogLevel) -> Result<()> {
+    pub fn log<S: AsRef<str>>(&mut self, message: S, level: LogLevel) -> Result<()> {
         // TODO: make macros so the message doesn't have to be evaluated if its
         //       level is skipped
         let message = OutgoingMessage::Log(Log {
-            body: Cow::Borrowed(message),
+            body: Cow::Borrowed(message.as_ref()),
             level,
         });
         self.write_message(message)

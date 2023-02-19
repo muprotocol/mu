@@ -1,18 +1,38 @@
-// Mostly copied from types in `reqwest` crate
+// parts of this file are derived from `reqwest` https://github.com/seanmonstar/reqwest
+//
+// Copyright (c) 2016 Sean McArthur
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 
 use std::{borrow::Cow, fmt};
 
 use musdk_common::{
-    incoming_message::IncomingMessage, outgoing_message::OutgoingMessage, Body, Header, HttpMethod,
-    Request, Response, Url, Version,
+    http, incoming_message::IncomingMessage, outgoing_message::OutgoingMessage, Body, Header,
+    HttpMethod, Request, Response, Version,
 };
 
 use serde::Serialize;
 
 use crate::{error, MuContext};
 
-const AUTHORIZATION_HEADER: &str = "AUTHORIZATION";
-const CONTENT_TYPE_HEADER: &str = "CONTENT_TYPE";
+const AUTHORIZATION_HEADER: &str = "authorization";
+const CONTENT_TYPE_HEADER: &str = "content-type";
 
 pub struct HttpClient<'c> {
     ctx: &'c mut MuContext,
@@ -20,59 +40,58 @@ pub struct HttpClient<'c> {
 
 impl<'c> HttpClient<'c> {
     /// Send request to runtime and receive the response.
-    pub fn execute_request(&mut self, req: Request) -> Result<Response<'c>> {
+    pub fn execute_request(
+        &mut self,
+        req: Request,
+    ) -> Result<Result<Response<'static>, http::error::Error>, ClientError> {
         self.ctx
             .write_message(OutgoingMessage::HttpRequest(req))
-            .map_err(HttpError::FailedToSendRequest)?;
+            .map_err(ClientError::SendRequest)?;
 
-        match self
-            .ctx
-            .read_message()
-            .map_err(HttpError::FailedToRecvResponse)?
-        {
+        match self.ctx.read_message().map_err(ClientError::RecvResponse)? {
             IncomingMessage::HttpResponse(response) => Ok(response),
-            _ => Err(HttpError::FailedToRecvResponse(
+            _ => Err(ClientError::RecvResponse(
                 error::Error::UnexpectedMessageKind("HttpResponse"),
             )),
         }
     }
 
     /// Convenience method to make a `GET` request to a URL.
-    pub fn get(&self, url: Url) -> RequestBuilder {
-        self.request(HttpMethod::Get, url)
+    pub fn get<S: Into<String>>(&mut self, url: S) -> RequestBuilder {
+        self.request(HttpMethod::Get, url.into())
     }
 
     /// Convenience method to make a `POST` request to a URL.
-    pub fn post(&self, url: Url) -> RequestBuilder {
-        self.request(HttpMethod::Post, url)
+    pub fn post<S: Into<String>>(&mut self, url: S) -> RequestBuilder {
+        self.request(HttpMethod::Post, url.into())
     }
 
     /// Convenience method to make a `PUT` request to a URL.
-    pub fn put(&self, url: Url) -> RequestBuilder {
-        self.request(HttpMethod::Put, url)
+    pub fn put<S: Into<String>>(&mut self, url: S) -> RequestBuilder {
+        self.request(HttpMethod::Put, url.into())
     }
 
     /// Convenience method to make a `PATCH` request to a URL.
-    pub fn patch(&self, url: Url) -> RequestBuilder {
-        self.request(HttpMethod::Patch, url)
+    pub fn patch<S: Into<String>>(&mut self, url: S) -> RequestBuilder {
+        self.request(HttpMethod::Patch, url.into())
     }
 
     /// Convenience method to make a `DELETE` request to a URL.
-    pub fn delete(&self, url: Url) -> RequestBuilder {
-        self.request(HttpMethod::Delete, url)
+    pub fn delete<S: Into<String>>(&mut self, url: S) -> RequestBuilder {
+        self.request(HttpMethod::Delete, url.into())
     }
 
     /// Convenience method to make a `HEAD` request to a URL.
-    pub fn head(&self, url: Url) -> RequestBuilder {
-        self.request(HttpMethod::Head, url)
+    pub fn head<S: Into<String>>(&mut self, url: S) -> RequestBuilder {
+        self.request(HttpMethod::Head, url.into())
     }
 
     /// Start building a `Request` with the `HttpMethod` and `Url`.
     ///
     /// Returns a `RequestBuilder`, which will allow setting headers and
     /// the request body before sending.
-    pub fn request(&mut self, method: HttpMethod, url: Url) -> RequestBuilder {
-        let req = Request::new(method, url);
+    pub fn request<S: Into<String>>(&mut self, method: HttpMethod, url: S) -> RequestBuilder {
+        let req = Request::new(method, url.into());
 
         let client = HttpClient { ctx: self.ctx };
         RequestBuilder::new(client, Ok(req))
@@ -90,8 +109,16 @@ impl<'c> HttpClient<'c> {
     ///
     /// This method fails if there was an error while sending request,
     /// redirect loop was detected or redirect limit was exhausted.
-    pub fn execute(&self, request: Request) -> Result<Response> {
+    pub fn execute(
+        &mut self,
+        request: Request,
+    ) -> Result<Result<Response, http::error::Error>, ClientError> {
         self.execute_request(request)
+    }
+
+    #[inline]
+    pub(crate) fn new(ctx: &'c mut MuContext) -> Self {
+        Self { ctx }
     }
 }
 
@@ -99,11 +126,14 @@ impl<'c> HttpClient<'c> {
 #[must_use = "RequestBuilder does nothing until you 'send' it"]
 pub struct RequestBuilder<'a, 'c: 'a> {
     client: HttpClient<'c>,
-    request: Result<Request<'a>>,
+    request: Result<Request<'a>, http::error::Error>,
 }
 
 impl<'a, 'c: 'a> RequestBuilder<'a, 'c> {
-    pub(super) fn new(client: HttpClient<'c>, request: Result<Request<'a>>) -> Self {
+    pub(super) fn new(
+        client: HttpClient<'c>,
+        request: Result<Request<'a>, http::error::Error>,
+    ) -> Self {
         RequestBuilder { client, request }
     }
 
@@ -125,7 +155,7 @@ impl<'a, 'c: 'a> RequestBuilder<'a, 'c> {
     /// Add a set of Headers to the existing ones on this Request.
     ///
     /// The headers will be merged in to any already set.
-    pub fn headers(mut self, headers: Vec<Header<'a>>) -> Self {
+    pub fn headers(mut self, mut headers: Vec<Header<'a>>) -> Self {
         if let Ok(ref mut req) = self.request {
             req.headers.append(&mut headers);
         }
@@ -144,7 +174,7 @@ impl<'a, 'c: 'a> RequestBuilder<'a, 'c> {
     /// Set the request body.
     pub fn body<T: Into<Body<'a>>>(mut self, body: T) -> Self {
         if let Ok(ref mut req) = self.request {
-            req.body = Some(body.into());
+            req.body = body.into();
         }
         self
     }
@@ -208,7 +238,7 @@ impl<'a, 'c: 'a> RequestBuilder<'a, 'c> {
     ///
     /// This method fails if the passed value cannot be serialized into
     /// url encoded format
-    pub fn form<T: Serialize + ?Sized>(mut self, form: &T) -> RequestBuilder {
+    pub fn form<T: Serialize + ?Sized>(mut self, form: &'a T) -> RequestBuilder {
         let mut error = None;
         if let Ok(ref mut req) = self.request {
             match serde_urlencoded::to_string(form) {
@@ -218,9 +248,13 @@ impl<'a, 'c: 'a> RequestBuilder<'a, 'c> {
                         value: "application/x-www-form-urlencoded".into(),
                     });
 
-                    req.body = Some(body.into_bytes().into());
+                    req.body = body.into_bytes().into();
                 }
-                Err(err) => error = Some(HttpError::FailedToSerializeRequestUrl(err)),
+                Err(err) => {
+                    error = Some(http::error::Error::Request(format!(
+                        "failed to serialize url: {err:?}"
+                    )))
+                }
             }
         }
         if let Some(err) = error {
@@ -250,9 +284,13 @@ impl<'a, 'c: 'a> RequestBuilder<'a, 'c> {
                         name: CONTENT_TYPE_HEADER.into(),
                         value: "application/json".into(),
                     });
-                    req.body = Some(body.into());
+                    req.body = body.into();
                 }
-                Err(err) => error = Some(HttpError::FailedToSerializeRequest(err)),
+                Err(err) => {
+                    error = Some(http::error::Error::Request(format!(
+                        "failed to serialize request: {err:?}"
+                    )))
+                }
             }
         }
         if let Some(err) = error {
@@ -263,7 +301,7 @@ impl<'a, 'c: 'a> RequestBuilder<'a, 'c> {
 
     /// Build a `Request`, which can be inspected, modified and executed with
     /// `HttpClient::execute()`.
-    pub fn build(self) -> Result<Request<'a>> {
+    pub fn build(self) -> Result<Request<'a>, http::error::Error> {
         self.request
     }
 
@@ -275,9 +313,11 @@ impl<'a, 'c: 'a> RequestBuilder<'a, 'c> {
     /// This method fails if there was an error while sending request,
     /// redirect loop was detected or redirect limit was exhausted.
     ///
-    pub fn send<'b>(self) -> Result<Response<'b>> {
-        self.request
-            .and_then(|req| self.client.execute_request(req))
+    pub fn send(mut self) -> Result<Result<Response<'static>, http::error::Error>, ClientError> {
+        match self.request {
+            Ok(req) => self.client.execute_request(req),
+            Err(e) => Ok(Err(e)),
+        }
     }
 }
 
@@ -301,11 +341,7 @@ fn fmt_request_fields<'a, 'b>(
 }
 
 #[derive(Debug)]
-pub enum HttpError {
-    FailedToSerializeRequest(serde_json::Error),
-    FailedToSerializeRequestUrl(serde_urlencoded::ser::Error),
-    FailedToSendRequest(error::Error),
-    FailedToRecvResponse(error::Error),
+pub enum ClientError {
+    SendRequest(error::Error),
+    RecvResponse(error::Error),
 }
-
-pub type Result<T> = std::result::Result<T, HttpError>;

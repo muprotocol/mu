@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use anyhow::{anyhow, bail, Context, Result};
 use mu_stack::StackID;
-use musdk_common::Status;
+use musdk_common::{Status, Version};
 use protobuf::{EnumOrUnknown, MessageField};
 
 include!(concat!(env!("OUT_DIR"), "/protos/rpc/mod.rs"));
@@ -70,15 +70,17 @@ impl<'a> From<musdk_common::Request<'a>> for rpc::Request {
         // and then we'd have to make the codegen look in the other crate's code,
         // but it doesn't seem to want to do this. All in all, not worth it IMO.
         fn convert_http_method(method: musdk_common::HttpMethod) -> EnumOrUnknown<rpc::HttpMethod> {
-            match method {
-                musdk_common::HttpMethod::Get => EnumOrUnknown::new(rpc::HttpMethod::GET),
-                musdk_common::HttpMethod::Post => EnumOrUnknown::new(rpc::HttpMethod::POST),
-                musdk_common::HttpMethod::Patch => EnumOrUnknown::new(rpc::HttpMethod::PATCH),
-                musdk_common::HttpMethod::Put => EnumOrUnknown::new(rpc::HttpMethod::PUT),
-                musdk_common::HttpMethod::Delete => EnumOrUnknown::new(rpc::HttpMethod::DELETE),
-                musdk_common::HttpMethod::Head => EnumOrUnknown::new(rpc::HttpMethod::HEAD),
-                musdk_common::HttpMethod::Options => EnumOrUnknown::new(rpc::HttpMethod::OPTIONS),
-            }
+            let value = match method {
+                musdk_common::HttpMethod::Get => rpc::HttpMethod::GET,
+                musdk_common::HttpMethod::Post => rpc::HttpMethod::POST,
+                musdk_common::HttpMethod::Patch => rpc::HttpMethod::PATCH,
+                musdk_common::HttpMethod::Put => rpc::HttpMethod::PUT,
+                musdk_common::HttpMethod::Delete => rpc::HttpMethod::DELETE,
+                musdk_common::HttpMethod::Head => rpc::HttpMethod::HEAD,
+                musdk_common::HttpMethod::Options => rpc::HttpMethod::OPTIONS,
+            };
+
+            EnumOrUnknown::new(value)
         }
 
         fn convert_key_value_pair<'a>(p: (Cow<'a, str>, Cow<'a, str>)) -> rpc::KeyValuePair {
@@ -90,7 +92,21 @@ impl<'a> From<musdk_common::Request<'a>> for rpc::Request {
             }
         }
 
+        fn convert_version(v: Version) -> EnumOrUnknown<rpc::HttpVersion> {
+            let value = match v {
+                Version::HTTP_09 => rpc::HttpVersion::HTTP09,
+                Version::HTTP_10 => rpc::HttpVersion::HTTP10,
+                Version::HTTP_11 => rpc::HttpVersion::HTTP11,
+                Version::HTTP_2 => rpc::HttpVersion::HTTP2,
+                Version::HTTP_3 => rpc::HttpVersion::HTTP3,
+                _ => unreachable!(),
+            };
+
+            EnumOrUnknown::new(value)
+        }
+
         Self {
+            url: request.url,
             method: convert_http_method(request.method),
             path_params: request
                 .path_params
@@ -104,6 +120,7 @@ impl<'a> From<musdk_common::Request<'a>> for rpc::Request {
                 .collect(),
             headers: request.headers.into_iter().map(header_to_proto).collect(),
             body: request.body.into_owned(),
+            http_version: convert_version(request.version),
             ..Default::default()
         }
     }
@@ -141,8 +158,21 @@ impl TryFrom<rpc::Request> for musdk_common::Request<'static> {
             }
         }
 
+        fn version_from_proto(v: EnumOrUnknown<rpc::HttpVersion>) -> Result<musdk_common::Version> {
+            v.enum_value()
+                .map(|v| match v {
+                    rpc::HttpVersion::HTTP09 => musdk_common::Version::HTTP_09,
+                    rpc::HttpVersion::HTTP10 => musdk_common::Version::HTTP_10,
+                    rpc::HttpVersion::HTTP11 => musdk_common::Version::HTTP_11,
+                    rpc::HttpVersion::HTTP2 => musdk_common::Version::HTTP_2,
+                    rpc::HttpVersion::HTTP3 => musdk_common::Version::HTTP_3,
+                })
+                .map_err(|i| anyhow!("Unknown enum value {i} for type HttpVersion"))
+        }
+
         Ok(Self {
             method: convert_http_method(request.method)?,
+            url: request.url,
             path_params: request
                 .path_params
                 .into_iter()
@@ -155,6 +185,7 @@ impl TryFrom<rpc::Request> for musdk_common::Request<'static> {
                 .collect(),
             headers: request.headers.into_iter().map(header_from_proto).collect(),
             body: Cow::Owned(request.body),
+            version: version_from_proto(request.http_version)?,
         })
     }
 }

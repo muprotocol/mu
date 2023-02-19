@@ -397,10 +397,15 @@ where
 
     let request = Request {
         method: stack_http_method_to_sdk(method),
+        url: request.uri().to_string(),
         path_params,
         query_params,
         headers,
-        body: Cow::Borrowed(payload.as_ref().map(AsRef::as_ref).unwrap_or(&[])),
+        body: payload
+            .as_ref()
+            .map(|b| Cow::Borrowed(b.as_ref()))
+            .unwrap_or(Cow::Borrowed(&[])),
+        version: actix_web_version_to_mu_version(request.version()),
     };
 
     let response = match (dependency_accessor.handle_request)(
@@ -436,6 +441,17 @@ where
         });
 
     response
+}
+
+fn actix_web_version_to_mu_version(version: http::Version) -> musdk_common::http::Version {
+    match version {
+        http::Version::HTTP_09 => musdk_common::http::Version::HTTP_09,
+        http::Version::HTTP_10 => musdk_common::http::Version::HTTP_10,
+        http::Version::HTTP_11 => musdk_common::http::Version::HTTP_11,
+        http::Version::HTTP_2 => musdk_common::http::Version::HTTP_2,
+        http::Version::HTTP_3 => musdk_common::http::Version::HTTP_3,
+        _ => unreachable!(),
+    }
 }
 
 #[cfg(test)]

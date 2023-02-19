@@ -1,3 +1,25 @@
+// parts of this file are derived from `reqwest` https://github.com/seanmonstar/reqwest
+//
+// Copyright (c) 2016 Sean McArthur
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
 use core::fmt;
 use std::{borrow::Cow, collections::HashMap};
 
@@ -9,10 +31,10 @@ use super::{Body, Header, HttpMethod, Url, Version};
 pub struct Request<'a> {
     pub method: HttpMethod,
     pub url: Url,
-    path_params: HashMap<Cow<'a, str>, Cow<'a, str>>,
-    query_params: HashMap<Cow<'a, str>, Cow<'a, str>>,
+    pub path_params: HashMap<Cow<'a, str>, Cow<'a, str>>,
+    pub query_params: HashMap<Cow<'a, str>, Cow<'a, str>>,
     pub headers: Vec<Header<'a>>,
-    pub body: Option<Body<'a>>,
+    pub body: Body<'a>,
     pub version: Version,
 }
 
@@ -26,7 +48,7 @@ impl<'a> Request<'a> {
             query_params: HashMap::new(),
             url,
             headers: vec![],
-            body: None,
+            body: Cow::Borrowed(&[]),
             version: Version::default(),
         }
     }
@@ -40,48 +62,6 @@ impl<'a> Request<'a> {
                 None
             }
         })
-    }
-
-    /// Get the method.
-    #[inline]
-    pub fn method(&self) -> &HttpMethod {
-        &self.method
-    }
-
-    /// Get the url.
-    #[inline]
-    pub fn url(&self) -> &Url {
-        &self.url
-    }
-
-    /// Get the headers.
-    #[inline]
-    pub fn headers(&self) -> &Vec<Header<'a>> {
-        &self.headers
-    }
-
-    /// Get the body.
-    #[inline]
-    pub fn body(&self) -> Option<&Body<'a>> {
-        self.body.as_ref()
-    }
-
-    /// Get the path params.
-    #[inline]
-    pub fn path_params(&self) -> &HashMap<Cow<'a, str>, Cow<'a, str>> {
-        &self.path_params
-    }
-
-    /// Get the query params.
-    #[inline]
-    pub fn query_params(&self) -> &HashMap<Cow<'a, str>, Cow<'a, str>> {
-        &self.query_params
-    }
-
-    /// Get the http version.
-    #[inline]
-    pub fn version(&self) -> Version {
-        self.version
     }
 }
 

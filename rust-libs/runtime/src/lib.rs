@@ -262,6 +262,7 @@ impl Runtime for RuntimeImpl {
             function: Cow::Owned(function_id.function_name),
             request: Request {
                 method: request.method,
+                url: request.url,
                 path_params: request
                     .path_params
                     .into_iter()
@@ -281,6 +282,7 @@ impl Runtime for RuntimeImpl {
                     })
                     .collect(),
                 body: Cow::Owned(request.body.into_owned()),
+                version: request.version,
             },
         };
 

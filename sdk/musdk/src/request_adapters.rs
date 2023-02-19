@@ -26,10 +26,7 @@ impl<'a> FromRequest<'a> for &'a [u8] {
     type Error = ();
 
     fn from_request(req: &'a Request) -> Result<Self, ()> {
-        match req.body() {
-            Some(b) => Ok(b),
-            None => Ok(&[]),
-        }
+        Ok(&req.body)
     }
 }
 
@@ -37,10 +34,7 @@ impl<'a> FromRequest<'a> for Vec<u8> {
     type Error = ();
 
     fn from_request(req: &'a Request) -> Result<Self, ()> {
-        match req.body() {
-            Some(b) => Ok(b.to_vec()),
-            None => Ok(vec![]),
-        }
+        Ok(req.body.to_vec())
     }
 }
 
@@ -56,10 +50,9 @@ impl<'a> FromRequest<'a> for &'a str {
             .unwrap_or("us-ascii");
 
         match charset.to_lowercase().as_str() {
-            "utf-8" | "us-ascii" => match req.body() {
-                Some(b) => core::str::from_utf8(b).map_err(|e| (e.to_string(), Status::BadRequest)),
-                None => Ok(""),
-            },
+            "utf-8" | "us-ascii" => {
+                core::str::from_utf8(&req.body).map_err(|e| (e.to_string(), Status::BadRequest))
+            }
             ch => Err((format!("unsupported charset: {ch}"), Status::BadRequest)),
         }
     }
@@ -82,7 +75,7 @@ impl<'a> FromRequest<'a> for PathParams<'a> {
 
     fn from_request(req: &'a Request) -> Result<Self, Self::Error> {
         let map = req
-            .path_params()
+            .path_params
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
@@ -96,7 +89,7 @@ impl<'a> FromRequest<'a> for QueryParams<'a> {
 
     fn from_request(req: &'a Request) -> Result<Self, Self::Error> {
         let map = req
-            .query_params()
+            .query_params
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
