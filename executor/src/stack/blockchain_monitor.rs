@@ -52,7 +52,13 @@ pub trait BlockchainMonitor: Clone + Send + Sync {
 
 pub enum BlockchainMonitorNotification {
     StacksAvailable(Vec<StackWithMetadata>),
-    StacksRemoved(Vec<StackID>),
+    StacksRemoved(Vec<(StackID, StackRemovalMode)>),
+}
+
+#[derive(Debug)]
+pub enum StackRemovalMode {
+    Temporary,
+    Permanent,
 }
 
 #[derive(Deserialize)]
@@ -620,10 +626,13 @@ fn on_solana_escrow_updated(
                             "Transitioning {owner_pubkey} to inactive state, \
                             stacks will be undeployed for this owner"
                         );
-                        let stack_ids = occ.stacks().map(|s| s.id()).collect::<Vec<_>>();
+                        let stack_id_modes = occ
+                            .stacks()
+                            .map(|s| (s.id(), StackRemovalMode::Temporary))
+                            .collect::<Vec<_>>();
                         state.stacks.make_inactive(&owner);
                         notification_channel
-                            .send(BlockchainMonitorNotification::StacksRemoved(stack_ids));
+                            .send(BlockchainMonitorNotification::StacksRemoved(stack_id_modes));
                     }
                 }
             } else {
@@ -990,8 +999,9 @@ async fn on_new_stack_received(
 
             if let OwnerEntry::Occupied(occ) = state.stacks.owner_entry(owner_id) {
                 if occ.remove_stack(stack_id).0 {
-                    notification_channel
-                        .send(BlockchainMonitorNotification::StacksRemoved(vec![stack_id]));
+                    notification_channel.send(BlockchainMonitorNotification::StacksRemoved(vec![
+                        (stack_id, StackRemovalMode::Permanent),
+                    ]));
                 }
             }
         }
