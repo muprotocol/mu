@@ -368,7 +368,7 @@ async fn start_and_query_nodes_with_same_stackids_different_tables(dbs: Vec<Box<
     let mut handles = vec![];
     for (i, db) in dbs.into_iter().enumerate() {
         let tl = [
-            format!("{}", i).try_into().unwrap(),
+            format!("{i}").try_into().unwrap(),
             format!("{}", 100 + i).try_into().unwrap(),
         ];
         let db_clone = db.clone();
@@ -402,7 +402,7 @@ async fn start_and_query_nodes_with_different_stackids_and_tables(dbs: Vec<Box<d
         let i = i as u8;
         let si = StackID::SolanaPublicKey([i; 32]);
         let tl = [
-            format!("{}", i).try_into().unwrap(),
+            format!("{i}").try_into().unwrap(),
             format!("{}", 100 + i).try_into().unwrap(),
         ];
         let db_clone = db.clone();
