@@ -113,11 +113,11 @@ pub(super) async fn deploy(
 
     // Step 2: Value-key-tables of Database
     let mut table_action_tuples = vec![];
-    for x in stack.key_value_tables() {
-        let table_name = x.name.to_owned().try_into().map_err(|e| {
+    for kvt in stack.key_value_tables() {
+        let table_name = kvt.name.to_owned().try_into().map_err(|e| {
             StackDeploymentError::FailedToDeployKeyValueTables(anyhow::anyhow!("{e}"))
         })?;
-        let delete = DeleteTable(x.delete);
+        let delete = DeleteTable(kvt.delete);
         table_action_tuples.push((table_name, delete));
     }
     db_client
