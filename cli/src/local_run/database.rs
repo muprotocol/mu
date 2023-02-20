@@ -7,7 +7,7 @@ use std::{
 use anyhow::Result;
 use mu_db::{DbConfig, DbManager, IpAndPort, PdConfig, TikvConfig, TikvRunnerConfig};
 
-pub const DATA_SUBDIR: &str = "target/mu-temp/database";
+pub const DATA_SUBDIR: &str = ".mu/database";
 
 pub async fn start(project_root: PathBuf) -> Result<Box<dyn DbManager>> {
     fn local_addr(port: u16) -> IpAndPort {

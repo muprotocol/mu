@@ -13,7 +13,7 @@ use musdk_common::{Request, Response};
 
 use super::StackWithID;
 
-pub const CACHE_SUBDIR: &str = "target/mu-temp/runtime-cache";
+pub const CACHE_SUBDIR: &str = ".mu/runtime-cache";
 
 pub async fn start(
     stack: StackWithID,

@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
     process::Stdio,
 };
@@ -17,9 +17,8 @@ pub const MU_MANIFEST_FILE_NAME: &str = "mu.yaml";
 pub const STACK_MANIFEST_FILE_NAME: &str = "stack.yaml";
 
 #[derive(Serialize, Deserialize)]
-pub struct MUManifest {
+pub struct MuManifest {
     name: String,
-    lang: Language,
     version: String,
     #[serde(
         serialize_with = "custom_stack_id_serialization::serialize",
@@ -29,86 +28,25 @@ pub struct MUManifest {
     services: Vec<Service>,
 }
 
-impl MUManifest {
-    pub fn new(name: String, lang: Language) -> Self {
-        let bytes = rand::random::<[u8; 32]>();
-        let dev_id = StackID::SolanaPublicKey(bytes);
-
-        MUManifest {
-            name,
-            lang,
-            version: "0.1".to_string(),
-            dev_id,
-            services: vec![],
-        }
-    }
-
-    pub fn write<W: Write>(&self, writer: &mut W) -> Result<()> {
-        serde_yaml::to_writer(writer, &self).context("Failed to write mu manifest")?;
-        Ok(())
-    }
-
+impl MuManifest {
     pub fn read<R: Read>(reader: &mut R) -> Result<Self> {
         serde_yaml::from_reader(reader).context("Invalid mu manifest file")
     }
 
-    //TODO: support multiple function in a single manifest
-    pub fn wasm_module_path(&self, build_mode: BuildMode) -> PathBuf {
-        match self.lang {
-            Language::Rust => {
-                let cargo_target_dir =
-                    std::env::var_os("CARGO_TARGET_DIR").unwrap_or("target".into());
-                let cargo_target_dir = Path::new(&cargo_target_dir);
-
-                let build_mode = match build_mode {
-                    BuildMode::Debug => "debug",
-                    BuildMode::Release => "release",
-                };
-
-                cargo_target_dir.join(format!("wasm32-wasi/{build_mode}/{}.wasm", self.name))
+    fn all_functions(&self) -> impl Iterator<Item = &Function> {
+        self.services.iter().filter_map(|s| {
+            if let Service::Function(f) = s {
+                Some(f)
+            } else {
+                None
             }
-        }
+        })
     }
 
-    pub fn build_project(&self, build_mode: BuildMode) -> Result<()> {
-        let create_cmd = |cmd, args: &[&str]| {
-            let mut cmd = std::process::Command::new(cmd);
-            for arg in args {
-                cmd.arg(arg);
-            }
-            cmd
-        };
-
-        let (mut pre_build, mut build) = match (self.lang, build_mode) {
-            (Language::Rust, BuildMode::Debug) => (
-                create_cmd("rustup", &["target", "add", "wasm32-wasi"]),
-                create_cmd("cargo", &["build", "--target", "wasm32-wasi"]),
-            ),
-
-            (Language::Rust, BuildMode::Release) => (
-                create_cmd("rustup", &["target", "add", "wasm32-wasi"]),
-                create_cmd("cargo", &["build", "--release", "--target", "wasm32-wasi"]),
-            ),
-        };
-
-        let exit = pre_build
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .output()
-            .map_err(|e| anyhow::format_err!("{}", e.to_string()))?;
-
-        if !exit.status.success() {
-            bail!("Failed to run pre-build script")
-        }
-
-        let exit = build
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .output()
-            .map_err(|e| anyhow::format_err!("{}", e.to_string()))?;
-
-        if !exit.status.success() {
-            bail!("Failed to build the project")
+    pub fn build_all(&self, build_mode: BuildMode, project_root: &Path) -> Result<()> {
+        for f in self.all_functions() {
+            println!("Building {}", f.name);
+            f.build(build_mode, project_root)?;
         }
 
         Ok(())
@@ -131,26 +69,29 @@ impl MUManifest {
 
         let services = self
             .services
-            .clone()
-            .into_iter()
+            .iter()
             .map(|s| {
                 anyhow::Ok(match s {
-                    Service::Database(d) => mu_stack::Service::Database(d),
-                    Service::Gateway(g) => mu_stack::Service::Gateway(g),
+                    Service::Database(d) => mu_stack::Service::Database(d.clone()),
+                    Service::Gateway(g) => mu_stack::Service::Gateway(g.clone()),
                     Service::Function(f) => {
-                        let mut env = f.env;
+                        let binary = match generation_mode {
+                            ArtifactGenerationMode::LocalRun => {
+                                f.wasm_module_path(build_mode).display().to_string()
+                            }
+                            ArtifactGenerationMode::Publish => bail!("Not implemented"),
+                        };
+
+                        let mut env = f.env.clone();
 
                         if let ArtifactGenerationMode::LocalRun = generation_mode {
-                            env.extend(f.env_dev);
+                            env.extend(f.env_dev.iter().map(|(k, v)| (k.clone(), v.clone())));
                             env.extend(overridden_envs.clone());
                         }
 
                         mu_stack::Service::Function(mu_stack::Function {
-                            name: f.name,
-                            binary: self.upload_function(
-                                self.wasm_module_path(build_mode),
-                                generation_mode,
-                            )?,
+                            name: f.name.clone(),
+                            binary,
                             runtime: f.runtime,
                             env,
                             memory_limit: f.memory_limit,
@@ -166,22 +107,6 @@ impl MUManifest {
             services,
         })
     }
-
-    pub fn add_services(mut self, services: &mut Vec<Service>) -> Self {
-        self.services.append(services);
-        self
-    }
-
-    fn upload_function(
-        &self,
-        wasm_module_path: PathBuf,
-        generation_mode: ArtifactGenerationMode,
-    ) -> Result<String> {
-        match generation_mode {
-            ArtifactGenerationMode::LocalRun => Ok(wasm_module_path.display().to_string()),
-            ArtifactGenerationMode::Publish => unimplemented!("don't have storage service yet"),
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -195,11 +120,104 @@ pub enum Service {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Function {
     pub name: String,
+    pub lang: Language,
     pub runtime: AssemblyRuntime,
     pub env: HashMap<String, String>,
     pub env_dev: HashMap<String, String>,
     #[serde(serialize_with = "custom_byte_unit_serialization::serialize")]
     pub memory_limit: byte_unit::Byte,
+}
+
+impl Function {
+    fn wasm_module_path(&self, build_mode: BuildMode) -> PathBuf {
+        match self.lang {
+            Language::Rust => {
+                let cargo_target_dir = std::env::var_os("CARGO_TARGET_DIR")
+                    .map(|x| {
+                        let path: &Path = x.as_ref();
+                        path.to_owned()
+                    })
+                    .unwrap_or({
+                        let mut root = self.root_dir();
+                        root.push("target");
+                        root
+                    });
+
+                let build_mode = match build_mode {
+                    BuildMode::Debug => "debug",
+                    BuildMode::Release => "release",
+                };
+
+                cargo_target_dir.join(format!("wasm32-wasi/{build_mode}/{}.wasm", self.name))
+            }
+        }
+    }
+
+    pub fn root_dir(&self) -> PathBuf {
+        format!("functions/{}", self.name).into()
+    }
+
+    pub fn build(&self, build_mode: BuildMode, project_root: &Path) -> Result<()> {
+        let create_cmd = |cmd, args: &[&str]| {
+            let mut cmd = std::process::Command::new(cmd);
+            for arg in args {
+                cmd.arg(arg);
+            }
+            cmd
+        };
+
+        let commands = match self.lang {
+            Language::Rust => {
+                let mut manifest = project_root.to_owned();
+                manifest.push(self.root_dir());
+                manifest.push("Cargo.toml");
+                match build_mode {
+                    BuildMode::Debug => [
+                        create_cmd("rustup", &["target", "add", "wasm32-wasi"]),
+                        create_cmd(
+                            "cargo",
+                            &[
+                                "build",
+                                "--target",
+                                "wasm32-wasi",
+                                "--manifest-path",
+                                manifest.display().to_string().as_str(),
+                            ],
+                        ),
+                    ],
+
+                    BuildMode::Release => [
+                        create_cmd("rustup", &["target", "add", "wasm32-wasi"]),
+                        create_cmd(
+                            "cargo",
+                            &[
+                                "build",
+                                "--release",
+                                "--target",
+                                "wasm32-wasi",
+                                "--manifest-path",
+                                manifest.display().to_string().as_str(),
+                            ],
+                        ),
+                    ],
+                }
+            }
+        };
+
+        for mut cmd in commands {
+            let exit = cmd
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .output()
+                .map_err(|e| anyhow::format_err!("{}", e.to_string()))?;
+
+            if !exit.status.success() {
+                bail!("Failed to run pre-build script")
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]

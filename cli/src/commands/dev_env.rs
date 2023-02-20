@@ -12,7 +12,7 @@ use clap::Args;
 
 use crate::{
     local_run,
-    mu_manifest::{self, BuildMode, MUManifest},
+    mu_manifest::{self, BuildMode, MuManifest},
     template::{Language, TemplateSet},
 };
 
@@ -61,7 +61,7 @@ pub fn execute_init(cmd: InitCommand) -> Result<()> {
 
     let Some(template_set) = template_sets.iter().find(|t| t.name == template_name) else {
         println!("Template `{template_name}` not found");
-        TemplateSet::print_all(&template_sets);
+        print_template_sets(&template_sets);
         exit(-1);
     };
 
@@ -107,6 +107,14 @@ pub fn execute_init(cmd: InitCommand) -> Result<()> {
     Ok(())
 }
 
+pub fn print_template_sets(sets: &[TemplateSet]) {
+    println!("Available templates:\n");
+    println!("{: ^10}|{: ^15}", "Name", "Languages");
+    println!("{}", "-".repeat(26));
+
+    sets.iter().for_each(|t| println!("{t}"));
+}
+
 pub fn execute_build(cmd: BuildCommand) -> Result<()> {
     let build_mode = if cmd.release {
         BuildMode::Release
@@ -114,7 +122,8 @@ pub fn execute_build(cmd: BuildCommand) -> Result<()> {
         BuildMode::Debug
     };
 
-    read_manifest()?.0.build_project(build_mode)
+    let (manifest, project_root) = read_manifest()?;
+    manifest.build_all(build_mode, &project_root)
 }
 
 pub fn execute_run(cmd: RunCommand) -> Result<()> {
@@ -126,7 +135,7 @@ pub fn execute_run(cmd: RunCommand) -> Result<()> {
         BuildMode::Debug
     };
 
-    manifest.build_project(build_mode)?;
+    manifest.build_all(build_mode, &project_root)?;
 
     let stack = manifest
         .generate_stack_manifest(build_mode, mu_manifest::ArtifactGenerationMode::LocalRun)
@@ -138,14 +147,14 @@ pub fn execute_run(cmd: RunCommand) -> Result<()> {
     ))
 }
 
-fn read_manifest() -> Result<(MUManifest, PathBuf)> {
+fn read_manifest() -> Result<(MuManifest, PathBuf)> {
     let mut path = std::env::current_dir()?;
 
     loop {
         let manifest_path = path.join(mu_manifest::MU_MANIFEST_FILE_NAME);
         if manifest_path.try_exists()? {
             let mut file = std::fs::File::open(&manifest_path)?;
-            return Ok((mu_manifest::MUManifest::read(&mut file)?, path));
+            return Ok((mu_manifest::MuManifest::read(&mut file)?, path));
         }
         let Some(parent) = path.parent() else {
             break

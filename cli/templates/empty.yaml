@@ -1,21 +1,9 @@
 name: empty
 services:
-  - type: Function
-    name: greeting
-    runtime: wasi1.0
-    memory_limit: 64MiB
-    env: {}
-    env_dev: {}
-  - type: Gateway
-    name: my_gateway
-    endpoints:
-      greet/{name}:
-        - method: get
-          route_to: greeting.greet_user
 templates:
   - lang: Rust
     files:
-      - path: Cargo.toml
+      - path: functions/{{name}}/Cargo.toml
         #TODO: replace `musdk` path with published one on Crates.io
         contents: !String |-
           [package]
@@ -27,7 +15,7 @@ templates:
           musdk = "0.1"
         args:
           - name
-      - path: src/main.rs
+      - path: functions/{{name}}/src/main.rs
         contents: !String |-
           use musdk::*;
 
@@ -41,8 +29,32 @@ templates:
                   format!("Hello, {name}!")
               }
           }
+        args:
+          - name
+      - path: mu.yaml
+        contents: !String |-
+          name: {{name}}
+          version: 0.1.0
+          dev_id: s_9bHMegyMRRuzQsHe4DSS261f4F7Yoxuhv39T7s8mtQkq
+          services:
+            - type: Function
+              name: {{name}}
+              lang: Rust
+              runtime: wasi1.0
+              memory_limit: 64MiB
+              env: {}
+              env_dev: {}
+            - type: Gateway
+              name: default-gateway
+              endpoints:
+                greet/{name}:
+                  - method: get
+                    route_to: {{name}}.greet_user
+        args:
+          - name
       - path: .gitignore
         contents: !String |-
-          /target
+          /.mu
+          /functions/*/target
         args:
           - name
