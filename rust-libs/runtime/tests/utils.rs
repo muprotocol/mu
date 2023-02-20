@@ -424,7 +424,7 @@ mod mock_db {
     #![allow(unused)]
     use async_trait::async_trait;
     use mu_db::error::Result;
-    use mu_db::{Blob, DbClient, DbManager, Key, Scan, TableName};
+    use mu_db::{Blob, DbClient, DbManager, DeleteTable, Key, Scan, TableName};
     use mu_stack::StackID;
     use tikv_client::Value;
 
@@ -439,7 +439,7 @@ mod mock_db {
         async fn update_stack_tables(
             &self,
             stack_id: StackID,
-            table_list: Vec<(TableName, bool)>,
+            table_list: Vec<(TableName, DeleteTable)>,
         ) -> Result<()> {
             Ok(())
         }

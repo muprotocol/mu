@@ -3,7 +3,7 @@ use mu_runtime::{AssemblyDefinition, Runtime};
 use reqwest::Url;
 use thiserror::Error;
 
-use mu_db::DbManager;
+use mu_db::{DbManager, DeleteTable};
 
 use mu_stack::{AssemblyID, HttpMethod, Stack, StackID};
 
@@ -117,7 +117,7 @@ pub(super) async fn deploy(
         let table_name = x.name.to_owned().try_into().map_err(|e| {
             StackDeploymentError::FailedToDeployKeyValueTables(anyhow::anyhow!("{e}"))
         })?;
-        let delete = x.delete;
+        let delete = DeleteTable(x.delete);
         table_action_tuples.push((table_name, delete));
     }
     db_client
@@ -169,9 +169,14 @@ pub(super) async fn undeploy_stack(
     if let StackRemovalMode::Permanent = mode {
         let db_client = db_manager.make_client().await?;
         let tables = db_client.table_list(id, None).await?;
-        for table in tables {
+        for table in tables.clone() {
             db_client.clear_table(id, table).await?;
         }
+        let table_deletes = tables
+            .into_iter()
+            .map(|table| (table, DeleteTable(true)))
+            .collect();
+        db_client.update_stack_tables(id, table_deletes).await?;
     }
 
     runtime.remove_all_functions(id).await?;

@@ -91,7 +91,7 @@ async fn test_queries_on_a_node_with<T>(
     let table_action_tuples = table_list
         .clone()
         .into_iter()
-        .map(|x| (x, false))
+        .map(|x| (x, DeleteTable(false)))
         .collect::<Vec<_>>();
     db.update_stack_tables(stack_id, table_action_tuples.clone())
         .await
@@ -215,14 +215,14 @@ async fn test_update_stack_tables(db: Box<dyn DbClient>) {
     let table_action_tuples = table_list_extend
         .clone()
         .into_iter()
-        .map(|x| (x, false))
+        .map(|x| (x, DeleteTable(false)))
         .collect::<Vec<_>>();
     db.update_stack_tables(STACK_ID, table_action_tuples.clone())
         .await
         .unwrap();
     test_table_list(db.as_ref(), table_list_extend.clone()).await;
     let mut table_action_tuples2 = table_action_tuples.clone();
-    table_action_tuples2.last_mut().unwrap().1 = true;
+    table_action_tuples2.last_mut().unwrap().1 = DeleteTable(true);
     db.update_stack_tables(STACK_ID, table_action_tuples2.clone())
         .await
         .unwrap();
@@ -714,7 +714,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
 
     let table_action_tuples = table_list()
         .into_iter()
-        .map(|x| (x, false))
+        .map(|x| (x, DeleteTable(false)))
         .collect::<Vec<_>>();
     for x in [&db, &db2, &db3] {
         x.update_stack_tables(STACK_ID, table_action_tuples.clone())
