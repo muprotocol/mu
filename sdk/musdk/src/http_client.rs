@@ -23,16 +23,17 @@
 use std::{borrow::Cow, fmt};
 
 use musdk_common::{
-    http, incoming_message::IncomingMessage, outgoing_message::OutgoingMessage, Body, Header,
-    HttpMethod, Request, Response, Version,
+    http_client::{
+        header::{AUTHORIZATION_HEADER, CONTENT_TYPE_HEADER},
+        *,
+    },
+    incoming_message::IncomingMessage,
+    outgoing_message::OutgoingMessage,
 };
 
 use serde::Serialize;
 
 use crate::{error, MuContext};
-
-const AUTHORIZATION_HEADER: &str = "authorization";
-const CONTENT_TYPE_HEADER: &str = "content-type";
 
 pub struct HttpClient<'c> {
     ctx: &'c mut MuContext,
@@ -43,7 +44,7 @@ impl<'c> HttpClient<'c> {
     pub fn execute_request(
         &mut self,
         req: Request,
-    ) -> Result<Result<Response<'static>, http::error::Error>, ClientError> {
+    ) -> Result<Result<Response<'static>, Error>, ClientError> {
         self.ctx
             .write_message(OutgoingMessage::HttpRequest(req))
             .map_err(ClientError::SendRequest)?;
@@ -109,10 +110,7 @@ impl<'c> HttpClient<'c> {
     ///
     /// This method fails if there was an error while sending request,
     /// redirect loop was detected or redirect limit was exhausted.
-    pub fn execute(
-        &mut self,
-        request: Request,
-    ) -> Result<Result<Response, http::error::Error>, ClientError> {
+    pub fn execute(&mut self, request: Request) -> Result<Result<Response, Error>, ClientError> {
         self.execute_request(request)
     }
 
@@ -126,14 +124,11 @@ impl<'c> HttpClient<'c> {
 #[must_use = "RequestBuilder does nothing until you 'send' it"]
 pub struct RequestBuilder<'a, 'c: 'a> {
     client: HttpClient<'c>,
-    request: Result<Request<'a>, http::error::Error>,
+    request: Result<Request<'a>, Error>,
 }
 
 impl<'a, 'c: 'a> RequestBuilder<'a, 'c> {
-    pub(super) fn new(
-        client: HttpClient<'c>,
-        request: Result<Request<'a>, http::error::Error>,
-    ) -> Self {
+    pub(super) fn new(client: HttpClient<'c>, request: Result<Request<'a>, Error>) -> Self {
         RequestBuilder { client, request }
     }
 
@@ -251,9 +246,7 @@ impl<'a, 'c: 'a> RequestBuilder<'a, 'c> {
                     req.body = body.into_bytes().into();
                 }
                 Err(err) => {
-                    error = Some(http::error::Error::Request(format!(
-                        "failed to serialize url: {err:?}"
-                    )))
+                    error = Some(Error::Request(format!("failed to serialize url: {err:?}")))
                 }
             }
         }
@@ -287,7 +280,7 @@ impl<'a, 'c: 'a> RequestBuilder<'a, 'c> {
                     req.body = body.into();
                 }
                 Err(err) => {
-                    error = Some(http::error::Error::Request(format!(
+                    error = Some(Error::Request(format!(
                         "failed to serialize request: {err:?}"
                     )))
                 }
@@ -301,7 +294,7 @@ impl<'a, 'c: 'a> RequestBuilder<'a, 'c> {
 
     /// Build a `Request`, which can be inspected, modified and executed with
     /// `HttpClient::execute()`.
-    pub fn build(self) -> Result<Request<'a>, http::error::Error> {
+    pub fn build(self) -> Result<Request<'a>, Error> {
         self.request
     }
 
@@ -313,7 +306,7 @@ impl<'a, 'c: 'a> RequestBuilder<'a, 'c> {
     /// This method fails if there was an error while sending request,
     /// redirect loop was detected or redirect limit was exhausted.
     ///
-    pub fn send(mut self) -> Result<Result<Response<'static>, http::error::Error>, ClientError> {
+    pub fn send(mut self) -> Result<Result<Response<'static>, Error>, ClientError> {
         match self.request {
             Ok(req) => self.client.execute_request(req),
             Err(e) => Ok(Err(e)),

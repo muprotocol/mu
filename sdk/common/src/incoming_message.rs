@@ -9,7 +9,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-use crate::{http, Request, Response};
+use crate::gateway::*;
+use crate::http_client;
 use db::*;
 
 #[repr(u16)]
@@ -38,7 +39,7 @@ pub struct ExecuteFunction<'a> {
     pub request: Request<'a>,
 }
 
-pub type HttpResponse<'a> = Result<Response<'a>, http::error::Error>;
+pub type HttpResponse<'a> = Result<http_client::Response<'a>, http_client::error::Error>;
 
 #[derive(Debug)]
 pub enum IncomingMessage<'a> {

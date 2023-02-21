@@ -24,7 +24,7 @@ use std::fmt;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::Status;
+use super::Status;
 
 /// The Errors that may occur when processing an `Request`
 #[derive(Debug, BorshSerialize, BorshDeserialize)]

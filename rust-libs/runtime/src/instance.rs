@@ -496,7 +496,10 @@ impl Instance<Running> {
         Ok(())
     }
 
-    fn send_http_request(&mut self, req: musdk_common::Request) -> Result<(), (Error, Usage)> {
+    fn send_http_request(
+        &mut self,
+        req: musdk_common::http_client::Request,
+    ) -> Result<(), (Error, Usage)> {
         self.state.io_state = IOState::InRuntimeCall;
 
         // Lazy initialization
@@ -649,7 +652,7 @@ mod utils {
     use std::{borrow::Cow, error::Error};
 
     use log::error;
-    use musdk_common::{http, Header, HttpMethod, Status, Version};
+    use musdk_common::http_client::{self, *};
     use reqwest::Method;
 
     pub fn http_method_to_reqwest_method(method: HttpMethod) -> reqwest::Method {
@@ -671,7 +674,6 @@ mod utils {
             Version::HTTP_11 => reqwest::Version::HTTP_11,
             Version::HTTP_2 => reqwest::Version::HTTP_2,
             Version::HTTP_3 => reqwest::Version::HTTP_3,
-            _ => unreachable!(),
         }
     }
 
@@ -682,30 +684,30 @@ mod utils {
             .unwrap_or("".to_string())
     }
 
-    pub fn reqwest_error_to_http_error(error: reqwest::Error) -> http::error::Error {
+    pub fn reqwest_error_to_http_error(error: reqwest::Error) -> http_client::Error {
         if error.is_builder() {
-            http::error::Error::Builder(error_reason(error))
+            http_client::Error::Builder(error_reason(error))
         } else if error.is_request() {
-            http::error::Error::Request(error_reason(error))
+            http_client::Error::Request(error_reason(error))
         } else if error.is_redirect() {
-            http::error::Error::Redirect(error_reason(error))
+            http_client::Error::Redirect(error_reason(error))
         } else if error.is_status() {
             // Note: this should not happen and we safely map unknown statuses to 200
-            let status = http::Status::from_code(error.status().map(|s| s.as_u16()).unwrap_or(200))
-                .unwrap_or(http::Status::default());
-            http::error::Error::Status(status)
+            let status = Status::from_code(error.status().map(|s| s.as_u16()).unwrap_or(200))
+                .unwrap_or(Status::default());
+            http_client::Error::Status(status)
         } else if error.is_body() {
-            http::error::Error::Body(error_reason(error))
+            http_client::Error::Body(error_reason(error))
         } else if error.is_decode() {
-            http::error::Error::Decode(error_reason(error))
+            http_client::Error::Decode(error_reason(error))
         } else {
-            http::error::Error::Upgrade(error_reason(error))
+            http_client::Error::Upgrade(error_reason(error))
         }
     }
 
     pub fn reqwest_response_to_http_response<'a>(
         response: reqwest::Result<reqwest::blocking::Response>,
-    ) -> Result<http::Response<'a>, http::error::Error> {
+    ) -> Result<Response<'a>, http_client::Error> {
         let response = response.map_err(reqwest_error_to_http_error)?;
 
         let status = Status::from_code(response.status().as_u16()).unwrap_or(Status::default());
@@ -714,12 +716,12 @@ mod utils {
             .headers()
             .clone() //TODO: Maybe not?
             .into_iter()
-            .map(|(name, value)| -> Result<Header, http::error::Error> {
-                let Some(name) = name else {return Err(http::error::Error::Decode("invalid header with empty name".to_string()))};
+            .map(|(name, value)| -> Result<Header, http_client::Error> {
+                let Some(name) = name else {return Err(http_client::Error::Decode("invalid header with empty name".to_string()))};
 
                 let value = value.to_str().map_err(|e| {
                     error!("invalid header value in http response: {e:?}");
-                    http::error::Error::Decode("invalid header value".to_string())
+                    http_client::Error::Decode("invalid header value".to_string())
                 })?;
 
                 Ok(Header {
@@ -734,7 +736,7 @@ mod utils {
             .map_err(reqwest_error_to_http_error)?
             .to_vec();
 
-        Ok(http::Response::builder()
+        Ok(Response::builder()
             .status(status)
             .headers(headers)
             .body_from_vec(body))
