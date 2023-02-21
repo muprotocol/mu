@@ -123,7 +123,7 @@ impl StorageClientImpl {
     }
 }
 
-struct AsyncReaderWrapper<'a>(Pin<&'a mut (dyn AsyncRead + Send + Sync + Unpin)>);
+struct AsyncReaderWrapper<'a>(&'a mut (dyn AsyncRead + Send + Sync + Unpin));
 
 impl<'a> AsyncRead for AsyncReaderWrapper<'a> {
     fn poll_read(
@@ -131,7 +131,7 @@ impl<'a> AsyncRead for AsyncReaderWrapper<'a> {
         cx: &mut std::task::Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        self.0.poll_read(cx, buf)
+        Pin::new(&mut self.0).poll_read(cx, buf)
     }
 }
 
@@ -143,7 +143,7 @@ impl<'a> AsyncWrite for AsyncWriterWrapper<'a> {
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> std::task::Poll<std::result::Result<usize, std::io::Error>> {
-        self.poll_write(cx, buf)
+        Pin::new(self.0).poll_write(cx, buf)
     }
 
     fn poll_flush(
@@ -185,7 +185,7 @@ impl StorageClient for StorageClientImpl {
         key: &str,
         reader: &mut (dyn AsyncRead + Send + Sync + Unpin),
     ) -> Result<u16> {
-        let mut wrapper = AsyncReaderWrapper(Pin::new(reader));
+        let mut wrapper = AsyncReaderWrapper(reader);
         let path = StorageClientImpl::create_path(stack_id, storage_name, key);
 
         self.bucket
