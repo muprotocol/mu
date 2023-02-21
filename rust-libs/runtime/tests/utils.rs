@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use mu_db::{DbManager, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig};
 use mu_runtime::{start, AssemblyDefinition, Notification, Runtime, RuntimeConfig, Usage};
 use mu_stack::{AssemblyID, AssemblyRuntime, FunctionID, StackID};
-use musdk_common::{Body, Header, Version};
+use musdk_common::http_client::*;
 
 // Add test project names (directory name) in this array to build them when testing
 const TEST_PROJECTS: &[&str] = &[
@@ -24,38 +24,7 @@ const TEST_PROJECTS: &[&str] = &[
     "http-client",
 ];
 
-// <<<<<<< HEAD
-// #[derive(Default)]
-// pub struct MapAssemblyProvider {
-//     inner: HashMap<AssemblyID, AssemblyDefinition>,
-// }
-
-// #[async_trait]
-// impl AssemblyProvider for MapAssemblyProvider {
-//     fn get(&self, id: &AssemblyID) -> Option<&AssemblyDefinition> {
-//         self.inner.get(id)
-//     }
-
-//     fn add_function(&mut self, function: AssemblyDefinition) {
-//         self.inner.insert(function.id.clone(), function);
-//     }
-
-//     fn remove_function(&mut self, id: &AssemblyID) {
-//         self.inner.remove(id);
-//     }
-
-//     fn remove_all_functions(&mut self, _stack_id: &StackID) -> Option<Vec<String>> {
-//         unimplemented!("Not needed for tests")
-//     }
-
-//     fn get_function_names(&self, _stack_id: &StackID) -> Vec<String> {
-//         unimplemented!("Not needed")
-//     }
-// }
-
 #[derive(Debug)]
-// =======
-// >>>>>>> master
 pub struct Project<'a> {
     pub id: AssemblyID,
     pub name: &'a str,
@@ -418,8 +387,6 @@ pub fn make_request<'a>(
         body: body.unwrap_or(Cow::Borrowed(&[])),
         path_params,
         query_params,
-        url: "".to_string(),
-        version: Version::HTTP_2,
     }
 }
 

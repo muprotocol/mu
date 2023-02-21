@@ -21,7 +21,7 @@
 // THE SOFTWARE.
 
 use core::fmt;
-use std::{borrow::Cow, collections::HashMap};
+use std::borrow::Cow;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
@@ -31,8 +31,6 @@ use super::{Body, Header, HttpMethod, Url, Version};
 pub struct Request<'a> {
     pub method: HttpMethod,
     pub url: Url,
-    pub path_params: HashMap<Cow<'a, str>, Cow<'a, str>>,
-    pub query_params: HashMap<Cow<'a, str>, Cow<'a, str>>,
     pub headers: Vec<Header<'a>>,
     pub body: Body<'a>,
     pub version: Version,
@@ -44,8 +42,6 @@ impl<'a> Request<'a> {
     pub fn new(method: HttpMethod, url: Url) -> Self {
         Request {
             method,
-            path_params: HashMap::new(),
-            query_params: HashMap::new(),
             url,
             headers: vec![],
             body: Cow::Borrowed(&[]),
