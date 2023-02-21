@@ -18,14 +18,12 @@ pub async fn start(project_root: PathBuf) -> Result<Box<dyn DbManager>> {
     }
 
     fn subdir(dir: &Path, subdir: &'static str) -> Result<PathBuf> {
-        let mut res = dir.to_path_buf();
-        res.push(subdir);
+        let res = dir.join(subdir);
         fs::create_dir_all(&res)?;
         Ok(res)
     }
 
-    let mut data_dir = project_root;
-    data_dir.push(DATA_SUBDIR);
+    let data_dir = project_root.join(DATA_SUBDIR);
 
     let node_address = local_addr(12012);
 
