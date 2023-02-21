@@ -8,16 +8,13 @@
 			"path": "cli"
 		},
 		{
+			"path": "rust-libs/common"
+		},
+		{
 			"path": "rust-libs/db"
 		},
 		{
 			"path": "rust-libs/db-embedded-tikv"
-		},
-		{
-			"path": "rust-libs/storage_embedded_juicefs"
-		},
-		{
-			"path": "rust-libs/common"
 		},
 		{
 			"path": "executor"
@@ -42,6 +39,9 @@
 		},
 		{
 			"path": "rust-libs/storage"
+		},
+		{
+			"path": "rust-libs/storage_embedded_juicefs"
 		}
 	]
 }

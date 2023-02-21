@@ -1,6 +1,6 @@
 use std::{env, fmt, net::IpAddr, os::unix::prelude::PermissionsExt, path::PathBuf, process, vec};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::error;
@@ -10,6 +10,8 @@ use nix::unistd::Pid;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
 use tokio::{fs::File, io::AsyncWriteExt};
+
+const BUCKET_NAME: &str = "mu-default";
 
 #[derive(Deserialize, Clone)]
 pub struct AuthConfig {
@@ -67,6 +69,7 @@ impl JuicefsRunner for JuicefsRunnerImpl {
 #[folder = "assets"]
 pub struct Assets;
 
+// TODO: move this in with db_embedded_tikv's version somewhere
 async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
     let mut temp_address = env::temp_dir();
     temp_address.push(name);
@@ -124,12 +127,12 @@ pub struct StorageInfo {
     endpoint: IpAndPort,
     access_key: String,
     secret_key: String,
-    bucket_name: String,
 }
 
 #[derive(Deserialize)]
 pub struct InternalStorageConfig {
-    tikv_endpoints: Vec<IpAndPort>,
+    metadata_tikv_endpoints: Vec<IpAndPort>,
+    object_storage_tikv_endpoints: Vec<IpAndPort>,
     storage: StorageInfo,
 }
 
@@ -139,24 +142,30 @@ struct Args {
 }
 
 fn generate_arguments(config: &InternalStorageConfig) -> Args {
-    let tikv_endpoints = config
-        .tikv_endpoints
-        .iter()
-        .map(|ip| ip.to_string())
-        .collect::<Vec<_>>()
-        .join(",");
+    fn tikv_endpoints(ports: &[IpAndPort]) -> String {
+        ports
+            .iter()
+            .map(|ip| ip.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    let metadata_endpoints = tikv_endpoints(config.metadata_tikv_endpoints.as_ref());
 
     let format_args = vec![
         "format".to_owned(),
         "--storage tikv".to_owned(),
-        format!("--bucket \"{tikv_endpoints}\""),
-        format!("\"tikv://{tikv_endpoints}\""),
-        config.storage.bucket_name.clone(),
+        format!(
+            "--bucket \"{}\"",
+            tikv_endpoints(config.object_storage_tikv_endpoints.as_ref())
+        ),
+        format!("\"tikv://{metadata_endpoints}\""),
+        BUCKET_NAME.to_string(),
     ];
 
     let gateway_args = vec![
         "gateway".to_owned(),
-        format!("\"tikv://{tikv_endpoints}\""),
+        format!("\"tikv://{metadata_endpoints}\""),
         config.storage.endpoint.to_string(),
     ];
 
@@ -199,12 +208,17 @@ pub async fn start(
 
     let args = generate_arguments(config);
 
-    let _format_process = std::process::Command::new(&juicefs_exe)
+    let format_exit_output = std::process::Command::new(&juicefs_exe)
         .args(args.format_args)
-        .spawn()
-        .context("Failed to spawn process juicefs format")?
-        .wait()
-        .context("juicefs format command failed to finish successfully")?;
+        .output()
+        .context("Failed to run juicefs format")?;
+    if !format_exit_output.status.success() {
+        bail!(
+            "Failed to format JuiceFS storage:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(format_exit_output.stdout.as_ref()),
+            String::from_utf8_lossy(format_exit_output.stderr.as_ref())
+        );
+    }
 
     let gateway_process = std::process::Command::new(juicefs_exe)
         .args(args.gateway_args)
@@ -225,10 +239,10 @@ pub async fn start(
             profile: None,
         },
         region: Region {
-            region: "TODO".to_owned(),
+            region: "us-east1".to_owned(),
             endpoint: config.storage.endpoint.to_string(),
         },
-        bucket_name: config.storage.bucket_name.clone(),
+        bucket_name: BUCKET_NAME.to_string(),
     };
 
     Ok((Box::new(JuicefsRunnerImpl { mailbox }), live_storage_config))

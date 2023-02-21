@@ -1,13 +1,13 @@
-use std::{fs, path::Path};
+use std::path::Path;
 
 use anyhow::Context;
 use flate2::bufread::GzDecoder;
 use tar::Archive;
 
-const TAG_NAME: &str = "1.0.3";
+const JUICEFS_VERSION: &str = "1.0.3";
 
-fn download_and_extract_file(url: String, dest: &str, file_name: &str) {
-    let new_path = Path::new(dest).join(format!("{file_name}-{TAG_NAME}"));
+fn download_and_extract_file(url: String, dest_folder: &str, file_name: &str) {
+    let new_path = Path::new(dest_folder).join(format!("{file_name}-{JUICEFS_VERSION}"));
 
     if new_path.exists() {
         return;
@@ -28,21 +28,21 @@ fn download_and_extract_file(url: String, dest: &str, file_name: &str) {
 
     let file = GzDecoder::new(&bytes[..]);
     let mut archive = Archive::new(file);
-    archive
-        .unpack(dest)
-        .context(format!("Failed to extract file:{file_name}"))
-        .unwrap();
-
-    let path = Path::new(dest).join(file_name);
-
-    fs::rename(path, new_path)
-        .context("Failed to rename file")
-        .unwrap();
+    for entry in archive.entries().unwrap() {
+        let mut entry = entry.unwrap();
+        if entry.path().unwrap().starts_with("juicefs") {
+            entry
+                .unpack(new_path)
+                .context("Failed to extract juicefs binary")
+                .unwrap();
+            break;
+        }
+    }
 }
 
 fn main() {
-    println!("cargo:rustc-env=TAG_NAME={TAG_NAME}");
+    println!("cargo:rustc-env=TAG_NAME={JUICEFS_VERSION}");
 
-    let juicefs_url = format!("https://github.com/juicedata/juicefs/releases/download/v${TAG_NAME}/juicefs-${TAG_NAME}-linux-amd64.tar.gz");
-    //download_and_extract_file(juicefs_url, "assets", "juicefs")
+    let juicefs_url = format!("https://github.com/juicedata/juicefs/releases/download/v{JUICEFS_VERSION}/juicefs-{JUICEFS_VERSION}-linux-amd64.tar.gz");
+    download_and_extract_file(juicefs_url, "assets", "juicefs")
 }
