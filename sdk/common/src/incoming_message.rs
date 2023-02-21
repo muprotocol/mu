@@ -30,7 +30,7 @@ enum IncomingMessageKind {
     CasResult = 1008,
 
     // Http Client
-    HttpResponse,
+    HttpResponse = 3001,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]

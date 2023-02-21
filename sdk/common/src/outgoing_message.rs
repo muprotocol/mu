@@ -36,7 +36,7 @@ pub enum OutgoingMessageKind {
     CompareAndSwap = 1013,
 
     // Http Client
-    HttpRequest,
+    HttpRequest = 3001,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
