@@ -12,6 +12,8 @@ use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
+use std::fmt::Display;
+use std::str::FromStr;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr},
@@ -73,43 +75,49 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
 /// # IpAndPort
 
 #[derive(Deserialize, Clone)]
-pub struct IpAndPort {
+pub struct TcpPortAddress {
     pub address: IpOrHostname,
     pub port: u16,
 }
 
-impl From<IpAndPort> for String {
-    fn from(value: IpAndPort) -> Self {
-        format!("{}:{}", value.address, value.port)
+impl Display for TcpPortAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.address, self.port)
     }
 }
 
-impl TryFrom<&str> for IpAndPort {
-    type Error = anyhow::Error;
+impl FromStr for TcpPortAddress {
+    type Err = anyhow::Error;
 
-    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
-        let x: Vec<&str> = value.split(':').collect();
-        if x.len() != 2 {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() != 2 {
             bail!("Can't parse, expected string in this format: ip_addr:port");
         } else {
-            Ok(IpAndPort {
-                address: x[0].parse()?,
-                port: x[1].parse()?,
+            Ok(TcpPortAddress {
+                address: parts[0].parse()?,
+                port: parts[1].parse()?,
             })
         }
+    }
+}
+
+impl From<TcpPortAddress> for String {
+    fn from(value: TcpPortAddress) -> Self {
+        value.to_string()
     }
 }
 
 #[derive(Deserialize, Clone)]
 pub struct PdConfig {
     pub data_dir: String,
-    pub peer_url: IpAndPort,
-    pub client_url: IpAndPort,
+    pub peer_url: TcpPortAddress,
+    pub client_url: TcpPortAddress,
     pub log_file: Option<String>,
 }
 
-fn unspecified_to_localhost(x: &IpAndPort) -> IpAndPort {
-    IpAndPort {
+fn unspecified_to_localhost(x: &TcpPortAddress) -> TcpPortAddress {
+    TcpPortAddress {
         address: match &x.address {
             xp if xp.is_unspecified() => IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
             xp => xp.clone(),
@@ -119,24 +127,24 @@ fn unspecified_to_localhost(x: &IpAndPort) -> IpAndPort {
 }
 
 impl PdConfig {
-    pub fn advertise_client_url(&self) -> IpAndPort {
+    pub fn advertise_client_url(&self) -> TcpPortAddress {
         unspecified_to_localhost(&self.client_url)
     }
 
-    pub fn advertise_peer_url(&self) -> IpAndPort {
+    pub fn advertise_peer_url(&self) -> TcpPortAddress {
         unspecified_to_localhost(&self.peer_url)
     }
 }
 
 #[derive(Deserialize, Clone)]
 pub struct TikvConfig {
-    pub cluster_url: IpAndPort,
+    pub cluster_url: TcpPortAddress,
     pub data_dir: String,
     pub log_file: Option<String>,
 }
 
 impl TikvConfig {
-    pub fn advertise_cluster_url(&self) -> IpAndPort {
+    pub fn advertise_cluster_url(&self) -> TcpPortAddress {
         unspecified_to_localhost(&self.cluster_url)
     }
 }
@@ -401,11 +409,11 @@ mod test {
         ];
         let tikv_runner_conf = TikvRunnerConfig {
             pd: PdConfig {
-                peer_url: IpAndPort {
+                peer_url: TcpPortAddress {
                     address: IpOrHostname::Ip(local_host),
                     port: 2380,
                 },
-                client_url: IpAndPort {
+                client_url: TcpPortAddress {
                     address: IpOrHostname::Ip(local_host),
                     port: 2379,
                 },
@@ -413,7 +421,7 @@ mod test {
                 log_file: None,
             },
             node: TikvConfig {
-                cluster_url: IpAndPort {
+                cluster_url: TcpPortAddress {
                     address: IpOrHostname::Ip(local_host),
                     port: 20160,
                 },

@@ -9,7 +9,7 @@ use std::{
 
 use anyhow::Result;
 use async_trait::async_trait;
-use mu_db::{DbManager, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig};
+use mu_db::{DbManager, NodeAddress, PdConfig, TcpPortAddress, TikvConfig, TikvRunnerConfig};
 use mu_runtime::{start, AssemblyDefinition, Notification, Runtime, RuntimeConfig, Usage};
 use mu_stack::{AssemblyID, AssemblyRuntime, FunctionID, StackID};
 use musdk_common::Header;
@@ -200,11 +200,11 @@ pub mod fixture {
 
             let tikv_config = TikvRunnerConfig {
                 pd: PdConfig {
-                    peer_url: IpAndPort {
+                    peer_url: TcpPortAddress {
                         address: IpOrHostname::Ip(localhost),
                         port: 12385,
                     },
-                    client_url: IpAndPort {
+                    client_url: TcpPortAddress {
                         address: IpOrHostname::Ip(localhost),
                         port: 12386,
                     },
@@ -220,7 +220,7 @@ pub mod fixture {
                     ),
                 },
                 node: TikvConfig {
-                    cluster_url: IpAndPort {
+                    cluster_url: TcpPortAddress {
                         address: IpOrHostname::Ip(localhost),
                         port: 20163,
                     },
