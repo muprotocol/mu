@@ -321,15 +321,15 @@ pub async fn start(
         10000,
     );
 
-    let res = TikvRunnerImpl { mailbox };
-
-    Ok(Box::new(res))
+    Ok(Box::new(TikvRunnerImpl { mailbox }))
 }
 
 #[async_trait]
 impl TikvRunner for TikvRunnerImpl {
     async fn stop(&self) -> Result<()> {
         self.mailbox.post(Message::Stop).await?;
+        // do we need to stop this ? and clone it too?
+        // based on the comment on mailbox.stop it seems like we dont need to stop it.
         self.mailbox.clone().stop().await;
         Ok(())
     }

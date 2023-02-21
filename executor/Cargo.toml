@@ -58,6 +58,7 @@ mu-common = { path = "../rust-libs/common" }
 mu-runtime = { path = "../rust-libs/runtime" }
 mu-gateway = { path = "../rust-libs/gateway" }
 mu-db = { path = "../rust-libs/db" }
+mu-storage = { path = "../rust-libs/storage" }
 
 [dev-dependencies]
 serial_test = "0.8"

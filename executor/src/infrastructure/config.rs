@@ -7,6 +7,7 @@ use config::{Config, Environment, File, FileFormat};
 use mu_db::DbConfig;
 use mu_gateway::GatewayManagerConfig;
 use mu_runtime::RuntimeConfig;
+use mu_storage::StorageConfig;
 
 use crate::{
     log_setup::LogConfig,
@@ -22,6 +23,7 @@ pub struct SystemConfig(
     pub GossipConfig,
     pub Vec<KnownNodeConfig>,
     pub DbConfig,
+    pub StorageConfig,
     pub GatewayManagerConfig,
     pub LogConfig,
     pub RuntimeConfig,
@@ -102,6 +104,8 @@ pub fn initialize_config() -> Result<SystemConfig> {
 
     let initial_cluster_config = config.get("tikv").context("Invalid tikv_runner config")?;
 
+    let storage_config = config.get("storage").context("Invalid storage config")?;
+
     let known_node_config: Vec<KnownNodeConfig> = config
         .get("initial_cluster")
         .context("Invalid known_node config")?;
@@ -127,6 +131,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
         gossip_config,
         known_node_config,
         initial_cluster_config,
+        storage_config,
         gateway_config,
         log_config,
         runtime_config,

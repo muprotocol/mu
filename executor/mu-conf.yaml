@@ -65,3 +65,31 @@ tikv:
         port: 20160
       data_dir: /var/lib/mu-executor/tikv-data/
       log_file: /var/log/mu-executor/tikv-server
+storage:
+  # If you already have a storage up, 
+  # use the external config and leave the internal as null
+  # External:
+  #   auth_config:
+  #     access_key: someaccesskey
+  #     secret_key: secret_key
+  #     security_token: null
+  #     session_token: null
+  #     profile: null
+  #   region:
+  #     region: us-east1
+  #     endpoint: 127.0.0.1:8080
+  #   bucket_name: some_bucketname
+  External: null
+  Internal:
+    tikv_endpoints:
+    - address: 127.0.0.1
+      port: 8001
+    - address: 127.0.0.1
+      port: 8001
+    storage:
+      endpoint:
+        address: 127.0.0.1
+        port: 8001
+      access_key: some_accesskey
+      secret_key: some_secret_key
+      bucket_name: some_bucketname

@@ -14,6 +14,9 @@
 			"path": "rust-libs/db-embedded-tikv"
 		},
 		{
+			"path": "rust-libs/storage_embedded_juicefs"
+		},
+		{
 			"path": "rust-libs/common"
 		},
 		{
@@ -38,7 +41,7 @@
 			"path": "sdk"
 		},
 		{
-			"path": "rust-libs/s3-storage"
+			"path": "rust-libs/storage"
 		}
 	]
 }

@@ -10,6 +10,7 @@ clonable
 codegen
 Condvar
 cranelift
+creds
 datagram
 Datagram
 datagrams
@@ -29,6 +30,7 @@ hostnames
 idgen
 ipaddress
 itertools
+juicefs
 keygen
 keypair
 keypairs
@@ -40,6 +42,7 @@ libudev
 Localnet
 MacOS
 middlewares
+MINIO
 mreqs
 mspc
 mudb
