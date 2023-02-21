@@ -23,8 +23,8 @@ use tokio::time::{sleep, Duration};
 // Used struct instead of enum, only for better visual structure in config
 #[derive(Deserialize, Clone)]
 pub struct DbConfig {
-    external: Option<Vec<TcpPortAddress>>,
-    internal: Option<TikvRunnerConfig>,
+    pub external: Option<Vec<TcpPortAddress>>,
+    pub internal: Option<TikvRunnerConfig>,
 }
 
 #[async_trait]

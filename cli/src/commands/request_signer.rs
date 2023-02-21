@@ -143,8 +143,8 @@ fn execute_sign_request(args: SignRequestCommand) -> Result<()> {
     let pubkey = signer.pubkey();
     let pk_base64 = general_purpose::STANDARD.encode(pubkey.to_bytes());
 
-    println!("X-MU-PUBLIC-KEY: {}", pk_base64);
-    println!("X-MU-SIGNATURE: {}", sig_base64);
+    println!("X-MU-PUBLIC-KEY: {pk_base64}");
+    println!("X-MU-SIGNATURE: {sig_base64}");
 
     drop(wallet_manager);
     Ok(())

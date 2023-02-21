@@ -5,14 +5,16 @@ use std::{
 };
 
 use anyhow::Result;
-use mu_db::{DbConfig, DbManager, IpAndPort, PdConfig, TikvConfig, TikvRunnerConfig};
 
-pub const DATA_SUBDIR: &str = ".mu/database";
+use mu_common::serde_support::IpOrHostname;
+use mu_db::{DbConfig, DbManager, PdConfig, TcpPortAddress, TikvConfig, TikvRunnerConfig};
+
+pub const DATA_SUBDIR: &str = ".mu/key_value_table";
 
 pub async fn start(project_root: PathBuf) -> Result<Box<dyn DbManager>> {
-    fn local_addr(port: u16) -> IpAndPort {
-        IpAndPort {
-            address: IpAddr::V4(Ipv4Addr::LOCALHOST),
+    fn local_addr(port: u16) -> TcpPortAddress {
+        TcpPortAddress {
+            address: IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
             port,
         }
     }

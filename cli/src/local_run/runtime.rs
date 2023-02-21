@@ -35,7 +35,7 @@ pub async fn start(
         include_function_logs: true,
     };
 
-    let db_manager = super::database::start(project_root).await?;
+    let db_manager = super::key_value_table::start(project_root).await?;
 
     //TODO: Report usage using the notifications
     let (runtime, _) = mu_runtime::start(db_manager.clone(), runtime_config).await?;
@@ -87,7 +87,7 @@ pub async fn start(
         .context("couldn't create database client")?;
 
     let mut tables = vec![];
-    for x in stack.databases() {
+    for x in stack.key_value_tables() {
         let table_name = x
             .name
             .to_owned()

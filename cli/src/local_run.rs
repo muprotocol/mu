@@ -8,7 +8,7 @@ use log::LevelFilter;
 use mu_stack::{Stack, StackID};
 use tokio_util::sync::CancellationToken;
 
-mod database;
+mod key_value_table;
 mod runtime;
 
 pub type StackWithID = (Stack, StackID);

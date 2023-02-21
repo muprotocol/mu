@@ -50,5 +50,6 @@ marketplace = { path = "../marketplace/programs/marketplace/", features = [
 mu-runtime = { path = "../rust-libs/runtime" }
 mu-gateway = { path = "../rust-libs/gateway" }
 mu_stack = { path = "../rust-libs/mu_stack" }
+mu-common = { path = "../rust-libs/common" }
 musdk-common = { path = "../sdk/common" }
 mu-db = { path = "../rust-libs/db" }

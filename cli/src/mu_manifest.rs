@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 use beau_collector::BeauCollector;
-use mu_stack::{AssemblyRuntime, Database, Gateway, Stack, StackID};
+use mu_stack::{AssemblyRuntime, Gateway, KeyValueTable, Stack, StackID};
 use serde::{Deserialize, Serialize};
 
 use crate::template::Language;
@@ -72,7 +72,7 @@ impl MuManifest {
             .iter()
             .map(|s| {
                 anyhow::Ok(match s {
-                    Service::Database(d) => mu_stack::Service::Database(d.clone()),
+                    Service::KeyValueTable(k) => mu_stack::Service::KeyValueTable(k.clone()),
                     Service::Gateway(g) => mu_stack::Service::Gateway(g.clone()),
                     Service::Function(f) => {
                         let binary = match generation_mode {
@@ -112,7 +112,7 @@ impl MuManifest {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum Service {
-    Database(Database),
+    KeyValueTable(KeyValueTable),
     Gateway(Gateway),
     Function(Function),
 }
