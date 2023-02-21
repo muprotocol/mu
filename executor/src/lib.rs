@@ -170,7 +170,7 @@ pub async fn run() -> Result<()> {
     .context("Failed to start gossip")?;
 
     let database_manager = mu_db::start(
-        mu_db::NodeAddress {
+        mu_db::TcpPortAddress {
             address: IpOrHostname::Ip(my_node.address),
             port: my_node.port,
         },
