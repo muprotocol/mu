@@ -23,6 +23,7 @@ const TEST_PROJECTS: &[&str] = &[
     "multi-body",
     "unclean-termination",
     "hello-db",
+    "instant-exit",
 ];
 
 #[derive(Debug)]
@@ -77,7 +78,10 @@ pub async fn read_wasm_functions<'a>(
 }
 
 pub mod fixture {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::{
+        process::Stdio,
+        sync::atomic::{AtomicBool, Ordering},
+    };
 
     use super::*;
     use test_context::{AsyncTestContext, TestContext};

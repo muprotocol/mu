@@ -1013,3 +1013,27 @@ async fn db_batch_crud(fixture: &mut RuntimeFixture) {
         })
         .await;
 }
+
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn instant_exit_is_handled(fixture: &mut RuntimeFixtureWithoutDB) {
+    use mu_runtime::error::*;
+
+    let projects = create_and_add_projects(
+        vec![("instant-exit", &["say_hello"], None)],
+        &*fixture.runtime,
+    )
+    .await
+    .unwrap();
+
+    let request = make_request(Cow::Borrowed(b""), vec![], HashMap::new(), HashMap::new());
+
+    match fixture
+        .runtime
+        .invoke_function(projects[0].function_id(0).unwrap(), request)
+        .await
+    {
+        Err(Error::FunctionDidntTerminateCleanly) => (),
+        _ => panic!("Instant exit function should fail to run"),
+    }
+}
