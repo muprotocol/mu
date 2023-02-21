@@ -3,7 +3,7 @@ mod types;
 
 pub use self::types::{Blob, Key, Scan, TableName};
 pub use db_embedded_tikv::{
-    IpAndPort, NodeAddress, PdConfig, RemoteNode, TikvConfig, TikvRunnerConfig,
+    NodeAddress, PdConfig, RemoteNode, TcpPortAddress, TikvConfig, TikvRunnerConfig,
 };
 use dyn_clonable::clonable;
 use log::warn;
@@ -25,7 +25,7 @@ use tokio::time::{sleep, Duration};
 // used struct instead of enum, only for better visual structure in config
 #[derive(Deserialize, Clone)]
 pub struct DbConfig {
-    external: Option<Vec<IpAndPort>>,
+    external: Option<Vec<TcpPortAddress>>,
     internal: Option<TikvRunnerConfig>,
 }
 
@@ -96,7 +96,7 @@ impl Debug for DbClientImpl {
 impl DbClientImpl {
     // TODO: VERY inefficient to create and drop connections continuously.
     // We need a connection pooling solution here.
-    pub async fn new(endpoints: Vec<IpAndPort>) -> Result<Self> {
+    pub async fn new(endpoints: Vec<TcpPortAddress>) -> Result<Self> {
         let new = RawClient::new(endpoints).await?;
         Ok(Self {
             inner: new.clone(),
@@ -274,7 +274,7 @@ impl DbClient for DbClientImpl {
 #[derive(Clone)]
 struct DbManagerImpl {
     inner: Option<Box<dyn TikvRunner>>,
-    endpoints: Vec<IpAndPort>,
+    endpoints: Vec<TcpPortAddress>,
 }
 
 pub async fn new_with_embedded_cluster(
@@ -304,7 +304,7 @@ pub async fn new_with_embedded_cluster(
 }
 
 pub async fn new_with_external_cluster(
-    endpoints: Vec<IpAndPort>,
+    endpoints: Vec<TcpPortAddress>,
 ) -> anyhow::Result<Box<dyn DbManager>> {
     ensure_cluster_healthy(&endpoints, 5).await?;
     Ok(Box::new(DbManagerImpl {
@@ -314,12 +314,12 @@ pub async fn new_with_external_cluster(
 }
 
 async fn ensure_cluster_healthy(
-    endpoints: &Vec<IpAndPort>,
+    endpoints: &Vec<TcpPortAddress>,
     max_try_count: u32,
 ) -> anyhow::Result<()> {
     #[tailcall::tailcall]
     async fn helper(
-        endpoints: &Vec<IpAndPort>,
+        endpoints: &Vec<TcpPortAddress>,
         try_count: u32,
         max_try_count: u32,
     ) -> anyhow::Result<()> {

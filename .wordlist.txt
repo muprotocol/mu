@@ -89,6 +89,7 @@ scans
 scts
 secretkey
 Segoe
+serde
 serverless
 Serverless
 shellexpand

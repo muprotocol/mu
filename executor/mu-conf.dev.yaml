@@ -5,6 +5,8 @@ log:
       level: off
     - module: wasmer_compiler_cranelift::translator::func_translator
       level: off
+gateway_manager:
+  listen_port: 12012
 blockchain_monitor:
   solana_cluster_rpc_url: http://127.0.0.1:8899/
   solana_cluster_pub_sub_url: ws://127.0.0.1:8900/
