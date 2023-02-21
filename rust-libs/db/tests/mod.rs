@@ -1,6 +1,7 @@
 use anyhow::Result;
 use assert_matches::assert_matches;
 use futures::Future;
+use mu_common::serde_support::IpOrHostname;
 use mu_db::{error::*, *};
 use mu_stack::StackID;
 use rand::Rng;
@@ -257,20 +258,20 @@ fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> Ti
     let _localhost: IpAddr = "127.0.0.1".parse().unwrap();
     TikvRunnerConfig {
         pd: PdConfig {
-            peer_url: IpAndPort {
-                address: any,
+            peer_url: TcpPortAddress {
+                address: IpOrHostname::Ip(any),
                 port: peer_port,
             },
-            client_url: IpAndPort {
-                address: any,
+            client_url: TcpPortAddress {
+                address: IpOrHostname::Ip(any),
                 port: client_port,
             },
             data_dir: data_dir.join(format!("pd_data_dir_{peer_port}")),
             log_file: Some(data_dir.join(format!("pd_log_{peer_port}"))),
         },
         node: TikvConfig {
-            cluster_url: IpAndPort {
-                address: any,
+            cluster_url: TcpPortAddress {
+                address: IpOrHostname::Ip(any),
                 port: tikv_port,
             },
             data_dir: data_dir.join(format!("tikv_data_dir_{tikv_port}")),
@@ -407,9 +408,9 @@ async fn start_and_query_nodes_with_different_stackids_and_tables(dbs: Vec<Box<d
 
 async fn make_db_client_with_external_cluster() -> Box<dyn DbClient> {
     let db_manager = mu_db::new_with_external_cluster(vec![
-        "127.0.0.1:2379".try_into().unwrap(),
-        "127.0.0.1:2382".try_into().unwrap(),
-        "127.0.0.1:2384".try_into().unwrap(),
+        "127.0.0.1:2379".parse().unwrap(),
+        "127.0.0.1:2382".parse().unwrap(),
+        "127.0.0.1:2384".parse().unwrap(),
     ])
     .await
     .unwrap();
@@ -639,7 +640,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     let vs = values();
 
     let db = mu_db::new_with_external_cluster(vec![
-        "127.0.0.1:2379".try_into().unwrap(),
+        "127.0.0.1:2379".parse().unwrap(),
         // "127.0.0.1:2382".try_into().unwrap(),
         // "127.0.0.1:2384".try_into().unwrap(),
     ])
@@ -651,7 +652,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
 
     let db2 = mu_db::new_with_external_cluster(vec![
         // "127.0.0.1:2379".try_into().unwrap(),
-        "127.0.0.1:2382".try_into().unwrap(),
+        "127.0.0.1:2382".parse().unwrap(),
         // "127.0.0.1:2384".try_into().unwrap(),
     ])
     .await
@@ -663,7 +664,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     let db3 = mu_db::new_with_external_cluster(vec![
         // "127.0.0.1:2379".try_into().unwrap(),
         // "127.0.0.1:2382".try_into().unwrap(),
-        "127.0.0.1:2384".try_into().unwrap(),
+        "127.0.0.1:2384".parse().unwrap(),
     ])
     .await
     .unwrap()

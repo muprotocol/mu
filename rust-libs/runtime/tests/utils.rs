@@ -11,7 +11,7 @@ use anyhow::Result;
 
 use async_trait::async_trait;
 
-use mu_db::{DbManager, IpAndPort, PdConfig, TikvConfig, TikvRunnerConfig};
+use mu_db::{DbManager, PdConfig, TcpPortAddress, TikvConfig, TikvRunnerConfig};
 use mu_runtime::{start, AssemblyDefinition, Notification, Runtime, RuntimeConfig, Usage};
 use mu_stack::{AssemblyID, AssemblyRuntime, FunctionID, StackID};
 use musdk_common::Header;
@@ -81,6 +81,7 @@ pub mod fixture {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
+    use mu_common::serde_support::IpOrHostname;
     use test_context::{AsyncTestContext, TestContext};
 
     pub static DID_INSTALL_WASM32_TARGET_RUN: AtomicBool = AtomicBool::new(false);
@@ -162,8 +163,8 @@ pub mod fixture {
     impl AsyncTestContext for DBManagerFixture {
         async fn setup() -> Self {
             let data_dir = TempDir::setup();
-            let addr = |port| IpAndPort {
-                address: IpAddr::V4(Ipv4Addr::LOCALHOST),
+            let addr = |port| TcpPortAddress {
+                address: IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
                 port,
             };
 

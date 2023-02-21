@@ -1,7 +1,7 @@
 name: my_stack_v2
 version: 0.2
 services:
-  - type: Database
+  - type: KeyValueTable
     name: my_db
   - type: Function
     name: my_function_v2

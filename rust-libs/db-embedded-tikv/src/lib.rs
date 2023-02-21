@@ -2,6 +2,18 @@
 //! due to the embedded resources. We moved it to a separate crate to improve
 //! type check times when developing the DB module.
 
+use anyhow::{bail, Context, Result};
+use async_trait::async_trait;
+use dyn_clonable::clonable;
+use log::{error, warn};
+use mailbox_processor::callback::CallbackMailboxProcessor;
+use mu_common::serde_support::IpOrHostname;
+use nix::sys::signal::{self, Signal};
+use nix::unistd::Pid;
+use rust_embed::RustEmbed;
+use serde::Deserialize;
+use std::fmt::Display;
+use std::str::FromStr;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr},
@@ -9,16 +21,6 @@ use std::{
     path::PathBuf,
     process::{self, Stdio},
 };
-
-use anyhow::{bail, Context, Result};
-use async_trait::async_trait;
-use dyn_clonable::clonable;
-use log::{error, warn};
-use mailbox_processor::callback::CallbackMailboxProcessor;
-use nix::sys::signal::{self, Signal};
-use nix::unistd::Pid;
-use rust_embed::RustEmbed;
-use serde::Deserialize;
 use tokio::{fs::File, io::AsyncWriteExt};
 
 #[derive(RustEmbed)]
@@ -69,73 +71,77 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
     Ok(temp_address)
 }
 
-// TODO: support hostname (also in gossip as well)
-/// # IpAndPort
-#[derive(Deserialize, Clone, PartialEq, Eq)]
-pub struct IpAndPort {
-    pub address: IpAddr,
+#[derive(Deserialize, Clone)]
+pub struct TcpPortAddress {
+    pub address: IpOrHostname,
     pub port: u16,
 }
 
-impl From<IpAndPort> for String {
-    fn from(value: IpAndPort) -> Self {
-        format!("{}:{}", value.address, value.port)
+impl Display for TcpPortAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.address, self.port)
     }
 }
 
-impl TryFrom<&str> for IpAndPort {
-    type Error = anyhow::Error;
+impl FromStr for TcpPortAddress {
+    type Err = anyhow::Error;
 
-    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
-        let x: Vec<&str> = value.split(':').collect();
-        if x.len() != 2 {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() != 2 {
             bail!("Can't parse, expected string in this format: ip_addr:port");
         } else {
-            Ok(IpAndPort {
-                address: x[0].parse()?,
-                port: x[1].parse()?,
+            Ok(TcpPortAddress {
+                address: parts[0].parse()?,
+                port: parts[1].parse()?,
             })
         }
+    }
+}
+
+impl From<TcpPortAddress> for String {
+    fn from(value: TcpPortAddress) -> Self {
+        value.to_string()
     }
 }
 
 #[derive(Deserialize, Clone)]
 pub struct PdConfig {
     pub data_dir: PathBuf,
-    pub peer_url: IpAndPort,
-    pub client_url: IpAndPort,
+    pub peer_url: TcpPortAddress,
+    pub client_url: TcpPortAddress,
     pub log_file: Option<PathBuf>,
 }
 
-fn unspecified_to_localhost(x: &IpAndPort) -> IpAndPort {
-    IpAndPort {
-        address: match x.address {
-            xp if xp.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
-            xp => xp,
+fn unspecified_to_localhost(x: &TcpPortAddress) -> TcpPortAddress {
+    TcpPortAddress {
+        address: match &x.address {
+            xp if xp.is_unspecified() => IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            xp => xp.clone(),
         },
         port: x.port,
     }
 }
 
 impl PdConfig {
-    pub fn advertise_client_url(&self) -> IpAndPort {
+    pub fn advertise_client_url(&self) -> TcpPortAddress {
         unspecified_to_localhost(&self.client_url)
     }
 
-    pub fn advertise_peer_url(&self) -> IpAndPort {
+    pub fn advertise_peer_url(&self) -> TcpPortAddress {
         unspecified_to_localhost(&self.peer_url)
     }
 }
 
 #[derive(Deserialize, Clone)]
 pub struct TikvConfig {
-    pub cluster_url: IpAndPort,
+    pub cluster_url: TcpPortAddress,
     pub data_dir: PathBuf,
     pub log_file: Option<PathBuf>,
 }
 
 impl TikvConfig {
-    pub fn advertise_cluster_url(&self) -> IpAndPort {
+    pub fn advertise_cluster_url(&self) -> TcpPortAddress {
         unspecified_to_localhost(&self.cluster_url)
     }
 }
@@ -158,14 +164,14 @@ struct TikvRunnerArgs {
 }
 
 pub struct RemoteNode {
-    pub address: IpAddr,
+    pub address: IpOrHostname,
     pub gossip_port: u16,
     pub pd_port: u16,
 }
 
 enum Node<'a> {
     Known(&'a RemoteNode),
-    Address(&'a IpAndPort),
+    Address(&'a TcpPortAddress),
 }
 
 fn generate_pd_name(node: Node<'_>) -> String {
@@ -177,7 +183,7 @@ fn generate_pd_name(node: Node<'_>) -> String {
 }
 
 fn generate_arguments(
-    node_address: IpAndPort,
+    node_address: TcpPortAddress,
     known_node_config: Vec<RemoteNode>,
     config: TikvRunnerConfig,
 ) -> TikvRunnerArgs {
@@ -283,7 +289,7 @@ struct TikvRunnerImpl {
 }
 
 pub async fn start(
-    node_address: IpAndPort,
+    node_address: TcpPortAddress,
     known_node_config: Vec<RemoteNode>,
     config: TikvRunnerConfig,
 ) -> Result<Box<dyn TikvRunner>> {
@@ -382,38 +388,38 @@ mod test {
     #[tokio::test]
     async fn generate_arguments_pd_args_and_tikv_args() {
         let local_host: IpAddr = "127.0.0.1".parse().unwrap();
-        let node_address = IpAndPort {
-            address: local_host,
+        let node_address = TcpPortAddress {
+            address: IpOrHostname::Ip(local_host),
             port: 2800,
         };
         let known_node_conf = vec![
             RemoteNode {
-                address: local_host,
+                address: IpOrHostname::Ip(local_host),
                 gossip_port: 2801,
                 pd_port: 2381,
             },
             RemoteNode {
-                address: local_host,
+                address: IpOrHostname::Ip(local_host),
                 gossip_port: 2802,
                 pd_port: 2383,
             },
         ];
         let tikv_runner_conf = TikvRunnerConfig {
             pd: PdConfig {
-                peer_url: IpAndPort {
-                    address: local_host,
+                peer_url: TcpPortAddress {
+                    address: IpOrHostname::Ip(local_host),
                     port: 2380,
                 },
-                client_url: IpAndPort {
-                    address: local_host,
+                client_url: TcpPortAddress {
+                    address: IpOrHostname::Ip(local_host),
                     port: 2379,
                 },
                 data_dir: PathBuf::from("./pd_test_dir"),
                 log_file: None,
             },
             node: TikvConfig {
-                cluster_url: IpAndPort {
-                    address: local_host,
+                cluster_url: TcpPortAddress {
+                    address: IpOrHostname::Ip(local_host),
                     port: 20160,
                 },
                 data_dir: PathBuf::from("./tikv_test_dir"),

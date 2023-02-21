@@ -4,12 +4,14 @@ pub mod network;
 pub mod request_routing;
 pub mod stack;
 
-use std::{process, sync::Arc, time::SystemTime};
+use std::{net::IpAddr, process, sync::Arc, time::SystemTime};
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
+use futures::{stream::FuturesUnordered, StreamExt};
 use log::*;
 use mailbox_processor::NotificationChannel;
+use mu_common::serde_support::IpOrHostname;
 use mu_runtime::Runtime;
 use network::rpc_handler::{self, RpcHandler, RpcRequestHandler};
 use stack::{
@@ -36,6 +38,18 @@ use crate::{
     },
 };
 
+async fn get_ip(ip_or_hostname: &IpOrHostname) -> Result<IpAddr, std::io::Error> {
+    match ip_or_hostname {
+        IpOrHostname::Ip(ip) => Ok(*ip),
+        IpOrHostname::Hostname(hostname) => {
+            let host = hostname.clone();
+            let resolved =
+                tokio::task::spawn_blocking(move || dns_lookup::lookup_host(&host)).await?;
+            resolved.map(|ip| ip[0]) // ip[0] is the ipv4 and ip[1] is the ipv6 resolution
+        }
+    }
+}
+
 pub async fn run() -> Result<()> {
     // TODO handle failures in components
 
@@ -48,7 +62,7 @@ pub async fn run() -> Result<()> {
     let config::SystemConfig(
         connection_manager_config,
         gossip_config,
-        mut known_nodes_config,
+        known_nodes_config,
         db_config,
         gateway_manager_config,
         log_config,
@@ -69,10 +83,25 @@ pub async fn run() -> Result<()> {
     };
     let my_hash = my_node.get_hash();
 
-    let is_seed = known_nodes_config
+    let mut known_nodes_config_with_ip = known_nodes_config
         .iter()
-        .any(|n| is_same_node_as_me(n, &my_node));
-    known_nodes_config.retain(|n| !is_same_node_as_me(n, &my_node));
+        .map(|n| async move {
+            match get_ip(&n.address).await {
+                Ok(ip) => Ok((n, ip)),
+                Err(e) => Err(e.into()),
+            }
+        })
+        .collect::<FuturesUnordered<_>>() // Turn futures into parallel stream
+        .collect::<Vec<_>>() // Wait for them to finish
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?; // Traverse the results into one result
+
+    let is_seed = known_nodes_config_with_ip
+        .iter()
+        .any(|(n, ip)| is_same_node_as_me(n, ip, &my_node));
+
+    known_nodes_config_with_ip.retain(|(n, ip)| !is_same_node_as_me(n, ip, &my_node));
 
     log_setup::setup(log_config)?;
 
@@ -98,14 +127,11 @@ pub async fn run() -> Result<()> {
 
     info!("Establishing connection to seeds");
 
-    for node in &known_nodes_config {
-        match connection_manager
-            .connect(node.address, node.gossip_port)
-            .await
-        {
+    for (node, node_ip) in &known_nodes_config_with_ip {
+        match connection_manager.connect(*node_ip, node.gossip_port).await {
             Ok(connection_id) => known_nodes.push((
                 NodeAddress {
-                    address: node.address,
+                    address: *node_ip,
                     port: node.gossip_port,
                     generation: 0,
                 },
@@ -144,14 +170,14 @@ pub async fn run() -> Result<()> {
     .context("Failed to start gossip")?;
 
     let database_manager = mu_db::start(
-        mu_db::IpAndPort {
-            address: my_node.address,
+        mu_db::NodeAddress {
+            address: IpOrHostname::Ip(my_node.address),
             port: my_node.port,
         },
-        known_nodes_config
+        known_nodes_config_with_ip
             .iter()
-            .map(|c| mu_db::RemoteNode {
-                address: c.address,
+            .map(|(c, _)| mu_db::RemoteNode {
+                address: c.address.clone(),
                 gossip_port: c.gossip_port,
                 pd_port: c.pd_port,
             })
@@ -317,8 +343,8 @@ pub async fn run() -> Result<()> {
     Ok(())
 }
 
-fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
-    node.gossip_port == me.port && (node.address == me.address || node.address.is_loopback())
+fn is_same_node_as_me(node: &KnownNodeConfig, node_ip: &IpAddr, me: &NodeAddress) -> bool {
+    node.gossip_port == me.port && (*node_ip == me.address || node_ip.is_loopback())
 }
 
 #[derive(Clone)]

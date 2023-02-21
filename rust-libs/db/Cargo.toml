@@ -22,6 +22,7 @@ log = "0.4"
 bytes = "1.2"
 mu_stack = { path = "../mu_stack" }
 tailcall = "0.1.5"
+mu-common = { path = "../common" }
 
 [build-dependencies]
 dirs = "4"
