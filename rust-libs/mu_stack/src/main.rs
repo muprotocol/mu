@@ -1,4 +1,5 @@
 use anyhow::Result;
+use base64::Engine;
 use clap::Parser;
 
 #[derive(Parser)]
@@ -74,13 +75,13 @@ fn main() -> anyhow::Result<()> {
             let yaml = read_file_or_stdin(&in_file)?;
             let stack: mu_stack::Stack = serde_yaml::from_str(yaml.as_ref())?;
             let proto = stack.serialize_to_proto()?;
-            let base64 = base64::encode(proto);
+            let base64 = base64::engine::general_purpose::STANDARD.encode(proto);
             write_file_or_stdout(&out_file, base64)?;
         }
 
         Command::ProtoToYaml { in_file, out_file } => {
             let base64 = read_file_or_stdin(&in_file)?;
-            let proto = base64::decode(base64.trim())?;
+            let proto = base64::engine::general_purpose::STANDARD.decode(base64.trim())?;
             let stack = mu_stack::Stack::try_deserialize_proto(proto)?;
             let yaml = serde_yaml::to_string(&stack)?;
             write_file_or_stdout(&out_file, yaml)?;

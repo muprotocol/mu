@@ -17,12 +17,14 @@ doc = false
 mu_stack = { path = "../rust-libs/mu_stack" }
 clap = { version = "4.0", features = ["derive"] }
 anyhow = "1"
+base64 = "0.21"
 thiserror = "1"
 shellexpand = "3"
 dirs = "4"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1"
+uriparse = "0.6"
 
 anchor-client = "0.26"
 spl-token = "3"
@@ -31,7 +33,6 @@ solana-cli-config = "1"
 solana-account-decoder = "1"
 solana-remote-wallet = "1"
 spl-associated-token-account = "1"
-uriparse = "0.6"
 
 marketplace = { path = "../marketplace/programs/marketplace/", features = [
     "no-entrypoint",
