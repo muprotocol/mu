@@ -78,10 +78,7 @@ pub async fn read_wasm_functions<'a>(
 }
 
 pub mod fixture {
-    use std::{
-        process::Stdio,
-        sync::atomic::{AtomicBool, Ordering},
-    };
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
     use test_context::{AsyncTestContext, TestContext};
