@@ -98,6 +98,7 @@ struct
 subcommands
 sysvar
 tailcall
+tera
 thiserror
 tikv
 Tikv
