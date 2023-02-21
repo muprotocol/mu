@@ -35,6 +35,7 @@ use solana_sdk::{
 };
 use tokio::{select, sync::mpsc::UnboundedReceiver, task::spawn_blocking};
 
+use super::ApiRequestSigner;
 use super::{config_types::Base58PublicKey, StackMetadata, StackWithMetadata};
 use crate::infrastructure::config::{ConfigDuration, ConfigUri};
 use crate::stack::blockchain_monitor::stack_collection::{OwnerEntry, OwnerState, StackCollection};
@@ -53,6 +54,8 @@ pub trait BlockchainMonitor: Clone + Send + Sync {
 pub enum BlockchainMonitorNotification {
     StacksAvailable(Vec<StackWithMetadata>),
     StacksRemoved(Vec<StackID>),
+    RequestSignersAvailable(Vec<(ApiRequestSigner, StackOwner)>),
+    RequestSignersRemoved(Vec<ApiRequestSigner>),
 }
 
 #[derive(Deserialize)]
@@ -85,6 +88,9 @@ struct SolanaPubSub<'a> {
 
     get_stacks_config: RpcProgramAccountsConfig,
     stack_subscription: SolanaSubscription<'a, RpcKeyedAccount>,
+
+    get_request_signers_config: RpcProgramAccountsConfig,
+    request_signer_subscription: SolanaSubscription<'a, RpcKeyedAccount>,
 
     // Owner ID -> subscription
     escrow_subscriptions: HashMap<Pubkey, SolanaSubscription<'a, UiAccount>>,
@@ -214,6 +220,25 @@ pub async fn start(
         with_context: Some(false),
     };
 
+    let get_request_signers_config = RpcProgramAccountsConfig {
+        filters: Some(vec![
+            RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+                0,
+                marketplace::ApiRequestSigner::discriminator().to_vec(),
+            )),
+            RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+                8 + 32 + 32,
+                region_pda.to_bytes().to_vec(),
+            )),
+        ]),
+        account_config: RpcAccountInfoConfig {
+            encoding: Some(UiAccountEncoding::Base64Zstd),
+            commitment: Some(CommitmentConfig::finalized()),
+            ..Default::default()
+        },
+        with_context: Some(false),
+    };
+
     let mut solana_pub_sub = {
         let client_wrapper = Box::pin(SolanaPubSubClientWrapper {
             client: PubsubClient::new(&config.solana_cluster_pub_sub_url.0.to_string())
@@ -222,7 +247,7 @@ pub async fn start(
             _phantom_pinned: PhantomPinned,
         });
 
-        let (stream, unsubscribe_callback) =
+        let (stack_stream, stack_unsubscribe_callback) =
             unsafe { (client_wrapper.deref() as *const SolanaPubSubClientWrapper).as_ref() }
                 .unwrap()
                 .client
@@ -230,12 +255,25 @@ pub async fn start(
                 .await
                 .context("Failed to setup Solana subscription for new stacks")?;
 
+        let (request_signer_stream, request_signer_unsubscribe_callback) =
+            unsafe { (client_wrapper.deref() as *const SolanaPubSubClientWrapper).as_ref() }
+                .unwrap()
+                .client
+                .program_subscribe(&marketplace::id(), Some(get_request_signers_config.clone()))
+                .await
+                .context("Failed to setup Solana subscription for new request signers")?;
+
         SolanaPubSub {
             client_wrapper,
             get_stacks_config: get_stacks_config.clone(),
             stack_subscription: SolanaSubscription {
-                stream,
-                unsubscribe_callback,
+                stream: stack_stream,
+                unsubscribe_callback: stack_unsubscribe_callback,
+            },
+            get_request_signers_config: get_request_signers_config.clone(),
+            request_signer_subscription: SolanaSubscription {
+                stream: request_signer_stream,
+                unsubscribe_callback: request_signer_unsubscribe_callback,
             },
             escrow_subscriptions: HashMap::new(),
         }
@@ -259,7 +297,7 @@ pub async fn start(
     let existing_stacks = existing_stacks
         .into_iter()
         .map(|s| {
-            let stack = read_solana_account(s)?;
+            let stack = read_solana_stack_account(s)?;
             match stack {
                 StackWithState::Active(s) => Ok(s),
                 StackWithState::Deleted { .. } => bail!("Got deleted stack on startup"),
@@ -272,6 +310,40 @@ pub async fn start(
         "Received {} existing stacks from Solana",
         existing_stacks.len()
     );
+
+    debug!("Retrieving existing request signers");
+    let mut get_existing_request_signers_config = get_request_signers_config.clone();
+    get_existing_request_signers_config
+        .filters
+        .as_mut()
+        .unwrap()
+        .push(RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            8 + 32 + 32 + 32 + 1,
+            vec![1u8],
+        )));
+    let existing_request_signers = rpc_client
+        .get_program_accounts_with_config(&marketplace::id(), get_existing_request_signers_config)
+        .await
+        .context("Failed to fetch existing request_signers from Solana")?
+        .into_iter()
+        .map(|r| {
+            let request_signer = read_solana_request_signer_account(r.1)?;
+            if request_signer.active {
+                Ok(request_signer)
+            } else {
+                bail!("Got inactive request signer at startup")
+            }
+        })
+        .collect::<Result<Vec<_>>>()
+        .context("Failed to parse request signers retrieved from Solana")?
+        .into_iter()
+        .map(|r| {
+            (
+                ApiRequestSigner::Solana(r.signer),
+                StackOwner::Solana(r.user),
+            )
+        })
+        .collect::<Vec<_>>();
 
     let (solana_provider_pda, _) = Pubkey::find_program_address(
         &[
@@ -318,6 +390,10 @@ pub async fn start(
     };
 
     let tick_interval = *config.solana_usage_report_interval;
+
+    notification_channel.send(BlockchainMonitorNotification::RequestSignersAvailable(
+        existing_request_signers,
+    ));
 
     let mailbox = PlainMailboxProcessor::start(
         |_mailbox, message_receiver| {
@@ -498,6 +574,23 @@ async fn mailbox_body(
                 }
             }
 
+            request_signer = state.solana.pub_sub.request_signer_subscription.stream.next() => {
+                if let Some(request_signer) = request_signer {
+                    debug!("Received request signer update");
+                    if let Err(f) = on_request_signer_received(
+                        request_signer,
+                        &notification_channel
+                    ) {
+                        warn!("Failed to process request signer: {f}");
+                    }
+                } else {
+                    warn!("Solana notification stream disconnected, attempting to reconnect");
+                    // TODO: this will make the mailbox stop processing messages while waiting to reconnect
+                    // should probably handle subscriptions on a separate task
+                    state = reconnect_solana_subscriber(state).await;
+                }
+            }
+
             escrow = select_next_escrow_update(
                 &mut state.solana.pub_sub.escrow_subscriptions,
                 state.solana.token_decimals
@@ -528,6 +621,12 @@ async fn mailbox_body(
         error!("Failed to report usages due to: {e}");
     }
     (state.solana.pub_sub.stack_subscription.unsubscribe_callback)().await;
+    (state
+        .solana
+        .pub_sub
+        .request_signer_subscription
+        .unsubscribe_callback)()
+    .await;
 
     if let Some(r) = stop_reply_channel {
         r.reply(());
@@ -820,26 +919,35 @@ async fn reconnect_solana_subscriber(state: State<'_>) -> State<'_> {
     debug!("Reconnecting solana subscriptions");
 
     (state.solana.pub_sub.stack_subscription.unsubscribe_callback)().await;
+    (state
+        .solana
+        .pub_sub
+        .request_signer_subscription
+        .unsubscribe_callback)()
+    .await;
 
     let client_wrapper = unsafe {
         (state.solana.pub_sub.client_wrapper.deref() as *const SolanaPubSubClientWrapper).as_ref()
     }
     .unwrap();
 
-    let (stack_subscription, escrow_subscriptions) = setup_solana_subscriptions(
-        client_wrapper,
-        &state.solana.pub_sub.get_stacks_config,
-        &state.solana.provider_pda,
-        state.stacks.owners().map(|o| match o {
-            StackOwner::Solana(pk) => pk,
-        }),
-    )
-    .await;
+    let (stack_subscription, request_signer_subscription, escrow_subscriptions) =
+        setup_solana_subscriptions(
+            client_wrapper,
+            &state.solana.pub_sub.get_stacks_config,
+            &state.solana.pub_sub.get_request_signers_config,
+            &state.solana.provider_pda,
+            state.stacks.owners().map(|o| match o {
+                StackOwner::Solana(pk) => pk,
+            }),
+        )
+        .await;
 
     State {
         solana: Solana {
             pub_sub: SolanaPubSub {
                 stack_subscription,
+                request_signer_subscription,
                 escrow_subscriptions,
                 ..state.solana.pub_sub
             },
@@ -852,9 +960,11 @@ async fn reconnect_solana_subscriber(state: State<'_>) -> State<'_> {
 async fn setup_solana_subscriptions<'a>(
     pub_sub_client_wrapper: &'a SolanaPubSubClientWrapper,
     get_stacks_config: &RpcProgramAccountsConfig,
+    get_request_signers_config: &RpcProgramAccountsConfig,
     provider_pda: &Pubkey,
     owners: impl Iterator<Item = &Pubkey> + Clone,
 ) -> (
+    SolanaSubscription<'a, RpcKeyedAccount>,
     SolanaSubscription<'a, RpcKeyedAccount>,
     HashMap<Pubkey, SolanaSubscription<'a, UiAccount>>,
 ) {
@@ -864,6 +974,22 @@ async fn setup_solana_subscriptions<'a>(
             .program_subscribe(&marketplace::id(), Some(get_stacks_config.clone()))
             .await
             .context("Failed to re-setup Solana subscription for new stacks")
+        {
+            Ok((stream, unsubscribe_callback)) => SolanaSubscription {
+                stream,
+                unsubscribe_callback,
+            },
+            Err(f) => {
+                warn!("{f}");
+                continue;
+            }
+        };
+
+        let request_signer_subscription = match pub_sub_client_wrapper
+            .client
+            .program_subscribe(&marketplace::id(), Some(get_request_signers_config.clone()))
+            .await
+            .context("Failed to re-setup Solana subscription for new request signers")
         {
             Ok((stream, unsubscribe_callback)) => SolanaSubscription {
                 stream,
@@ -889,7 +1015,11 @@ async fn setup_solana_subscriptions<'a>(
             }
         };
 
-        return (stack_subscription, escrow_subscriptions);
+        return (
+            stack_subscription,
+            request_signer_subscription,
+            escrow_subscriptions,
+        );
     }
 }
 
@@ -930,6 +1060,39 @@ async fn setup_solana_escrow_subscriptions<'a>(
     }
 
     Ok(escrow_subscriptions)
+}
+
+fn on_request_signer_received(
+    account: Response<RpcKeyedAccount>,
+    notification_channel: &NotificationChannel<BlockchainMonitorNotification>,
+) -> Result<()> {
+    let account: Account = account
+        .value
+        .account
+        .decode()
+        .ok_or_else(|| anyhow!("Failed to decode request signer Account"))?;
+
+    let request_signer_account = read_solana_request_signer_account(account)?;
+
+    if request_signer_account.active {
+        notification_channel.send(BlockchainMonitorNotification::RequestSignersAvailable(
+            vec![(
+                ApiRequestSigner::Solana(request_signer_account.signer),
+                StackOwner::Solana(request_signer_account.user),
+            )],
+        ));
+    } else {
+        notification_channel.send(BlockchainMonitorNotification::RequestSignersRemoved(vec![
+            ApiRequestSigner::Solana(request_signer_account.signer),
+        ]));
+    }
+
+    Ok(())
+}
+
+fn read_solana_request_signer_account(account: Account) -> Result<marketplace::ApiRequestSigner> {
+    marketplace::ApiRequestSigner::try_deserialize(&mut &account.data[..])
+        .context("Failed to deserialize request signer data")
 }
 
 async fn on_new_stack_received(
@@ -1000,7 +1163,7 @@ async fn on_new_stack_received(
     Ok(())
 }
 
-fn read_solana_account((pubkey, account): (Pubkey, Account)) -> Result<StackWithState> {
+fn read_solana_stack_account((pubkey, account): (Pubkey, Account)) -> Result<StackWithState> {
     let stack_account = marketplace::Stack::try_deserialize(&mut &account.data[..])
         .context("Failed to deserialize Stack data")?;
 
@@ -1042,7 +1205,7 @@ fn read_solana_rpc_keyed_account(stack: Response<RpcKeyedAccount>) -> Result<Sta
         .account
         .decode()
         .ok_or_else(|| anyhow!("Failed to decode Account"))?;
-    read_solana_account((pubkey, account))
+    read_solana_stack_account((pubkey, account))
 }
 
 // TODO: ensure we have the right usage signer for this region

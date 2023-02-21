@@ -15,18 +15,19 @@ doc = false
 [dependencies]
 async-trait = "0.1"
 clap = { version = "4.1", features = ["derive"] }
-anyhow = "1.0"
-thiserror = "1.0"
+anyhow = "1"
+base64 = "0.21"
+thiserror = "1"
 shellexpand = "3"
 dirs = "4"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1"
-rust-embed = "6.4"
+rust-embed = "6"
 rand = "0.8"
-tokio = "1.0"
+tokio = "1"
 tokio-util = "0.7"
-ctrlc = "3.2"
+ctrlc = "3"
 uriparse = "0.6"
 beau_collector = "0.2"
 byte-unit = { version = "4.0", default-features = false, features = ["serde"] }

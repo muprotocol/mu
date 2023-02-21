@@ -7,6 +7,7 @@ pub mod dev_env;
 pub mod escrow;
 pub mod list;
 pub mod provider;
+pub mod request_signer;
 pub mod stack;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -19,19 +20,28 @@ pub enum Command {
         sub_command: provider::Command,
     },
 
+    /// List available providers and regions
     List {
         #[command(subcommand)]
         sub_command: list::Command,
     },
 
+    /// Escrow account management
     Escrow {
         #[command(subcommand)]
         sub_command: escrow::Command,
     },
 
+    /// Stack management
     Stack {
         #[command(subcommand)]
         sub_command: stack::Command,
+    },
+
+    /// API request signer management and request signing
+    RequestSigner {
+        #[command(subcommand)]
+        sub_command: request_signer::Command,
     },
 
     /// Initialize a new mu project
@@ -60,7 +70,7 @@ pub fn execute(args: Arguments) -> Result<()> {
         Command::List { sub_command } => list::execute(config, sub_command),
         Command::Escrow { sub_command } => escrow::execute(config, sub_command),
         Command::Stack { sub_command } => stack::execute(config, sub_command),
-
+        Command::RequestSigner { sub_command } => request_signer::execute(config, sub_command),
         Command::Init(sub_command) => dev_env::execute_init(sub_command),
         Command::Build(sub_command) => dev_env::execute_build(sub_command),
         Command::Run(sub_command) => dev_env::execute_run(sub_command),

@@ -12,6 +12,7 @@ clonable
 codegen
 Condvar
 cranelift
+dalek
 datagram
 Datagram
 datagrams

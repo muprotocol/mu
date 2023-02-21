@@ -71,7 +71,7 @@ pub async fn start(
     };
 
     //TODO: Report usage using the notifications
-    let (gateway, _) = mu_gateway::start(gateway_config, {
+    let (gateway, _) = mu_gateway::start_without_additional_services(gateway_config, {
         let runtime = runtime.clone();
         move |f, r| Box::pin(handle_request(f, r, runtime.clone()))
     })

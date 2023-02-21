@@ -1,6 +1,7 @@
+pub mod api;
 pub mod infrastructure;
 pub mod network;
-mod request_routing;
+pub mod request_routing;
 pub mod stack;
 
 use std::{process, sync::Arc, time::SystemTime};
@@ -13,6 +14,7 @@ use mu_runtime::Runtime;
 use network::rpc_handler::{self, RpcHandler, RpcRequestHandler};
 use stack::{
     blockchain_monitor::{BlockchainMonitor, BlockchainMonitorNotification},
+    request_signer_cache::RequestSignerCache,
     usage_aggregator::{Usage, UsageAggregator},
 };
 use tokio::{
@@ -29,7 +31,7 @@ use crate::{
         NodeAddress,
     },
     stack::{
-        blockchain_monitor,
+        blockchain_monitor, request_signer_cache,
         scheduler::{self, Scheduler, SchedulerNotification},
     },
 };
@@ -170,10 +172,16 @@ pub async fn run() -> Result<()> {
         },
     );
 
+    let request_signer_cache = request_signer_cache::start();
+
     let scheduler_ref = Arc::new(RwLock::new(None));
-    let (gateway_manager, mut gateway_notification_receiver) =
-        mu_gateway::start(gateway_manager_config, {
-            // TODO: no notification channel for now, requests are sent straight to runtime
+    let (gateway_manager, mut gateway_notification_receiver) = mu_gateway::start(
+        gateway_manager_config,
+        api::service_factory(),
+        Some(api::DependencyAccessor {
+            request_signer_cache: request_signer_cache.clone(),
+        }),
+        {
             let connection_manager = connection_manager.clone();
             let gossip = gossip.clone();
             let scheduler_ref = scheduler_ref.clone();
@@ -191,9 +199,10 @@ pub async fn run() -> Result<()> {
                     runtime.clone(),
                 ))
             }
-        })
-        .await
-        .context("Failed to start gateway manager")?;
+        },
+    )
+    .await
+    .context("Failed to start gateway manager")?;
 
     // TODO: fetch stacks from blockchain before starting scheduler
     let (scheduler_notification_channel, mut scheduler_notification_receiver) =
@@ -228,6 +237,7 @@ pub async fn run() -> Result<()> {
             usage_aggregator.as_ref(),
             &mut gateway_notification_receiver,
             &mut runtime_notification_receiver,
+            request_signer_cache.as_ref(),
         )
         .await;
 
@@ -257,6 +267,8 @@ pub async fn run() -> Result<()> {
             .stop()
             .await
             .context("Failed to stop gateway manager")?;
+
+        request_signer_cache.stop().await;
 
         trace!("Stopping gossip");
         gossip.stop().await.context("Failed to stop gossip")?;
@@ -353,6 +365,7 @@ async fn glue_modules(
     usage_aggregator: &dyn UsageAggregator,
     gateway_notification_receiver: &mut mpsc::UnboundedReceiver<mu_gateway::Notification>,
     runtime_notification_receiver: &mut mpsc::UnboundedReceiver<mu_runtime::Notification>,
+    request_signer_cache: &dyn RequestSignerCache,
 ) {
     loop {
         select! {
@@ -374,7 +387,7 @@ async fn glue_modules(
             }
 
             notification = blockchain_monitor_notification_receiver.recv() => {
-                process_blockchain_monitor_notification(notification, scheduler).await;
+                process_blockchain_monitor_notification(notification, scheduler, request_signer_cache).await;
             }
 
             notification = gateway_notification_receiver.recv() => {
@@ -492,16 +505,36 @@ async fn process_scheduler_notification(
 async fn process_blockchain_monitor_notification(
     notification: Option<BlockchainMonitorNotification>,
     scheduler: &dyn Scheduler,
+    request_signer_cache: &dyn RequestSignerCache,
 ) {
     match notification {
         None => (), // TODO
         Some(BlockchainMonitorNotification::StacksAvailable(stacks)) => {
             debug!("Stacks available: {stacks:?}");
-            scheduler.stacks_available(stacks).await.unwrap();
+            request_signer_cache
+                .stacks_available(stacks.iter().map(|s| (s.id(), s.owner())).collect())
+                .await
+                .unwrap();
+            scheduler.stacks_available(stacks.clone()).await.unwrap();
         }
         Some(BlockchainMonitorNotification::StacksRemoved(stack_ids)) => {
             debug!("Stacks removed: {stack_ids:?}");
+            request_signer_cache
+                .stacks_removed(stack_ids.clone())
+                .await
+                .unwrap();
             scheduler.stacks_removed(stack_ids).await.unwrap();
+        }
+        Some(BlockchainMonitorNotification::RequestSignersAvailable(signers)) => {
+            debug!("Request signers available: {signers:?}");
+            request_signer_cache
+                .signers_available(signers)
+                .await
+                .unwrap();
+        }
+        Some(BlockchainMonitorNotification::RequestSignersRemoved(signers)) => {
+            debug!("Request signers removed: {signers:?}");
+            request_signer_cache.signers_removed(signers).await.unwrap();
         }
     }
 }
