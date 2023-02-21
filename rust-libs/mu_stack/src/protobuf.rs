@@ -31,8 +31,8 @@ impl From<super::Stack> for Stack {
                 .services
                 .into_iter()
                 .map(|s| match s {
-                    super::Service::Database(d) => Service {
-                        service: Some(service::Service::Database(Database {
+                    super::Service::KeyValueTable(d) => Service {
+                        service: Some(service::Service::KeyValueTable(KeyValueTable {
                             name: d.name,
                             ..Default::default()
                         })),
@@ -127,8 +127,10 @@ impl TryFrom<Stack> for super::Stack {
                 .map(|s| match s.service {
                     None => Err(anyhow!("Blank service encountered")),
 
-                    Some(service::Service::Database(d)) => {
-                        Ok(super::Service::Database(super::Database { name: d.name }))
+                    Some(service::Service::KeyValueTable(d)) => {
+                        Ok(super::Service::KeyValueTable(super::KeyValueTable {
+                            name: d.name,
+                        }))
                     }
 
                     Some(service::Service::Gateway(g)) => {
