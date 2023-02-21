@@ -6,7 +6,8 @@ mod hello_wasm {
     use super::*;
 
     #[mu_function]
-    fn say_hello<'a>(_ctx: &'a MuContext, name: &'a str) -> String {
+    fn say_hello<'a>(ctx: &'a mut MuContext, name: &'a str) -> String {
+        ctx.log("say_hello_started!", LogLevel::Debug).unwrap();
         format!("Hello {}, welcome to MuRuntime", name)
     }
 

@@ -53,6 +53,8 @@ chrono = "0.4"
 byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
 http = "0.2"
 protobuf = "3.2"
+actix-web = "4.2"
+ed25519-dalek = "1"
 musdk-common = { path = "../sdk/common" }
 mu-common = { path = "../rust-libs/common" }
 mu-runtime = { path = "../rust-libs/runtime" }

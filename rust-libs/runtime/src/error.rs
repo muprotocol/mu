@@ -11,8 +11,8 @@ pub enum Error {
     #[error("Function Loading Error: {0:?}")]
     FunctionLoadingError(FunctionLoadingError),
 
-    #[error("Error in DB")]
-    DBError(&'static str),
+    #[error("Error in DB: {0:?}")]
+    DBError(anyhow::Error),
 
     #[error("Failed to read message from function: {0:?}")]
     FailedToReadMessage(std::io::Error),
@@ -62,7 +62,7 @@ pub enum FunctionLoadingError {
     FailedToGetImportObject(WasiError),
 
     #[error("Failed to instantiate wasm module: {0}")]
-    FailedToInstantiateWasmModule(InstantiationError),
+    FailedToInstantiateWasmModule(Box<InstantiationError>),
 
     #[error("Failed to get memory: {0}")]
     FailedToGetMemory(ExportError),

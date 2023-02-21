@@ -1968,6 +1968,7 @@ checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
 name = "executor"
 version = "0.1.0"
 dependencies = [
+ "actix-web",
  "anchor-client",
  "anyhow",
  "assert_matches",
@@ -1982,6 +1983,7 @@ dependencies = [
  "dns-lookup",
  "dyn-clonable",
  "dyn-clone",
+ "ed25519-dalek",
  "env_logger 0.10.0",
  "futures 0.3.25",
  "http",
@@ -3201,7 +3203,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base58",
- "base64 0.13.1",
+ "base64 0.21.0",
  "borsh 0.0.0",
  "byte-unit",
  "bytes",
@@ -3212,6 +3214,7 @@ dependencies = [
  "protoc-bin-vendored",
  "serde",
  "serde_yaml 0.9.17",
+ "thiserror",
 ]
 
 [[package]]

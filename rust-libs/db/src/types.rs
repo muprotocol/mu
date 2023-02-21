@@ -10,7 +10,7 @@ const TABLE_LIST_METADATA: &str = "__tlm";
 
 pub type Blob = Vec<u8>;
 
-fn tikv_key_from_3_chunk(first: &[u8], second: &[u8], third: &[u8]) -> TikvKey {
+fn tikv_key_from_3_chunk(first: &[u8], second: &[u8], third: &[u8]) -> Blob {
     let mut x: Blob = Vec::with_capacity(first.len() + second.len() + third.len() + 2);
     assert!(first.len() <= u8::MAX as usize);
     x.push(first.len() as u8);
@@ -19,10 +19,10 @@ fn tikv_key_from_3_chunk(first: &[u8], second: &[u8], third: &[u8]) -> TikvKey {
     x.push(second.len() as u8);
     x.put_slice(second);
     x.put_slice(third);
-    x.into()
+    x
 }
 
-fn three_chunk_try_from_tikv_key(value: tikv_client::Key) -> Result<(Blob, Blob, Blob)> {
+fn three_chunk_try_from_tikv_key(value: Blob) -> Result<(Blob, Blob, Blob)> {
     const E: &str = "Insufficient blobs to convert to Key";
     let split_at = |mut x: Vec<u8>, y| {
         if x.len() < y {
@@ -34,7 +34,7 @@ fn three_chunk_try_from_tikv_key(value: tikv_client::Key) -> Result<(Blob, Blob,
     };
     let split_first = |x: Vec<u8>| split_at(x, 1).map(|(mut x, y)| (x.pop().unwrap(), y));
 
-    let x: Blob = value.into();
+    let x = value;
 
     let (a_size, x) = split_first(x)?;
     let (a, x) = split_at(x, a_size as usize)?;
@@ -59,19 +59,19 @@ impl TableListKey {
     }
 }
 
-impl From<TableListKey> for tikv_client::Key {
+impl From<TableListKey> for TikvKey {
     fn from(k: TableListKey) -> Self {
         let first = TABLE_LIST_METADATA.as_bytes();
         let second = k.stack_id.to_bytes();
         let third = k.table_name.as_bytes();
-        tikv_key_from_3_chunk(first, second.as_ref(), third)
+        tikv_key_from_3_chunk(first, second.as_ref(), third).into()
     }
 }
 
-impl TryFrom<tikv_client::Key> for TableListKey {
+impl TryFrom<TikvKey> for TableListKey {
     type Error = Error;
-    fn try_from(value: tikv_client::Key) -> Result<Self> {
-        let (a, b, c) = three_chunk_try_from_tikv_key(value)?;
+    fn try_from(value: TikvKey) -> Result<Self> {
+        let (a, b, c) = three_chunk_try_from_tikv_key(value.into())?;
         if TABLE_LIST_METADATA.as_bytes() != a.as_slice() {
             bail!("Can't deserialize TableListKey as it doesn't begin with {TABLE_LIST_METADATA}")
         } else {
@@ -198,7 +198,7 @@ pub struct Key {
     pub inner_key: Blob,
 }
 
-impl From<Key> for tikv_client::Key {
+impl From<Key> for Blob {
     fn from(k: Key) -> Self {
         let first = k.stack_id.to_bytes();
         let second = k.table_name.as_bytes();
@@ -207,9 +207,22 @@ impl From<Key> for tikv_client::Key {
     }
 }
 
-impl TryFrom<tikv_client::Key> for Key {
+impl From<Key> for TikvKey {
+    fn from(k: Key) -> Self {
+        Self::from(Blob::from(k))
+    }
+}
+
+impl TryFrom<TikvKey> for Key {
     type Error = Error;
-    fn try_from(value: tikv_client::Key) -> Result<Self> {
+    fn try_from(value: TikvKey) -> Result<Self> {
+        Self::try_from(Vec::from(value))
+    }
+}
+
+impl TryFrom<Vec<u8>> for Key {
+    type Error = Error;
+    fn try_from(value: Vec<u8>) -> Result<Self> {
         let (a, b, c) = three_chunk_try_from_tikv_key(value)?;
         Ok(Self {
             stack_id: StackID::try_from_bytes(a.as_ref())
@@ -247,6 +260,8 @@ impl From<ScanTableList> for BoundRange {
     }
 }
 
+// TODO: ByTableName is equal to ByInnerKeyPrefix with empty inner_key
+// consider this type `Scan(StackID, TableName, Option<Blob>)`
 /// # Scan
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Scan {

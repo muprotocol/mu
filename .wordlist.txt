@@ -10,6 +10,7 @@ clonable
 codegen
 Condvar
 cranelift
+dalek
 datagram
 Datagram
 datagrams
@@ -20,6 +21,7 @@ flate
 funcs
 graphcycles
 grpcio
+hamidrezakp
 Hasher
 hashkey
 hashset
