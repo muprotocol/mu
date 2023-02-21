@@ -7,8 +7,8 @@ use anchor_spl::token::{Mint, Token, TokenAccount, Transfer};
 declare_id!("2MZLka8nfoAf1LKCCbgCw5ZXfpMbKGDuLjQ88MNMyti2");
 
 fn calc_usage(rates: &ServiceRates, usage: &ServiceUsage) -> u64 {
-    (rates.billion_function_mb_instructions as u128 * usage.function_mb_instructions
-        / 1_000_000_000) as u64
+    (rates.function_mb_tera_instructions as u128 * usage.function_mb_instructions / 1_000_000)
+        as u64
         + (rates.db_gigabyte_months as u128 * usage.db_bytes_seconds
             / (1024 * 1024 * 1024 * 60 * 60 * 24 * 30)) as u64
         + (rates.million_db_reads * usage.db_reads / 1_000_000)
@@ -419,7 +419,7 @@ pub struct AuthorizeProvider<'info> {
 // actually 0.01 $MU.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct ServiceRates {
-    pub billion_function_mb_instructions: u64,
+    pub function_mb_tera_instructions: u64,
     pub db_gigabyte_months: u64,
     pub million_db_reads: u64,
     pub million_db_writes: u64,
