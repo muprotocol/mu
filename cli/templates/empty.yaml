@@ -35,7 +35,7 @@ templates:
         contents: !String |-
           name: {{name}}
           version: 0.1.0
-          dev_id: s_9bHMegyMRRuzQsHe4DSS261f4F7Yoxuhv39T7s8mtQkq
+          dev_id: {{dev_id}}
           services:
             - type: Function
               name: {{name}}
@@ -52,6 +52,7 @@ templates:
                     route_to: {{name}}.greet_user
         args:
           - name
+          - dev_id
       - path: .gitignore
         contents: !String |-
           /.mu

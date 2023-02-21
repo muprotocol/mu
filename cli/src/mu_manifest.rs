@@ -137,11 +137,7 @@ impl Function {
                         let path: &Path = x.as_ref();
                         path.to_owned()
                     })
-                    .unwrap_or({
-                        let mut root = self.root_dir();
-                        root.push("target");
-                        root
-                    });
+                    .unwrap_or(self.root_dir().join("target"));
 
                 let build_mode = match build_mode {
                     BuildMode::Debug => "debug",
@@ -163,6 +159,7 @@ impl Function {
             for arg in args {
                 cmd.arg(arg);
             }
+            cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
             cmd
         };
 
@@ -206,8 +203,6 @@ impl Function {
 
         for mut cmd in commands {
             let exit = cmd
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
                 .output()
                 .map_err(|e| anyhow::format_err!("{}", e.to_string()))?;
 

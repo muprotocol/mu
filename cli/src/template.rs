@@ -8,6 +8,7 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
+use mu_stack::StackID;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -27,12 +28,7 @@ pub struct TemplateSet {
 
 impl Display for TemplateSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let langs = Itertools::intersperse(
-            self.templates.iter().map(|t| t.lang.to_string()),
-            ", ".to_string(),
-        )
-        .collect::<String>();
-
+        let langs = concat_string(self.templates.iter().map(|t| t.lang.to_string()));
         write!(f, "{: ^10}|{: ^15}", self.name, langs)
     }
 }
@@ -100,7 +96,7 @@ impl TemplateSet {
             .map_err(|e| TemplateError::FailedToCreateDirectory(path.to_path_buf(), e))?;
 
         if let Some(template) = self.templates.iter().find(|t| t.lang == lang) {
-            template.create_files(path, &args)?;
+            template.create_files(path, args)?;
         } else {
             return Err(TemplateError::LanguageNotSupported {
                 requested: lang,
@@ -108,7 +104,6 @@ impl TemplateSet {
             });
         }
 
-        //TODO: create .gitignore file
         let git_result = std::process::Command::new("git")
             .arg("init")
             .current_dir(path)
@@ -128,15 +123,20 @@ impl Template {
     pub fn create_files(
         &self,
         path: &Path,
-        args: &HashMap<String, String>,
+        mut args: HashMap<String, String>,
     ) -> Result<(), TemplateError> {
+        // `dev_id` for MuManifest
+        let bytes = rand::random::<[u8; 32]>();
+        let dev_id = StackID::SolanaPublicKey(bytes);
+        args.insert("dev_id".into(), dev_id.to_string());
+
         for file in self.files.iter() {
             let path = PathBuf::from(Self::replace_args(
                 path.join(&file.path)
                     .to_str()
                     .ok_or(TemplateError::NonUnicodePathNotSupported)?,
                 &file.args,
-                args,
+                &args,
             )?);
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)
@@ -148,7 +148,7 @@ impl Template {
                 FileContent::File(_) => unimplemented!(),
             };
 
-            contents = Self::replace_args(&contents, &file.args, args)?;
+            contents = Self::replace_args(&contents, &file.args, &args)?;
 
             std::fs::write(&path, contents)
                 .map_err(|e| TemplateError::FailedToCreateFile(path, e))?;
@@ -178,7 +178,8 @@ pub enum TemplateError {
     #[error("Argument {0} is missing in arguments")]
     ArgumentMissing(String),
 
-    #[error("This template does not support `{requested}`, available languages are: {}", available.iter().fold(String::new(), |a, s| format!("{a}, {s}")))]
+    #[error("This template does not support `{requested}`, available languages are: {}",
+        concat_string(available.iter().map(ToString::to_string)))]
     LanguageNotSupported {
         requested: Language,
         available: Vec<Language>,
@@ -195,4 +196,8 @@ pub enum TemplateError {
 
     #[error("Non-unicode paths are not supported")]
     NonUnicodePathNotSupported,
+}
+
+fn concat_string<I: Iterator<Item = String>>(items: I) -> String {
+    Itertools::intersperse(items, ", ".into()).collect::<String>()
 }
