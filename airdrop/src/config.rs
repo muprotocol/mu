@@ -1,24 +1,32 @@
-use std::path::PathBuf;
+mod serde_support;
 
-use anyhow::{Context, Result};
+use std::{path::PathBuf, str::FromStr};
+
+use anyhow::{anyhow, Context, Result};
 use config::{Config, Environment, File, FileFormat};
 use serde::Deserialize;
-use solana_sdk::{pubkey::Pubkey, signature::Keypair};
+use solana_sdk::{
+    pubkey::Pubkey,
+    signature::{read_keypair, Keypair},
+};
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct AppConfig {
-    listen_address: std::net::SocketAddr,
-    mint_pubkey: Pubkey,
+    pub rpc_address: std::net::SocketAddr,
+    pub listen_address: std::net::SocketAddr,
+    pub mint_pubkey: Pubkey,
     authority_keypair: PathBuf,
-    per_address_cap: u64,
-    per_hour_cap: u64,
+    pub per_request_cap: Option<u64>,
+    pub per_address_cap: Option<u64>,
+    //pub time_slice: ConfigDuration,
 }
+
+//TODO: check that caps are valid
 
 pub fn initialize_config() -> Result<AppConfig> {
     let defaults = vec![
-        ("listen_address", "127.0.0.1:0"), // 0 => Random port from OS
-        ("per_address_cap", "10000"),
-        ("per_hour_cap", "1000"),
+        ("rpc_address", "127.0.0.1:8899"),
+        ("listen_address", "127.0.0.1:0"), // 0 => Request random port from OS
     ];
 
     let env = Environment::default()
@@ -46,18 +54,26 @@ pub fn initialize_config() -> Result<AppConfig> {
     }
 
     builder = builder.add_source(env);
-
-    builder
+    let config = builder
         .build()
-        .context("Failed to initialize configuration")?
-        .try_deserialize()
-        .map_err(Into::into)
+        .context("Failed to initialize configuration")?;
+
+    Ok(AppConfig {
+        rpc_address: config.get("rpc_address")?,
+        listen_address: config.get("listen_address")?,
+        mint_pubkey: config
+            .get::<String>("mint_pubkey")
+            .map(|p| Pubkey::from_str(&p))??,
+        authority_keypair: config.get("authority_keypair")?,
+        per_request_cap: config.get("per_request_cap")?,
+        per_address_cap: config.get("per_address_cap")?,
+    })
 }
 
 impl AppConfig {
     // Support all types of Signers
     pub fn authority_keypair(&self) -> anyhow::Result<Keypair> {
-        let bytes = std::fs::read(&self.authority_keypair)?;
-        Keypair::from_bytes(&bytes).map_err(Into::into)
+        let mut file = std::fs::File::open(&self.authority_keypair)?;
+        read_keypair(&mut file).map_err(|e| anyhow!("Unable to read keypair file: {e}"))
     }
 }

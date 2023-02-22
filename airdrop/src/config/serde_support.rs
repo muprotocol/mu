@@ -1,4 +1,4 @@
-use std::{ops::Deref, str::FromStr, time::Duration};
+use std::{ops::Deref, time::Duration};
 
 use serde::{
     de::{self, Visitor},
@@ -8,12 +8,6 @@ use serde::{
 // Wrapper type to support human-readable duration deserialization with serde
 #[derive(Debug, Clone)]
 pub struct ConfigDuration(Duration);
-
-impl ConfigDuration {
-    pub fn new(d: Duration) -> Self {
-        Self(d)
-    }
-}
 
 impl Deref for ConfigDuration {
     type Target = Duration;
