@@ -2258,6 +2258,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-client",
  "anyhow",
+ "base64 0.21.0",
  "clap 4.1.4",
  "dirs",
  "marketplace",
@@ -2282,7 +2283,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base58",
- "base64 0.13.1",
+ "base64 0.21.0",
  "borsh 0.0.0",
  "byte-unit",
  "bytes",
@@ -2293,6 +2294,7 @@ dependencies = [
  "protoc-bin-vendored",
  "serde",
  "serde_yaml",
+ "thiserror",
 ]
 
 [[package]]

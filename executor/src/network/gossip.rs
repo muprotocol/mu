@@ -16,7 +16,7 @@ use mailbox_processor::{
     plain::{MessageReceiver, PlainMailboxProcessor},
     ReplyChannel,
 };
-use mu_common::id::IdExt;
+use mu_common::{id::IdExt, serde_support::IpOrHostname};
 use mu_stack::StackID;
 use protobuf::Message;
 use rand::{prelude::Distribution, rngs::ThreadRng};
@@ -120,7 +120,7 @@ pub struct GossipConfig {
 
 #[derive(Deserialize)]
 pub struct KnownNodeConfig {
-    pub address: IpAddr,
+    pub address: IpOrHostname,
     pub gossip_port: u16,
     pub pd_port: u16,
 }

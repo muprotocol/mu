@@ -10,6 +10,7 @@ clonable
 codegen
 Condvar
 cranelift
+dalek
 datagram
 Datagram
 datagrams
@@ -85,6 +86,7 @@ Ryzen
 scans
 scts
 secretkey
+serde
 serverless
 Serverless
 shellexpand

@@ -4,6 +4,7 @@ use solana_sdk::pubkey::Pubkey;
 pub mod blockchain_monitor;
 mod config_types;
 pub mod deploy;
+pub mod request_signer_cache;
 pub mod scheduler;
 pub mod usage_aggregator;
 
@@ -53,4 +54,9 @@ impl StackMetadata {
 pub struct SolanaStackMetadata {
     pub account_id: Pubkey,
     pub owner: Pubkey,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum ApiRequestSigner {
+    Solana(Pubkey),
 }
