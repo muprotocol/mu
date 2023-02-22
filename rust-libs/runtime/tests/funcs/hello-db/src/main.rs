@@ -55,7 +55,7 @@ mod hello_db {
         let req = req.into_inner();
         let table = &req.table_name;
         let key = req.key.as_bytes();
-        let previous_value = None;
+        let previous_value = Option::<&[u8]>::None;
         let new_value = req.value.as_bytes();
         // unique creation
         // create if previous value does not exist
@@ -136,10 +136,10 @@ mod hello_db {
         let table_key_value_triples = req
             .iter()
             .map(|(x, y, z)| (x.as_str(), y.as_bytes(), z.as_bytes()))
-            .collect();
+            .collect::<Vec<_>>();
         let is_atomic = false;
         ctx.db()
-            .batch_put(table_key_value_triples, is_atomic)
+            .batch_put(&table_key_value_triples, is_atomic)
             .unwrap()
     }
 
@@ -152,10 +152,10 @@ mod hello_db {
         let table_key_tuples = req
             .iter()
             .map(|(x, y)| (x.as_str(), y.as_bytes()))
-            .collect();
+            .collect::<Vec<_>>();
         let res = ctx
             .db()
-            .batch_get(table_key_tuples)
+            .batch_get(&table_key_tuples)
             .unwrap()
             .into_iter()
             .map(into_string_triple)
@@ -172,11 +172,11 @@ mod hello_db {
         let table_key_prefix_tuples = req
             .iter()
             .map(|(x, y)| (x.as_str(), y.as_bytes()))
-            .collect();
+            .collect::<Vec<_>>();
         let each_limit = 32;
         let res = ctx
             .db()
-            .batch_scan(table_key_prefix_tuples, each_limit)
+            .batch_scan(&table_key_prefix_tuples, each_limit)
             .unwrap()
             .into_iter()
             .map(into_string_triple)
@@ -193,11 +193,11 @@ mod hello_db {
         let table_key_prefix_tuples = req
             .iter()
             .map(|(x, y)| (x.as_str(), y.as_bytes()))
-            .collect();
+            .collect::<Vec<_>>();
         let each_limit = 32;
         let res = ctx
             .db()
-            .batch_scan_keys(table_key_prefix_tuples, each_limit)
+            .batch_scan_keys(&table_key_prefix_tuples, each_limit)
             .unwrap()
             .into_iter()
             .map(|(t, k)| (t.to_string(), blob_to_string(k.as_ref())))
@@ -211,7 +211,7 @@ mod hello_db {
         let table_key_tuples = req
             .iter()
             .map(|(x, y)| (x.as_str(), y.as_bytes()))
-            .collect();
-        ctx.db().batch_delete(table_key_tuples).unwrap()
+            .collect::<Vec<_>>();
+        ctx.db().batch_delete(&table_key_tuples).unwrap()
     }
 }

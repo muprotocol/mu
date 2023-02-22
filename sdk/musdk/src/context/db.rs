@@ -73,14 +73,14 @@ impl<'a> DbHandle<'a> {
         self.context.read_message()
     }
 
-    pub fn batch_put<K: AsRef<[u8]>, V: AsRef<[u8]>>(
+    pub fn batch_put<'b, K: AsRef<[u8]> + 'b, V: AsRef<[u8]> + 'b>(
         &mut self,
-        table_key_value_triples: &[(&str, K, V)],
+        table_key_value_triples: impl IntoIterator<Item = &'b (&'b str, K, V)>,
         is_atomic: bool,
     ) -> Result<()> {
         let req = BatchPut {
             table_key_value_triples: table_key_value_triples
-                .iter()
+                .into_iter()
                 .map(|(t, k, v)| {
                     (
                         Cow::Borrowed(t.as_bytes()),
@@ -95,9 +95,9 @@ impl<'a> DbHandle<'a> {
         from_empty_resp(resp, "BatchPut")
     }
 
-    pub fn batch_get<T: AsRef<[u8]>>(
+    pub fn batch_get<'b, T: AsRef<[u8]> + 'b>(
         &mut self,
-        table_key_tuples: &[(&str, T)],
+        table_key_tuples: impl IntoIterator<Item = &'b (&'b str, T)>,
     ) -> Result<Vec<(TableName, Key, Value)>> {
         let req = BatchGet {
             table_key_tuples: vec_tuple_cow_u8_from(table_key_tuples),
@@ -106,7 +106,10 @@ impl<'a> DbHandle<'a> {
         from_table_key_value_list_resp(resp, "BatchGet")
     }
 
-    pub fn batch_delete<T: AsRef<[u8]>>(&mut self, table_key_tuples: &[(&str, T)]) -> Result<()> {
+    pub fn batch_delete<'b, T: AsRef<[u8]> + 'b>(
+        &mut self,
+        table_key_tuples: impl IntoIterator<Item = &'b (&'b str, T)>,
+    ) -> Result<()> {
         let req = BatchDelete {
             table_key_tuples: vec_tuple_cow_u8_from(table_key_tuples),
         };
@@ -114,9 +117,9 @@ impl<'a> DbHandle<'a> {
         from_empty_resp(resp, "BatchDelete")
     }
 
-    pub fn batch_scan<T: AsRef<[u8]>>(
+    pub fn batch_scan<'b, T: AsRef<[u8]> + 'b>(
         &mut self,
-        table_key_prefix_tuples: &[(&str, T)],
+        table_key_prefix_tuples: impl IntoIterator<Item = &'b (&'b str, T)>,
         each_limit: u32,
     ) -> Result<Vec<(TableName, Key, Value)>> {
         let req = BatchScan {
@@ -127,9 +130,9 @@ impl<'a> DbHandle<'a> {
         from_table_key_value_list_resp(resp, "BatchScan")
     }
 
-    pub fn batch_scan_keys<T: AsRef<[u8]>>(
+    pub fn batch_scan_keys<'b, T: AsRef<[u8]> + 'b>(
         &mut self,
-        table_key_prefix_tuples: &[(&str, T)],
+        table_key_prefix_tuples: impl IntoIterator<Item = &'b (&'b str, T)>,
         each_limit: u32,
     ) -> Result<Vec<(TableName, Key)>> {
         let req = BatchScanKeys {
@@ -321,12 +324,14 @@ fn resp_to_err<T>(resp: IM, kind_name: &'static str) -> Result<T> {
 }
 
 #[allow(clippy::type_complexity)]
-fn vec_tuple_cow_u8_from<'a, T>(pairs: &'a [(&'a str, T)]) -> Vec<(Cow<[u8]>, Cow<[u8]>)>
+fn vec_tuple_cow_u8_from<'b, T: AsRef<[u8]> + 'b>(
+    pairs: impl IntoIterator<Item = &'b (&'b str, T)>,
+) -> Vec<(Cow<'b, [u8]>, Cow<'b, [u8]>)>
 where
     T: AsRef<[u8]>,
 {
     pairs
-        .iter()
+        .into_iter()
         .map(|(t, k)| (t.as_bytes().into(), k.as_ref().into()))
         .collect()
 }
