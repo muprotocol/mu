@@ -9,7 +9,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-use crate::Response;
+use crate::{function::*, http_client::Request as HttpRequest};
 use db::*;
 
 #[repr(u16)]
@@ -34,6 +34,9 @@ pub enum OutgoingMessageKind {
     BatchScan = 1011,
     BatchScanKeys = 1012,
     CompareAndSwap = 1013,
+
+    // Http Client
+    HttpRequest = 3001,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -83,6 +86,9 @@ pub enum OutgoingMessage<'a> {
     BatchScan(BatchScan<'a>),
     BatchScanKeys(BatchScanKeys<'a>),
     CompareAndSwap(CompareAndSwap<'a>),
+
+    // Http Client
+    HttpRequest(HttpRequest<'a>),
 }
 
 macro_rules! read_cases {
@@ -137,7 +143,8 @@ impl<'a> OutgoingMessage<'a> {
                 BatchDelete,
                 BatchScan,
                 BatchScanKeys,
-                CompareAndSwap
+                CompareAndSwap,
+                HttpRequest
             ]
         )
     }
@@ -162,7 +169,8 @@ impl<'a> OutgoingMessage<'a> {
                 BatchDelete,
                 BatchScan,
                 BatchScanKeys,
-                CompareAndSwap
+                CompareAndSwap,
+                HttpRequest
             ]
         );
 

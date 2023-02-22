@@ -13,7 +13,10 @@ use musdk_common::{
     Request, Response,
 };
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    http_client::HttpClient,
+};
 
 pub type MuFunction = Rc<dyn for<'a> Fn(&'a mut MuContext, &'a Request) -> Response<'static>>;
 
@@ -42,6 +45,10 @@ impl MuContext {
         db::DbHandle { context: self }
     }
 
+    pub fn http_client(&mut self) -> HttpClient {
+        HttpClient::new(self)
+    }
+
     fn read_and_execute_function(&mut self) {
         fn helper(ctx: &mut MuContext) -> Result<()> {
             let message = ctx.read_message()?;
@@ -65,12 +72,11 @@ impl MuContext {
         }
     }
 
-    pub fn log(&mut self, message: &str, level: LogLevel) -> Result<()> {
-        // TODO: set log level, check against given level, skip if necessary
+    pub fn log<S: AsRef<str>>(&mut self, message: S, level: LogLevel) -> Result<()> {
         // TODO: make macros so the message doesn't have to be evaluated if its
         //       level is skipped
         let message = OutgoingMessage::Log(Log {
-            body: Cow::Borrowed(message),
+            body: Cow::Borrowed(message.as_ref()),
             level,
         });
         self.write_message(message)
@@ -90,11 +96,11 @@ impl MuContext {
         panic!("{panic_description}");
     }
 
-    fn read_message(&mut self) -> Result<IncomingMessage<'static>> {
+    pub(crate) fn read_message(&mut self) -> Result<IncomingMessage<'static>> {
         IncomingMessage::read(&mut self.stdin).map_err(Error::CannotDeserializeIncomingMessage)
     }
 
-    fn write_message(&mut self, message: OutgoingMessage<'_>) -> Result<()> {
+    pub(crate) fn write_message(&mut self, message: OutgoingMessage<'_>) -> Result<()> {
         message
             .write(&mut self.stdout)
             .map_err(Error::CannotSerializeOutgoingMessage)?;
