@@ -190,7 +190,7 @@ pub enum Service {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KeyValueTable {
     pub name: String,
-    pub delete: bool,
+    pub delete: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

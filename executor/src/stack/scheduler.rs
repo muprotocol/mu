@@ -422,12 +422,11 @@ async fn step(
 
                 // As soon as we get a stack definition, we want to deploy its gateways so we can
                 // route new requests to that stack to the correct node.
+                info!("Received update for {id}, deploying its gateways");
+                deploy_gateways(id, &new_stack.stack, state.gateway_manager.as_ref()).await;
 
                 match state.stacks.entry(id) {
                     Entry::Vacant(vac) => {
-                        info!("Learning about {id} for first time, deploying its gateways");
-                        deploy_gateways(id, &new_stack.stack, state.gateway_manager.as_ref()).await;
-
                         vac.insert(StackDeployment::Undeployed { stack: new_stack });
                     }
 

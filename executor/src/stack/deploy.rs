@@ -114,9 +114,9 @@ pub(super) async fn deploy(
     for kvt in stack.key_value_tables() {
         let table_name = kvt
             .name
-            .to_owned()
+            .clone()
             .try_into()
-            .map_err(|e| StackDeploymentError::FailedToDeployTables(e.into()))?;
+            .map_err(StackDeploymentError::FailedToDeployTables)?;
         let delete = matches!(kvt.delete, Some(true));
         table_actions.push((table_name, delete));
     }
