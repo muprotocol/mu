@@ -3,6 +3,7 @@ use std::{borrow::Cow, collections::HashMap};
 use futures::FutureExt;
 use itertools::Itertools;
 
+use mu_db::DeleteTable;
 use mu_runtime::*;
 use musdk_common::{Header, Status};
 use serial_test::serial;
@@ -606,7 +607,7 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
     // let v3 = "value3".to_string();
 
     let stack_id = projects[0].id.stack_id;
-    let table_action_tuples = vec![(TABLE_NAME.try_into().unwrap(), false)];
+    let table_action_tuples = vec![(TABLE_NAME.try_into().unwrap(), DeleteTable(false))];
     fixture
         .db_manager_fixture
         .db_manager
@@ -833,8 +834,8 @@ async fn db_batch_crud(fixture: &mut RuntimeFixture) {
 
     let stack_id = projects[0].id.stack_id;
     let table_action_tuples = vec![
-        (TABLE_NAME.try_into().unwrap(), false),
-        (TABLE_NAME2.try_into().unwrap(), false),
+        (TABLE_NAME.try_into().unwrap(), DeleteTable(false)),
+        (TABLE_NAME2.try_into().unwrap(), DeleteTable(false)),
     ];
     fixture
         .db_manager_fixture

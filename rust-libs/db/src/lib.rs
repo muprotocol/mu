@@ -1,7 +1,7 @@
 pub mod error;
 mod types;
 
-pub use self::types::{Blob, Key, Scan, TableName};
+pub use self::types::{Blob, DeleteTable, Key, Scan, TableName};
 pub use db_embedded_tikv::{
     NodeAddress, PdConfig, RemoteNode, TcpPortAddress, TikvConfig, TikvRunnerConfig,
 };
@@ -35,7 +35,7 @@ pub trait DbClient: Send + Sync + Debug + Clone {
     async fn update_stack_tables(
         &self,
         stack_id: StackID,
-        table_action_tuples: Vec<(TableName, bool)>,
+        table_action_tuples: Vec<(TableName, DeleteTable)>,
     ) -> Result<()>;
 
     async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()>;
@@ -122,7 +122,7 @@ impl DbClient for DbClientImpl {
     async fn update_stack_tables(
         &self,
         stack_id: StackID,
-        table_action_tuples: Vec<(TableName, bool)>,
+        table_action_tuples: Vec<(TableName, DeleteTable)>,
     ) -> Result<()> {
         // TODO: think of something for deleting existing tables
         let existing_tables = self
@@ -137,9 +137,9 @@ impl DbClient for DbClientImpl {
         let mut kvs_delete = vec![];
         for (table, is_delete) in table_action_tuples {
             let k = TableListKey::new(stack_id, table);
-            if !existing_tables.contains(&k) && !is_delete {
+            if !existing_tables.contains(&k) && !*is_delete {
                 kvs_add.push((k, vec![]))
-            } else if existing_tables.contains(&k) && is_delete {
+            } else if existing_tables.contains(&k) && *is_delete {
                 kvs_delete.push(k)
             }
         }

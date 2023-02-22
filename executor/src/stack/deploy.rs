@@ -3,9 +3,11 @@ use mu_runtime::{AssemblyDefinition, Runtime};
 use reqwest::Url;
 use thiserror::Error;
 
-use mu_db::DbManager;
+use mu_db::{DbManager, DeleteTable};
 
 use mu_stack::{AssemblyID, HttpMethod, Stack, StackID};
+
+use super::blockchain_monitor::StackRemovalMode;
 
 #[derive(Error, Debug)]
 pub enum StackValidationError {
@@ -117,7 +119,7 @@ pub(super) async fn deploy(
             .clone()
             .try_into()
             .map_err(StackDeploymentError::FailedToDeployTables)?;
-        let delete = matches!(kvt.delete, Some(true));
+        let delete = DeleteTable(matches!(kvt.delete, Some(true)));
         table_actions.push((table_name, delete));
     }
 
@@ -158,9 +160,27 @@ async fn download_function(url: Url) -> Result<bytes::Bytes, StackDeploymentErro
         .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))
 }
 
-pub(super) async fn undeploy_stack(id: StackID, runtime: &dyn Runtime) -> anyhow::Result<()> {
+pub(super) async fn undeploy_stack(
+    id: StackID,
+    mode: StackRemovalMode,
+    runtime: &dyn Runtime,
+    db_manager: &dyn DbManager,
+) -> anyhow::Result<()> {
     // TODO: have a policy for deleting user data from the database
     // It should handle deleted and suspended stacks differently
+
+    if let StackRemovalMode::Permanent = mode {
+        let db_client = db_manager.make_client().await?;
+        let tables = db_client.table_list(id, None).await?;
+        for table in tables.clone() {
+            db_client.clear_table(id, table).await?;
+        }
+        let table_deletes = tables
+            .into_iter()
+            .map(|table| (table, DeleteTable(true)))
+            .collect();
+        db_client.update_stack_tables(id, table_deletes).await?;
+    }
 
     runtime.remove_all_functions(id).await?;
 

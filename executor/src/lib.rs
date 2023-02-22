@@ -541,13 +541,13 @@ async fn process_blockchain_monitor_notification(
                 .unwrap();
             scheduler.stacks_available(stacks.clone()).await.unwrap();
         }
-        Some(BlockchainMonitorNotification::StacksRemoved(stack_ids)) => {
-            debug!("Stacks removed: {stack_ids:?}");
+        Some(BlockchainMonitorNotification::StacksRemoved(stacks)) => {
+            debug!("Stacks removed: {stacks:?}");
             request_signer_cache
-                .stacks_removed(stack_ids.clone())
+                .stacks_removed(stacks.iter().map(|s| s.0).collect())
                 .await
                 .unwrap();
-            scheduler.stacks_removed(stack_ids).await.unwrap();
+            scheduler.stacks_removed(stacks).await.unwrap();
         }
         Some(BlockchainMonitorNotification::RequestSignersAvailable(signers)) => {
             debug!("Request signers available: {signers:?}");
