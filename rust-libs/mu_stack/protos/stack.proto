@@ -18,6 +18,7 @@ message Service {
 
 message KeyValueTable {
     string name = 1;
+    bool delete = 2;
 }
 
 message Gateway {

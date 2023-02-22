@@ -606,14 +606,14 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
     // let v3 = "value3".to_string();
 
     let stack_id = projects[0].id.stack_id;
-    let table_names = vec![TABLE_NAME.try_into().unwrap()];
+    let table_action_tuples = vec![(TABLE_NAME.try_into().unwrap(), false)];
     fixture
         .db_manager_fixture
         .db_manager
         .make_client()
         .await
         .unwrap()
-        .update_stack_tables(stack_id, table_names)
+        .update_stack_tables(stack_id, table_action_tuples)
         .await
         .unwrap();
 
@@ -832,9 +832,9 @@ async fn db_batch_crud(fixture: &mut RuntimeFixture) {
     const VALUE3: &str = "value3";
 
     let stack_id = projects[0].id.stack_id;
-    let table_names = vec![
-        TABLE_NAME.try_into().unwrap(),
-        TABLE_NAME2.try_into().unwrap(),
+    let table_action_tuples = vec![
+        (TABLE_NAME.try_into().unwrap(), false),
+        (TABLE_NAME2.try_into().unwrap(), false),
     ];
     fixture
         .db_manager_fixture
@@ -842,7 +842,7 @@ async fn db_batch_crud(fixture: &mut RuntimeFixture) {
         .make_client()
         .await
         .unwrap()
-        .update_stack_tables(stack_id, table_names)
+        .update_stack_tables(stack_id, table_action_tuples)
         .await
         .unwrap();
 

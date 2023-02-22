@@ -440,7 +440,7 @@ mod mock_db {
         async fn update_stack_tables(
             &self,
             stack_id: StackID,
-            table_list: Vec<TableName>,
+            table_list: Vec<(TableName, bool)>,
         ) -> Result<()> {
             Ok(())
         }

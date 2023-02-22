@@ -34,6 +34,7 @@ impl From<super::Stack> for Stack {
                     super::Service::KeyValueTable(d) => Service {
                         service: Some(service::Service::KeyValueTable(KeyValueTable {
                             name: d.name,
+                            delete: matches!(d.delete, Some(true)),
                             ..Default::default()
                         })),
                         ..Default::default()
@@ -130,6 +131,7 @@ impl TryFrom<Stack> for super::Stack {
                     Some(service::Service::KeyValueTable(d)) => {
                         Ok(super::Service::KeyValueTable(super::KeyValueTable {
                             name: d.name,
+                            delete: Some(d.delete),
                         }))
                     }
 

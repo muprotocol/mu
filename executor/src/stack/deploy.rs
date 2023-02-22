@@ -110,19 +110,21 @@ pub(super) async fn deploy(
         .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
 
     // Step 2: Database tables
-    let mut tables = vec![];
-    for x in stack.key_value_tables() {
-        let table_name = x
+    let mut table_actions = vec![];
+    for kvt in stack.key_value_tables() {
+        let table_name = kvt
             .name
-            .to_owned()
+            .clone()
             .try_into()
-            .map_err(|e| StackDeploymentError::FailedToDeployTables(anyhow::anyhow!("{e}")))?;
-        tables.push(table_name);
+            .map_err(StackDeploymentError::FailedToDeployTables)?;
+        let delete = matches!(kvt.delete, Some(true));
+        table_actions.push((table_name, delete));
     }
+
     db_client
-        .update_stack_tables(id, tables)
+        .update_stack_tables(id, table_actions)
         .await
-        .map_err(|e| StackDeploymentError::FailedToDeployTables(anyhow::anyhow!("{e}")))?;
+        .map_err(|e| StackDeploymentError::FailedToDeployTables(e.into()))?;
 
     let existing_function_names = runtime.get_function_names(id).await.unwrap_or_default();
     let mut functions_to_delete = vec![];

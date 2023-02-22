@@ -32,7 +32,11 @@ pub struct DbConfig {
 #[async_trait]
 #[clonable]
 pub trait DbClient: Send + Sync + Debug + Clone {
-    async fn update_stack_tables(&self, stack_id: StackID, tables: Vec<TableName>) -> Result<()>;
+    async fn update_stack_tables(
+        &self,
+        stack_id: StackID,
+        table_action_tuples: Vec<(TableName, bool)>,
+    ) -> Result<()>;
 
     async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()>;
     async fn get(&self, key: Key) -> Result<Option<Value>>;
@@ -118,7 +122,7 @@ impl DbClient for DbClientImpl {
     async fn update_stack_tables(
         &self,
         stack_id: StackID,
-        table_list: Vec<TableName>,
+        table_action_tuples: Vec<(TableName, bool)>,
     ) -> Result<()> {
         // TODO: think of something for deleting existing tables
         let existing_tables = self
@@ -129,15 +133,22 @@ impl DbClient for DbClientImpl {
             .map(|k| k.try_into().map_err(Into::into))
             .collect::<Result<HashSet<TableListKey>>>()?;
 
-        let mut kvs = vec![];
-        for t in table_list {
-            let k = TableListKey::new(stack_id, t);
-            if !existing_tables.contains(&k) {
-                kvs.push((k, vec![]))
+        let mut kvs_add = vec![];
+        let mut kvs_delete = vec![];
+        for (table, is_delete) in table_action_tuples {
+            let k = TableListKey::new(stack_id, table);
+            if !existing_tables.contains(&k) && !is_delete {
+                kvs_add.push((k, vec![]))
+            } else if existing_tables.contains(&k) && is_delete {
+                kvs_delete.push(k)
             }
         }
 
-        self.inner.batch_put(kvs).await.map_err(Into::into)
+        self.inner.batch_put(kvs_add).await?;
+        self.inner
+            .batch_delete(kvs_delete)
+            .await
+            .map_err(Into::into)
     }
 
     async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()> {
