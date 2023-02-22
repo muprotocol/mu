@@ -9,7 +9,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-use crate::{gateway::*, http_client::Request as HttpRequest};
+use crate::{function::*, http_client::Request as HttpRequest};
 use db::*;
 
 #[repr(u16)]

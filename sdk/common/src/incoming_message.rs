@@ -9,7 +9,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-use crate::gateway::*;
+use crate::function::*;
 use crate::http_client;
 use db::*;
 
