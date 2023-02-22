@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::*;
 use mu_db::DbManager;
+use mu_storage::StorageManager;
 use providers::AssemblyProvider;
 use tokio::sync::mpsc;
 use wasmer::{Module, Store};
@@ -114,6 +115,7 @@ struct RuntimeState {
     config: RuntimeConfig,
     assembly_provider: AssemblyProvider,
     db_manager: Box<dyn DbManager>,
+    storage_manager: Box<dyn StorageManager>,
     hashkey_dict: HashMap<AssemblyID, CacheHashAndMemoryLimit>,
     cache: FileSystemCache,
     next_instance_id: u64,
@@ -124,6 +126,7 @@ struct RuntimeState {
 impl RuntimeState {
     pub async fn new(
         db_manager: Box<dyn DbManager>,
+        storage_manager: Box<dyn StorageManager>,
         config: RuntimeConfig,
     ) -> Result<(Self, mpsc::UnboundedReceiver<Notification>)> {
         let (tx, rx) = NotificationChannel::new();
@@ -138,6 +141,7 @@ impl RuntimeState {
                 config,
                 assembly_provider: Default::default(),
                 db_manager,
+                storage_manager,
                 hashkey_dict,
                 cache,
                 next_instance_id: 0,
@@ -244,6 +248,7 @@ impl RuntimeState {
             definition.memory_limit,
             self.config.include_function_logs,
             self.db_manager.clone(),
+            self.storage_manager.clone(),
         ))
     }
 }
@@ -338,9 +343,11 @@ impl Runtime for RuntimeImpl {
 
 pub async fn start(
     db_manager: Box<dyn DbManager>,
+    storage_manager: Box<dyn StorageManager>,
     config: RuntimeConfig,
 ) -> Result<(Box<dyn Runtime>, mpsc::UnboundedReceiver<Notification>)> {
-    let (state, notification_receiver) = RuntimeState::new(db_manager, config).await?;
+    let (state, notification_receiver) =
+        RuntimeState::new(db_manager, storage_manager, config).await?;
     let mailbox = CallbackMailboxProcessor::start(mailbox_step, state, 10000);
     Ok((Box::new(RuntimeImpl { mailbox }), notification_receiver))
 }

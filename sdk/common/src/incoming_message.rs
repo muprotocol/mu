@@ -1,4 +1,5 @@
 pub mod db;
+pub mod storage;
 
 use std::{
     borrow::Cow,
@@ -11,6 +12,7 @@ use num_traits::FromPrimitive;
 
 use crate::Request;
 use db::*;
+use storage::*;
 
 #[repr(u16)]
 #[derive(FromPrimitive)]
@@ -27,6 +29,12 @@ enum IncomingMessageKind {
     TableKeyValueListResult = 1006,
     EmptyResult = 1007,
     CasResult = 1008,
+
+    // Storage messages
+    StorageError = 2001,
+    StorageGetResult = 2002,
+    StatusResult = 2003,
+    ObjectListResult = 2004,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -49,6 +57,12 @@ pub enum IncomingMessage<'a> {
     TableKeyValueListResult(TableKeyValueListResult<'a>),
     EmptyResult(EmptyResult),
     CasResult(CasResult<'a>),
+
+    // Storage messages
+    StorageError(StorageError<'a>),
+    StorageGetResult(StorageGetResult<'a>),
+    StatusResult(StatusResult),
+    ObjectListResult(ObjectListResult<'a>),
 }
 
 macro_rules! read_cases {
@@ -100,9 +114,12 @@ impl<'a> IncomingMessage<'a> {
                 KeyValueListResult,
                 TableKeyListResult,
                 TableKeyValueListResult,
-                CasResult
+                CasResult,
+                StorageError,
+                StorageGetResult,
+                ObjectListResult
             ] * 'static,
-            [EmptyResult]
+            [EmptyResult, StatusResult]
         )
     }
 
@@ -119,7 +136,11 @@ impl<'a> IncomingMessage<'a> {
                 TableKeyListResult,
                 TableKeyValueListResult,
                 EmptyResult,
-                CasResult
+                CasResult,
+                StorageError,
+                StorageGetResult,
+                StatusResult,
+                ObjectListResult
             ]
         );
 

@@ -25,6 +25,7 @@ dyn-clonable = "0.9"
 mu_stack = { path = "../mu_stack" }
 mu-common = { path = "../common" }
 mu-db = { path = "../db" }
+mu-storage = { path = "../storage" }
 musdk-common = { path = "../../sdk/common" }
 byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
 

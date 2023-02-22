@@ -3231,6 +3231,7 @@ dependencies = [
  "mailbox_processor",
  "mu-common",
  "mu-db",
+ "mu-storage",
  "mu_stack",
  "musdk-common",
  "serde",

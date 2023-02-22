@@ -1,4 +1,10 @@
-use std::{borrow::Cow, collections::HashMap, future::Future, sync::Arc};
+use std::{
+    borrow::{BorrowMut, Cow},
+    collections::HashMap,
+    future::Future,
+    ops::Deref,
+    sync::Arc,
+};
 
 use super::{
     error::{Error, FunctionLoadingError},
@@ -12,10 +18,17 @@ use anyhow::anyhow;
 use log::{error, log, trace, Level};
 use mu_db::{error::Result as MudbResult, DbClient, DbManager, Key as MudbKey, Scan as MudbScan};
 use mu_stack::{AssemblyID, StackID};
+use mu_storage::{StorageClient, StorageManager};
 use musdk_common::{
-    incoming_message::{db::*, IncomingMessage},
+    incoming_message::{
+        self,
+        db::*,
+        storage::{ObjectListResult, StatusResult, StorageError, StorageGetResult},
+        IncomingMessage,
+    },
     outgoing_message::{LogLevel, OutgoingMessage},
 };
+use tokio::io::BufWriter;
 use wasmer::{CompilerConfig, Module, RuntimeError, Store};
 use wasmer_compiler_llvm::LLVM;
 use wasmer_middlewares::{metering::MeteringPoints, Metering};
@@ -89,7 +102,9 @@ pub struct Instance<S: InstanceState> {
     memory_limit: byte_unit::Byte,
     include_logs: bool,
     db_manager: Box<dyn DbManager>,
+    storage_manager: Box<dyn StorageManager>,
     db_client: Option<Box<dyn DbClient>>,
+    storage_client: Option<Box<dyn StorageClient>>,
 }
 
 impl Instance<Loaded> {
@@ -103,6 +118,7 @@ impl Instance<Loaded> {
         memory_limit: byte_unit::Byte,
         include_logs: bool,
         db_manager: Box<dyn DbManager>,
+        storage_manager: Box<dyn StorageManager>,
     ) -> Self {
         let state = Loaded {
             store,
@@ -119,7 +135,9 @@ impl Instance<Loaded> {
             memory_limit,
             include_logs,
             db_manager,
+            storage_manager,
             db_client: None,
+            storage_client: None,
         }
     }
 
@@ -143,7 +161,9 @@ impl Instance<Loaded> {
             memory_limit: self.memory_limit,
             include_logs: self.include_logs,
             db_manager: self.db_manager,
+            storage_manager: self.storage_manager,
             db_client: None,
+            storage_client: None,
         })
     }
 }
@@ -442,6 +462,68 @@ impl Instance<Running> {
                                     .map(into_cas_incoming_msg)
                             })?
                         }
+                        OutgoingMessage::StoragePut(req) => {
+                            self.storage_request(|client, stack_id| async move {
+                                client
+                                    .put(
+                                        stack_id,
+                                        &req.storage_name,
+                                        &req.key,
+                                        req.reader.deref().borrow_mut(),
+                                    )
+                                    .await
+                                    .map(|res| {
+                                        IncomingMessage::StatusResult(StatusResult {
+                                            status_code: res,
+                                        })
+                                    })
+                            })?
+                        }
+                        OutgoingMessage::StorageGet(req) => {
+                            self.storage_request(|client, stack_id| async move {
+                                let data: Vec<u8> = vec![];
+                                let mut writer = BufWriter::new(data);
+                                client
+                                    .get(stack_id, &req.storage_name, &req.key, &mut writer)
+                                    .await
+                                    .map(move |res| {
+                                        IncomingMessage::StorageGetResult(StorageGetResult {
+                                            status_code: res,
+                                            data: Cow::Owned(writer.into_inner()),
+                                        })
+                                    })
+                            })?
+                        }
+                        OutgoingMessage::StorageDelete(req) => {
+                            self.storage_request(|client, stack_id| async move {
+                                client
+                                    .delete(stack_id, &req.storage_name, &req.key)
+                                    .await
+                                    .map(|res| {
+                                        IncomingMessage::StatusResult(StatusResult {
+                                            status_code: res,
+                                        })
+                                    })
+                            })?
+                        }
+                        OutgoingMessage::StorageList(req) => {
+                            self.storage_request(|client, stack_id| async move {
+                                client
+                                    .list(stack_id, &req.storage_name, &req.prefix)
+                                    .await
+                                    .map(|res| {
+                                        IncomingMessage::ObjectListResult(ObjectListResult {
+                                            list: res
+                                                .into_iter()
+                                                .map(|o| incoming_message::storage::Object {
+                                                    key: Cow::Owned(o.key),
+                                                    size: o.size,
+                                                })
+                                                .collect(),
+                                        })
+                                    })
+                            })?
+                        }
                     }
                 }
             }
@@ -475,6 +557,39 @@ impl Instance<Running> {
                     self.write_message(msg)
                 }
                 Err(e) => self.write_message(IncomingMessage::DbError(DbError {
+                    error: Cow::from(format!("{e:?}")),
+                })),
+            }
+            .map_err(|e| (e, Usage::default()))
+        })
+    }
+
+    fn storage_request<'a, A, B>(&mut self, f: A) -> Result<(), (Error, Usage)>
+    where
+        A: FnOnce(Box<dyn StorageClient>, StackID) -> B,
+        B: Future<Output = anyhow::Result<IncomingMessage<'a>>>,
+    {
+        tokio::runtime::Handle::current().block_on(async {
+            let stack_id = self.id.function_id.stack_id;
+            let storage_client_res = match &self.storage_client {
+                Some(client) => Ok(client.clone()),
+                None => {
+                    let client = self.storage_manager.make_client();
+                    self.storage_client = client.as_ref().ok().map(ToOwned::to_owned);
+                    client
+                }
+            };
+
+            match storage_client_res {
+                Ok(client) => {
+                    let msg = f(client, stack_id).await.unwrap_or_else(|e| {
+                        IncomingMessage::StorageError(StorageError {
+                            error: Cow::from(format!("{e:?}")),
+                        })
+                    });
+                    self.write_message(msg)
+                }
+                Err(e) => self.write_message(IncomingMessage::StorageError(StorageError {
                     error: Cow::from(format!("{e:?}")),
                 })),
             }

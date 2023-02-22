@@ -48,6 +48,7 @@ pub async fn run() -> Result<()> {
         gossip_config,
         mut known_nodes_config,
         db_config,
+        storage_config,
         gateway_manager_config,
         log_config,
         runtime_config,
@@ -158,10 +159,15 @@ pub async fn run() -> Result<()> {
     )
     .await?;
 
-    let (runtime, mut runtime_notification_receiver) =
-        mu_runtime::start(database_manager.clone(), runtime_config)
-            .await
-            .context("Failed to initiate runtime")?;
+    let storage_manager = mu_storage::start(&storage_config).await?;
+
+    let (runtime, mut runtime_notification_receiver) = mu_runtime::start(
+        database_manager.clone(),
+        storage_manager.clone(),
+        runtime_config,
+    )
+    .await
+    .context("Failed to initiate runtime")?;
 
     let rpc_handler = rpc_handler::new(
         connection_manager.clone(),
@@ -245,6 +251,12 @@ pub async fn run() -> Result<()> {
             .stop_embedded_cluster()
             .await
             .context("Failed to stop runtime")?;
+
+        trace!("Stopping storage manager");
+        storage_manager
+            .stop()
+            .await
+            .context("Failed to stop runtime");
 
         // Stop gateway manager first. This waits for actix-web to shut down, essentially
         // running all requests to completion or cancelling them safely before shutting

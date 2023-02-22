@@ -1,4 +1,5 @@
 pub mod db;
+pub mod storage;
 
 use std::{
     borrow::Cow,
@@ -11,6 +12,7 @@ use num_traits::FromPrimitive;
 
 use crate::Response;
 use db::*;
+use storage::*;
 
 #[repr(u16)]
 #[derive(FromPrimitive)]
@@ -34,6 +36,12 @@ pub enum OutgoingMessageKind {
     BatchScan = 1011,
     BatchScanKeys = 1012,
     CompareAndSwap = 1013,
+
+    // Storage messages
+    StoragePut = 2001,
+    StorageGet = 2002,
+    StorageDelete = 2003,
+    StorageList = 2004,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -83,6 +91,12 @@ pub enum OutgoingMessage<'a> {
     BatchScan(BatchScan<'a>),
     BatchScanKeys(BatchScanKeys<'a>),
     CompareAndSwap(CompareAndSwap<'a>),
+
+    // Storage messages
+    StoragePut(StoragePut<'a>),
+    StorageGet(StorageGet<'a>),
+    StorageDelete(StorageDelete<'a>),
+    StorageList(StorageList<'a>),
 }
 
 macro_rules! read_cases {
@@ -137,7 +151,11 @@ impl<'a> OutgoingMessage<'a> {
                 BatchDelete,
                 BatchScan,
                 BatchScanKeys,
-                CompareAndSwap
+                CompareAndSwap,
+                StoragePut,
+                StorageGet,
+                StorageDelete,
+                StorageList
             ]
         )
     }
@@ -162,7 +180,11 @@ impl<'a> OutgoingMessage<'a> {
                 BatchDelete,
                 BatchScan,
                 BatchScanKeys,
-                CompareAndSwap
+                CompareAndSwap,
+                StoragePut,
+                StorageGet,
+                StorageDelete,
+                StorageList
             ]
         );
 
