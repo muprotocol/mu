@@ -11,9 +11,7 @@ connection_manager:
   max_request_response_size: 8MiB
 gateway_manager:
   listen_address: 0.0.0.0
-  # Note, this is a TCP port. Connection manager uses a UDP port, so it's OK for both
-  # listen_ports to be set to the same number.
-  listen_port: 12012
+  listen_port: 12080
 gossip:
   heartbeat_interval: 1s
   assume_dead_after_missed_heartbeats: 10
@@ -22,8 +20,7 @@ gossip:
   liveness_check_interval: 1s
   network_stabilization_interval: 5s
 initial_cluster:
-  # TODO: allow hostnames
-  - address: 127.0.0.1
+  - address: localhost
     gossip_port: 12012
     pd_port: 2380
 runtime:
