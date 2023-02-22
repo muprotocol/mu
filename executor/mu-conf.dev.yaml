@@ -1,10 +1,6 @@
 log:
   level: info
   filters:
-    - module: mu::stack::blockchain_monitor
-      level: trace
-    - module: mu::stack::scheduler
-      level: trace
     - module: quinn::connection
       level: off
     - module: wasmer_compiler_cranelift::translator::func_translator
@@ -17,7 +13,6 @@ blockchain_monitor:
   solana_usage_signer_private_key: 4GhpeXmHAsQW1K29Q3PBuKzq7fdQzAQS4Bsh5uP3oev1HvZg3tEgT8nZpYAVVikBdKtWGauYBXBDGCeseqyM9R4p
   solana_usage_report_interval: 5s
 db_manager:
-  # Note, this value should not be under 1s
   usage_report_duration: 30s
 runtime:
   cache_path: runtime-cache
