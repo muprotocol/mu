@@ -1,5 +1,5 @@
 [package]
-name = "solana-faucet"
+name = "faucet"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,13 +11,14 @@ crossbeam-channel = "0.5"
 log = "0.4"
 serde = "1.0"
 serde_derive = "1.0"
-solana-clap-utils = "1.16"
-solana-cli-config = "1.16"
-solana-logger = "1.16"
-solana-metrics = "1.16"
-solana-sdk = "1.16"
-solana-version = "1.16"
+solana-clap-utils = "1.15"
+solana-cli-config = "1.15"
+solana-logger = "1.15"
+solana-metrics = "1.15"
+solana-sdk = "1.15"
+solana-version = "1.15"
 spl-memo = { version = "3.0", features = ["no-entrypoint"] }
+spl-token = "3.5"
 thiserror = "1.0"
 tokio = { version = "1", features = ["full"] }
 

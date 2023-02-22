@@ -5,7 +5,6 @@
 //! for a given time time_slice.
 
 use {
-    bincode::{deserialize, serialize, serialized_size},
     byteorder::{ByteOrder, LittleEndian},
     crossbeam_channel::{unbounded, Sender},
     log::*,
@@ -19,7 +18,6 @@ use {
         packet::PACKET_DATA_SIZE,
         pubkey::Pubkey,
         signature::{Keypair, Signer},
-        system_instruction,
         transaction::Transaction,
     },
     std::{
@@ -69,16 +67,16 @@ pub enum FaucetError {
     NoDataReceived,
 
     #[error("request too large; req: ◎{0}, cap: ◎{1}")]
-    PerRequestCapExceeded(f64, f64),
+    PerRequestCapExceeded(u64, u64),
 
     #[error("limit reached; req: ◎{0}, to: {1}, current: ◎{2}, cap: ◎{3}")]
-    PerTimeCapExceeded(f64, String, f64, f64),
+    PerTimeCapExceeded(u64, String, u64, u64),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum FaucetRequest {
     GetAirdrop {
-        lamports: u64,
+        amount: u64,
         to: Pubkey,
         blockhash: Hash,
     },
@@ -126,7 +124,7 @@ impl Faucet {
         if let Some((per_request_cap, per_time_cap)) = per_request_cap.zip(per_time_cap) {
             if per_time_cap < per_request_cap {
                 warn!(
-                    "per_time_cap {} SOL < per_request_cap {} SOL; \
+                    "per_time_cap {} MU < per_request_cap {} MU; \
                     maximum single requests will fail",
                     lamports_to_sol(per_time_cap),
                     lamports_to_sol(per_request_cap),
@@ -154,10 +152,10 @@ impl Faucet {
         if let Some(cap) = self.per_time_cap {
             if new_total > cap {
                 return Err(FaucetError::PerTimeCapExceeded(
-                    lamports_to_sol(request_amount),
+                    request_amount,
                     to.to_string(),
-                    lamports_to_sol(new_total),
-                    lamports_to_sol(cap),
+                    new_total,
+                    cap,
                 ));
             }
         }
@@ -181,26 +179,16 @@ impl Faucet {
         trace!("build_airdrop_transaction: {:?}", req);
         match req {
             FaucetRequest::GetAirdrop {
-                lamports,
+                amount,
                 to,
                 blockhash,
             } => {
                 let mint_pubkey = self.faucet_keypair.pubkey();
-                info!(
-                    "Requesting airdrop of {} SOL to {:?}",
-                    lamports_to_sol(lamports),
-                    to
-                );
+                info!("Requesting airdrop of {} MU to {:?}", amount, to);
 
                 if let Some(cap) = self.per_request_cap {
-                    if lamports > cap {
-                        let memo = format!(
-                            "{}",
-                            FaucetError::PerRequestCapExceeded(
-                                lamports_to_sol(lamports),
-                                lamports_to_sol(cap),
-                            )
-                        );
+                    if amount > cap {
+                        let memo = format!("{}", FaucetError::PerRequestCapExceeded(amount, cap,));
                         let memo_instruction = Instruction {
                             program_id: Pubkey::from(spl_memo::id().to_bytes()),
                             accounts: vec![],
@@ -214,12 +202,12 @@ impl Faucet {
                     }
                 }
                 if !ip.is_loopback() && !self.allowed_ips.contains(&ip) {
-                    self.check_time_request_limit(lamports, ip)?;
+                    self.check_time_request_limit(amount, ip)?;
                 }
-                self.check_time_request_limit(lamports, to)?;
+                self.check_time_request_limit(amount, to)?;
 
                 let transfer_instruction =
-                    system_instruction::transfer(&mint_pubkey, &to, lamports);
+                    spl_token::instruction::transfer(&spl_token::ID, &mint_pubkey, &to, amount);
                 let message = Message::new(&[transfer_instruction], Some(&mint_pubkey));
                 Ok(FaucetTransaction::Airdrop(Transaction::new(
                     &[&self.faucet_keypair],
