@@ -9,10 +9,10 @@ use std::{
 
 use anyhow::Result;
 use async_trait::async_trait;
-use mu_db::{DbManager, IpAndPort, NodeAddress, PdConfig, TikvConfig, TikvRunnerConfig};
+use mu_db::{DbManager, NodeAddress, PdConfig, TcpPortAddress, TikvConfig, TikvRunnerConfig};
 use mu_runtime::{start, AssemblyDefinition, Notification, Runtime, RuntimeConfig, Usage};
 use mu_stack::{AssemblyID, AssemblyRuntime, FunctionID, StackID};
-use musdk_common::Header;
+use musdk_common::http_client::*;
 
 // Add test project names (directory name) in this array to build them when testing
 const TEST_PROJECTS: &[&str] = &[
@@ -21,40 +21,10 @@ const TEST_PROJECTS: &[&str] = &[
     "multi-body",
     "unclean-termination",
     "hello-db",
+    "http-client",
 ];
 
-// <<<<<<< HEAD
-// #[derive(Default)]
-// pub struct MapAssemblyProvider {
-//     inner: HashMap<AssemblyID, AssemblyDefinition>,
-// }
-
-// #[async_trait]
-// impl AssemblyProvider for MapAssemblyProvider {
-//     fn get(&self, id: &AssemblyID) -> Option<&AssemblyDefinition> {
-//         self.inner.get(id)
-//     }
-
-//     fn add_function(&mut self, function: AssemblyDefinition) {
-//         self.inner.insert(function.id.clone(), function);
-//     }
-
-//     fn remove_function(&mut self, id: &AssemblyID) {
-//         self.inner.remove(id);
-//     }
-
-//     fn remove_all_functions(&mut self, _stack_id: &StackID) -> Option<Vec<String>> {
-//         unimplemented!("Not needed for tests")
-//     }
-
-//     fn get_function_names(&self, _stack_id: &StackID) -> Vec<String> {
-//         unimplemented!("Not needed")
-//     }
-// }
-
 #[derive(Debug)]
-// =======
-// >>>>>>> master
 pub struct Project<'a> {
     pub id: AssemblyID,
     pub name: &'a str,
@@ -109,6 +79,7 @@ pub mod fixture {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
+    use mu_common::serde_support::IpOrHostname;
     use test_context::{AsyncTestContext, TestContext};
 
     pub static DID_INSTALL_WASM32_TARGET_RUN: AtomicBool = AtomicBool::new(false);
@@ -193,18 +164,18 @@ pub mod fixture {
             let localhost = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
             let node_address = NodeAddress {
-                address: localhost,
+                address: IpOrHostname::Ip(localhost),
                 port: 12803,
             };
 
             let tikv_config = TikvRunnerConfig {
                 pd: PdConfig {
-                    peer_url: IpAndPort {
-                        address: localhost,
+                    peer_url: TcpPortAddress {
+                        address: IpOrHostname::Ip(localhost),
                         port: 12385,
                     },
-                    client_url: IpAndPort {
-                        address: localhost,
+                    client_url: TcpPortAddress {
+                        address: IpOrHostname::Ip(localhost),
                         port: 12386,
                     },
                     data_dir: data_dir
@@ -219,8 +190,8 @@ pub mod fixture {
                     ),
                 },
                 node: TikvConfig {
-                    cluster_url: IpAndPort {
-                        address: localhost,
+                    cluster_url: TcpPortAddress {
+                        address: IpOrHostname::Ip(localhost),
                         port: 20163,
                     },
                     data_dir: data_dir
@@ -406,7 +377,7 @@ pub async fn create_and_add_projects<'a>(
 }
 
 pub fn make_request<'a>(
-    body: Cow<'a, [u8]>,
+    body: Option<Body<'a>>,
     headers: Vec<Header<'a>>,
     path_params: HashMap<Cow<'a, str>, Cow<'a, str>>,
     query_params: HashMap<Cow<'a, str>, Cow<'a, str>>,
@@ -414,7 +385,7 @@ pub fn make_request<'a>(
     musdk_common::Request {
         method: musdk_common::HttpMethod::Get,
         headers,
-        body,
+        body: body.unwrap_or(Cow::Borrowed(&[])),
         path_params,
         query_params,
     }

@@ -162,7 +162,7 @@ fn generate_module(r#mod: &FunctionsMod) -> TokenStream2 {
 
         #(#invokers)*
 
-        #(#mu_functions)*
+        #(#[allow(clippy::needless_lifetimes)] #mu_functions)*
 
         #(#other_items)*
     })

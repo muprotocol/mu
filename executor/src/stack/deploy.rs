@@ -14,8 +14,8 @@ pub enum StackValidationError {
     #[error("Duplicate function name '{0}'")]
     DuplicateFunctionName(String),
 
-    #[error("Duplicate key_value_table name '{0}'")]
-    DuplicateKeyValueTableName(String),
+    #[error("Duplicate table name '{0}'")]
+    DuplicateTableName(String),
 
     #[error("Duplicate gateway name '{0}'")]
     DuplicateGatewayName(String),
@@ -53,8 +53,8 @@ pub enum StackDeploymentError {
     #[error("Failed to deploy gateways due to: {0}")]
     FailedToDeployGateways(anyhow::Error),
 
-    #[error("Failed to deploy key-value-tables due to: {0}")]
-    FailedToDeployKeyValueTables(anyhow::Error),
+    #[error("Failed to deploy tables due to: {0}")]
+    FailedToDeployTables(anyhow::Error),
 
     #[error("Failed to connect to muDB: {0}")]
     FailedToConnectToDatabase(anyhow::Error),
@@ -111,19 +111,22 @@ pub(super) async fn deploy(
         .await
         .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
 
-    // Step 2: Value-key-tables of Database
-    let mut table_action_tuples = vec![];
+    // Step 2: Database tables
+    let mut table_actions = vec![];
     for kvt in stack.key_value_tables() {
-        let table_name = kvt.name.to_owned().try_into().map_err(|e| {
-            StackDeploymentError::FailedToDeployKeyValueTables(anyhow::anyhow!("{e}"))
-        })?;
-        let delete = DeleteTable(kvt.delete);
-        table_action_tuples.push((table_name, delete));
+        let table_name = kvt
+            .name
+            .clone()
+            .try_into()
+            .map_err(StackDeploymentError::FailedToDeployTables)?;
+        let delete = DeleteTable(matches!(kvt.delete, Some(true)));
+        table_actions.push((table_name, delete));
     }
+
     db_client
-        .update_stack_tables(id, table_action_tuples)
+        .update_stack_tables(id, table_actions)
         .await
-        .map_err(|e| StackDeploymentError::FailedToDeployKeyValueTables(anyhow::anyhow!("{e}")))?;
+        .map_err(|e| StackDeploymentError::FailedToDeployTables(e.into()))?;
 
     let existing_function_names = runtime.get_function_names(id).await.unwrap_or_default();
     let mut functions_to_delete = vec![];

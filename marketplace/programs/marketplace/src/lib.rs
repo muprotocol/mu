@@ -164,6 +164,28 @@ pub mod marketplace {
         Ok(())
     }
 
+    pub fn create_api_request_signer(ctx: Context<CreateApiRequestSigner>) -> Result<()> {
+        ctx.accounts.request_signer.set_inner(ApiRequestSigner {
+            signer: ctx.accounts.signer.key(),
+            user: ctx.accounts.user.key(),
+            region: ctx.accounts.region.key(),
+            bump: *ctx.bumps.get("request_signer").unwrap(),
+            active: true,
+        });
+
+        Ok(())
+    }
+
+    pub fn activate_api_request_signer(ctx: Context<ActivateApiRequestSigner>) -> Result<()> {
+        ctx.accounts.request_signer.active = true;
+        Ok(())
+    }
+
+    pub fn deactivate_api_request_signer(ctx: Context<DeactivateApiRequestSigner>) -> Result<()> {
+        ctx.accounts.request_signer.active = false;
+        Ok(())
+    }
+
     pub fn create_authorized_usage_signer(
         ctx: Context<CreateAuthorizedUsageSigner>,
         // TODO: why aren't these in the Accounts struct?
@@ -612,6 +634,94 @@ pub struct DeleteStack<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
     pub system_program: Program<'info, System>,
+}
+
+#[account]
+pub struct ApiRequestSigner {
+    pub signer: Pubkey,
+    pub user: Pubkey,
+    pub region: Pubkey,
+    pub bump: u8,
+    pub active: bool,
+}
+
+#[derive(Accounts)]
+pub struct CreateApiRequestSigner<'info> {
+    #[account(
+        init,
+        payer = user,
+        space = 8 + 32 + 32 + 32 + 1 + 1,
+        seeds = [b"request_signer", user.key.as_ref(), signer.key.as_ref(), region.key().as_ref()],
+        bump
+    )]
+    request_signer: Account<'info, ApiRequestSigner>,
+
+    #[account(mut)]
+    user: Signer<'info>,
+
+    #[account()]
+    signer: Signer<'info>,
+
+    #[account()]
+    region: Account<'info, ProviderRegion>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ActivateApiRequestSigner<'info> {
+    #[account(
+        mut,
+        has_one = user,
+        has_one = signer,
+        has_one = region,
+        seeds = [
+            b"request_signer",
+            request_signer.user.as_ref(),
+            request_signer.signer.as_ref(),
+            request_signer.region.as_ref()
+        ],
+        bump = request_signer.bump
+    )]
+    request_signer: Account<'info, ApiRequestSigner>,
+
+    #[account(mut)]
+    user: Signer<'info>,
+
+    #[account()]
+    signer: Signer<'info>,
+
+    #[account()]
+    region: Account<'info, ProviderRegion>,
+}
+
+#[derive(Accounts)]
+pub struct DeactivateApiRequestSigner<'info> {
+    #[account(
+        mut,
+        has_one = user,
+        has_one = signer,
+        has_one = region,
+        seeds = [
+            b"request_signer",
+            request_signer.user.as_ref(),
+            request_signer.signer.as_ref(),
+            request_signer.region.as_ref()
+        ],
+        bump = request_signer.bump
+    )]
+    request_signer: Account<'info, ApiRequestSigner>,
+
+    #[account(mut)]
+    user: Signer<'info>,
+
+    #[account()]
+    /// CHECK: The signer itself is not required to deactivate, so users can
+    /// deactivate signers in case they lose the private key.
+    signer: AccountInfo<'info>,
+
+    #[account()]
+    region: Account<'info, ProviderRegion>,
 }
 
 #[account]

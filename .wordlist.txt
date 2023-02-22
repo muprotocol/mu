@@ -10,11 +10,13 @@ clonable
 codegen
 Condvar
 cranelift
+dalek
 datagram
 Datagram
 datagrams
 deque
 didnt
+docsrs
 dont
 flate
 funcs
@@ -51,6 +53,7 @@ MuProtocol
 musdk
 muxer
 nanos
+Neue
 nonblocking
 ocsp
 oneshot
@@ -85,6 +88,8 @@ Ryzen
 scans
 scts
 secretkey
+Segoe
+serde
 serverless
 Serverless
 shellexpand

@@ -645,6 +645,65 @@ export const updateStackUsage = async (
     return { pda, bump };
 }
 
+export interface MuApiRequestSigner {
+    pda: PublicKey,
+    wallet: Keypair,
+}
+
+export const createApiRequestSigner = async (
+    mu: MuProgram,
+    userWallet: Keypair,
+    signer: Keypair,
+    region: MuRegionInfo,
+): Promise<MuApiRequestSigner> => {
+    let [pda, _] = publicKey.findProgramAddressSync(
+        [
+            anchor.utils.bytes.utf8.encode("request_signer"),
+            userWallet.publicKey.toBytes(),
+            signer.publicKey.toBytes(),
+            region.pda.toBytes(),
+        ],
+        mu.program.programId
+    );
+
+    await mu.program.methods.createApiRequestSigner().accounts({
+        requestSigner: pda,
+        signer: signer.publicKey,
+        user: userWallet.publicKey,
+        region: region.pda,
+    }).signers([userWallet, signer]).rpc();
+
+    return { pda, wallet: signer };
+}
+
+export const activateApiRequestSigner = async (
+    mu: MuProgram,
+    userWallet: Keypair,
+    requestSigner: MuApiRequestSigner,
+    region: MuRegionInfo,
+) => {
+    await mu.program.methods.activateApiRequestSigner().accounts({
+        user: userWallet.publicKey,
+        signer: requestSigner.wallet.publicKey,
+        requestSigner: requestSigner.pda,
+        region: region.pda,
+    }).signers([userWallet, requestSigner.wallet]).rpc();
+}
+
+export const deactivateApiRequestSigner = async (
+    mu: MuProgram,
+    userWallet: Keypair,
+    requestSigner: MuApiRequestSigner,
+    region: MuRegionInfo,
+) => {
+    await mu.program.methods.deactivateApiRequestSigner().accounts({
+        user: userWallet.publicKey,
+        signer: requestSigner.wallet.publicKey,
+        requestSigner: requestSigner.pda,
+        region: region.pda,
+    }).signers([userWallet]).rpc();
+}
+
 export const withdrawEscrowBalance = async (
     mu: MuProgram,
     escrowAccount: MuEscrowAccountInfo,
