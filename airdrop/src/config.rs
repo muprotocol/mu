@@ -71,7 +71,7 @@ pub fn initialize_config() -> Result<AppConfig> {
 }
 
 impl AppConfig {
-    // Support all types of Signers
+    //TODO: Support all types of Signers
     pub fn authority_keypair(&self) -> anyhow::Result<Keypair> {
         let mut file = std::fs::File::open(&self.authority_keypair)?;
         read_keypair(&mut file).map_err(|e| anyhow!("Unable to read keypair file: {e}"))

@@ -1,5 +1,5 @@
-listen_address: 0.0.0.0:13140
+listen_address: 127.0.0.1:13140
 mint_pubkey: 3v4rZHozXcjViwordtaatQz8rSD6mVKMXrkFyqSUDdLL
-authority_keypair: /home/hamid/.config/solana/id.json
+authority_keypair: path_to_authority_keypair
 per_request_cap: 1000
 per_address_cap: 20000

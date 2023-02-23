@@ -1,6 +1,9 @@
 use std::{collections::HashMap, net::IpAddr, str::FromStr, sync::RwLock};
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use solana_client::{
+    client_error::ClientErrorKind, nonblocking::rpc_client::RpcClient, rpc_request::RpcError,
+};
 use solana_sdk::signature::{Keypair, Signature};
 use spl_token::solana_program::pubkey::Pubkey;
 
@@ -8,7 +11,7 @@ use crate::config::AppConfig;
 
 //TODO: Add Email address too.
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct AirdropRequest {
     pub amount: u64,
     #[serde(deserialize_with = "deserialize_pubkey")]
@@ -25,9 +28,10 @@ pub struct AirdropResponse {
 
 #[derive(Debug, Serialize)]
 pub enum Error {
-    InternalError(String),
+    Internal(String),
     FailedToCreateTransaction(String),
     FailedToSendTransaction(String),
+    TokenAccountNotInitializedYet,
     PerRequestCapExceeded { requested: u64, capacity: u64 },
     PerAddressCapExceeded { requested: u64, capacity: u64 },
 }
@@ -37,9 +41,10 @@ pub struct State {
     pub authority_keypair: Keypair,
 
     pub cache: RwLock<Cache>,
+    pub solana_client: RpcClient,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Cache {
     pub addr_cache: HashMap<IpAddr, u64>,
     pub pubkey_cache: HashMap<Pubkey, u64>,
@@ -63,7 +68,7 @@ impl State {
         let mut cache = self
             .cache
             .write()
-            .map_err(|e| Error::InternalError(format!("Can not lock cache: {e}")))?;
+            .map_err(|e| Error::Internal(format!("Can not lock cache: {e}")))?;
 
         let new_addr_total = cache
             .addr_cache
@@ -97,6 +102,24 @@ impl State {
 
         Ok(())
     }
+
+    pub fn revert_changes(&self, addr: IpAddr, pubkey: Pubkey, amount: u64) -> Result<(), Error> {
+        let mut cache = self
+            .cache
+            .write()
+            .map_err(|e| Error::Internal(format!("Can not lock cache: {e}")))?;
+
+        cache
+            .addr_cache
+            .entry(addr)
+            .and_modify(|total| *total = total.saturating_sub(amount));
+
+        cache
+            .pubkey_cache
+            .entry(pubkey)
+            .and_modify(|total| *total = total.saturating_sub(amount));
+        Ok(())
+    }
 }
 
 fn deserialize_pubkey<'de, D>(deserializer: D) -> Result<Pubkey, D::Error>
@@ -114,4 +137,16 @@ where
     S: Serializer,
 {
     sig.to_string().serialize(serializer)
+}
+
+pub async fn account_exists(solana_client: &RpcClient, pubkey: &Pubkey) -> Result<bool, Error> {
+    match solana_client.get_account(pubkey).await {
+        Ok(_) => Ok(true),
+        Err(client_error) => match client_error.kind {
+            ClientErrorKind::RpcError(RpcError::ForUser(s)) if s.contains("AccountNotFound") => {
+                Ok(false)
+            }
+            _ => Err(Error::Internal(client_error.to_string())),
+        },
+    }
 }
