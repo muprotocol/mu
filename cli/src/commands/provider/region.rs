@@ -28,7 +28,10 @@ pub struct CreateArgs {
     )]
     min_escrow_balance: f64,
 
-    #[arg(long, help = "Billion function instructions and MB of RAM")]
+    #[arg(
+        long,
+        help = "Price per 1000 billion function instructions (equivalent to about 5 minutes of execution time on a 3GHz CPU) and 1 megabyte of RAM"
+    )]
     function_mb_tera_instructions: u64,
 
     #[arg(long, help = "Database GB per month")]
