@@ -341,8 +341,8 @@ async fn failing_function_should_not_hang(fixture: &mut RuntimeFixtureWithoutDB)
         .await;
 
     match result.err().unwrap() {
-        Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(_)) => (),
-        _ => panic!("function should have been exited early!"),
+        Error::FunctionDidntTerminateCleanly => (),
+        _ => panic!("function should have been failed!"),
     }
 }
 

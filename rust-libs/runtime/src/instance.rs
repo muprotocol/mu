@@ -16,7 +16,7 @@ use musdk_common::{
     incoming_message::{db::*, IncomingMessage},
     outgoing_message::{LogLevel, OutgoingMessage},
 };
-use wasmer::{CompilerConfig, Module, RuntimeError, Store};
+use wasmer::{CompilerConfig, Module, Store};
 use wasmer_compiler_llvm::LLVM;
 use wasmer_middlewares::{metering::MeteringPoints, Metering};
 
@@ -222,12 +222,7 @@ impl Instance<Running> {
                 &self.id
             );
 
-            return Err((
-                Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(
-                    RuntimeError::new("Function Early Exit"),
-                )),
-                Default::default(),
-            ));
+            return Err((Error::FunctionDidntTerminateCleanly, Default::default()));
         }
 
         self.write_message(IncomingMessage::ExecuteFunction(request))

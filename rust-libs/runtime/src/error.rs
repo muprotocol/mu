@@ -38,9 +38,6 @@ pub enum FunctionRuntimeError {
     #[error("Function reported fatal error: {0}")]
     FatalError(String),
 
-    #[error("Function exited early: {0:?}")]
-    FunctionEarlyExit(RuntimeError),
-
     #[error("Function maximum memory exceeded")]
     MaximumMemoryExceeded,
 

@@ -101,8 +101,9 @@ pub fn start(
         result
             .map(|_| get_remaining_points(&mut store, &instance))
             .map_err(|e| {
+                log::debug!("Function didn't terminated cleanly: {e:?}");
                 (
-                    Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(e)),
+                    Error::FunctionDidntTerminateCleanly,
                     get_remaining_points(&mut store, &instance),
                 )
             })
