@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{Context, Result};
 
-use mu_db::DbManager;
+use mu_db::{DbManager, DeleteTable};
 use mu_gateway::{GatewayManager, GatewayManagerConfig};
 use mu_runtime::{AssemblyDefinition, Runtime, RuntimeConfig};
 use mu_stack::{AssemblyID, FunctionID, Gateway, StackID};
@@ -86,20 +86,21 @@ pub async fn start(
         .await
         .context("couldn't create database client")?;
 
-    let mut tables = vec![];
-    for x in stack.key_value_tables() {
-        let table_name = x
+    let mut table_actions = vec![];
+    for kvt in stack.key_value_tables() {
+        let table_name = kvt
             .name
-            .to_owned()
+            .clone()
             .try_into()
-            .with_context(|| format!("Invalid table name: {}", x.name))?;
-        tables.push(table_name);
+            .context("Failed to deploy tables")?;
+        let delete = DeleteTable(matches!(kvt.delete, Some(true)));
+        table_actions.push((table_name, delete));
     }
 
     db_client
-        .update_stack_tables(stack_id, tables)
+        .update_stack_tables(stack_id, table_actions)
         .await
-        .context("failed to setup database")?;
+        .context("Failed to deploy tables")?;
 
     let gateways = stack.gateways().map(ToOwned::to_owned).collect();
 

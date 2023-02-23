@@ -191,6 +191,16 @@ impl Deref for TableName {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteTable(pub bool);
+
+impl Deref for DeleteTable {
+    type Target = bool;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Key {
     pub stack_id: StackID,

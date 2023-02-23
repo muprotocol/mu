@@ -1563,6 +1563,7 @@ dependencies = [
  "mu_stack",
  "musdk-common",
  "rand 0.8.5",
+ "reqwest",
  "serde",
  "serde_json",
  "serial_test",

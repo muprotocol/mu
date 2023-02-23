@@ -94,9 +94,15 @@ async fn test_queries_on_a_node_with<T>(
     T: Future + Send + 'static,
 {
     // db
-    db.update_stack_tables(stack_id, table_list.clone().into())
+    let table_action_tuples = table_list
+        .clone()
+        .into_iter()
+        .map(|x| (x, DeleteTable(false)))
+        .collect::<Vec<_>>();
+    db.update_stack_tables(stack_id, table_action_tuples.clone())
         .await
         .unwrap();
+
     let key = Key {
         stack_id,
         table_name: table_list[0].clone(),
@@ -206,6 +212,27 @@ async fn test_unpredictable_scans_for_keys(
 async fn test_table_list(db: &dyn DbClient, tl: Vec<TableName>) {
     let table_names = db.table_list(STACK_ID, None).await.unwrap();
     assert_eq!(table_names, tl);
+}
+
+async fn test_update_stack_tables(db: Box<dyn DbClient>) {
+    let table_list = vec!["table_1".try_into().unwrap(), "table_2".try_into().unwrap()];
+    let mut table_list_extend = table_list.clone();
+    table_list_extend.push("table_3".try_into().unwrap());
+    let table_action_tuples = table_list_extend
+        .clone()
+        .into_iter()
+        .map(|x| (x, DeleteTable(false)))
+        .collect::<Vec<_>>();
+    db.update_stack_tables(STACK_ID, table_action_tuples.clone())
+        .await
+        .unwrap();
+    test_table_list(db.as_ref(), table_list_extend.clone()).await;
+    let mut table_action_tuples2 = table_action_tuples.clone();
+    table_action_tuples2.last_mut().unwrap().1 = DeleteTable(true);
+    db.update_stack_tables(STACK_ID, table_action_tuples2.clone())
+        .await
+        .unwrap();
+    test_table_list(db.as_ref(), table_list).await;
 }
 
 async fn try_to_make_client_or_stop_cluster(
@@ -512,6 +539,27 @@ async fn make_3_dbs() -> (Vec<Box<dyn DbManager>>, Vec<Box<dyn DbClient>>) {
 
 #[tokio::test]
 #[serial]
+async fn success_to_update_and_delete_stack_tables() {
+    clean_data_dir();
+
+    let node_address = make_node_address(2803);
+    let known_node_conf = vec![];
+    let tikv_runner_conf = make_tikv_runner_conf(2385, 2386, 20163);
+    let db_manager =
+        mu_db::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+            .await
+            .unwrap();
+
+    let db_client = try_to_make_client_or_stop_cluster(db_manager.as_ref())
+        .await
+        .unwrap();
+
+    test_update_stack_tables(db_client).await;
+    db_manager.stop_embedded_cluster().await.unwrap();
+}
+
+#[tokio::test]
+#[serial]
 async fn success_to_start_and_query_single_embedded_clustered_node() {
     clean_data_dir();
 
@@ -672,8 +720,12 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     .await
     .unwrap();
 
+    let table_action_tuples = table_list()
+        .into_iter()
+        .map(|x| (x, DeleteTable(false)))
+        .collect::<Vec<_>>();
     for x in [&db, &db2, &db3] {
-        x.update_stack_tables(STACK_ID, table_list().into())
+        x.update_stack_tables(STACK_ID, table_action_tuples.clone())
             .await
             .unwrap();
     }

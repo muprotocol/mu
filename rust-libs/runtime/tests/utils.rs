@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use mu_db::{DbManager, PdConfig, TcpPortAddress, TikvConfig, TikvRunnerConfig};
 use mu_runtime::{start, AssemblyDefinition, Notification, Runtime, RuntimeConfig, Usage};
 use mu_stack::{AssemblyID, AssemblyRuntime, FunctionID, StackID};
-use musdk_common::Header;
+use musdk_common::http_client::*;
 
 // Add test project names (directory name) in this array to build them when testing
 const TEST_PROJECTS: &[&str] = &[
@@ -23,6 +23,7 @@ const TEST_PROJECTS: &[&str] = &[
     "multi-body",
     "unclean-termination",
     "hello-db",
+    "http-client",
     "instant-exit",
 ];
 
@@ -352,7 +353,7 @@ pub async fn create_and_add_projects<'a>(
 }
 
 pub fn make_request<'a>(
-    body: Cow<'a, [u8]>,
+    body: Option<Body<'a>>,
     headers: Vec<Header<'a>>,
     path_params: HashMap<Cow<'a, str>, Cow<'a, str>>,
     query_params: HashMap<Cow<'a, str>, Cow<'a, str>>,
@@ -360,7 +361,7 @@ pub fn make_request<'a>(
     musdk_common::Request {
         method: musdk_common::HttpMethod::Get,
         headers,
-        body,
+        body: body.unwrap_or(Cow::Borrowed(&[])),
         path_params,
         query_params,
     }
@@ -370,7 +371,7 @@ mod mock_db {
     #![allow(unused)]
     use async_trait::async_trait;
     use mu_db::error::Result;
-    use mu_db::{Blob, DbClient, DbManager, Key, Scan, TableName};
+    use mu_db::{Blob, DbClient, DbManager, DeleteTable, Key, Scan, TableName};
     use mu_stack::StackID;
     use tikv_client::Value;
 
@@ -385,7 +386,7 @@ mod mock_db {
         async fn update_stack_tables(
             &self,
             stack_id: StackID,
-            table_list: Vec<TableName>,
+            table_list: Vec<(TableName, DeleteTable)>,
         ) -> Result<()> {
             Ok(())
         }

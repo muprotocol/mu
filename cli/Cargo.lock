@@ -3226,6 +3226,7 @@ dependencies = [
  "mu-db",
  "mu_stack",
  "musdk-common",
+ "reqwest",
  "serde",
  "thiserror",
  "tokio",

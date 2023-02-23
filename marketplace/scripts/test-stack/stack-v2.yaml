@@ -1,8 +1,12 @@
 name: my_stack_v2
 version: 0.2
 services:
+  # note: t1 is missing on purpose
   - type: KeyValueTable
-    name: my_db
+    name: t2
+    delete: true
+  - type: KeyValueTable
+    name: t3
   - type: Function
     name: my_function_v2
     binary: http://localhost:8080/test-function-v2.wasm
