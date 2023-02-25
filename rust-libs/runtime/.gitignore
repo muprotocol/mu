@@ -1,4 +1,3 @@
 /target
 /tests/funcs/*/target
-/tests/runtime/test_data/*
 /runtime-cache

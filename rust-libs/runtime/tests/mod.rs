@@ -2,12 +2,12 @@ use std::{borrow::Cow, collections::HashMap};
 
 use futures::FutureExt;
 use itertools::Itertools;
+use serial_test::serial;
+use test_context::test_context;
 
 use mu_db::DeleteTable;
 use mu_runtime::*;
 use musdk_common::{Header, Status};
-use serial_test::serial;
-use test_context::test_context;
 
 use crate::utils::{fixture::*, *};
 
@@ -41,37 +41,6 @@ async fn test_simple_func(fixture: &mut RuntimeFixtureWithoutDB) {
         resp.body.as_ref()
     );
 }
-
-// #[tokio::test]
-// async fn can_query_mudb() {
-//     let projects = vec![create_project("hello-mudb", None)];
-//     let (runtime, db_service, _) = create_runtime(&projects).await;
-
-//     let database_id = DatabaseID {
-//         stack_id: projects[0].id.stack_id,
-//         db_name: "my_db".into(),
-//     };
-
-//     create_db_if_not_exist(db_service, database_id)
-//         .await
-//         .unwrap();
-
-//     let request = musdk_common::Request {
-//         method: musdk_common::HttpMethod::Get,
-//         path: Cow::Borrowed("/get_name"),
-//         query: HashMap::new(),
-//         headers: Vec::new(),
-//         body: Cow::Borrowed("Dream".as_bytes()),
-//     };
-
-//     let resp = runtime
-//         .invoke_function(projects[0].id.clone(), request)
-//         .await
-//         .unwrap();
-
-//     assert_eq!(Cow::Borrowed("Hello Dream".as_bytes()), resp.body);
-//     runtime.stop().await.unwrap();
-// }
 
 #[test_context(RuntimeFixtureWithoutDB)]
 #[tokio::test]
@@ -373,8 +342,8 @@ async fn failing_function_should_not_hang(fixture: &mut RuntimeFixtureWithoutDB)
         .await;
 
     match result.err().unwrap() {
-        Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(_)) => (),
-        _ => panic!("function should have been exited early!"),
+        Error::FunctionDidntTerminateCleanly => (),
+        _ => panic!("function should have been failed!"),
     }
 }
 
@@ -1044,6 +1013,30 @@ async fn db_batch_crud(fixture: &mut RuntimeFixture) {
             )
         })
         .await;
+}
+
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn instant_exit_is_handled(fixture: &mut RuntimeFixtureWithoutDB) {
+    use mu_runtime::error::*;
+
+    let projects = create_and_add_projects(
+        vec![("instant-exit", &["say_hello"], None)],
+        &*fixture.runtime,
+    )
+    .await
+    .unwrap();
+
+    let request = make_request(None, vec![], HashMap::new(), HashMap::new());
+
+    match fixture
+        .runtime
+        .invoke_function(projects[0].function_id(0).unwrap(), request)
+        .await
+    {
+        Err(Error::FunctionDidntTerminateCleanly) => (),
+        _ => panic!("Instant exit function should fail to run"),
+    }
 }
 
 #[test_context(RuntimeFixtureWithoutDB)]

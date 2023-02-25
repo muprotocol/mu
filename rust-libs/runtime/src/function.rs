@@ -5,10 +5,9 @@ use std::{
 };
 
 use super::{
-    error::{Error, FunctionLoadingError, FunctionRuntimeError},
+    error::{Error, FunctionLoadingError, FunctionRuntimeError, Result},
     types::{FunctionHandle, FunctionIO},
 };
-use anyhow::Result;
 use bytes::Buf;
 use wasmer::{Instance, Module, Store};
 use wasmer_middlewares::metering::get_remaining_points;
@@ -19,7 +18,7 @@ pub fn start(
     mut store: Store,
     module: &Module,
     envs: HashMap<String, String>,
-) -> Result<FunctionHandle, Error> {
+) -> Result<FunctionHandle> {
     //TODO: Check wasi version specified in this module and if we can run it!
 
     let stdin = Pipe::new();
@@ -102,8 +101,9 @@ pub fn start(
         result
             .map(|_| get_remaining_points(&mut store, &instance))
             .map_err(|e| {
+                log::debug!("Function didn't terminated cleanly: {e:?}");
                 (
-                    Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(e)),
+                    Error::FunctionDidntTerminateCleanly,
                     get_remaining_points(&mut store, &instance),
                 )
             })

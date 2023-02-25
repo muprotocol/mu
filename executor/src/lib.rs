@@ -170,7 +170,7 @@ pub async fn run() -> Result<()> {
     .context("Failed to start gossip")?;
 
     let database_manager = mu_db::start(
-        mu_db::NodeAddress {
+        mu_db::TcpPortAddress {
             address: IpOrHostname::Ip(my_node.address),
             port: my_node.port,
         },
@@ -200,29 +200,31 @@ pub async fn run() -> Result<()> {
 
     let request_signer_cache = request_signer_cache::start();
 
-    let connection_manager_clone = connection_manager.clone();
-    let gossip_clone = gossip.clone();
-    let rpc_handler_clone = rpc_handler.clone();
-    let runtime_clone = runtime.clone();
-
     let scheduler_ref = Arc::new(RwLock::new(None));
-    let scheduler_ref_clone = scheduler_ref.clone();
     let (gateway_manager, mut gateway_notification_receiver) = mu_gateway::start(
         gateway_manager_config,
         api::service_factory(),
         Some(api::DependencyAccessor {
             request_signer_cache: request_signer_cache.clone(),
         }),
-        move |f, r| {
-            Box::pin(request_routing::route_request(
-                f,
-                r,
-                connection_manager_clone.clone(),
-                gossip_clone.clone(),
-                scheduler_ref_clone.clone(),
-                rpc_handler_clone.clone(),
-                runtime_clone.clone(),
-            ))
+        {
+            let connection_manager = connection_manager.clone();
+            let gossip = gossip.clone();
+            let scheduler_ref = scheduler_ref.clone();
+            let rpc_handler = rpc_handler.clone();
+            let runtime = runtime.clone();
+
+            move |f, r| {
+                Box::pin(request_routing::route_request(
+                    f,
+                    r,
+                    connection_manager.clone(),
+                    gossip.clone(),
+                    scheduler_ref.clone(),
+                    rpc_handler.clone(),
+                    runtime.clone(),
+                ))
+            }
         },
     )
     .await
@@ -279,7 +281,7 @@ pub async fn run() -> Result<()> {
 
         trace!("Stopping database manager");
         database_manager
-            .stop_embedded_cluster()
+            .stop()
             .await
             .context("Failed to stop runtime")?;
 

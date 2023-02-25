@@ -11,24 +11,24 @@ use std::{
     ops::{Add, AddAssign},
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::anyhow;
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::*;
-use mu_db::DbManager;
-use providers::AssemblyProvider;
 use tokio::sync::mpsc;
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
 
 use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel, ReplyChannel};
 use mu_common::id::IdExt;
+use mu_db::DbManager;
 use mu_stack::{AssemblyID, FunctionID, StackID};
 use musdk_common::{Header, Request, Response};
 
 use instance::create_store;
+use providers::AssemblyProvider;
 
-pub use error::{Error, FunctionLoadingError, FunctionRuntimeError};
+pub use error::{Error, FunctionLoadingError, FunctionRuntimeError, Result};
 pub use instance::{Instance, Loaded, Running};
 pub use types::{AssemblyDefinition, InvokeFunctionRequest, RuntimeConfig};
 
@@ -39,14 +39,14 @@ pub trait Runtime: Clone + Send + Sync {
         &self,
         function_id: FunctionID,
         request: Request<'a>,
-    ) -> Result<Response<'static>, Error>;
+    ) -> Result<Response<'static>>;
 
-    async fn stop(&self) -> Result<(), Error>;
+    async fn stop(&self) -> Result<()>;
 
-    async fn add_functions(&self, functions: Vec<AssemblyDefinition>) -> Result<(), Error>;
-    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<(), Error>;
-    async fn remove_all_functions(&self, stack_id: StackID) -> Result<(), Error>;
-    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>, Error>;
+    async fn add_functions(&self, functions: Vec<AssemblyDefinition>) -> Result<()>;
+    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<()>;
+    async fn remove_all_functions(&self, stack_id: StackID) -> Result<()>;
+    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>>;
 }
 
 #[derive(Clone)]
@@ -129,8 +129,7 @@ impl RuntimeState {
         let (tx, rx) = NotificationChannel::new();
 
         let hashkey_dict = HashMap::new();
-        let mut cache =
-            FileSystemCache::new(&config.cache_path).context("failed to create cache")?;
+        let mut cache = FileSystemCache::new(&config.cache_path).map_err(Error::CacheSetup)?;
         cache.set_cache_extension(Some("wasmu"));
 
         Ok((
@@ -148,11 +147,11 @@ impl RuntimeState {
         ))
     }
 
-    fn load_module(&mut self, function_id: &AssemblyID) -> Result<(Store, Module)> {
-        if self.hashkey_dict.contains_key(function_id) {
+    fn load_module(&mut self, assembly_id: &AssemblyID) -> Result<(Store, Module)> {
+        if self.hashkey_dict.contains_key(assembly_id) {
             let CacheHashAndMemoryLimit { hash, memory_limit } = self
                 .hashkey_dict
-                .get(function_id)
+                .get(assembly_id)
                 .ok_or_else(|| Error::Internal(anyhow!("cache key can not be found")))?
                 .to_owned();
 
@@ -163,60 +162,62 @@ impl RuntimeState {
                 Err(e) => {
                     warn!("cached module is corrupted: {}", e);
 
-                    let definition = self.assembly_provider.get(function_id).ok_or_else(|| {
+                    let definition = self.assembly_provider.get(assembly_id).ok_or_else(|| {
                         Error::FunctionLoadingError(FunctionLoadingError::AssemblyNotFound(
-                            function_id.clone(),
+                            assembly_id.clone(),
                         ))
                     })?;
 
-                    let module = Module::new(&store, definition.source.clone())?;
+                    let module = Module::new(&store, definition.source.clone()).map_err(|e| {
+                        Error::FunctionLoadingError(FunctionLoadingError::CompileWasmModule(e))
+                    })?;
 
-                    self.cache.store(*hash, &module)?;
+                    self.cache.store(*hash, &module).map_err(|e| {
+                        Error::FunctionLoadingError(
+                            FunctionLoadingError::SerializeCachedWasmModule(e),
+                        )
+                    })?;
 
                     Ok((store, module))
                 }
             }
         } else {
-            let function_definition = match self.assembly_provider.get(function_id) {
+            let assembly_definition = match self.assembly_provider.get(assembly_id) {
                 Some(d) => d,
                 None => {
                     return Err(Error::FunctionLoadingError(
-                        FunctionLoadingError::AssemblyNotFound(function_id.clone()),
-                    )
-                    .into());
+                        FunctionLoadingError::AssemblyNotFound(assembly_id.clone()),
+                    ));
                 }
             };
 
-            let mut hash_array = Vec::with_capacity(function_id.assembly_name.len() + 16); // Uuid is 16 bytes
-            hash_array.extend_from_slice(function_id.stack_id.get_bytes()); //This is bad, should
+            let mut hash_array = Vec::with_capacity(assembly_id.assembly_name.len() + 16); // Uuid is 16 bytes
+            hash_array.extend_from_slice(assembly_id.stack_id.get_bytes()); //This is bad, should
                                                                             //use a method on
                                                                             //StackID
-            hash_array.extend_from_slice(function_id.assembly_name.as_bytes());
+            hash_array.extend_from_slice(assembly_id.assembly_name.as_bytes());
             let hash = wasmer_cache::Hash::generate(&hash_array);
 
             self.hashkey_dict.insert(
-                function_id.clone(),
+                assembly_id.clone(),
                 CacheHashAndMemoryLimit {
                     hash,
-                    memory_limit: function_definition.memory_limit,
+                    memory_limit: assembly_definition.memory_limit,
                 },
             );
 
-            let store = create_store(function_definition.memory_limit)?;
+            let store = create_store(assembly_definition.memory_limit)?;
 
-            if let Ok(module) = Module::from_binary(&store, &function_definition.source) {
+            if let Ok(module) = Module::from_binary(&store, &assembly_definition.source) {
                 if let Err(e) = self.cache.store(hash, &module) {
-                    error!("failed to cache module: {e}, function id: {}", function_id);
+                    error!("failed to cache module: {e}, function id: {}", assembly_id);
                 }
                 Ok((store, module))
             } else {
-                error!("can not build wasm module for function: {}", function_id);
-                Err(
-                    Error::FunctionLoadingError(FunctionLoadingError::InvalidAssembly(
-                        function_id.clone(),
-                    ))
-                    .into(),
-                )
+                error!("can not build wasm module for function: {}", assembly_id);
+                Err(Error::FunctionLoadingError(
+                    FunctionLoadingError::InvalidAssembly(assembly_id.clone()),
+                ))
             }
         }
     }
@@ -254,7 +255,7 @@ impl Runtime for RuntimeImpl {
         &self,
         function_id: FunctionID,
         request: Request<'a>,
-    ) -> Result<Response<'static>, Error> {
+    ) -> Result<Response<'static>> {
         // TODO: This is a rather ridiculous thing to do, but necessary
         // since we're sending the request to another thread. There has
         // to be a better way.
@@ -298,7 +299,7 @@ impl Runtime for RuntimeImpl {
         Ok(response.response)
     }
 
-    async fn stop(&self) -> Result<(), Error> {
+    async fn stop(&self) -> Result<()> {
         self.mailbox
             .post(MailboxMessage::Shutdown)
             .await
@@ -307,28 +308,28 @@ impl Runtime for RuntimeImpl {
         Ok(())
     }
 
-    async fn add_functions(&self, functions: Vec<AssemblyDefinition>) -> Result<(), Error> {
+    async fn add_functions(&self, functions: Vec<AssemblyDefinition>) -> Result<()> {
         self.mailbox
             .post(MailboxMessage::AddFunctions(functions))
             .await
             .map_err(|e| Error::Internal(e.into()))
     }
 
-    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<(), Error> {
+    async fn remove_functions(&self, stack_id: StackID, names: Vec<String>) -> Result<()> {
         self.mailbox
             .post(MailboxMessage::RemoveFunctions(stack_id, names))
             .await
             .map_err(|e| Error::Internal(e.into()))
     }
 
-    async fn remove_all_functions(&self, stack_id: StackID) -> Result<(), Error> {
+    async fn remove_all_functions(&self, stack_id: StackID) -> Result<()> {
         self.mailbox
             .post(MailboxMessage::RemoveAllFunctions(stack_id))
             .await
             .map_err(|e| Error::Internal(e.into()))
     }
 
-    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>, Error> {
+    async fn get_function_names(&self, stack_id: StackID) -> Result<Vec<String>> {
         self.mailbox
             .post_and_reply(|r| MailboxMessage::GetFunctionNames(stack_id, r))
             .await
@@ -434,6 +435,6 @@ async fn execute_function(state: &mut RuntimeState, req: InvokeFunctionRequest) 
                 }
             });
         }
-        Err(f) => req.reply.reply(Err(Error::Internal(f))),
+        Err(f) => req.reply.reply(Err(f)),
     }
 }

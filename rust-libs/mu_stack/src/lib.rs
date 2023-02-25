@@ -302,3 +302,18 @@ pub enum AssemblyRuntime {
     #[serde(rename = "wasi1.0")]
     Wasi1_0,
 }
+
+impl Display for HttpMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            HttpMethod::Get => "Get",
+            HttpMethod::Head => "Head",
+            HttpMethod::Post => "Post",
+            HttpMethod::Put => "Put",
+            HttpMethod::Patch => "Patch",
+            HttpMethod::Delete => "Delete",
+            HttpMethod::Options => "Options",
+        };
+        std::fmt::Display::fmt(s, f)
+    }
+}

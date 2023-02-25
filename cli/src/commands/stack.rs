@@ -151,14 +151,14 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
             if let StackState::Active { revision, name, .. } = stack.state {
                 let region = regions.get(&stack.region).unwrap();
                 let provider = providers.get(&region.provider).unwrap();
-                println!("{}:", name);
-                println!("\tKey: {}", key);
+                println!("{name}:");
+                println!("\tKey: {key}");
                 println!("\tProvider ID: {}", region.provider);
                 println!("\tProvider Name: {}", provider.name);
                 println!("\tRegion ID: {}", stack.region);
                 println!("\tRegion Name: {}", region.name);
                 println!("\tSeed: {}", stack.seed);
-                println!("\tRevision: {}", revision);
+                println!("\tRevision: {revision}");
             } else {
                 println!("Internal error: didn't expect to receive deleted stack")
             }

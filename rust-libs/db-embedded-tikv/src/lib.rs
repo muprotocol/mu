@@ -19,7 +19,7 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     os::unix::prelude::PermissionsExt,
     path::PathBuf,
-    process,
+    process::{self, Stdio},
 };
 use tokio::{fs::File, io::AsyncWriteExt};
 
@@ -71,9 +71,6 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
     Ok(temp_address)
 }
 
-// TODO: support hostname (also in gossip as well)
-/// # IpAndPort
-
 #[derive(Deserialize, Clone)]
 pub struct TcpPortAddress {
     pub address: IpOrHostname,
@@ -110,10 +107,10 @@ impl From<TcpPortAddress> for String {
 
 #[derive(Deserialize, Clone)]
 pub struct PdConfig {
-    pub data_dir: String,
+    pub data_dir: PathBuf,
     pub peer_url: TcpPortAddress,
     pub client_url: TcpPortAddress,
-    pub log_file: Option<String>,
+    pub log_file: Option<PathBuf>,
 }
 
 fn unspecified_to_localhost(x: &TcpPortAddress) -> TcpPortAddress {
@@ -139,8 +136,8 @@ impl PdConfig {
 #[derive(Deserialize, Clone)]
 pub struct TikvConfig {
     pub cluster_url: TcpPortAddress,
-    pub data_dir: String,
-    pub log_file: Option<String>,
+    pub data_dir: PathBuf,
+    pub log_file: Option<PathBuf>,
 }
 
 impl TikvConfig {
@@ -166,11 +163,6 @@ struct TikvRunnerArgs {
     pub tikv_args: Vec<String>,
 }
 
-pub struct NodeAddress {
-    pub address: IpOrHostname,
-    pub port: u16,
-}
-
 pub struct RemoteNode {
     pub address: IpOrHostname,
     pub gossip_port: u16,
@@ -179,7 +171,7 @@ pub struct RemoteNode {
 
 enum Node<'a> {
     Known(&'a RemoteNode),
-    Address(&'a NodeAddress),
+    Address(&'a TcpPortAddress),
 }
 
 fn generate_pd_name(node: Node<'_>) -> String {
@@ -191,7 +183,7 @@ fn generate_pd_name(node: Node<'_>) -> String {
 }
 
 fn generate_arguments(
-    node_address: NodeAddress,
+    node_address: TcpPortAddress,
     known_node_config: Vec<RemoteNode>,
     config: TikvRunnerConfig,
 ) -> TikvRunnerArgs {
@@ -236,7 +228,7 @@ fn generate_arguments(
 
     let mut pd_args = vec![
         format!("--name={pd_name}"),
-        format!("--data-dir={}", config.pd.data_dir),
+        format!("--data-dir={}", config.pd.data_dir.display()),
         format!(
             "--client-urls=http://{}:{}",
             config.pd.client_url.address, config.pd.client_url.port
@@ -259,7 +251,7 @@ fn generate_arguments(
     ];
 
     if let Some(log_file) = config.pd.log_file.as_ref() {
-        pd_args.push(format!("--log-file={log_file}"))
+        pd_args.push(format!("--log-file={}", log_file.display()))
     }
 
     let mut tikv_args = vec![
@@ -277,11 +269,11 @@ fn generate_arguments(
             config.node.advertise_cluster_url().address,
             config.node.advertise_cluster_url().port
         ),
-        format!("--data-dir={}", config.node.data_dir),
+        format!("--data-dir={}", config.node.data_dir.display()),
     ];
 
     if let Some(log_file) = config.node.log_file {
-        tikv_args.push(format!("--log-file={log_file}"))
+        tikv_args.push(format!("--log-file={}", log_file.display()))
     }
 
     TikvRunnerArgs { pd_args, tikv_args }
@@ -297,7 +289,7 @@ struct TikvRunnerImpl {
 }
 
 pub async fn start(
-    node_address: NodeAddress,
+    node_address: TcpPortAddress,
     known_node_config: Vec<RemoteNode>,
     config: TikvRunnerConfig,
 ) -> Result<Box<dyn TikvRunner>> {
@@ -311,13 +303,18 @@ pub async fn start(
 
     let args = generate_arguments(node_address, known_node_config, config);
 
+    // TODO: capture stdio logs
     let pd_process = std::process::Command::new(pd_exe)
         .args(args.pd_args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .context("Failed to spawn process pd")?;
 
     let tikv_process = std::process::Command::new(tikv_exe)
         .args(args.tikv_args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .context("Failed to spawn process tikv")?;
 
@@ -391,7 +388,7 @@ mod test {
     #[tokio::test]
     async fn generate_arguments_pd_args_and_tikv_args() {
         let local_host: IpAddr = "127.0.0.1".parse().unwrap();
-        let node_address = NodeAddress {
+        let node_address = TcpPortAddress {
             address: IpOrHostname::Ip(local_host),
             port: 2800,
         };
@@ -417,7 +414,7 @@ mod test {
                     address: IpOrHostname::Ip(local_host),
                     port: 2379,
                 },
-                data_dir: "./pd_test_dir".into(),
+                data_dir: PathBuf::from("./pd_test_dir"),
                 log_file: None,
             },
             node: TikvConfig {
@@ -425,7 +422,7 @@ mod test {
                     address: IpOrHostname::Ip(local_host),
                     port: 20160,
                 },
-                data_dir: "./tikv_test_dir".into(),
+                data_dir: PathBuf::from("./tikv_test_dir"),
                 log_file: None,
             },
         };
