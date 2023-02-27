@@ -89,6 +89,7 @@ pub mod marketplace {
             authorized: false,
             owner: ctx.accounts.owner.key(),
             bump: *ctx.bumps.get("provider").unwrap(),
+            deposit: ctx.accounts.state.provider_deposit,
         });
 
         Ok(())
@@ -404,6 +405,7 @@ pub struct Provider {
     pub owner: Pubkey,
     pub authorized: bool,
     pub name: String,
+    pub deposit: u64,
     pub bump: u8,
 }
 
@@ -420,7 +422,7 @@ pub struct CreateProvider<'info> {
     #[account(
         init,
         payer = owner,
-        space = 8 + 32 + 1 + 4 + name.as_bytes().len() + 1,
+        space = 8 + 32 + 1 + 4 + name.as_bytes().len() + 8 + 1,
         seeds = [b"provider", owner.key().as_ref()],
         bump
     )]
