@@ -62,7 +62,7 @@ pub fn signer_from_path(
         SignerSourceKind::Filepath(path) => match read_keypair_file(&path) {
             Err(e) => Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!("could not read keypair file \"{}\". Run \"solana-keygen new\" to create a keypair file: {}", path, e),
+                format!("could not read keypair file \"{path}\". Run \"solana-keygen new\" to create a keypair file: {e}"),
             )
             .into()),
             Ok(file) => Ok(Box::new(file)),
@@ -140,7 +140,7 @@ impl AsRef<str> for SignerSourceKind {
 impl std::fmt::Debug for SignerSourceKind {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let s: &str = self.as_ref();
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 

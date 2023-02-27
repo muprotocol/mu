@@ -134,7 +134,7 @@ pub fn execute_view(config: Config, cmd: ViewEscrowCommand) -> Result<()> {
         "Escrow account for provider '{}':",
         verify_balance.provider.name
     );
-    println!("\tAccount key: {}", escrow_pda);
+    println!("\tAccount key: {escrow_pda}");
     println!("\tBalance: {}", token_account.ui_amount_string);
     println!();
 

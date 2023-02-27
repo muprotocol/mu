@@ -8,8 +8,10 @@ use std::{
 };
 
 use anyhow::Result;
+
 use async_trait::async_trait;
-use mu_db::{DbManager, NodeAddress, PdConfig, TcpPortAddress, TikvConfig, TikvRunnerConfig};
+
+use mu_db::{DbManager, PdConfig, TcpPortAddress, TikvConfig, TikvRunnerConfig};
 use mu_runtime::{start, AssemblyDefinition, Notification, Runtime, RuntimeConfig, Usage};
 use mu_stack::{AssemblyID, AssemblyRuntime, FunctionID, StackID};
 use musdk_common::http_client::*;
@@ -22,6 +24,7 @@ const TEST_PROJECTS: &[&str] = &[
     "unclean-termination",
     "hello-db",
     "http-client",
+    "instant-exit",
 ];
 
 #[derive(Debug)]
@@ -58,7 +61,7 @@ pub async fn read_wasm_functions<'a>(
     let mut results = HashMap::new();
 
     for project in projects {
-        let source = std::fs::read(project.wasm_module_path())?;
+        let source = std::fs::read(&project.wasm_module_path())?;
 
         results.insert(
             project.id.clone(),
@@ -161,54 +164,27 @@ pub mod fixture {
     impl AsyncTestContext for DBManagerFixture {
         async fn setup() -> Self {
             let data_dir = TempDir::setup();
-            let localhost = IpAddr::V4(Ipv4Addr::LOCALHOST);
-
-            let node_address = NodeAddress {
-                address: IpOrHostname::Ip(localhost),
-                port: 12803,
+            let addr = |port| TcpPortAddress {
+                address: IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                port,
             };
 
             let tikv_config = TikvRunnerConfig {
                 pd: PdConfig {
-                    peer_url: TcpPortAddress {
-                        address: IpOrHostname::Ip(localhost),
-                        port: 12385,
-                    },
-                    client_url: TcpPortAddress {
-                        address: IpOrHostname::Ip(localhost),
-                        port: 12386,
-                    },
-                    data_dir: data_dir
-                        .get_rand_sub_dir(Some("pd_data_dir"))
-                        .display()
-                        .to_string(),
-                    log_file: Some(
-                        data_dir
-                            .get_rand_sub_dir(Some("pd_log"))
-                            .display()
-                            .to_string(),
-                    ),
+                    peer_url: addr(12385),
+                    client_url: addr(12386),
+                    data_dir: data_dir.get_rand_sub_dir(Some("pd_data_dir")),
+                    log_file: Some(data_dir.get_rand_sub_dir(Some("pd_log"))),
                 },
                 node: TikvConfig {
-                    cluster_url: TcpPortAddress {
-                        address: IpOrHostname::Ip(localhost),
-                        port: 20163,
-                    },
-                    data_dir: data_dir
-                        .get_rand_sub_dir(Some("tikv_data_dir"))
-                        .display()
-                        .to_string(),
-                    log_file: Some(
-                        data_dir
-                            .get_rand_sub_dir(Some("tikv_log"))
-                            .display()
-                            .to_string(),
-                    ),
+                    cluster_url: addr(20163),
+                    data_dir: data_dir.get_rand_sub_dir(Some("tikv_data_dir")),
+                    log_file: Some(data_dir.get_rand_sub_dir(Some("tikv_log"))),
                 },
             };
 
             Self {
-                db_manager: mu_db::new_with_embedded_cluster(node_address, vec![], tikv_config)
+                db_manager: mu_db::new_with_embedded_cluster(addr(12803), vec![], tikv_config)
                     .await
                     .unwrap(),
 
@@ -217,7 +193,7 @@ pub mod fixture {
         }
 
         async fn teardown(self) {
-            self.db_manager.stop_embedded_cluster().await.unwrap();
+            self.db_manager.stop().await.unwrap();
             self.data_dir.teardown();
         }
     }
@@ -496,7 +472,7 @@ mod mock_db {
             Ok(Box::new(EmptyDBClient))
         }
 
-        async fn stop_embedded_cluster(&self) -> anyhow::Result<()> {
+        async fn stop(&self) -> anyhow::Result<()> {
             Ok(())
         }
     }

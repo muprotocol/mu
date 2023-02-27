@@ -2,9 +2,7 @@ pub mod error;
 mod types;
 
 pub use self::types::{Blob, DeleteTable, Key, Scan, TableName};
-pub use db_embedded_tikv::{
-    NodeAddress, PdConfig, RemoteNode, TcpPortAddress, TikvConfig, TikvRunnerConfig,
-};
+pub use db_embedded_tikv::{PdConfig, RemoteNode, TcpPortAddress, TikvConfig, TikvRunnerConfig};
 use dyn_clonable::clonable;
 use log::warn;
 
@@ -21,12 +19,12 @@ use std::{collections::HashSet, fmt::Debug};
 use tikv_client::{self, KvPair, RawClient, Value};
 use tokio::time::{sleep, Duration};
 
-// only one should be provided
-// used struct instead of enum, only for better visual structure in config
+// Only one of the fields should be provided
+// Used struct instead of enum, only for better visual structure in config
 #[derive(Deserialize, Clone)]
 pub struct DbConfig {
-    external: Option<Vec<TcpPortAddress>>,
-    internal: Option<TikvRunnerConfig>,
+    pub external: Option<Vec<TcpPortAddress>>,
+    pub internal: Option<TikvRunnerConfig>,
 }
 
 #[async_trait]
@@ -80,7 +78,7 @@ pub trait DbClient: Send + Sync + Debug + Clone {
 #[clonable]
 pub trait DbManager: Send + Sync + Clone {
     async fn make_client(&self) -> anyhow::Result<Box<dyn DbClient>>;
-    async fn stop_embedded_cluster(&self) -> anyhow::Result<()>;
+    async fn stop(&self) -> anyhow::Result<()>;
 }
 
 // TODO: caching
@@ -289,7 +287,7 @@ struct DbManagerImpl {
 }
 
 pub async fn new_with_embedded_cluster(
-    node_address: NodeAddress,
+    node_address: TcpPortAddress,
     known_node_config: Vec<RemoteNode>,
     config: TikvRunnerConfig,
 ) -> anyhow::Result<Box<dyn DbManager>> {
@@ -361,7 +359,7 @@ async fn ensure_cluster_healthy(
 }
 
 pub async fn start(
-    node: NodeAddress,
+    node: TcpPortAddress,
     remote_nodes: Vec<RemoteNode>,
     db_config: DbConfig,
 ) -> anyhow::Result<Box<dyn DbManager>> {
@@ -382,7 +380,7 @@ impl DbManager for DbManagerImpl {
         Ok(Box::new(DbClientImpl::new(self.endpoints.clone()).await?))
     }
 
-    async fn stop_embedded_cluster(&self) -> anyhow::Result<()> {
+    async fn stop(&self) -> anyhow::Result<()> {
         match &self.inner {
             Some(r) => r.stop().await,
             None => Ok(()),

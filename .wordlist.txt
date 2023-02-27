@@ -1,9 +1,11 @@
 absl
 actix
 balancer
+bcollect
 Bincode
 Borsh
 bufread
+canonicalize
 chrono
 clippy
 clonable
@@ -101,6 +103,7 @@ stackids
 stateful
 struct
 subcommands
+SUBDIR
 sysvar
 tailcall
 thiserror

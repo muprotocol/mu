@@ -1,12 +1,15 @@
 [package]
 name = "mu-cli"
 version = "0.1.0"
-rust-version = "1.56"
 edition = "2021"
 repository = "https://github.com/muprotocol/mu"
 description = "Mu CLI"
 license = "Apache-2.0"
 default-run = "mu"
+
+[features]
+admin = []
+dev-env = ["mu-runtime", "mu-gateway", "mu-db"]
 
 [[bin]]
 name = "mu"
@@ -14,17 +17,28 @@ path = "src/bin/mu.rs"
 doc = false
 
 [dependencies]
-mu_stack = { path = "../rust-libs/mu_stack" }
-clap = { version = "4.0", features = ["derive"] }
+async-trait = "0.1"
+clap = { version = "4.1", features = ["derive"] }
 anyhow = "1"
 base64 = "0.21"
 thiserror = "1"
 shellexpand = "3"
 dirs = "4"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1"
+rust-embed = "6"
+rand = "0.8"
+tokio = "1"
+tokio-util = "0.7"
+ctrlc = "3"
 uriparse = "0.6"
+beau_collector = "0.2"
+byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
+reqwest = "0.11"
+log = "0.4"
+env_logger = "0.10"
+itertools = "0.10.5"
 
 anchor-client = "0.26"
 spl-token = "3"
@@ -37,3 +51,9 @@ spl-associated-token-account = "1"
 marketplace = { path = "../marketplace/programs/marketplace/", features = [
     "no-entrypoint",
 ] }
+mu-runtime = { path = "../rust-libs/runtime", optional = true }
+mu-gateway = { path = "../rust-libs/gateway", optional = true }
+mu_stack = { path = "../rust-libs/mu_stack" }
+mu-common = { path = "../rust-libs/common" }
+musdk-common = { path = "../sdk/common" }
+mu-db = { path = "../rust-libs/db", optional = true }
