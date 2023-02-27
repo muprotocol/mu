@@ -2,7 +2,6 @@ use anchor_client::{
     anchor_lang::{prelude::AnchorError, AccountDeserialize},
     solana_client::{
         client_error::ClientErrorKind,
-        nonblocking::rpc_client::RpcClient,
         rpc_filter::{Memcmp, RpcFilterType},
         rpc_request::RpcError,
     },
@@ -43,10 +42,6 @@ impl MarketplaceClient {
             program: anchor_client::Client::new(config.cluster.clone(), payer)
                 .program(config.program_id),
         })
-    }
-
-    pub fn rpc_client(&self) -> RpcClient {
-        RpcClient::new(self.cluster.url().to_string())
     }
 
     pub fn get_mu_state_pda(&self) -> Pubkey {
