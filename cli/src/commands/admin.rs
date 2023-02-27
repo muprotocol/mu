@@ -11,6 +11,7 @@ use crate::{config::Config, marketplace_client};
 #[derive(Debug, Parser)]
 pub enum Command {
     Initialize(InitializeCommand),
+    UpdateDeposit(UpdateDepositCommand),
     CreateProviderAuthorizer(CreateAuthorizerCommand),
     ListUnauthorizedProviders,
     AuthorizeProvider(AuthorizeProviderCommand),
@@ -29,6 +30,11 @@ pub struct InitializeCommand {
 }
 
 #[derive(Debug, Parser)]
+pub struct UpdateDepositCommand {
+    deposit: f64,
+}
+
+#[derive(Debug, Parser)]
 pub struct CreateAuthorizerCommand {
     authorizer_keypair: String,
 }
@@ -41,6 +47,7 @@ pub struct AuthorizeProviderCommand {
 pub fn execute(config: Config, command: Command) -> Result<()> {
     match command {
         Command::Initialize(cmd) => execute_initialize(config, cmd),
+        Command::UpdateDeposit(cmd) => execute_update_deposit(config, cmd),
         Command::CreateProviderAuthorizer(cmd) => execute_create_provider_authorizer(config, cmd),
         Command::ListUnauthorizedProviders => execute_list_unauthorized_providers(config),
         Command::AuthorizeProvider(cmd) => execute_authorize_provider(config, cmd),
@@ -59,6 +66,18 @@ fn execute_initialize(config: Config, command: InitializeCommand) -> Result<()> 
         command.token_mint,
         command.commission_rate_micros,
         crate::token_utils::ui_amount_to_token_amount(&mint, command.provider_deposit),
+    )
+}
+
+fn execute_update_deposit(config: Config, command: UpdateDepositCommand) -> Result<()> {
+    let client = config.build_marketplace_client()?;
+    let signer = config.get_signer()?;
+    let (_, mu_state) = client.get_mu_state()?;
+    let mint = client.get_mint(&mu_state)?;
+    marketplace_client::admin::update_deposit(
+        &client,
+        signer.as_ref(),
+        crate::token_utils::ui_amount_to_token_amount(&mint, command.deposit),
     )
 }
 

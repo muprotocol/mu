@@ -25,9 +25,6 @@ pub mod request_signer;
 pub mod signer;
 pub mod stack;
 
-//TODO: This needs to be read from the blockchain
-const PROVIDER_INITIALIZATION_FEE: u64 = 100_000000;
-
 /// Marketplace Client for communicating with Mu smart contracts
 pub struct MarketplaceClient {
     pub cluster: Cluster,

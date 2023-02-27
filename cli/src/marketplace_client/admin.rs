@@ -44,6 +44,23 @@ pub fn initialize(
     Ok(())
 }
 
+pub fn update_deposit(client: &MarketplaceClient, signer: &dyn Signer, deposit: u64) -> Result<()> {
+    client
+        .program
+        .request()
+        .args(marketplace::instruction::UpdateProviderDeposit {
+            provider_deposit: deposit,
+        })
+        .accounts(marketplace::accounts::UpdateProviderDeposit {
+            authority: signer.pubkey(),
+            state: client.get_mu_state_pda(),
+        })
+        .send_with_spinner_and_config(Default::default())
+        .context("Failed to send initialization transaction")?;
+
+    Ok(())
+}
+
 pub fn create_provider_authorizer(
     client: &MarketplaceClient,
     authority: &dyn Signer,

@@ -1,6 +1,8 @@
 use std::rc::Rc;
 
-use super::{MarketplaceClient, PROVIDER_INITIALIZATION_FEE};
+use crate::token_utils::token_amount_to_ui_amount;
+
+use super::MarketplaceClient;
 use anchor_client::solana_sdk::{pubkey::Pubkey, signer::Signer, system_program, sysvar};
 use anyhow::{bail, Result};
 
@@ -43,11 +45,13 @@ pub fn create(
     let provider_token_account_balance =
         client.get_token_account_balance(&provider_token_account)?;
 
-    if provider_token_account_balance < PROVIDER_INITIALIZATION_FEE {
+    if provider_token_account_balance < mu_state.provider_deposit {
+        let mint = client.get_mint(&mu_state)?;
         bail!(
-            "Token account does not have sufficient balance: needed {}, was {}.",
-            PROVIDER_INITIALIZATION_FEE,
-            provider_token_account_balance
+            "The associated token account of the wallet does not have sufficient balance \
+                for paying the provider deposit: need {}, was {}.",
+            token_amount_to_ui_amount(&mint, mu_state.provider_deposit),
+            token_amount_to_ui_amount(&mint, provider_token_account_balance),
         );
     }
 
