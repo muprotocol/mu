@@ -385,11 +385,12 @@ export const createRegion = async (
     regionNum: number,
     rates: ServiceRates,
     minEscrowBalance: BN,
+    base_url: string
 ): Promise<MuRegionInfo> => {
     let region = getRegion(mu, provider, regionNum);
 
     await mu.program.methods
-        .createRegion(regionNum, name, rates, minEscrowBalance)
+        .createRegion(regionNum, name, base_url, rates, minEscrowBalance)
         .accounts({
             provider: provider.pda,
             region: region.pda,

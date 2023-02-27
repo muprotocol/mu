@@ -18,6 +18,12 @@ pub struct CreateArgs {
 
     #[arg(
         long,
+        help = "Region base url, must be an HTTP/HTTPS URL such as https://middle-earth-01.awesome-cloud.com"
+    )]
+    base_url: String,
+
+    #[arg(
+        long,
         help = "Region number, must be unique across all regions for a provider"
     )]
     region_num: u32,
@@ -55,6 +61,8 @@ pub fn execute(config: Config, sub_command: Command) -> Result<()> {
 
 fn create(config: Config, args: CreateArgs) -> Result<()> {
     let client = config.build_marketplace_client()?;
+
+    let url = validate_base_url(args.base_url.as_ref())?;
 
     let (_, state) = client.get_mu_state()?;
     let mint = client.get_mint(&state)?;
@@ -94,9 +102,26 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
     let instruction = marketplace::instruction::CreateRegion {
         region_num: args.region_num,
         name: args.name,
+        base_url: url.to_string(),
         min_escrow_balance,
         rates,
     };
 
     marketplace_client::region::create(&client, accounts, instruction, provider_keypair)
+}
+
+fn validate_base_url(url: &str) -> Result<uriparse::uri::URI> {
+    let url = url.to_lowercase();
+    let mut url = uriparse::uri::URI::try_from(url.as_str()).context("Invalid base URL")?;
+    url.normalize();
+
+    if url.scheme() != "http" && url.scheme() != "https" {
+        bail!("Base URL must be an HTTP or HTTPS URL");
+    }
+
+    if url.has_password() || url.has_username() || url.has_query() {
+        bail!("Base URL cannot contain username, password or query parameters");
+    }
+
+    Ok(url.into_owned())
 }
