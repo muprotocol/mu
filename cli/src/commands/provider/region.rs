@@ -1,5 +1,5 @@
 use anchor_client::solana_sdk::system_program;
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use clap::{Args, Parser};
 
 use crate::{config::Config, marketplace_client};
@@ -64,6 +64,14 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
     let provider_keypair = config.get_signer()?;
 
     let provider_pda = client.get_provider_pda(provider_keypair.pubkey());
+    let provider = client
+        .program
+        .account::<marketplace::Provider>(provider_pda)
+        .context("Failed to fetch provider account")?;
+
+    if !provider.authorized {
+        bail!("Provider is not authorized, can't create regions yet");
+    }
 
     let region_pda = client.get_region_pda(&provider_keypair.pubkey(), args.region_num);
 

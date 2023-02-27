@@ -323,7 +323,7 @@ pub struct Initialize<'info> {
         init,
         payer = authority,
         token::mint = mint,
-        token::authority = state,
+        token::authority = authority,
         seeds = [b"commission"],
         bump
     )]
