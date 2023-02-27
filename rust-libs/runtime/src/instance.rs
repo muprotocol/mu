@@ -217,6 +217,15 @@ impl Instance<Running> {
         mut self,
         request: ExecuteFunctionRequest<'static>,
     ) -> Result<(ExecuteFunctionResponse, Usage), (Error, Usage)> {
+        let x_correlation_id = request
+            .request
+            .x_correlation_id()
+            .map(|x| x.to_string())
+            .unwrap_or_else(|| {
+                error!("x-correlation-id do not exist");
+                "_".to_string()
+            });
+
         trace!("Running {}", &self.id);
 
         if self.is_finished() {
@@ -288,7 +297,7 @@ impl Instance<Running> {
                                 log!(
                                     target: FUNCTION_LOG_TARGET,
                                     level,
-                                    "{}: {}",
+                                    "[{x_correlation_id}]{}: {}",
                                     self.id,
                                     log.body
                                 );
