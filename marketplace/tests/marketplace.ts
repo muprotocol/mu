@@ -72,7 +72,7 @@ describe("marketplace", () => {
 
     it("Fails to create region when provider isn't authorized", async () => {
         const rates: ServiceRates = {
-            functionMbTeraInstructions: new BN(1),
+            functionMbTeraInstructions: new BN(1000),
             dbGigabyteMonths: new BN(1000),
             gigabytesGatewayTraffic: new BN(100),
             millionDbReads: new BN(500),
@@ -95,7 +95,7 @@ describe("marketplace", () => {
 
     it("Creates a region once provider is authorized", async () => {
         const rates: ServiceRates = {
-            functionMbTeraInstructions: new BN(1),
+            functionMbTeraInstructions: new BN(1000),
             dbGigabyteMonths: new BN(1000),
             gigabytesGatewayTraffic: new BN(100),
             millionDbReads: new BN(500),
