@@ -222,7 +222,7 @@ impl Instance<Running> {
             .x_correlation_id()
             .map(|x| x.to_string())
             .unwrap_or_else(|| {
-                error!("x-correlation-id do not exist");
+                error!("x-correlation-id does not exist");
                 "_".to_string()
             });
 
