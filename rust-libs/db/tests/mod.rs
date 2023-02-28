@@ -1,18 +1,24 @@
 use anyhow::Result;
 use assert_matches::assert_matches;
 use futures::Future;
+use mu_common::serde_support::IpOrHostname;
 use mu_db::{error::*, *};
 use mu_stack::StackID;
 use rand::Rng;
 use serial_test::serial;
 use std::fs;
 use std::net::IpAddr;
+use std::path::Path;
 
 const TEST_DATA_DIR: &str = "tests/mudb/test_data";
 
 fn clean_data_dir() {
     fs::remove_dir_all(TEST_DATA_DIR).unwrap_or_else(|why| {
-        println!("{} {:?}", TEST_DATA_DIR, why.kind());
+        println!(
+            "can not remove directory {}: {:?}",
+            TEST_DATA_DIR,
+            why.kind()
+        );
     });
 }
 
@@ -88,9 +94,15 @@ async fn test_queries_on_a_node_with<T>(
     T: Future + Send + 'static,
 {
     // db
-    db.update_stack_tables(stack_id, table_list.clone().into())
+    let table_action_tuples = table_list
+        .clone()
+        .into_iter()
+        .map(|x| (x, DeleteTable(false)))
+        .collect::<Vec<_>>();
+    db.update_stack_tables(stack_id, table_action_tuples.clone())
         .await
         .unwrap();
+
     let key = Key {
         stack_id,
         table_name: table_list[0].clone(),
@@ -202,13 +214,34 @@ async fn test_table_list(db: &dyn DbClient, tl: Vec<TableName>) {
     assert_eq!(table_names, tl);
 }
 
+async fn test_update_stack_tables(db: Box<dyn DbClient>) {
+    let table_list = vec!["table_1".try_into().unwrap(), "table_2".try_into().unwrap()];
+    let mut table_list_extend = table_list.clone();
+    table_list_extend.push("table_3".try_into().unwrap());
+    let table_action_tuples = table_list_extend
+        .clone()
+        .into_iter()
+        .map(|x| (x, DeleteTable(false)))
+        .collect::<Vec<_>>();
+    db.update_stack_tables(STACK_ID, table_action_tuples.clone())
+        .await
+        .unwrap();
+    test_table_list(db.as_ref(), table_list_extend.clone()).await;
+    let mut table_action_tuples2 = table_action_tuples.clone();
+    table_action_tuples2.last_mut().unwrap().1 = DeleteTable(true);
+    db.update_stack_tables(STACK_ID, table_action_tuples2.clone())
+        .await
+        .unwrap();
+    test_table_list(db.as_ref(), table_list).await;
+}
+
 async fn try_to_make_client_or_stop_cluster(
-    db_manager: &DbManagerImpl,
+    db_manager: &dyn DbManager,
 ) -> Result<Box<dyn DbClient>> {
     match db_manager.make_client().await {
         Ok(x) => Ok(x),
         Err(e) => {
-            db_manager.stop_embedded_cluster().await?;
+            db_manager.stop().await?;
             Err(e)
         }
     }
@@ -239,35 +272,37 @@ async fn test_queries_on_single_node(db: Box<dyn DbClient>) {
     test_table_list(db.as_ref(), table_list().into()).await;
 }
 
-fn make_node_address(port: u16) -> NodeAddress {
-    NodeAddress {
+fn make_node_address(port: u16) -> TcpPortAddress {
+    TcpPortAddress {
         address: "127.0.0.1".parse().unwrap(),
         port,
     }
 }
 fn make_tikv_runner_conf(peer_port: u16, client_port: u16, tikv_port: u16) -> TikvRunnerConfig {
+    let data_dir = Path::new(TEST_DATA_DIR);
+
     let any: IpAddr = "0.0.0.0".parse().unwrap();
     let _localhost: IpAddr = "127.0.0.1".parse().unwrap();
     TikvRunnerConfig {
         pd: PdConfig {
-            peer_url: IpAndPort {
-                address: any,
+            peer_url: TcpPortAddress {
+                address: IpOrHostname::Ip(any),
                 port: peer_port,
             },
-            client_url: IpAndPort {
-                address: any,
+            client_url: TcpPortAddress {
+                address: IpOrHostname::Ip(any),
                 port: client_port,
             },
-            data_dir: format!("{TEST_DATA_DIR}/pd_data_dir_{peer_port}"),
-            log_file: Some(format!("{TEST_DATA_DIR}/pd_log_{peer_port}")),
+            data_dir: data_dir.join(format!("pd_data_dir_{peer_port}")),
+            log_file: Some(data_dir.join(format!("pd_log_{peer_port}"))),
         },
         node: TikvConfig {
-            cluster_url: IpAndPort {
-                address: any,
+            cluster_url: TcpPortAddress {
+                address: IpOrHostname::Ip(any),
                 port: tikv_port,
             },
-            data_dir: format!("{TEST_DATA_DIR}/tikv_data_dir_{tikv_port}"),
-            log_file: Some(format!("{TEST_DATA_DIR}/tikv_log_{tikv_port}")),
+            data_dir: data_dir.join(format!("tikv_data_dir_{tikv_port}")),
+            log_file: Some(data_dir.join(format!("tikv_log_{tikv_port}"))),
         },
     }
 }
@@ -341,7 +376,7 @@ async fn start_and_query_nodes_with_same_stackids_different_tables(dbs: Vec<Box<
     let mut handles = vec![];
     for (i, db) in dbs.into_iter().enumerate() {
         let tl = [
-            format!("{}", i).try_into().unwrap(),
+            format!("{i}").try_into().unwrap(),
             format!("{}", 100 + i).try_into().unwrap(),
         ];
         let db_clone = db.clone();
@@ -375,7 +410,7 @@ async fn start_and_query_nodes_with_different_stackids_and_tables(dbs: Vec<Box<d
         let i = i as u8;
         let si = StackID::SolanaPublicKey([i; 32]);
         let tl = [
-            format!("{}", i).try_into().unwrap(),
+            format!("{i}").try_into().unwrap(),
             format!("{}", 100 + i).try_into().unwrap(),
         ];
         let db_clone = db.clone();
@@ -399,29 +434,29 @@ async fn start_and_query_nodes_with_different_stackids_and_tables(dbs: Vec<Box<d
 }
 
 async fn make_db_client_with_external_cluster() -> Box<dyn DbClient> {
-    let db_manager = DbManagerImpl::new_with_external_cluster(vec![
-        "127.0.0.1:2379".try_into().unwrap(),
-        "127.0.0.1:2382".try_into().unwrap(),
-        "127.0.0.1:2384".try_into().unwrap(),
+    let db_manager = mu_db::new_with_external_cluster(vec![
+        "127.0.0.1:2379".parse().unwrap(),
+        "127.0.0.1:2382".parse().unwrap(),
+        "127.0.0.1:2384".parse().unwrap(),
     ])
     .await
     .unwrap();
-    try_to_make_client_or_stop_cluster(&db_manager)
+    try_to_make_client_or_stop_cluster(db_manager.as_ref())
         .await
         .unwrap()
 }
 
-async fn make_3_dbs() -> (Vec<DbManagerImpl>, Vec<Box<dyn DbClient>>) {
+async fn make_3_dbs() -> (Vec<Box<dyn DbManager>>, Vec<Box<dyn DbClient>>) {
     // dummy creation/deletion of db_manager to ensure assets have been downloaded
     // and /tmp files have created before start concurrent creation.
-    DbManagerImpl::new_with_embedded_cluster(
+    mu_db::new_with_embedded_cluster(
         make_node_address(3000),
         vec![],
         make_tikv_runner_conf(3380, 3379, 20260),
     )
     .await
     .unwrap()
-    .stop_embedded_cluster()
+    .stop()
     .await
     .unwrap();
 
@@ -435,15 +470,12 @@ async fn make_3_dbs() -> (Vec<DbManagerImpl>, Vec<Box<dyn DbClient>>) {
             make_known_node_conf(2801, 2381),
             make_known_node_conf(2802, 2383),
         ];
-        let db_manager = DbManagerImpl::new_with_embedded_cluster(
-            node_address,
-            known_node_conf,
-            tikv_runner_conf,
-        )
-        .await
-        .unwrap();
+        let db_manager =
+            mu_db::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+                .await
+                .unwrap();
 
-        let db = try_to_make_client_or_stop_cluster(&db_manager)
+        let db = try_to_make_client_or_stop_cluster(db_manager.as_ref())
             .await
             .unwrap();
 
@@ -458,15 +490,12 @@ async fn make_3_dbs() -> (Vec<DbManagerImpl>, Vec<Box<dyn DbClient>>) {
             make_known_node_conf(2800, 2380),
             make_known_node_conf(2802, 2383),
         ];
-        let db_manager = DbManagerImpl::new_with_embedded_cluster(
-            node_address,
-            known_node_conf,
-            tikv_runner_conf,
-        )
-        .await
-        .unwrap();
+        let db_manager =
+            mu_db::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+                .await
+                .unwrap();
 
-        let db = try_to_make_client_or_stop_cluster(&db_manager)
+        let db = try_to_make_client_or_stop_cluster(db_manager.as_ref())
             .await
             .unwrap();
         (db_manager, db)
@@ -481,15 +510,12 @@ async fn make_3_dbs() -> (Vec<DbManagerImpl>, Vec<Box<dyn DbClient>>) {
             make_known_node_conf(2801, 2381),
         ];
 
-        let db_manager = DbManagerImpl::new_with_embedded_cluster(
-            node_address,
-            known_node_conf,
-            tikv_runner_conf,
-        )
-        .await
-        .unwrap();
+        let db_manager =
+            mu_db::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+                .await
+                .unwrap();
 
-        let db = try_to_make_client_or_stop_cluster(&db_manager)
+        let db = try_to_make_client_or_stop_cluster(db_manager.as_ref())
             .await
             .unwrap();
         (db_manager, db)
@@ -513,6 +539,27 @@ async fn make_3_dbs() -> (Vec<DbManagerImpl>, Vec<Box<dyn DbClient>>) {
 
 #[tokio::test]
 #[serial]
+async fn success_to_update_and_delete_stack_tables() {
+    clean_data_dir();
+
+    let node_address = make_node_address(2803);
+    let known_node_conf = vec![];
+    let tikv_runner_conf = make_tikv_runner_conf(2385, 2386, 20163);
+    let db_manager =
+        mu_db::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+            .await
+            .unwrap();
+
+    let db_client = try_to_make_client_or_stop_cluster(db_manager.as_ref())
+        .await
+        .unwrap();
+
+    test_update_stack_tables(db_client).await;
+    db_manager.stop().await.unwrap();
+}
+
+#[tokio::test]
+#[serial]
 async fn success_to_start_and_query_single_embedded_clustered_node() {
     clean_data_dir();
 
@@ -520,16 +567,16 @@ async fn success_to_start_and_query_single_embedded_clustered_node() {
     let known_node_conf = vec![];
     let tikv_runner_conf = make_tikv_runner_conf(2385, 2386, 20163);
     let db_manager =
-        DbManagerImpl::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+        mu_db::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
             .await
             .unwrap();
 
-    let db_client = try_to_make_client_or_stop_cluster(&db_manager)
+    let db_client = try_to_make_client_or_stop_cluster(db_manager.as_ref())
         .await
         .unwrap();
 
     test_queries_on_single_node(db_client).await;
-    db_manager.stop_embedded_cluster().await.unwrap();
+    db_manager.stop().await.unwrap();
 }
 
 #[tokio::test]
@@ -542,7 +589,7 @@ async fn success_to_start_and_query_3_embedded_clustered_nodes_with_same_stackid
     start_and_query_nodes_with_same_stackids_and_tables(dbs).await;
 
     for x in db_managers {
-        x.stop_embedded_cluster().await.unwrap();
+        x.stop().await.unwrap();
     }
 }
 
@@ -557,7 +604,7 @@ async fn success_to_start_and_query_3_embedded_clustered_nodes_with_same_stackid
     start_and_query_nodes_with_same_stackids_different_tables(dbs).await;
 
     for x in db_managers {
-        x.stop_embedded_cluster().await.unwrap();
+        x.stop().await.unwrap();
     }
 }
 
@@ -572,7 +619,7 @@ async fn success_to_start_and_query_3_embedded_clustered_nodes_with_different_st
     start_and_query_nodes_with_different_stackids_and_tables(dbs).await;
 
     for x in db_managers {
-        x.stop_embedded_cluster().await.unwrap();
+        x.stop().await.unwrap();
     }
 }
 
@@ -640,8 +687,8 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     let ks = keys(si, tl.clone());
     let vs = values();
 
-    let db = DbManagerImpl::new_with_external_cluster(vec![
-        "127.0.0.1:2379".try_into().unwrap(),
+    let db = mu_db::new_with_external_cluster(vec![
+        "127.0.0.1:2379".parse().unwrap(),
         // "127.0.0.1:2382".try_into().unwrap(),
         // "127.0.0.1:2384".try_into().unwrap(),
     ])
@@ -651,9 +698,9 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     .await
     .unwrap();
 
-    let db2 = DbManagerImpl::new_with_external_cluster(vec![
+    let db2 = mu_db::new_with_external_cluster(vec![
         // "127.0.0.1:2379".try_into().unwrap(),
-        "127.0.0.1:2382".try_into().unwrap(),
+        "127.0.0.1:2382".parse().unwrap(),
         // "127.0.0.1:2384".try_into().unwrap(),
     ])
     .await
@@ -662,10 +709,10 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     .await
     .unwrap();
 
-    let db3 = DbManagerImpl::new_with_external_cluster(vec![
+    let db3 = mu_db::new_with_external_cluster(vec![
         // "127.0.0.1:2379".try_into().unwrap(),
         // "127.0.0.1:2382".try_into().unwrap(),
-        "127.0.0.1:2384".try_into().unwrap(),
+        "127.0.0.1:2384".parse().unwrap(),
     ])
     .await
     .unwrap()
@@ -673,8 +720,12 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     .await
     .unwrap();
 
+    let table_action_tuples = table_list()
+        .into_iter()
+        .map(|x| (x, DeleteTable(false)))
+        .collect::<Vec<_>>();
     for x in [&db, &db2, &db3] {
-        x.update_stack_tables(STACK_ID, table_list().into())
+        x.update_stack_tables(STACK_ID, table_action_tuples.clone())
             .await
             .unwrap();
     }

@@ -1,14 +1,12 @@
 log:
   level: info
   filters:
-    - module: mu::stack::blockchain_monitor
-      level: trace
-    - module: mu::stack::scheduler
-      level: trace
     - module: quinn::connection
       level: off
     - module: wasmer_compiler_cranelift::translator::func_translator
       level: off
+gateway_manager:
+  listen_port: 12012
 blockchain_monitor:
   solana_cluster_rpc_url: http://127.0.0.1:8899/
   solana_cluster_pub_sub_url: ws://127.0.0.1:8900/
@@ -17,15 +15,15 @@ blockchain_monitor:
   solana_usage_signer_private_key: 4GhpeXmHAsQW1K29Q3PBuKzq7fdQzAQS4Bsh5uP3oev1HvZg3tEgT8nZpYAVVikBdKtWGauYBXBDGCeseqyM9R4p
   solana_usage_report_interval: 5s
 db_manager:
-  # Note, this value should not be under 1s
   usage_report_duration: 30s
 runtime:
   cache_path: runtime-cache
   include_function_logs: true
 tikv:
-  pd:
-    data_dir: ./db/pd-data/
-    log_file: ./db/log/pd-server
-  node:
-    data_dir: ./db/tikv-data/
-    log_file: ./db/log/tikv-server
+  internal:
+    pd:
+      data_dir: ./db/pd-data/
+      log_file: ./db/log/pd-server
+    node:
+      data_dir: ./db/tikv-data/
+      log_file: ./db/log/tikv-server

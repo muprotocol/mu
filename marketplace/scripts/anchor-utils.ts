@@ -239,10 +239,10 @@ export const getMu = (anchorProvider: anchor.AnchorProvider, mint: Keypair): MuP
 
 }
 
-export const initializeMu = async (anchorProvider: anchor.AnchorProvider, mint: Keypair, commission_rate_micros: number): Promise<MuProgram> => {
+export const initializeMu = async (anchorProvider: anchor.AnchorProvider, mint: Keypair, commission_rate_micros: number, providerDeposit: BN): Promise<MuProgram> => {
     let mu = getMu(anchorProvider, mint);
 
-    await mu.program.methods.initialize(commission_rate_micros).accounts({
+    await mu.program.methods.initialize(commission_rate_micros, providerDeposit).accounts({
         authority: anchorProvider.wallet.publicKey,
         state: mu.statePda,
         depositToken: mu.depositPda,
@@ -251,6 +251,13 @@ export const initializeMu = async (anchorProvider: anchor.AnchorProvider, mint: 
     }).rpc();
 
     return mu;
+}
+
+export const updateProviderDeposit = async (mu: MuProgram, providerDeposit: BN) => {
+    await mu.program.methods.updateProviderDeposit(providerDeposit).accounts({
+        state: mu.statePda,
+        authority: mu.anchorProvider.wallet.publicKey,
+    }).rpc();
 }
 
 export interface MuProviderInfo {
@@ -378,11 +385,12 @@ export const createRegion = async (
     regionNum: number,
     rates: ServiceRates,
     minEscrowBalance: BN,
+    base_url: string
 ): Promise<MuRegionInfo> => {
     let region = getRegion(mu, provider, regionNum);
 
     await mu.program.methods
-        .createRegion(regionNum, name, rates, minEscrowBalance)
+        .createRegion(regionNum, name, base_url, rates, minEscrowBalance)
         .accounts({
             provider: provider.pda,
             region: region.pda,
@@ -643,6 +651,65 @@ export const updateStackUsage = async (
     }).signers([authSigner.wallet]).rpc();
 
     return { pda, bump };
+}
+
+export interface MuApiRequestSigner {
+    pda: PublicKey,
+    wallet: Keypair,
+}
+
+export const createApiRequestSigner = async (
+    mu: MuProgram,
+    userWallet: Keypair,
+    signer: Keypair,
+    region: MuRegionInfo,
+): Promise<MuApiRequestSigner> => {
+    let [pda, _] = publicKey.findProgramAddressSync(
+        [
+            anchor.utils.bytes.utf8.encode("request_signer"),
+            userWallet.publicKey.toBytes(),
+            signer.publicKey.toBytes(),
+            region.pda.toBytes(),
+        ],
+        mu.program.programId
+    );
+
+    await mu.program.methods.createApiRequestSigner().accounts({
+        requestSigner: pda,
+        signer: signer.publicKey,
+        user: userWallet.publicKey,
+        region: region.pda,
+    }).signers([userWallet, signer]).rpc();
+
+    return { pda, wallet: signer };
+}
+
+export const activateApiRequestSigner = async (
+    mu: MuProgram,
+    userWallet: Keypair,
+    requestSigner: MuApiRequestSigner,
+    region: MuRegionInfo,
+) => {
+    await mu.program.methods.activateApiRequestSigner().accounts({
+        user: userWallet.publicKey,
+        signer: requestSigner.wallet.publicKey,
+        requestSigner: requestSigner.pda,
+        region: region.pda,
+    }).signers([userWallet, requestSigner.wallet]).rpc();
+}
+
+export const deactivateApiRequestSigner = async (
+    mu: MuProgram,
+    userWallet: Keypair,
+    requestSigner: MuApiRequestSigner,
+    region: MuRegionInfo,
+) => {
+    await mu.program.methods.deactivateApiRequestSigner().accounts({
+        user: userWallet.publicKey,
+        signer: requestSigner.wallet.publicKey,
+        requestSigner: requestSigner.pda,
+        region: region.pda,
+    }).signers([userWallet]).rpc();
 }
 
 export const withdrawEscrowBalance = async (

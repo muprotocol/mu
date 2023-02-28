@@ -1,8 +1,10 @@
 name: my_stack
 version: 0.1
 services:
-  - type: Database
-    name: my_db
+  - type: KeyValueTable
+    name: t1
+  - type: KeyValueTable
+    name: t2
   - type: Function
     name: my_function
     binary: http://localhost:8080/test-function.wasm

@@ -28,12 +28,9 @@ impl<'a, T: Deserialize<'a>> FromRequest<'a> for Json<T> {
         match content_type::parse(&content_type) {
             (Some(content_type), Some(charset)) if content_type == "application/json" => {
                 match charset.to_lowercase().as_str() {
-                    "utf-8" | "us-ascii" => serde_json::from_slice::<T>(&req.body)
+                    "utf-8" | "us-ascii" => serde_json::from_slice::<T>(req.body.as_ref())
                         .map(Self)
-                        .map_err(|_| {
-                            //TODO: Log error back to runtime
-                            ("invalid json", Status::BadRequest)
-                        }),
+                        .map_err(|_| ("invalid json", Status::BadRequest)),
                     _ => Err(("invalid charset, expecting `utf-8`", Status::BadRequest)),
                 }
             }
@@ -52,7 +49,6 @@ impl<'a, T: Serialize> IntoResponse<'a> for Json<T> {
                 .content_type(Cow::Borrowed("application/json; charset=utf-8"))
                 .body_from_vec(vec),
 
-            //TODO: log the error back to runtime
             Err(_) => Status::InternalServerError.into_response(),
         }
     }

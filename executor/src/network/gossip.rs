@@ -16,7 +16,7 @@ use mailbox_processor::{
     plain::{MessageReceiver, PlainMailboxProcessor},
     ReplyChannel,
 };
-use mu_common::id::IdExt;
+use mu_common::{id::IdExt, serde_support::IpOrHostname};
 use mu_stack::StackID;
 use protobuf::Message;
 use rand::{prelude::Distribution, rngs::ThreadRng};
@@ -115,11 +115,12 @@ pub struct GossipConfig {
     pub assume_dead_after_missed_heartbeats: u32,
     pub max_peers: usize,
     pub peer_update_interval: ConfigDuration,
+    pub network_stabilization_wait_time: ConfigDuration,
 }
 
 #[derive(Deserialize)]
 pub struct KnownNodeConfig {
-    pub address: IpAddr,
+    pub address: IpOrHostname,
     pub gossip_port: u16,
     pub pd_port: u16,
 }
@@ -150,8 +151,8 @@ pub enum GossipNotification {
     // Notifications
     NodeDiscovered(NodeAddress),
     NodeDied(NodeAddress, NodeDiedCleanly),
-    NodeDeployedStacks(NodeAddress, Vec<StackID>), // TODO
-    NodeUndeployedStacks(NodeAddress, Vec<StackID>), // TODO
+    NodeDeployedStacks(NodeAddress, Vec<StackID>),
+    NodeUndeployedStacks(NodeAddress, Vec<StackID>),
 
     // Requests
     Connect(ConnectionRequestID, IpAddr, u16),

@@ -54,7 +54,7 @@ pub fn create(
         .send_with_spinner_and_config(Default::default())
         .context("Failed to send escrow account creation transaction")?;
 
-    println!("Escrow account created, account key is: {}", escrow_pda);
+    println!("Escrow account created, account key is: {escrow_pda}");
     println!("Note: to recharge, you can use `mu escrow recharge` or make direct token transfers to this account.");
 
     Ok(())

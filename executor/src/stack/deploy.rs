@@ -1,19 +1,20 @@
-use mu_gateway::GatewayManager;
-use mu_runtime::{AssemblyDefinition, Runtime};
 use reqwest::Url;
 use thiserror::Error;
 
-use mu_db::DbManager;
-
+use mu_db::{DbManager, DeleteTable};
+use mu_gateway::GatewayManager;
+use mu_runtime::{AssemblyDefinition, Runtime};
 use mu_stack::{AssemblyID, HttpMethod, Stack, StackID};
+
+use super::blockchain_monitor::StackRemovalMode;
 
 #[derive(Error, Debug)]
 pub enum StackValidationError {
     #[error("Duplicate function name '{0}'")]
     DuplicateFunctionName(String),
 
-    #[error("Duplicate database name '{0}'")]
-    DuplicateDatabaseName(String),
+    #[error("Duplicate table name '{0}'")]
+    DuplicateTableName(String),
 
     #[error("Duplicate gateway name '{0}'")]
     DuplicateGatewayName(String),
@@ -42,14 +43,17 @@ pub enum StackDeploymentError {
     #[error("Validation error: {0}")]
     ValidationError(StackValidationError),
 
+    #[error("Bad assembly definition")]
+    BadAssemblyDefinition,
+
     #[error("Failed to deploy functions due to: {0}")]
     FailedToDeployFunctions(anyhow::Error),
 
     #[error("Failed to deploy gateways due to: {0}")]
     FailedToDeployGateways(anyhow::Error),
 
-    #[error("Failed to deploy databases due to: {0}")]
-    FailedToDeployDatabases(anyhow::Error),
+    #[error("Failed to deploy tables due to: {0}")]
+    FailedToDeployTables(anyhow::Error),
 
     #[error("Failed to connect to muDB: {0}")]
     FailedToConnectToDatabase(anyhow::Error),
@@ -86,16 +90,19 @@ pub(super) async fn deploy(
             .await
             .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
 
-        function_defs.push(AssemblyDefinition {
-            id: AssemblyID {
-                stack_id: id,
-                assembly_name: func.name.clone(),
-            },
-            source: function_source,
-            runtime: func.runtime,
-            envs: func.env.clone(),
-            memory_limit: func.memory_limit,
-        });
+        function_defs.push(
+            AssemblyDefinition::try_new(
+                AssemblyID {
+                    stack_id: id,
+                    assembly_name: func.name.clone(),
+                },
+                function_source,
+                func.runtime,
+                func.env.clone(),
+                func.memory_limit,
+            )
+            .map_err(|_| StackDeploymentError::BadAssemblyDefinition)?,
+        );
         function_names.push(&func.name);
     }
     runtime
@@ -103,19 +110,22 @@ pub(super) async fn deploy(
         .await
         .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
 
-    // Step 2: Databases
-    let mut tables = vec![];
-    for x in stack.databases() {
-        let table_name =
-            x.name.to_owned().try_into().map_err(|e| {
-                StackDeploymentError::FailedToDeployDatabases(anyhow::anyhow!("{e}"))
-            })?;
-        tables.push(table_name);
+    // Step 2: Database tables
+    let mut table_actions = vec![];
+    for kvt in stack.key_value_tables() {
+        let table_name = kvt
+            .name
+            .clone()
+            .try_into()
+            .map_err(StackDeploymentError::FailedToDeployTables)?;
+        let delete = DeleteTable(matches!(kvt.delete, Some(true)));
+        table_actions.push((table_name, delete));
     }
+
     db_client
-        .update_stack_tables(id, tables)
+        .update_stack_tables(id, table_actions)
         .await
-        .map_err(|e| StackDeploymentError::FailedToDeployDatabases(anyhow::anyhow!("{e}")))?;
+        .map_err(|e| StackDeploymentError::FailedToDeployTables(e.into()))?;
 
     let existing_function_names = runtime.get_function_names(id).await.unwrap_or_default();
     let mut functions_to_delete = vec![];
@@ -135,7 +145,7 @@ pub(super) async fn deploy(
 }
 
 fn validate(stack: Stack) -> Result<Stack, StackValidationError> {
-    // TODO
+    // TODO - implement this in mu_stack, use it in CLI too
     Ok(stack)
 }
 
@@ -149,9 +159,27 @@ async fn download_function(url: Url) -> Result<bytes::Bytes, StackDeploymentErro
         .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))
 }
 
-pub(super) async fn undeploy_stack(id: StackID, runtime: &dyn Runtime) -> anyhow::Result<()> {
+pub(super) async fn undeploy_stack(
+    id: StackID,
+    mode: StackRemovalMode,
+    runtime: &dyn Runtime,
+    db_manager: &dyn DbManager,
+) -> anyhow::Result<()> {
     // TODO: have a policy for deleting user data from the database
     // It should handle deleted and suspended stacks differently
+
+    if let StackRemovalMode::Permanent = mode {
+        let db_client = db_manager.make_client().await?;
+        let tables = db_client.table_list(id, None).await?;
+        for table in tables.clone() {
+            db_client.clear_table(id, table).await?;
+        }
+        let table_deletes = tables
+            .into_iter()
+            .map(|table| (table, DeleteTable(true)))
+            .collect();
+        db_client.update_stack_tables(id, table_deletes).await?;
+    }
 
     runtime.remove_all_functions(id).await?;
 

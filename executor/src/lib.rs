@@ -1,23 +1,22 @@
+pub mod api;
 pub mod infrastructure;
 pub mod network;
-mod request_routing;
+pub mod request_routing;
 pub mod stack;
 
-use std::{
-    process,
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{net::IpAddr, process, sync::Arc, time::SystemTime};
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
+use futures::{stream::FuturesUnordered, StreamExt};
 use log::*;
 use mailbox_processor::NotificationChannel;
-use mu_db::{DbManager, DbManagerImpl};
+use mu_common::serde_support::IpOrHostname;
 use mu_runtime::Runtime;
 use network::rpc_handler::{self, RpcHandler, RpcRequestHandler};
 use stack::{
     blockchain_monitor::{BlockchainMonitor, BlockchainMonitorNotification},
+    request_signer_cache::RequestSignerCache,
     usage_aggregator::{Usage, UsageAggregator},
 };
 use tokio::{
@@ -34,10 +33,22 @@ use crate::{
         NodeAddress,
     },
     stack::{
-        blockchain_monitor,
+        blockchain_monitor, request_signer_cache,
         scheduler::{self, Scheduler, SchedulerNotification},
     },
 };
+
+async fn get_ip(ip_or_hostname: &IpOrHostname) -> Result<IpAddr, std::io::Error> {
+    match ip_or_hostname {
+        IpOrHostname::Ip(ip) => Ok(*ip),
+        IpOrHostname::Hostname(hostname) => {
+            let host = hostname.clone();
+            let resolved =
+                tokio::task::spawn_blocking(move || dns_lookup::lookup_host(&host)).await?;
+            resolved.map(|ip| ip[0]) // ip[0] is the ipv4 and ip[1] is the ipv6 resolution
+        }
+    }
+}
 
 pub async fn run() -> Result<()> {
     // TODO handle failures in components
@@ -51,14 +62,16 @@ pub async fn run() -> Result<()> {
     let config::SystemConfig(
         connection_manager_config,
         gossip_config,
-        mut known_nodes_config,
-        tikv_config,
+        known_nodes_config,
+        db_config,
         gateway_manager_config,
         log_config,
         runtime_config,
         scheduler_config,
         blockchain_monitor_config,
     ) = config::initialize_config()?;
+
+    let stabilization_wait_time = *gossip_config.network_stabilization_wait_time;
 
     let my_node = NodeAddress {
         address: connection_manager_config.listen_address,
@@ -70,10 +83,25 @@ pub async fn run() -> Result<()> {
     };
     let my_hash = my_node.get_hash();
 
-    let is_seed = known_nodes_config
+    let mut known_nodes_config_with_ip = known_nodes_config
         .iter()
-        .any(|n| is_same_node_as_me(n, &my_node));
-    known_nodes_config.retain(|n| !is_same_node_as_me(n, &my_node));
+        .map(|n| async move {
+            match get_ip(&n.address).await {
+                Ok(ip) => Ok((n, ip)),
+                Err(e) => Err(e.into()),
+            }
+        })
+        .collect::<FuturesUnordered<_>>() // Turn futures into parallel stream
+        .collect::<Vec<_>>() // Wait for them to finish
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?; // Traverse the results into one result
+
+    let is_seed = known_nodes_config_with_ip
+        .iter()
+        .any(|(n, ip)| is_same_node_as_me(n, ip, &my_node));
+
+    known_nodes_config_with_ip.retain(|(n, ip)| !is_same_node_as_me(n, ip, &my_node));
 
     log_setup::setup(log_config)?;
 
@@ -99,14 +127,11 @@ pub async fn run() -> Result<()> {
 
     info!("Establishing connection to seeds");
 
-    for node in &known_nodes_config {
-        match connection_manager
-            .connect(node.address, node.gossip_port)
-            .await
-        {
+    for (node, node_ip) in &known_nodes_config_with_ip {
+        match connection_manager.connect(*node_ip, node.gossip_port).await {
             Ok(connection_id) => known_nodes.push((
                 NodeAddress {
-                    address: node.address,
+                    address: *node_ip,
                     port: node.gossip_port,
                     generation: 0,
                 },
@@ -144,32 +169,27 @@ pub async fn run() -> Result<()> {
     )
     .context("Failed to start gossip")?;
 
-    let function_provider = mu_runtime::providers::DefaultAssemblyProvider::new();
-    // TODO: don't leak this implementation
-    // @Hossein: remove this when implementing the external TiKV feature
-    let database_manager = DbManagerImpl::new_with_embedded_cluster(
-        mu_db::NodeAddress {
-            address: my_node.address,
+    let database_manager = mu_db::start(
+        mu_db::TcpPortAddress {
+            address: IpOrHostname::Ip(my_node.address),
             port: my_node.port,
         },
-        known_nodes_config
+        known_nodes_config_with_ip
             .iter()
-            .map(|c| mu_db::RemoteNode {
-                address: c.address,
+            .map(|(c, _)| mu_db::RemoteNode {
+                address: c.address.clone(),
                 gossip_port: c.gossip_port,
                 pd_port: c.pd_port,
             })
             .collect(),
-        tikv_config,
+        db_config,
     )
     .await?;
-    let (runtime, mut runtime_notification_receiver) = mu_runtime::start(
-        Box::new(function_provider),
-        Box::new(database_manager.clone()),
-        runtime_config,
-    )
-    .await
-    .context("Failed to initiate runtime")?;
+
+    let (runtime, mut runtime_notification_receiver) =
+        mu_runtime::start(database_manager.clone(), runtime_config)
+            .await
+            .context("Failed to initiate runtime")?;
 
     let rpc_handler = rpc_handler::new(
         connection_manager.clone(),
@@ -178,28 +198,37 @@ pub async fn run() -> Result<()> {
         },
     );
 
-    // TODO: no notification channel for now, requests are sent straight to runtime
-    let connection_manager_clone = connection_manager.clone();
-    let gossip_clone = gossip.clone();
-    let rpc_handler_clone = rpc_handler.clone();
-    let runtime_clone = runtime.clone();
+    let request_signer_cache = request_signer_cache::start();
 
     let scheduler_ref = Arc::new(RwLock::new(None));
-    let scheduler_ref_clone = scheduler_ref.clone();
-    let (gateway_manager, mut gateway_notification_receiver) =
-        mu_gateway::start(gateway_manager_config, move |f, r| {
-            Box::pin(request_routing::route_request(
-                f,
-                r,
-                connection_manager_clone.clone(),
-                gossip_clone.clone(),
-                scheduler_ref_clone.clone(),
-                rpc_handler_clone.clone(),
-                runtime_clone.clone(),
-            ))
-        })
-        .await
-        .context("Failed to start gateway manager")?;
+    let (gateway_manager, mut gateway_notification_receiver) = mu_gateway::start(
+        gateway_manager_config,
+        api::service_factory(),
+        Some(api::DependencyAccessor {
+            request_signer_cache: request_signer_cache.clone(),
+        }),
+        {
+            let connection_manager = connection_manager.clone();
+            let gossip = gossip.clone();
+            let scheduler_ref = scheduler_ref.clone();
+            let rpc_handler = rpc_handler.clone();
+            let runtime = runtime.clone();
+
+            move |f, r| {
+                Box::pin(request_routing::route_request(
+                    f,
+                    r,
+                    connection_manager.clone(),
+                    gossip.clone(),
+                    scheduler_ref.clone(),
+                    rpc_handler.clone(),
+                    runtime.clone(),
+                ))
+            }
+        },
+    )
+    .await
+    .context("Failed to start gateway manager")?;
 
     // TODO: fetch stacks from blockchain before starting scheduler
     let (scheduler_notification_channel, mut scheduler_notification_receiver) =
@@ -212,7 +241,7 @@ pub async fn run() -> Result<()> {
         scheduler_notification_channel,
         runtime.clone(),
         gateway_manager.clone(),
-        Box::new(database_manager.clone()),
+        database_manager.clone(),
     );
 
     *scheduler_ref.write().await = Some(scheduler.clone());
@@ -234,6 +263,7 @@ pub async fn run() -> Result<()> {
             usage_aggregator.as_ref(),
             &mut gateway_notification_receiver,
             &mut runtime_notification_receiver,
+            request_signer_cache.as_ref(),
         )
         .await;
 
@@ -251,7 +281,7 @@ pub async fn run() -> Result<()> {
 
         trace!("Stopping database manager");
         database_manager
-            .stop_embedded_cluster()
+            .stop()
             .await
             .context("Failed to stop runtime")?;
 
@@ -263,6 +293,8 @@ pub async fn run() -> Result<()> {
             .stop()
             .await
             .context("Failed to stop gateway manager")?;
+
+        request_signer_cache.stop().await;
 
         trace!("Stopping gossip");
         gossip.stop().await.context("Failed to stop gossip")?;
@@ -293,10 +325,12 @@ pub async fn run() -> Result<()> {
         Result::<()>::Ok(())
     });
 
-    // TODO make the wait configurable
     {
-        info!("Waiting 4 seconds for node discovery to complete");
-        tokio::time::sleep(Duration::from_secs(4)).await;
+        info!(
+            "Waiting {} seconds for gossip state to stabilize",
+            stabilization_wait_time.as_secs()
+        );
+        tokio::time::sleep(stabilization_wait_time).await;
 
         info!("Will start to schedule stacks now");
         scheduler_clone.ready_to_schedule_stacks().await?;
@@ -309,8 +343,8 @@ pub async fn run() -> Result<()> {
     Ok(())
 }
 
-fn is_same_node_as_me(node: &KnownNodeConfig, me: &NodeAddress) -> bool {
-    node.gossip_port == me.port && (node.address == me.address || node.address.is_loopback())
+fn is_same_node_as_me(node: &KnownNodeConfig, node_ip: &IpAddr, me: &NodeAddress) -> bool {
+    node.gossip_port == me.port && (*node_ip == me.address || node_ip.is_loopback())
 }
 
 #[derive(Clone)]
@@ -357,6 +391,7 @@ async fn glue_modules(
     usage_aggregator: &dyn UsageAggregator,
     gateway_notification_receiver: &mut mpsc::UnboundedReceiver<mu_gateway::Notification>,
     runtime_notification_receiver: &mut mpsc::UnboundedReceiver<mu_runtime::Notification>,
+    request_signer_cache: &dyn RequestSignerCache,
 ) {
     loop {
         select! {
@@ -378,7 +413,7 @@ async fn glue_modules(
             }
 
             notification = blockchain_monitor_notification_receiver.recv() => {
-                process_blockchain_monitor_notification(notification, scheduler).await;
+                process_blockchain_monitor_notification(notification, scheduler, request_signer_cache).await;
             }
 
             notification = gateway_notification_receiver.recv() => {
@@ -496,16 +531,36 @@ async fn process_scheduler_notification(
 async fn process_blockchain_monitor_notification(
     notification: Option<BlockchainMonitorNotification>,
     scheduler: &dyn Scheduler,
+    request_signer_cache: &dyn RequestSignerCache,
 ) {
     match notification {
         None => (), // TODO
         Some(BlockchainMonitorNotification::StacksAvailable(stacks)) => {
             debug!("Stacks available: {stacks:?}");
-            scheduler.stacks_available(stacks).await.unwrap();
+            request_signer_cache
+                .stacks_available(stacks.iter().map(|s| (s.id(), s.owner())).collect())
+                .await
+                .unwrap();
+            scheduler.stacks_available(stacks.clone()).await.unwrap();
         }
-        Some(BlockchainMonitorNotification::StacksRemoved(stack_ids)) => {
-            debug!("Stacks removed: {stack_ids:?}");
-            scheduler.stacks_removed(stack_ids).await.unwrap();
+        Some(BlockchainMonitorNotification::StacksRemoved(stacks)) => {
+            debug!("Stacks removed: {stacks:?}");
+            request_signer_cache
+                .stacks_removed(stacks.iter().map(|s| s.0).collect())
+                .await
+                .unwrap();
+            scheduler.stacks_removed(stacks).await.unwrap();
+        }
+        Some(BlockchainMonitorNotification::RequestSignersAvailable(signers)) => {
+            debug!("Request signers available: {signers:?}");
+            request_signer_cache
+                .signers_available(signers)
+                .await
+                .unwrap();
+        }
+        Some(BlockchainMonitorNotification::RequestSignersRemoved(signers)) => {
+            debug!("Request signers removed: {signers:?}");
+            request_signer_cache.signers_removed(signers).await.unwrap();
         }
     }
 }

@@ -1,0 +1,8 @@
+[package]
+name = "hello-db"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+musdk = { path= "../../../../../sdk/musdk", features = ["json"]}
+serde = { version = "1.0", features = ["derive"] }

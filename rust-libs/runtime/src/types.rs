@@ -1,30 +1,27 @@
-use super::{error::Error, function::Pipe};
-use mu_stack::{AssemblyID, AssemblyRuntime, StackID};
+use crate::FunctionLoadingError;
 
-use anyhow::Result;
+use super::{
+    error::{Error, Result},
+    function::Pipe,
+};
+
+use mu_stack::{AssemblyID, AssemblyRuntime};
+
 use bytes::Bytes;
 use mailbox_processor::ReplyChannel;
 use serde::Deserialize;
-use std::{collections::HashMap, fmt::Display, path::PathBuf};
+use std::{collections::HashMap, fmt::Display, marker::PhantomData, path::PathBuf};
 use tokio::{sync::oneshot::error::TryRecvError, task::JoinHandle};
 use wasmer_middlewares::metering::MeteringPoints;
 
 pub(super) type ExecuteFunctionRequest<'a> = musdk_common::incoming_message::ExecuteFunction<'a>;
 pub(super) type ExecuteFunctionResponse = musdk_common::outgoing_message::FunctionResult<'static>;
 
-pub trait AssemblyProvider: Send {
-    fn get(&self, id: &AssemblyID) -> Option<&AssemblyDefinition>;
-    fn add_function(&mut self, assembly: AssemblyDefinition);
-    fn remove_function(&mut self, id: &AssemblyID);
-    fn remove_all_functions(&mut self, stack_id: &StackID) -> Option<Vec<String>>;
-    fn get_function_names(&self, stack_id: &StackID) -> Vec<String>;
-}
-
 #[derive(Debug)]
 pub struct InvokeFunctionRequest {
     pub assembly_id: AssemblyID,
     pub request: ExecuteFunctionRequest<'static>,
-    pub reply: ReplyChannel<Result<ExecuteFunctionResponse, Error>>,
+    pub reply: ReplyChannel<Result<ExecuteFunctionResponse>>,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -45,13 +42,14 @@ pub struct AssemblyDefinition {
     pub source: Bytes,
     pub runtime: AssemblyRuntime,
 
-    // TODO: key must not contain `=` and both must not contain `null` byte
     pub envs: HashMap<String, String>,
     pub memory_limit: byte_unit::Byte,
+
+    _make_me_private: PhantomData<()>,
 }
 
 impl AssemblyDefinition {
-    pub fn new(
+    pub fn try_new(
         id: AssemblyID,
         source: Bytes,
         runtime: AssemblyRuntime,
@@ -60,15 +58,39 @@ impl AssemblyDefinition {
             Item = (String, String),
         >,
         memory_limit: byte_unit::Byte,
-    ) -> Self {
+    ) -> Result<Self> {
         let envs: HashMap<String, String> = envs.into_iter().collect();
-        Self {
+        for e in &envs {
+            if e.0.contains('=') {
+                return Err(Error::FunctionLoadingError(
+                    FunctionLoadingError::InvalidAssemblyDefinition(
+                        "Env key cannot contain '=' character".to_string(),
+                    ),
+                ));
+            }
+            if e.0.contains('\0') {
+                return Err(Error::FunctionLoadingError(
+                    FunctionLoadingError::InvalidAssemblyDefinition(
+                        "Env key cannot contain null character".to_string(),
+                    ),
+                ));
+            }
+            if e.1.contains('\0') {
+                return Err(Error::FunctionLoadingError(
+                    FunctionLoadingError::InvalidAssemblyDefinition(
+                        "Env value cannot contain null character".to_string(),
+                    ),
+                ));
+            }
+        }
+        Ok(Self {
             id,
             source,
             runtime,
             envs,
             memory_limit,
-        }
+            _make_me_private: PhantomData,
+        })
     }
 }
 
@@ -81,7 +103,7 @@ pub struct FunctionIO {
 
 #[derive(Debug)]
 pub struct FunctionHandle {
-    pub join_handle: JoinHandle<Result<MeteringPoints, (super::error::Error, MeteringPoints)>>,
+    pub join_handle: JoinHandle<Result<MeteringPoints, (Error, MeteringPoints)>>,
     is_finished_rx: tokio::sync::oneshot::Receiver<()>,
     is_finished: bool,
     pub io: FunctionIO,
@@ -89,7 +111,7 @@ pub struct FunctionHandle {
 
 impl FunctionHandle {
     pub fn new(
-        join_handle: JoinHandle<Result<MeteringPoints, (super::error::Error, MeteringPoints)>>,
+        join_handle: JoinHandle<Result<MeteringPoints, (Error, MeteringPoints)>>,
         is_finished_rx: tokio::sync::oneshot::Receiver<()>,
         io: FunctionIO,
     ) -> Self {

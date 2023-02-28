@@ -1,19 +1,23 @@
-import { Keypair, PublicKey } from '@solana/web3.js'
+import { Keypair } from '@solana/web3.js'
 import * as spl from '@solana/spl-token';
 import chai, { expect } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import {
+    activateApiRequestSigner,
     authorizeProvider,
+    createApiRequestSigner,
     createAuthorizedUsageSigner,
     createEscrowAccount,
     createMint,
     createProvider,
     createProviderAuthorizer,
     createRegion,
+    deactivateApiRequestSigner,
     deleteStack,
     deployStack,
     initializeMu,
     mintToAccount,
+    MuApiRequestSigner,
     MuAuthorizedSignerInfo,
     MuEscrowAccountInfo,
     MuProgram,
@@ -24,6 +28,7 @@ import {
     readOrCreateUserWallet,
     readOrCreateWallet,
     ServiceRates, ServiceUsage,
+    updateProviderDeposit,
     updateStack,
     updateStackUsage,
     withdrawEscrowBalance
@@ -41,6 +46,7 @@ describe("marketplace", () => {
     let authSigner: MuAuthorizedSignerInfo;
 
     let userWallet: Keypair;
+    let requestSigner: MuApiRequestSigner;
     let escrow: MuEscrowAccountInfo;
     let stack: MuStackInfo;
 
@@ -49,7 +55,7 @@ describe("marketplace", () => {
     it("Initializes", async () => {
         let provider = AnchorProvider.env();
         let mint = await createMint(provider);
-        mu = await initializeMu(provider, mint, 100_000);
+        mu = await initializeMu(provider, mint, 100_000, new BN(100_000000));
     });
 
     it("Creates a provider authorizer", async () => {
@@ -65,6 +71,17 @@ describe("marketplace", () => {
         expect(depositAccount.amount).to.equals(100000000n);
     });
 
+    it("Updates provider deposit", async () => {
+        await updateProviderDeposit(mu, new BN(200_000000));
+
+        let otherProvider = await createProvider(mu, "OtherProvider");
+
+        const providerAccount = await spl.getAccount(mu.anchorProvider.connection, otherProvider.tokenAccount);
+        const depositAccount = await spl.getAccount(mu.anchorProvider.connection, mu.depositPda);
+        expect(providerAccount.amount).to.equals(9800_000000n);
+        expect(depositAccount.amount).to.equals(300_000000n);
+    });
+
     it("Fails to create region when provider isn't authorized", async () => {
         const rates: ServiceRates = {
             billionFunctionMbInstructions: new BN(1), // TODO too cheap to be priced correctly, even with 6 decimal places
@@ -76,7 +93,7 @@ describe("marketplace", () => {
         };
 
         try {
-            let _ = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000));
+            let _ = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000), "");
             throw new Error("Region creation succeeded when it should have failed");
         } catch (e) {
             let anchorError = e as AnchorError;
@@ -98,7 +115,7 @@ describe("marketplace", () => {
             millionGatewayRequests: new BN(50)
         };
 
-        region = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000));
+        region = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000), "http://localhost:12012");
     });
 
     it("Creates an Authorized Usage Signer", async () => {
@@ -252,6 +269,28 @@ describe("marketplace", () => {
         );
         expect(escrowAccount.amount).to.equals(10_000_000n - 2n * usagePrice);
     })
+
+    it("Creates an API request signer", async () => {
+        let signer = Keypair.generate(); // Note: can, but doesn't need to be an account on the blockchain
+        requestSigner = await createApiRequestSigner(mu, userWallet, signer, region);
+
+        let signerAccount = await mu.program.account.apiRequestSigner.fetch(requestSigner.pda);
+        expect(signerAccount.active).to.be.true;
+    });
+
+    it("Deactivates an API request signer", async () => {
+        await deactivateApiRequestSigner(mu, userWallet, requestSigner, region);
+
+        let signerAccount = await mu.program.account.apiRequestSigner.fetch(requestSigner.pda);
+        expect(signerAccount.active).to.be.false;
+    });
+
+    it("Re-activates an API request signer", async () => {
+        await activateApiRequestSigner(mu, userWallet, requestSigner, region);
+
+        let signerAccount = await mu.program.account.apiRequestSigner.fetch(requestSigner.pda);
+        expect(signerAccount.active).to.be.true;
+    });
 
     it("Withdraws escrow balance", async () => {
         let tempWallet = await readOrCreateWallet(mu);

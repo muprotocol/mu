@@ -19,14 +19,16 @@ thiserror = "1.0"
 log = "0.4"
 async-trait = "0.1"
 bytes = "1.2"
-mailbox_processor = { path = "../mailbox_processor" }
 dyn-clone = "1.0"
 dyn-clonable = "0.9"
+byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
+reqwest = "0.11"
+
+mailbox_processor = { path = "../mailbox_processor" }
 mu_stack = { path = "../mu_stack" }
 mu-common = { path = "../common" }
 mu-db = { path = "../db" }
 musdk-common = { path = "../../sdk/common" }
-byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
 
 [dev-dependencies]
 test-context = "0.1.4"
@@ -36,3 +38,5 @@ itertools = "0.10"
 rand = "0.8"
 db-embedded-tikv = { path = "../db-embedded-tikv" }
 tikv-client = "0.1.0"
+env_logger = "0.10"
+serial_test = "0.8"

@@ -33,7 +33,11 @@ pub enum Error {
 pub mod marketplace {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>, commission_rate_micros: u32) -> Result<()> {
+    pub fn initialize(
+        ctx: Context<Initialize>,
+        commission_rate_micros: u32,
+        provider_deposit: u64,
+    ) -> Result<()> {
         if commission_rate_micros > 1_000_000 {
             return Err(Error::CommissionRateOutOfBounds.into());
         }
@@ -44,8 +48,18 @@ pub mod marketplace {
             deposit_token: ctx.accounts.deposit_token.key(),
             commission_token: ctx.accounts.commission_token.key(),
             commission_rate_micros,
+            provider_deposit,
             bump: *ctx.bumps.get("state").unwrap(),
         });
+
+        Ok(())
+    }
+
+    pub fn update_provider_deposit(
+        ctx: Context<UpdateProviderDeposit>,
+        provider_deposit: u64,
+    ) -> Result<()> {
+        ctx.accounts.state.provider_deposit = provider_deposit;
 
         Ok(())
     }
@@ -68,13 +82,14 @@ pub mod marketplace {
             authority: ctx.accounts.owner.to_account_info(),
         };
         let transfer_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), transfer);
-        anchor_spl::token::transfer(transfer_ctx, 100_000000)?; // TODO: make this configurable
+        anchor_spl::token::transfer(transfer_ctx, ctx.accounts.state.provider_deposit)?;
 
         ctx.accounts.provider.set_inner(Provider {
             name,
             authorized: false,
             owner: ctx.accounts.owner.key(),
             bump: *ctx.bumps.get("provider").unwrap(),
+            deposit: ctx.accounts.state.provider_deposit,
         });
 
         Ok(())
@@ -89,6 +104,7 @@ pub mod marketplace {
         ctx: Context<CreateRegion>,
         region_num: u32,
         name: String,
+        base_url: String,
         rates: ServiceRates,
         min_escrow_balance: u64,
     ) -> Result<()> {
@@ -98,6 +114,7 @@ pub mod marketplace {
 
         ctx.accounts.region.set_inner(ProviderRegion {
             name,
+            base_url,
             region_num,
             rates,
             min_escrow_balance,
@@ -161,6 +178,28 @@ pub mod marketplace {
         }
 
         ctx.accounts.stack.state = StackState::Deleted;
+        Ok(())
+    }
+
+    pub fn create_api_request_signer(ctx: Context<CreateApiRequestSigner>) -> Result<()> {
+        ctx.accounts.request_signer.set_inner(ApiRequestSigner {
+            signer: ctx.accounts.signer.key(),
+            user: ctx.accounts.user.key(),
+            region: ctx.accounts.region.key(),
+            bump: *ctx.bumps.get("request_signer").unwrap(),
+            active: true,
+        });
+
+        Ok(())
+    }
+
+    pub fn activate_api_request_signer(ctx: Context<ActivateApiRequestSigner>) -> Result<()> {
+        ctx.accounts.request_signer.active = true;
+        Ok(())
+    }
+
+    pub fn deactivate_api_request_signer(ctx: Context<DeactivateApiRequestSigner>) -> Result<()> {
+        ctx.accounts.request_signer.active = false;
         Ok(())
     }
 
@@ -271,6 +310,7 @@ pub struct MuState {
     pub deposit_token: Pubkey,
     pub commission_token: Pubkey,
     pub commission_rate_micros: u32,
+    pub provider_deposit: u64,
     pub bump: u8,
 }
 
@@ -280,7 +320,7 @@ pub struct Initialize<'info> {
         init,
         payer = authority,
         seeds = [b"state"],
-        space = 8 + 32 + 32 + 32 + 32 + 4 + 1,
+        space = 8 + 32 + 32 + 32 + 32 + 4 + 8 + 1,
         bump
     )]
     state: Account<'info, MuState>,
@@ -301,7 +341,7 @@ pub struct Initialize<'info> {
         init,
         payer = authority,
         token::mint = mint,
-        token::authority = state,
+        token::authority = authority,
         seeds = [b"commission"],
         bump
     )]
@@ -312,6 +352,19 @@ pub struct Initialize<'info> {
 
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateProviderDeposit<'info> {
+    #[account(
+        mut,
+        seeds = [b"state"],
+        bump = state.bump
+    )]
+    state: Account<'info, MuState>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
 }
 
 #[account]
@@ -354,6 +407,7 @@ pub struct Provider {
     pub owner: Pubkey,
     pub authorized: bool,
     pub name: String,
+    pub deposit: u64,
     pub bump: u8,
 }
 
@@ -370,7 +424,7 @@ pub struct CreateProvider<'info> {
     #[account(
         init,
         payer = owner,
-        space = 8 + 32 + 1 + 4 + name.as_bytes().len() + 1,
+        space = 8 + 32 + 1 + 4 + name.as_bytes().len() + 8 + 1,
         seeds = [b"provider", owner.key().as_ref()],
         bump
     )]
@@ -445,17 +499,18 @@ pub struct ProviderRegion {
     pub min_escrow_balance: u64,
     pub bump: u8,
     pub name: String,
+    pub base_url: String,
 }
 
 #[derive(Accounts)]
-#[instruction(region_num: u32, name: String)]
+#[instruction(region_num: u32, name: String, base_url: String)]
 pub struct CreateRegion<'info> {
     #[account(has_one = owner)]
     pub provider: Account<'info, Provider>,
 
     #[account(
         init,
-        space = 8 + 32 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 8 + 1 + 4 + name.as_bytes().len(),
+        space = 8 + 32 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 8 + 1 + 4 + name.as_bytes().len() + 4 + base_url.as_bytes().len(),
         payer = owner,
         seeds = [b"region", owner.key().as_ref(), region_num.to_le_bytes().as_ref()],
         bump
@@ -612,6 +667,94 @@ pub struct DeleteStack<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
     pub system_program: Program<'info, System>,
+}
+
+#[account]
+pub struct ApiRequestSigner {
+    pub signer: Pubkey,
+    pub user: Pubkey,
+    pub region: Pubkey,
+    pub bump: u8,
+    pub active: bool,
+}
+
+#[derive(Accounts)]
+pub struct CreateApiRequestSigner<'info> {
+    #[account(
+        init,
+        payer = user,
+        space = 8 + 32 + 32 + 32 + 1 + 1,
+        seeds = [b"request_signer", user.key.as_ref(), signer.key.as_ref(), region.key().as_ref()],
+        bump
+    )]
+    request_signer: Account<'info, ApiRequestSigner>,
+
+    #[account(mut)]
+    user: Signer<'info>,
+
+    #[account()]
+    signer: Signer<'info>,
+
+    #[account()]
+    region: Account<'info, ProviderRegion>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ActivateApiRequestSigner<'info> {
+    #[account(
+        mut,
+        has_one = user,
+        has_one = signer,
+        has_one = region,
+        seeds = [
+            b"request_signer",
+            request_signer.user.as_ref(),
+            request_signer.signer.as_ref(),
+            request_signer.region.as_ref()
+        ],
+        bump = request_signer.bump
+    )]
+    request_signer: Account<'info, ApiRequestSigner>,
+
+    #[account(mut)]
+    user: Signer<'info>,
+
+    #[account()]
+    signer: Signer<'info>,
+
+    #[account()]
+    region: Account<'info, ProviderRegion>,
+}
+
+#[derive(Accounts)]
+pub struct DeactivateApiRequestSigner<'info> {
+    #[account(
+        mut,
+        has_one = user,
+        has_one = signer,
+        has_one = region,
+        seeds = [
+            b"request_signer",
+            request_signer.user.as_ref(),
+            request_signer.signer.as_ref(),
+            request_signer.region.as_ref()
+        ],
+        bump = request_signer.bump
+    )]
+    request_signer: Account<'info, ApiRequestSigner>,
+
+    #[account(mut)]
+    user: Signer<'info>,
+
+    #[account()]
+    /// CHECK: The signer itself is not required to deactivate, so users can
+    /// deactivate signers in case they lose the private key.
+    signer: AccountInfo<'info>,
+
+    #[account()]
+    region: Account<'info, ProviderRegion>,
 }
 
 #[account]

@@ -12,6 +12,7 @@ wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "npm run test"
+deploy-uninitialized = "npx ts-node ./scripts/cmd-deploy-uninitialized.ts"
 deploy-empty = "npx ts-node ./scripts/cmd-deploy-empty.ts"
 deploy-test-stack = "npx ts-node ./scripts/cmd-deploy-test-stack.ts"
 initialize-mu = "npx ts-node ./scripts/cmd-initialize-mu.ts"

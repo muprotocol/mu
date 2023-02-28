@@ -16,6 +16,12 @@ pub enum Error {
 
     #[error("Unknown function {0}")]
     UnknownFunction(String),
+
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+
+    #[error("Unexpected message kind, was expecting {0}")]
+    UnexpectedMessageKind(&'static str),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -100,7 +100,6 @@ fn generate_mu_functions_wrapper(r#mod: &FunctionsMod) -> TokenStream2 {
 
 fn generate_main_fn(r#mod: &FunctionsMod) -> TokenStream2 {
     let struct_name = struct_ident(r#mod.name);
-    // TODO: fully qualify types once their namespaces are decided
     quote!(
         fn main() {
             ::musdk::MuContext::run::<#struct_name>();
@@ -140,7 +139,6 @@ fn generate_context_factory_function(r#mod: &FunctionsMod) -> TokenStream2 {
 fn generate_context_factory(r#mod: &FunctionsMod) -> TokenStream2 {
     let struct_name = struct_ident(r#mod.name);
     let mod_name = r#mod.name;
-    // TODO: fully qualify types once their namespaces are decided
     quote!(
         impl ::musdk::ContextFactory for #struct_name {
             fn create_context() -> ::musdk::MuContext {
@@ -164,7 +162,7 @@ fn generate_module(r#mod: &FunctionsMod) -> TokenStream2 {
 
         #(#invokers)*
 
-        #(#mu_functions)*
+        #(#[allow(clippy::needless_lifetimes)] #mu_functions)*
 
         #(#other_items)*
     })

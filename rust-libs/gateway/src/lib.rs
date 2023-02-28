@@ -4,7 +4,7 @@ use std::{borrow::Cow, collections::HashMap, future::Future, net::IpAddr, pin::P
 
 use actix_web::{
     body::BoxBody,
-    dev::ServerHandle,
+    dev::{HttpServiceFactory, ServerHandle},
     guard,
     http::{self, StatusCode},
     web, App, HttpRequest, HttpResponse, HttpServer, Resource, Responder,
@@ -29,6 +29,7 @@ pub trait GatewayManager: Clone + Send + Sync {
     async fn stop(&self) -> Result<()>;
 }
 
+//TODO: support multiple listen addresses, including Ipv6
 #[derive(Deserialize)]
 pub struct GatewayManagerConfig {
     pub listen_address: IpAddr,
@@ -118,9 +119,9 @@ where
     }
 }
 
-fn match_path_and_extract_path_params<'a, 'ep>(
+fn match_path_and_extract_path_params<'a>(
     request_path: &'a str,
-    endpoint_path: &'ep str,
+    endpoint_path: &str,
 ) -> Option<PathParams<'a>> {
     //TODO: Cache `endpoint_path` path segments for future matches
     let mut request_path_segments = request_path.split('/');
@@ -132,7 +133,7 @@ fn match_path_and_extract_path_params<'a, 'ep>(
         match (request_path_segments.next(), endpoint_path_segments.next()) {
             (Some(req_segment), Some(ep_segment)) => {
                 //TODO: Check for cases like `/get/{a}{b}/` which is invalid, since there
-                //is two variables in one segment.
+                //is two variables in one segment -> should happen during stack validation
 
                 if req_segment == ep_segment {
                     continue;
@@ -152,15 +153,64 @@ fn match_path_and_extract_path_params<'a, 'ep>(
     }
 }
 
-pub async fn start<F>(
+pub async fn start_without_additional_services<HandleRequest>(
     config: GatewayManagerConfig,
-    handle_request_callback: F,
+    handle_request_callback: HandleRequest,
 ) -> Result<(
     Box<dyn GatewayManager>,
     mpsc::UnboundedReceiver<Notification>,
 )>
 where
-    for<'a> F: (Fn(
+    for<'a> HandleRequest: (Fn(
+            FunctionID,
+            Request<'a>,
+        ) -> Pin<Box<dyn Future<Output = Result<Response<'static>>> + Send + 'a>>)
+        // TODO: we're using a box because I don't know how I can use 'a in two where
+        // clauses, so I can't express the same lifetime bound with a generic future
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+{
+    struct IdentityServiceFactory;
+
+    impl HttpServiceFactory for IdentityServiceFactory {
+        fn register(self, _config: &mut actix_web::dev::AppService) {}
+    }
+
+    start(
+        config,
+        || IdentityServiceFactory,
+        Option::<()>::None,
+        handle_request_callback,
+    )
+    .await
+}
+
+pub trait HttpServiceFactoryBuilder: Fn() -> Self::Factory + Clone + Send + 'static {
+    type Factory: HttpServiceFactory + 'static;
+}
+
+impl<F, T> HttpServiceFactoryBuilder for F
+where
+    F: ?Sized + Fn() -> T + Clone + Send + 'static,
+    T: HttpServiceFactory + 'static,
+{
+    type Factory = T;
+}
+
+pub async fn start<HandleRequest, AppData: Clone + Send + 'static>(
+    config: GatewayManagerConfig,
+    // note: use [actix_web::services!] to pass more than one service here.
+    additional_services: impl HttpServiceFactoryBuilder,
+    additional_app_data: Option<AppData>,
+    handle_request_callback: HandleRequest,
+) -> Result<(
+    Box<dyn GatewayManager>,
+    mpsc::UnboundedReceiver<Notification>,
+)>
+where
+    for<'a> HandleRequest: (Fn(
             FunctionID,
             Request<'a>,
         ) -> Pin<Box<dyn Future<Output = Result<Response<'static>>> + Send + 'a>>)
@@ -175,7 +225,7 @@ where
 
     let gateways = Arc::new(RwLock::new(HashMap::new()));
 
-    let accessor: DependencyAccessor<F> = {
+    let accessor: DependencyAccessor<HandleRequest> = {
         let gateways = gateways.clone();
         DependencyAccessor {
             gateways,
@@ -185,8 +235,15 @@ where
     };
 
     let server = HttpServer::new(move || {
-        App::new()
-            .app_data(web::Data::new(accessor.clone()))
+        let mut app = App::new().app_data(web::Data::new(accessor.clone()));
+
+        if let Some(additional_data) = additional_app_data.as_ref() {
+            app = app.app_data(web::Data::new(additional_data.clone()));
+        }
+
+        app = app.service(additional_services());
+
+        app = app
             .service(
                 Resource::new("/{stack_id}/{gateway_name}/{path:.*}")
                     .guard(
@@ -198,9 +255,11 @@ where
                             .or(guard::Options())
                             .or(guard::Patch()),
                     )
-                    .to(handle_request::<F>),
+                    .to(handle_request::<HandleRequest>),
             )
-            .default_service(web::to(|| async { ResponseWrapper::not_found() }))
+            .default_service(web::to(|| async { ResponseWrapper::not_found() }));
+
+        app
     })
     .bind((config.listen_address, config.listen_port))
     .context("Failed to bind HTTP server port")?
@@ -219,19 +278,15 @@ where
 
     Ok((Box::new(gateway_manager_impl), rx))
 }
-fn calculate_request_size(r: &Request) -> u64 {
-    //let mut size = r.path.as_bytes().len() as u64; //TODO: check if we can calculate this
-    let mut size = r
-        .query_params
-        .iter()
-        .map(|x| x.0.as_bytes().len() as u64 + x.1.as_bytes().len() as u64)
-        .sum::<u64>();
+fn calculate_request_size(r: &HttpRequest, payload: &Option<web::Bytes>) -> u64 {
+    let mut size = r.path().len() as u64;
+    size += r.query_string().len() as u64;
     size += r
-        .headers
+        .headers()
         .iter()
-        .map(|x| x.name.as_bytes().len() as u64 + x.value.as_bytes().len() as u64)
+        .map(|x| x.0.as_str().as_bytes().len() as u64 + x.1.as_bytes().len() as u64)
         .sum::<u64>();
-    size += r.body.len() as u64;
+    size += payload.as_ref().map(|p| p.len() as u64).unwrap_or(0u64);
     size
 }
 
@@ -344,6 +399,8 @@ where
         + Sync
         + 'static,
 {
+    let mut traffic = calculate_request_size(&request, &payload);
+
     let Ok(stack_id) = request.match_info().get("stack_id").unwrap().parse() else {
         return ResponseWrapper::not_found();
     };
@@ -405,8 +462,6 @@ where
         body: Cow::Borrowed(payload.as_ref().map(AsRef::as_ref).unwrap_or(&[])),
     };
 
-    let mut traffic = calculate_request_size(&request);
-
     let response = match (dependency_accessor.handle_request)(
         FunctionID {
             assembly_id: AssemblyID {
@@ -423,7 +478,8 @@ where
             traffic += calculate_response_size(&r);
             ResponseWrapper(r)
         }
-        // TODO: Generate meaningful error messages (propagate user function failure?)
+        // TODO: Only report a "user function failure" if the failure was in the user function
+        // TODO: Implement X-REQUEST-ID in responses and logs to enable debugging
         Err(f) => {
             error!("Failed to run user function: {f:?}");
             ResponseWrapper::internal_error("User function failure")

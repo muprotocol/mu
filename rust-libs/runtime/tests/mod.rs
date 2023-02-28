@@ -2,10 +2,12 @@ use std::{borrow::Cow, collections::HashMap};
 
 use futures::FutureExt;
 use itertools::Itertools;
+use serial_test::serial;
+use test_context::test_context;
 
+use mu_db::DeleteTable;
 use mu_runtime::*;
 use musdk_common::{Header, Status};
-use test_context::test_context;
 
 use crate::utils::{fixture::*, *};
 
@@ -22,7 +24,7 @@ async fn test_simple_func(fixture: &mut RuntimeFixtureWithoutDB) {
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Chappy"),
+        Some(Cow::Borrowed(b"Chappy")),
         vec![],
         HashMap::new(),
         HashMap::new(),
@@ -40,37 +42,6 @@ async fn test_simple_func(fixture: &mut RuntimeFixtureWithoutDB) {
     );
 }
 
-// #[tokio::test]
-// async fn can_query_mudb() {
-//     let projects = vec![create_project("hello-mudb", None)];
-//     let (runtime, db_service, _) = create_runtime(&projects).await;
-
-//     let database_id = DatabaseID {
-//         stack_id: projects[0].id.stack_id,
-//         db_name: "my_db".into(),
-//     };
-
-//     create_db_if_not_exist(db_service, database_id)
-//         .await
-//         .unwrap();
-
-//     let request = musdk_common::Request {
-//         method: musdk_common::HttpMethod::Get,
-//         path: Cow::Borrowed("/get_name"),
-//         query: HashMap::new(),
-//         headers: Vec::new(),
-//         body: Cow::Borrowed("Dream".as_bytes()),
-//     };
-
-//     let resp = runtime
-//         .invoke_function(projects[0].id.clone(), request)
-//         .await
-//         .unwrap();
-
-//     assert_eq!(Cow::Borrowed("Hello Dream".as_bytes()), resp.body);
-//     runtime.stop().await.unwrap();
-// }
-
 #[test_context(RuntimeFixtureWithoutDB)]
 #[tokio::test]
 async fn can_run_multiple_instance_of_the_same_function(fixture: &mut RuntimeFixtureWithoutDB) {
@@ -83,7 +54,7 @@ async fn can_run_multiple_instance_of_the_same_function(fixture: &mut RuntimeFix
 
     let make_request = |name: &'static str| {
         make_request(
-            Cow::Borrowed(name.as_bytes()),
+            Some(Cow::Borrowed(name.as_bytes())),
             vec![],
             HashMap::new(),
             HashMap::new(),
@@ -138,7 +109,7 @@ async fn can_run_instances_of_different_functions(fixture: &mut RuntimeFixtureWi
     .await
     .unwrap();
 
-    let make_request = |body| make_request(body, vec![], HashMap::new(), HashMap::new());
+    let make_request = |body| make_request(Some(body), vec![], HashMap::new(), HashMap::new());
 
     let instance_1 = fixture
         .runtime
@@ -183,7 +154,7 @@ async fn unclean_termination_is_handled(fixture: &mut RuntimeFixtureWithoutDB) {
     .await
     .unwrap();
 
-    let request = make_request(Cow::Borrowed(b""), vec![], HashMap::new(), HashMap::new());
+    let request = make_request(None, vec![], HashMap::new(), HashMap::new());
 
     match fixture
         .runtime
@@ -212,7 +183,7 @@ async fn functions_with_limited_memory_wont_run(fixture: &mut RuntimeFixtureWith
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Fred"),
+        Some(Cow::Borrowed(b"Fred")),
         vec![],
         HashMap::new(),
         HashMap::new(),
@@ -246,7 +217,7 @@ async fn functions_with_limited_memory_will_run_with_enough_memory(
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Fred"),
+        Some(Cow::Borrowed(b"Fred")),
         vec![],
         HashMap::new(),
         HashMap::new(),
@@ -270,7 +241,7 @@ async fn function_usage_is_reported_correctly_1(fixture: &mut RuntimeFixtureWith
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Chappy"),
+        Some(Cow::Borrowed(b"Chappy")),
         vec![],
         HashMap::new(),
         HashMap::new(),
@@ -359,7 +330,7 @@ async fn failing_function_should_not_hang(fixture: &mut RuntimeFixtureWithoutDB)
             .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Chappy"),
+        Some(Cow::Borrowed(b"Chappy")),
         vec![],
         HashMap::new(),
         HashMap::new(),
@@ -371,8 +342,8 @@ async fn failing_function_should_not_hang(fixture: &mut RuntimeFixtureWithoutDB)
         .await;
 
     match result.err().unwrap() {
-        Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(_)) => (),
-        _ => panic!("function should have been exited early!"),
+        Error::FunctionDidntTerminateCleanly => (),
+        _ => panic!("function should have been failed!"),
     }
 }
 
@@ -412,7 +383,7 @@ async fn json_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB) {
     };
 
     let request = make_request(
-        Cow::Borrowed(&form),
+        Some(Cow::Borrowed(&form)),
         vec![Header {
             name: Cow::Borrowed("content-type"),
             value: Cow::Borrowed("application/json; charset=utf-8"),
@@ -446,7 +417,7 @@ async fn string_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB)
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Due"),
+        Some(Cow::Borrowed(b"Due")),
         vec![],
         HashMap::new(),
         HashMap::new(),
@@ -476,7 +447,7 @@ async fn string_body_request_and_response_fails_with_incorrect_charset(
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Due"),
+        Some(Cow::Borrowed(b"Due")),
         vec![Header {
             name: Cow::Borrowed("content-type"),
             value: Cow::Borrowed("text/plain; charset=windows-12345"),
@@ -509,7 +480,7 @@ async fn string_body_request_and_response_do_not_care_for_content_type(
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Due"),
+        Some(Cow::Borrowed(b"Due")),
         vec![Header {
             name: Cow::Borrowed("content-type"),
             value: Cow::Borrowed("application/json; charset=utf-8"),
@@ -540,7 +511,7 @@ async fn can_access_path_params(fixture: &mut RuntimeFixtureWithoutDB) {
     .unwrap();
 
     let request = make_request(
-        Cow::Borrowed(b"Due"),
+        Some(Cow::Borrowed(b"Due")),
         vec![],
         [("type".into(), "users".into()), ("id".into(), "13".into())].into(),
         HashMap::new(),
@@ -561,6 +532,580 @@ async fn can_access_path_params(fixture: &mut RuntimeFixtureWithoutDB) {
             let r = r.unwrap();
             assert_eq!(Status::Ok, r.status);
             assert_eq!(expected_response.as_bytes(), r.body.as_ref());
+        })
+        .await;
+}
+
+#[test_context(RuntimeFixture)]
+#[tokio::test]
+#[serial]
+async fn db_crud(fixture: &mut RuntimeFixture) {
+    use serde::{Deserialize, Serialize};
+
+    let projects = create_and_add_projects(
+        vec![(
+            "hello-db",
+            &["create", "read", "update", "delete", "scan", "scan_keys"],
+            None,
+        )],
+        &*fixture.runtime,
+    )
+    .await
+    .unwrap();
+
+    const CREATE: usize = 0;
+    const READ: usize = 1;
+    const UPDATE: usize = 2;
+    const DELETE: usize = 3;
+    const SCAN: usize = 4;
+    const SCAN_KEYS: usize = 5;
+
+    const TABLE_NAME: &str = "table_1";
+    const KEY: &str = "a::a";
+    const KEY2: &str = "a::b";
+    const KEY3: &str = "b::a";
+    const VALUE: &str = "1111";
+    const VALUE2: &str = "2222";
+    const VALUE3: &str = "3333";
+    const VALUE4: &str = "4444";
+
+    // let k1 = "a::b".to_string();
+    // let k2 = "b::a".to_string();
+    // let v1 = "value1".to_string();
+    // let v2 = "value2".to_string();
+    // let v3 = "value3".to_string();
+
+    let stack_id = projects[0].id.stack_id;
+    let table_action_tuples = vec![(TABLE_NAME.try_into().unwrap(), DeleteTable(false))];
+    fixture
+        .db_manager_fixture
+        .db_manager
+        .make_client()
+        .await
+        .unwrap()
+        .update_stack_tables(stack_id, table_action_tuples)
+        .await
+        .unwrap();
+
+    let request = |x| {
+        make_request(
+            Some(Cow::Borrowed(x)),
+            vec![Header {
+                name: Cow::Borrowed("content-type"),
+                value: Cow::Borrowed("application/json; charset=utf-8"),
+            }],
+            HashMap::new(),
+            HashMap::new(),
+        )
+    };
+
+    #[derive(Deserialize, Serialize, Debug)]
+    struct CreateReq {
+        pub table_name: String,
+        pub key: String,
+        pub value: String,
+    }
+
+    type UpdateReq = CreateReq;
+
+    #[derive(Deserialize, Serialize, Debug)]
+    struct ReadReq {
+        pub table_name: String,
+        pub key: String,
+    }
+
+    type DeleteReq = ReadReq;
+
+    // create
+
+    let make_create_req = |a: &str, b: &str, c: &str| {
+        serde_json::to_vec(&CreateReq {
+            table_name: a.into(),
+            key: b.into(),
+            value: c.into(),
+        })
+    };
+
+    macro_rules! create {
+        ($req: expr) => {
+            fixture
+                .runtime
+                .invoke_function(projects[0].function_id(CREATE).unwrap(), request($req))
+                .then(|r| async move {
+                    let r = r.unwrap();
+                    assert_eq!(Status::Ok, r.status);
+                    assert!(r.body.as_ref().is_empty());
+                })
+        };
+    }
+
+    let create_req = make_create_req(TABLE_NAME, KEY, VALUE).unwrap();
+    create!(&create_req).await;
+
+    // read
+
+    let make_read_req = |a: &str, b: &str| {
+        serde_json::to_vec(&ReadReq {
+            table_name: a.into(),
+            key: b.into(),
+        })
+    };
+
+    macro_rules! read {
+        ($req: expr, $expected_result: expr) => {
+            fixture
+                .runtime
+                .invoke_function(projects[0].function_id(READ).unwrap(), request($req))
+                .then(|r| async move {
+                    let r = r.unwrap();
+                    assert_eq!(Status::Ok, r.status);
+                    assert_eq!($expected_result, r.body.as_ref());
+                })
+        };
+    }
+
+    let read_req = make_read_req(TABLE_NAME, KEY).unwrap();
+    read!(&read_req, VALUE.as_bytes()).await;
+
+    // update
+    const NEW_VALUE: &str = "new_value";
+    let update_req = serde_json::to_vec(&UpdateReq {
+        table_name: TABLE_NAME.into(),
+        key: KEY.into(),
+        value: NEW_VALUE.into(),
+    })
+    .unwrap();
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(UPDATE).unwrap(),
+            request(&update_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert!(r.body.as_ref().is_empty());
+        })
+        .await;
+
+    // read updated value
+    read!(&read_req, NEW_VALUE.as_bytes()).await;
+
+    // delete
+    let delete_req = read_req.clone();
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(DELETE).unwrap(),
+            request(&delete_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert!(r.body.as_ref().is_empty());
+        })
+        .await;
+
+    // read deleted value and get nothing
+    read!(&read_req, b"").await;
+
+    // scan test
+
+    let create_req = make_create_req(TABLE_NAME, KEY2, VALUE2).unwrap();
+    create!(&create_req).await;
+
+    // it's not happen because KEY2 already exists, create will not change it as should does.
+    let create_req = make_create_req(TABLE_NAME, KEY2, VALUE3).unwrap();
+    create!(&create_req).await;
+
+    let create_req = make_create_req(TABLE_NAME, KEY3, VALUE4).unwrap();
+    create!(&create_req).await;
+
+    let key_prefix = "".to_string();
+    let scan_req = (TABLE_NAME.to_string(), key_prefix);
+    let scan_req = serde_json::to_vec(&scan_req).unwrap();
+
+    // scan
+
+    fixture
+        .runtime
+        .invoke_function(projects[0].function_id(SCAN).unwrap(), request(&scan_req))
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(
+                vec![(KEY2.into(), VALUE2.into()), (KEY3.into(), VALUE4.into())],
+                serde_json::from_slice::<Vec<(String, String)>>(r.body.as_ref()).unwrap()
+            )
+        })
+        .await;
+
+    // scan keys
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(SCAN_KEYS).unwrap(),
+            request(&scan_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(
+                vec![KEY2, KEY3],
+                serde_json::from_slice::<Vec<String>>(r.body.as_ref()).unwrap()
+            )
+        })
+        .await;
+}
+
+#[test_context(RuntimeFixture)]
+#[tokio::test]
+#[serial]
+async fn db_batch_crud(fixture: &mut RuntimeFixture) {
+    use serde::{Deserialize, Serialize};
+    env_logger::init();
+
+    let projects = create_and_add_projects(
+        vec![(
+            "hello-db",
+            &[
+                "table_list",
+                "batch_put",
+                "batch_get",
+                "batch_scan",
+                "batch_scan_keys",
+                "batch_delete",
+            ],
+            None,
+        )],
+        &*fixture.runtime,
+    )
+    .await
+    .unwrap();
+
+    const TABLE_LIST: usize = 0;
+    const BATCH_PUT: usize = 1;
+    const BATCH_GET: usize = 2;
+    const BATCH_SCAN: usize = 3;
+    const BATCH_SCAN_KEYS: usize = 4;
+    const BATCH_DELETE: usize = 5;
+
+    const TABLE_NAME: &str = "table_1";
+    const TABLE_NAME2: &str = "table_2";
+    const KEY: &str = "a::a";
+    const KEY2: &str = "a::b";
+    const KEY3: &str = "b::a";
+    const VALUE: &str = "value1";
+    const VALUE2: &str = "value2";
+    const VALUE3: &str = "value3";
+
+    let stack_id = projects[0].id.stack_id;
+    let table_action_tuples = vec![
+        (TABLE_NAME.try_into().unwrap(), DeleteTable(false)),
+        (TABLE_NAME2.try_into().unwrap(), DeleteTable(false)),
+    ];
+    fixture
+        .db_manager_fixture
+        .db_manager
+        .make_client()
+        .await
+        .unwrap()
+        .update_stack_tables(stack_id, table_action_tuples)
+        .await
+        .unwrap();
+
+    let request = |x| {
+        make_request(
+            Some(Cow::Borrowed(x)),
+            vec![Header {
+                name: Cow::Borrowed("content-type"),
+                value: Cow::Borrowed("application/json; charset=utf-8"),
+            }],
+            HashMap::new(),
+            HashMap::new(),
+        )
+    };
+
+    #[derive(Deserialize, Serialize, Debug)]
+    struct CreateReq {
+        pub table_name: String,
+        pub key: String,
+        pub value: String,
+    }
+
+    type UpdateReq = CreateReq;
+
+    #[derive(Deserialize, Serialize, Debug)]
+    struct ReadReq {
+        pub table_name: String,
+        pub key: String,
+    }
+
+    type DeleteReq = ReadReq;
+
+    // table list
+    fixture
+        .runtime
+        .invoke_function(projects[0].function_id(TABLE_LIST).unwrap(), request(&[]))
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(
+                vec![TABLE_NAME.to_string(), TABLE_NAME2.to_string()],
+                serde_json::from_slice::<Vec<String>>(r.body.as_ref()).unwrap()
+            );
+        })
+        .await;
+
+    // batch put
+
+    let batch_put_req = serde_json::to_vec::<Vec<(String, String, String)>>(&vec![
+        (TABLE_NAME.into(), KEY.into(), VALUE.into()),
+        (TABLE_NAME.into(), KEY3.into(), VALUE3.into()),
+        (TABLE_NAME2.into(), KEY2.into(), VALUE2.into()),
+        (TABLE_NAME2.into(), KEY3.into(), VALUE3.into()),
+    ])
+    .unwrap();
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(BATCH_PUT).unwrap(),
+            request(&batch_put_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert!(r.body.as_ref().is_empty());
+        })
+        .await;
+
+    // batch get
+
+    let batch_get_req = serde_json::to_vec::<Vec<(String, String)>>(&vec![
+        (TABLE_NAME.into(), KEY.into()),
+        (TABLE_NAME.into(), KEY3.into()),
+        (TABLE_NAME2.into(), KEY2.into()),
+    ])
+    .unwrap();
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(BATCH_GET).unwrap(),
+            request(&batch_get_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(
+                vec![
+                    (TABLE_NAME.into(), KEY.into(), VALUE.into()),
+                    (TABLE_NAME.into(), KEY3.into(), VALUE3.into()),
+                    (TABLE_NAME2.into(), KEY2.into(), VALUE2.into()),
+                ],
+                serde_json::from_slice::<Vec<(String, String, String)>>(r.body.as_ref()).unwrap()
+            )
+        })
+        .await;
+
+    // batch scan
+
+    let batch_scan_req = serde_json::to_vec::<Vec<(String, String)>>(&vec![
+        (TABLE_NAME.into(), "a::".into()),
+        (TABLE_NAME2.into(), "b::".into()),
+    ])
+    .unwrap();
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(BATCH_SCAN).unwrap(),
+            request(&batch_scan_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(
+                vec![
+                    (TABLE_NAME.into(), KEY.into(), VALUE.into()),
+                    (TABLE_NAME2.into(), KEY3.into(), VALUE3.into()),
+                ],
+                serde_json::from_slice::<Vec<(String, String, String)>>(r.body.as_ref()).unwrap()
+            )
+        })
+        .await;
+
+    // batch scan keys
+
+    let batch_scan_req = serde_json::to_vec::<Vec<(String, String)>>(&vec![
+        (TABLE_NAME.into(), "".into()),
+        (TABLE_NAME2.into(), "b::".into()),
+    ])
+    .unwrap();
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(BATCH_SCAN_KEYS).unwrap(),
+            request(&batch_scan_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(
+                vec![
+                    (TABLE_NAME.into(), KEY.into()),
+                    (TABLE_NAME.into(), KEY3.into()),
+                    (TABLE_NAME2.into(), KEY3.into()),
+                ],
+                serde_json::from_slice::<Vec<(String, String)>>(r.body.as_ref()).unwrap()
+            )
+        })
+        .await;
+
+    // batch delete
+
+    let batch_delete_req = serde_json::to_vec::<Vec<(String, String)>>(&vec![
+        (TABLE_NAME.into(), KEY.into()),
+        (TABLE_NAME2.into(), KEY2.into()),
+    ])
+    .unwrap();
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(BATCH_DELETE).unwrap(),
+            request(&batch_delete_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert!(r.body.as_ref().is_empty());
+        })
+        .await;
+
+    // batch scan after delete
+
+    let batch_scan_req = serde_json::to_vec::<Vec<(String, String)>>(&vec![
+        (TABLE_NAME.into(), "".into()),
+        (TABLE_NAME2.into(), "".into()),
+    ])
+    .unwrap();
+
+    fixture
+        .runtime
+        .invoke_function(
+            projects[0].function_id(BATCH_SCAN).unwrap(),
+            request(&batch_scan_req),
+        )
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(
+                vec![
+                    (TABLE_NAME.into(), KEY3.into(), VALUE3.into()),
+                    (TABLE_NAME2.into(), KEY3.into(), VALUE3.into())
+                ],
+                serde_json::from_slice::<Vec<(String, String, String)>>(r.body.as_ref()).unwrap()
+            )
+        })
+        .await;
+}
+
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn instant_exit_is_handled(fixture: &mut RuntimeFixtureWithoutDB) {
+    use mu_runtime::error::*;
+
+    let projects = create_and_add_projects(
+        vec![("instant-exit", &["say_hello"], None)],
+        &*fixture.runtime,
+    )
+    .await
+    .unwrap();
+
+    let request = make_request(None, vec![], HashMap::new(), HashMap::new());
+
+    match fixture
+        .runtime
+        .invoke_function(projects[0].function_id(0).unwrap(), request)
+        .await
+    {
+        Err(Error::FunctionDidntTerminateCleanly) => (),
+        _ => panic!("Instant exit function should fail to run"),
+    }
+}
+
+#[test_context(RuntimeFixtureWithoutDB)]
+#[tokio::test]
+async fn can_send_http_requests_with_http_client(fixture: &mut RuntimeFixtureWithoutDB) {
+    let projects = create_and_add_projects(
+        vec![("http-client", &["test_download"], None)],
+        &*fixture.runtime,
+    )
+    .await
+    .unwrap();
+
+    let request = make_request(None, vec![], HashMap::new(), HashMap::new());
+
+    let expected_response = br#"<!doctype html>
+<html>
+<head>
+    <title>Example Domain</title>
+
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type="text/css">
+    body {
+        background-color: #f0f0f2;
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        
+    }
+    div {
+        width: 600px;
+        margin: 5em auto;
+        padding: 2em;
+        background-color: #fdfdff;
+        border-radius: 0.5em;
+        box-shadow: 2px 3px 7px 2px rgba(0,0,0,0.02);
+    }
+    a:link, a:visited {
+        color: #38488f;
+        text-decoration: none;
+    }
+    @media (max-width: 700px) {
+        div {
+            margin: 0 auto;
+            width: auto;
+        }
+    }
+    </style>    
+</head>
+
+<body>
+<div>
+    <h1>Example Domain</h1>
+    <p>This domain is for use in illustrative examples in documents. You may use this
+    domain in literature without prior coordination or asking for permission.</p>
+    <p><a href="https://www.iana.org/domains/example">More information...</a></p>
+</div>
+</body>
+</html>
+"#;
+
+    fixture
+        .runtime
+        .invoke_function(projects[0].function_id(0).unwrap(), request)
+        .then(|r| async move {
+            let r = r.unwrap();
+            assert_eq!(Status::Ok, r.status);
+            assert_eq!(expected_response, r.body.as_ref());
         })
         .await;
 }

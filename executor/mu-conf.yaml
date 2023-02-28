@@ -11,18 +11,16 @@ connection_manager:
   max_request_response_size: 8MiB
 gateway_manager:
   listen_address: 0.0.0.0
-  # Note, this is a TCP port. Connection manager uses a UDP port, so it's OK for both
-  # listen_ports to be set to the same number.
-  listen_port: 12012
+  listen_port: 12080
 gossip:
   heartbeat_interval: 1s
   assume_dead_after_missed_heartbeats: 10
   max_peers: 6
   peer_update_interval: 10s
   liveness_check_interval: 1s
+  network_stabilization_interval: 5s
 initial_cluster:
-  # TODO: allow hostnames
-  - address: 127.0.0.1
+  - address: localhost
     gossip_port: 12012
     pd_port: 2380
 runtime:
@@ -39,21 +37,27 @@ blockchain_monitor:
   solana_usage_report_interval: 1d
 # TODO
 # db_manager:
-#   # Note, this value should not be under 1s
 #   usage_report_duration: 15m
 tikv:
-  pd:
-    data_dir: /var/lib/mu-executor/pd-data/
-    peer_url:
-      address: 0.0.0.0
-      port: 2380
-    client_url:
-      address: 0.0.0.0
-      port: 2379
-    log_file: /var/log/mu-executor/pd-server
-  node:
-    cluster_url:
-      address: 0.0.0.0
-      port: 20160
-    data_dir: /var/lib/mu-executor/tikv-data/
-    log_file: /var/log/mu-executor/tikv-server
+  # if you already have a db running use the external template and remove the internal key.
+  # external:
+  # - address: 127.0.0.1
+  #   port: 8000
+  # - address: 127.0.0.1
+  #   port: 8000
+  internal:
+    pd:
+      data_dir: /var/lib/mu-executor/pd-data/
+      peer_url:
+        address: 0.0.0.0
+        port: 2380
+      client_url:
+        address: 0.0.0.0
+        port: 2379
+      log_file: /var/log/mu-executor/pd-server
+    node:
+      cluster_url:
+        address: 0.0.0.0
+        port: 20160
+      data_dir: /var/lib/mu-executor/tikv-data/
+      log_file: /var/log/mu-executor/tikv-server

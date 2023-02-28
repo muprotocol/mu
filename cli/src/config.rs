@@ -1,22 +1,17 @@
-//! TODO: more descriptive error context messages
-
 use anchor_client::{
     solana_sdk::{pubkey::Pubkey, signature::read_keypair_file, signer::Signer},
     Cluster,
 };
-use anyhow::{anyhow, bail, Context, Error, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use solana_cli_config::{Config as SolanaConfig, CONFIG_FILE};
 use solana_remote_wallet::remote_wallet::RemoteWalletManager;
-use std::{cell::RefCell, fs, io, path::Path, rc::Rc, str::FromStr, sync::Arc};
+use std::{cell::RefCell, fs, path::Path, rc::Rc, str::FromStr, sync::Arc};
 
 use crate::{marketplace_client::MarketplaceClient, signer};
 
 #[derive(Default, Debug, Parser)]
 pub struct ConfigOverride {
-    // TODO: why override the program ID? At best, we'd only want to do this during development,
-    // so it should be behind a feature/debug_assertions flag.
     /// Program ID override.
     #[clap(global = true, long = "program-id")]
     pub program_id: Option<Pubkey>,
@@ -38,7 +33,6 @@ pub struct ConfigOverride {
 }
 
 pub struct Config {
-    // TODO: see TODOs in `ConfigOverride`
     pub program_id: Pubkey,
     pub cluster: Cluster,
     pub keypair: Option<String>,
@@ -48,6 +42,16 @@ pub struct Config {
 
     signer: RefCell<Option<Rc<dyn Signer>>>,
     wallet_manager: RefCell<Option<Arc<RemoteWalletManager>>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct SerializedConfig {
+    program_id: String,
+    cluster: String,
+    keypair: String,
+    skip_seed_phrase_validation: bool,
+    confirm_key: bool,
 }
 
 impl Default for Config {
@@ -128,9 +132,24 @@ impl Config {
     }
 
     fn from_path(p: impl AsRef<Path>) -> Result<Self> {
-        fs::read_to_string(&p)
-            .with_context(|| format!("Error reading the file with path: {}", p.as_ref().display()))?
-            .parse::<Self>()
+        let file_content = fs::read_to_string(&p).with_context(|| {
+            format!("Error reading the file with path: {}", p.as_ref().display())
+        })?;
+        Self::deserialize_from_yaml(&file_content)
+    }
+
+    fn deserialize_from_yaml(yaml: &str) -> Result<Self> {
+        let cfg: SerializedConfig = serde_yaml::from_str(yaml)
+            .map_err(|e| anyhow::format_err!("Unable to deserialize config: {}", e.to_string()))?;
+        Ok(Config {
+            cluster: cfg.cluster.parse()?,
+            keypair: Some(shellexpand::tilde(&cfg.keypair).into_owned()),
+            program_id: Pubkey::from_str(&cfg.program_id)?,
+            skip_seed_phrase_validation: false,
+            confirm_key: false,
+            signer: RefCell::new(None),
+            wallet_manager: RefCell::new(None),
+        })
     }
 
     pub fn get_signer(&self) -> Result<Rc<dyn Signer>> {
@@ -187,41 +206,4 @@ impl Config {
             }
         }
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-// TODO: naming, also why have two of this?
-struct _Config {
-    program_id: String,
-    cluster: String,
-    keypair: String,
-}
-
-// TODO: see ToString above
-impl FromStr for Config {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let cfg: _Config = serde_yaml::from_str(s)
-            .map_err(|e| anyhow::format_err!("Unable to deserialize config: {}", e.to_string()))?;
-        Ok(Config {
-            cluster: cfg.cluster.parse()?,
-            keypair: Some(shellexpand::tilde(&cfg.keypair).into_owned()),
-            program_id: Pubkey::from_str(&cfg.program_id)?,
-            skip_seed_phrase_validation: false,
-            confirm_key: false,
-            signer: RefCell::new(None),
-            wallet_manager: RefCell::new(None),
-        })
-    }
-}
-
-pub fn get_solana_cfg_url() -> Result<String, io::Error> {
-    let config_file = CONFIG_FILE.as_ref().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            "Default Solana config was not found",
-        )
-    })?;
-    SolanaConfig::load(config_file).map(|config| config.json_rpc_url)
 }
