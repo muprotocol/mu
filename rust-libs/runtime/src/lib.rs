@@ -15,9 +15,6 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::*;
-use mu_db::DbManager;
-use mu_storage::StorageManager;
-use providers::AssemblyProvider;
 use tokio::sync::mpsc;
 use wasmer::{Module, Store};
 use wasmer_cache::{Cache, FileSystemCache};
@@ -26,6 +23,7 @@ use mailbox_processor::{callback::CallbackMailboxProcessor, NotificationChannel,
 use mu_common::id::IdExt;
 use mu_db::DbManager;
 use mu_stack::{AssemblyID, FunctionID, StackID};
+use mu_storage::StorageManager;
 use musdk_common::{Header, Request, Response};
 
 use instance::create_store;

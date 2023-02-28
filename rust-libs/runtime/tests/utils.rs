@@ -212,6 +212,7 @@ pub mod fixture {
             build_test_funcs();
 
             let db_manager = <DBManagerFixture as AsyncTestContext>::setup().await;
+            let storage_manager = Box::new(mock_storage::EmptyStorageManager);
             let data_dir = TempDir::setup();
 
             let config = RuntimeConfig {
@@ -220,7 +221,9 @@ pub mod fixture {
             };
 
             let (runtime, mut notifications) =
-                start(db_manager.db_manager.clone(), config).await.unwrap();
+                start(db_manager.db_manager.clone(), storage_manager, config)
+                    .await
+                    .unwrap();
 
             let usages = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
@@ -251,6 +254,7 @@ pub mod fixture {
                 data_dir,
             }
         }
+
         async fn teardown(self) {
             self.runtime.stop().await.unwrap();
             AsyncTestContext::teardown(self.db_manager_fixture).await;
@@ -271,6 +275,7 @@ pub mod fixture {
             build_test_funcs();
 
             let db_manager = mock_db::EmptyDBManager;
+            let storage_manager = mock_storage::EmptyStorageManager;
             let data_dir = TempDir::setup();
 
             let config = RuntimeConfig {
@@ -278,7 +283,10 @@ pub mod fixture {
                 include_function_logs: true,
             };
 
-            let (runtime, mut notifications) = start(Box::new(db_manager), config).await.unwrap();
+            let (runtime, mut notifications) =
+                start(Box::new(db_manager), Box::new(storage_manager), config)
+                    .await
+                    .unwrap();
 
             let usages = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
@@ -474,6 +482,70 @@ mod mock_db {
 
         async fn stop(&self) -> anyhow::Result<()> {
             Ok(())
+        }
+    }
+}
+
+mod mock_storage {
+    use async_trait::async_trait;
+    use mu_stack::StackID;
+    use mu_storage::{Object, StorageClient, StorageManager};
+    use tokio::io::{AsyncRead, AsyncWrite};
+    #[derive(Clone)]
+    pub struct EmptyStorageManager;
+
+    #[derive(Clone)]
+    pub struct EmptyStorageClient;
+
+    #[async_trait]
+    impl StorageManager for EmptyStorageManager {
+        fn make_client(&self) -> anyhow::Result<Box<dyn mu_storage::StorageClient>> {
+            Ok(Box::new(EmptyStorageClient))
+        }
+
+        async fn stop(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl StorageClient for EmptyStorageClient {
+        async fn get(
+            &self,
+            _stack_id: StackID,
+            _storage_name: &str,
+            _key: &str,
+            _writer: &mut (dyn AsyncWrite + Send + Sync + Unpin),
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn put(
+            &self,
+            _stack_id: StackID,
+            _storage_name: &str,
+            _key: &str,
+            _reader: &mut (dyn AsyncRead + Send + Sync + Unpin),
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn delete(
+            &self,
+            _stack_id: StackID,
+            _storage_name: &str,
+            _key: &str,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn list(
+            &self,
+            _stack_id: StackID,
+            _storage_name: &str,
+            _prefix: &str,
+        ) -> anyhow::Result<Vec<Object>> {
+            Ok(vec![])
         }
     }
 }

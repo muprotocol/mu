@@ -16,14 +16,14 @@ pub struct Object {
 
 #[async_trait]
 #[clonable]
-pub trait StorageClient: Send + Sync + Debug + Clone {
+pub trait StorageClient: Send + Sync + Clone {
     async fn get(
         &self,
         stack_id: StackID,
         storage_name: &str,
         key: &str,
         writer: &mut (dyn AsyncWrite + Send + Sync + Unpin),
-    ) -> Result<u16>;
+    ) -> Result<()>;
 
     async fn put(
         &self,
@@ -31,9 +31,9 @@ pub trait StorageClient: Send + Sync + Debug + Clone {
         storage_name: &str,
         key: &str,
         reader: &mut (dyn AsyncRead + Send + Sync + Unpin),
-    ) -> Result<u16>;
+    ) -> Result<()>;
 
-    async fn delete(&self, stack_id: StackID, storage_name: &str, key: &str) -> Result<u16>;
+    async fn delete(&self, stack_id: StackID, storage_name: &str, key: &str) -> Result<()>;
 
     async fn list(
         &self,
@@ -60,7 +60,7 @@ pub struct StorageConfig {
 #[clonable]
 pub trait StorageManager: Send + Sync + Clone {
     fn make_client(&self) -> anyhow::Result<Box<dyn StorageClient>>;
-    async fn stop(self) -> anyhow::Result<()>;
+    async fn stop(&self) -> anyhow::Result<()>;
 }
 
 #[derive(Clone)]
@@ -75,9 +75,9 @@ impl StorageManager for StorageManagerImpl {
         Ok(Box::new(StorageClientImpl::new(&self.config)?))
     }
 
-    async fn stop(self) -> anyhow::Result<()> {
+    async fn stop(&self) -> anyhow::Result<()> {
         match self.inner {
-            Some(r) => r.stop().await,
+            Some(ref r) => r.stop().await,
             None => Ok(()),
         }
     }
@@ -131,13 +131,11 @@ impl StorageClient for StorageClientImpl {
         storage_name: &str,
         key: &str,
         writer: &mut (dyn AsyncWrite + Send + Sync + Unpin),
-    ) -> Result<u16> {
+    ) -> Result<()> {
         let mut wrapper = AsyncWriterWrapper { writer };
         let path = Self::create_path(stack_id, storage_name, key);
-        self.bucket
-            .get_object_stream(path, &mut wrapper)
-            .await
-            .map_err(|e| e.into())
+        self.bucket.get_object_stream(path, &mut wrapper).await?;
+        Ok(())
     }
 
     async fn put(
@@ -146,22 +144,20 @@ impl StorageClient for StorageClientImpl {
         storage_name: &str,
         key: &str,
         reader: &mut (dyn AsyncRead + Send + Sync + Unpin),
-    ) -> Result<u16> {
+    ) -> Result<()> {
         let mut wrapper = AsyncReaderWrapper { reader };
         let path = Self::create_path(stack_id, storage_name, key);
 
-        self.bucket
-            .put_object_stream(&mut wrapper, path)
-            .await
-            .map_err(|e| e.into())
+        self.bucket.put_object_stream(&mut wrapper, path).await?;
+        Ok(())
     }
 
-    async fn delete(&self, stack_id: StackID, storage_name: &str, key: &str) -> Result<u16> {
+    async fn delete(&self, stack_id: StackID, storage_name: &str, key: &str) -> Result<()> {
         let path = Self::create_path(stack_id, storage_name, key);
 
-        let resp = self.bucket.delete_object(path).await?;
+        self.bucket.delete_object(path).await?;
 
-        Ok(resp.status_code())
+        Ok(())
     }
 
     async fn list(

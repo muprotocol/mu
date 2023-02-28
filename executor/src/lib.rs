@@ -285,17 +285,17 @@ pub async fn run() -> Result<()> {
         trace!("Stopping runtime");
         runtime.stop().await.context("Failed to stop runtime")?;
 
+        trace!("Stopping storage manager");
+        storage_manager
+            .stop()
+            .await
+            .context("Failed to stop runtime")?;
+
         trace!("Stopping database manager");
         database_manager
             .stop()
             .await
             .context("Failed to stop runtime")?;
-
-        trace!("Stopping storage manager");
-        storage_manager
-            .stop()
-            .await
-            .context("Failed to stop runtime");
 
         // Stop gateway manager first. This waits for actix-web to shut down, essentially
         // running all requests to completion or cancelling them safely before shutting

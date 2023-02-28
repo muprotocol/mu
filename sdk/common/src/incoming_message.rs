@@ -8,14 +8,15 @@ use std::{
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
 
 use crate::function::*;
 use crate::http_client;
 use db::*;
 use storage::*;
 
-#[repr(u16)]
 #[derive(FromPrimitive)]
+#[repr(u16)]
 enum IncomingMessageKind {
     // Runtime messages
     ExecuteFunction = 1,
@@ -33,7 +34,7 @@ enum IncomingMessageKind {
     // Storage messages
     StorageError = 2001,
     StorageGetResult = 2002,
-    StatusResult = 2003,
+    StorageEmptyResult = 2003,
     ObjectListResult = 2004,
 
     // Http Client
@@ -66,7 +67,7 @@ pub enum IncomingMessage<'a> {
     // Storage messages
     StorageError(StorageError<'a>),
     StorageGetResult(StorageGetResult<'a>),
-    StatusResult(StatusResult),
+    StorageEmptyResult(StorageEmptyResult),
     ObjectListResult(ObjectListResult<'a>),
 
     // Http client
@@ -128,7 +129,7 @@ impl<'a> IncomingMessage<'a> {
                 ObjectListResult,
                 HttpResponse
             ] * 'static,
-            [EmptyResult, StatusResult]
+            [EmptyResult, StorageEmptyResult]
         )
     }
 
@@ -148,7 +149,7 @@ impl<'a> IncomingMessage<'a> {
                 CasResult,
                 StorageError,
                 StorageGetResult,
-                StatusResult,
+                StorageEmptyResult,
                 ObjectListResult,
                 HttpResponse
             ]

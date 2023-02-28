@@ -23,13 +23,13 @@ use musdk_common::{
     incoming_message::{
         self,
         db::*,
-        storage::{ObjectListResult, StatusResult, StorageError, StorageGetResult},
+        storage::{ObjectListResult, StorageEmptyResult, StorageError, StorageGetResult},
         IncomingMessage,
     },
     outgoing_message::{LogLevel, OutgoingMessage},
 };
 use tokio::io::BufWriter;
-use wasmer::{CompilerConfig, Module, RuntimeError, Store};
+use wasmer::{CompilerConfig, Module, Store};
 use wasmer_compiler_llvm::LLVM;
 use wasmer_middlewares::{metering::MeteringPoints, Metering};
 
@@ -474,10 +474,8 @@ impl Instance<Running> {
                                         req.reader.deref().borrow_mut(),
                                     )
                                     .await
-                                    .map(|res| {
-                                        IncomingMessage::StatusResult(StatusResult {
-                                            status_code: res,
-                                        })
+                                    .map(|()| {
+                                        IncomingMessage::StorageEmptyResult(StorageEmptyResult)
                                     })
                             })?
                         }
@@ -488,9 +486,8 @@ impl Instance<Running> {
                                 client
                                     .get(stack_id, &req.storage_name, &req.key, &mut writer)
                                     .await
-                                    .map(move |res| {
+                                    .map(move |()| {
                                         IncomingMessage::StorageGetResult(StorageGetResult {
-                                            status_code: res,
                                             data: Cow::Owned(writer.into_inner()),
                                         })
                                     })
@@ -501,10 +498,8 @@ impl Instance<Running> {
                                 client
                                     .delete(stack_id, &req.storage_name, &req.key)
                                     .await
-                                    .map(|res| {
-                                        IncomingMessage::StatusResult(StatusResult {
-                                            status_code: res,
-                                        })
+                                    .map(|()| {
+                                        IncomingMessage::StorageEmptyResult(StorageEmptyResult)
                                     })
                             })?
                         }
@@ -528,8 +523,10 @@ impl Instance<Running> {
                         }
 
                         OutgoingMessage::HttpRequest(req) => self.send_http_request(req)?,
+                    }
                 }
             }
+        }
     }
 
     fn db_request<'a, A, B>(&mut self, f: A) -> Result<(), (Error, Usage)>

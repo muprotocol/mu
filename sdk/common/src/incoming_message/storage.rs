@@ -3,9 +3,7 @@ use std::borrow::Cow;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct StatusResult {
-    pub status_code: u16,
-}
+pub struct StorageEmptyResult;
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct Object<'a> {
@@ -24,6 +22,5 @@ pub struct StorageError<'a> {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct StorageGetResult<'a> {
-    pub status_code: u16,
     pub data: Cow<'a, [u8]>,
 }
