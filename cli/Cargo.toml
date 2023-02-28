@@ -7,6 +7,10 @@ description = "Mu CLI"
 license = "Apache-2.0"
 default-run = "mu"
 
+[features]
+admin = []
+dev-env = ["mu-runtime", "mu-gateway", "mu-db"]
+
 [[bin]]
 name = "mu"
 path = "src/bin/mu.rs"
@@ -47,9 +51,9 @@ spl-associated-token-account = "1"
 marketplace = { path = "../marketplace/programs/marketplace/", features = [
     "no-entrypoint",
 ] }
-mu-runtime = { path = "../rust-libs/runtime" }
-mu-gateway = { path = "../rust-libs/gateway" }
+mu-runtime = { path = "../rust-libs/runtime", optional = true }
+mu-gateway = { path = "../rust-libs/gateway", optional = true }
 mu_stack = { path = "../rust-libs/mu_stack" }
 mu-common = { path = "../rust-libs/common" }
 musdk-common = { path = "../sdk/common" }
-mu-db = { path = "../rust-libs/db" }
+mu-db = { path = "../rust-libs/db", optional = true }

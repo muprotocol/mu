@@ -33,7 +33,11 @@ pub enum Error {
 pub mod marketplace {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>, commission_rate_micros: u32) -> Result<()> {
+    pub fn initialize(
+        ctx: Context<Initialize>,
+        commission_rate_micros: u32,
+        provider_deposit: u64,
+    ) -> Result<()> {
         if commission_rate_micros > 1_000_000 {
             return Err(Error::CommissionRateOutOfBounds.into());
         }
@@ -44,8 +48,18 @@ pub mod marketplace {
             deposit_token: ctx.accounts.deposit_token.key(),
             commission_token: ctx.accounts.commission_token.key(),
             commission_rate_micros,
+            provider_deposit,
             bump: *ctx.bumps.get("state").unwrap(),
         });
+
+        Ok(())
+    }
+
+    pub fn update_provider_deposit(
+        ctx: Context<UpdateProviderDeposit>,
+        provider_deposit: u64,
+    ) -> Result<()> {
+        ctx.accounts.state.provider_deposit = provider_deposit;
 
         Ok(())
     }
@@ -68,13 +82,14 @@ pub mod marketplace {
             authority: ctx.accounts.owner.to_account_info(),
         };
         let transfer_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), transfer);
-        anchor_spl::token::transfer(transfer_ctx, 100_000000)?; // TODO: make this configurable
+        anchor_spl::token::transfer(transfer_ctx, ctx.accounts.state.provider_deposit)?;
 
         ctx.accounts.provider.set_inner(Provider {
             name,
             authorized: false,
             owner: ctx.accounts.owner.key(),
             bump: *ctx.bumps.get("provider").unwrap(),
+            deposit: ctx.accounts.state.provider_deposit,
         });
 
         Ok(())
@@ -293,6 +308,7 @@ pub struct MuState {
     pub deposit_token: Pubkey,
     pub commission_token: Pubkey,
     pub commission_rate_micros: u32,
+    pub provider_deposit: u64,
     pub bump: u8,
 }
 
@@ -302,7 +318,7 @@ pub struct Initialize<'info> {
         init,
         payer = authority,
         seeds = [b"state"],
-        space = 8 + 32 + 32 + 32 + 32 + 4 + 1,
+        space = 8 + 32 + 32 + 32 + 32 + 4 + 8 + 1,
         bump
     )]
     state: Account<'info, MuState>,
@@ -323,7 +339,7 @@ pub struct Initialize<'info> {
         init,
         payer = authority,
         token::mint = mint,
-        token::authority = state,
+        token::authority = authority,
         seeds = [b"commission"],
         bump
     )]
@@ -334,6 +350,19 @@ pub struct Initialize<'info> {
 
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateProviderDeposit<'info> {
+    #[account(
+        mut,
+        seeds = [b"state"],
+        bump = state.bump
+    )]
+    state: Account<'info, MuState>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
 }
 
 #[account]
@@ -376,6 +405,7 @@ pub struct Provider {
     pub owner: Pubkey,
     pub authorized: bool,
     pub name: String,
+    pub deposit: u64,
     pub bump: u8,
 }
 
@@ -392,7 +422,7 @@ pub struct CreateProvider<'info> {
     #[account(
         init,
         payer = owner,
-        space = 8 + 32 + 1 + 4 + name.as_bytes().len() + 1,
+        space = 8 + 32 + 1 + 4 + name.as_bytes().len() + 8 + 1,
         seeds = [b"provider", owner.key().as_ref()],
         bump
     )]
