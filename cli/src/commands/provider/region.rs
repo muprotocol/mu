@@ -30,7 +30,7 @@ pub struct CreateArgs {
 
     #[arg(
         long,
-        help = "Price per 1000 billion function instructions (equivalent to about 5 minutes of execution time on a 3GHz CPU) and 1 megabyte of RAM"
+        help = "Price per 1000 billion CPU instructions (equivalent to about 5 minutes of execution time on a 3GHz CPU) and 1 megabyte of RAM"
     )]
     function_mb_tera_instructions: u64,
 
