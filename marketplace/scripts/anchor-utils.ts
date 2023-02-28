@@ -239,10 +239,10 @@ export const getMu = (anchorProvider: anchor.AnchorProvider, mint: Keypair): MuP
 
 }
 
-export const initializeMu = async (anchorProvider: anchor.AnchorProvider, mint: Keypair, commission_rate_micros: number): Promise<MuProgram> => {
+export const initializeMu = async (anchorProvider: anchor.AnchorProvider, mint: Keypair, commission_rate_micros: number, providerDeposit: BN): Promise<MuProgram> => {
     let mu = getMu(anchorProvider, mint);
 
-    await mu.program.methods.initialize(commission_rate_micros).accounts({
+    await mu.program.methods.initialize(commission_rate_micros, providerDeposit).accounts({
         authority: anchorProvider.wallet.publicKey,
         state: mu.statePda,
         depositToken: mu.depositPda,
@@ -251,6 +251,13 @@ export const initializeMu = async (anchorProvider: anchor.AnchorProvider, mint: 
     }).rpc();
 
     return mu;
+}
+
+export const updateProviderDeposit = async (mu: MuProgram, providerDeposit: BN) => {
+    await mu.program.methods.updateProviderDeposit(providerDeposit).accounts({
+        state: mu.statePda,
+        authority: mu.anchorProvider.wallet.publicKey,
+    }).rpc();
 }
 
 export interface MuProviderInfo {
@@ -378,11 +385,12 @@ export const createRegion = async (
     regionNum: number,
     rates: ServiceRates,
     minEscrowBalance: BN,
+    base_url: string
 ): Promise<MuRegionInfo> => {
     let region = getRegion(mu, provider, regionNum);
 
     await mu.program.methods
-        .createRegion(regionNum, name, rates, minEscrowBalance)
+        .createRegion(regionNum, name, base_url, rates, minEscrowBalance)
         .accounts({
             provider: provider.pda,
             region: region.pda,

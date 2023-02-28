@@ -28,6 +28,7 @@ import {
     readOrCreateUserWallet,
     readOrCreateWallet,
     ServiceRates, ServiceUsage,
+    updateProviderDeposit,
     updateStack,
     updateStackUsage,
     withdrawEscrowBalance
@@ -54,7 +55,7 @@ describe("marketplace", () => {
     it("Initializes", async () => {
         let provider = AnchorProvider.env();
         let mint = await createMint(provider);
-        mu = await initializeMu(provider, mint, 100_000);
+        mu = await initializeMu(provider, mint, 100_000, new BN(100_000000));
     });
 
     it("Creates a provider authorizer", async () => {
@@ -70,6 +71,17 @@ describe("marketplace", () => {
         expect(depositAccount.amount).to.equals(100000000n);
     });
 
+    it("Updates provider deposit", async () => {
+        await updateProviderDeposit(mu, new BN(200_000000));
+
+        let otherProvider = await createProvider(mu, "OtherProvider");
+
+        const providerAccount = await spl.getAccount(mu.anchorProvider.connection, otherProvider.tokenAccount);
+        const depositAccount = await spl.getAccount(mu.anchorProvider.connection, mu.depositPda);
+        expect(providerAccount.amount).to.equals(9800_000000n);
+        expect(depositAccount.amount).to.equals(300_000000n);
+    });
+
     it("Fails to create region when provider isn't authorized", async () => {
         const rates: ServiceRates = {
             billionFunctionMbInstructions: new BN(1), // TODO too cheap to be priced correctly, even with 6 decimal places
@@ -81,7 +93,7 @@ describe("marketplace", () => {
         };
 
         try {
-            let _ = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000));
+            let _ = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000), "");
             throw new Error("Region creation succeeded when it should have failed");
         } catch (e) {
             let anchorError = e as AnchorError;
@@ -103,7 +115,7 @@ describe("marketplace", () => {
             millionGatewayRequests: new BN(50)
         };
 
-        region = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000));
+        region = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000), "http://localhost:12012");
     });
 
     it("Creates an Authorized Usage Signer", async () => {

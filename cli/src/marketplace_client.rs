@@ -6,13 +6,16 @@ use anchor_client::{
         rpc_request::RpcError,
     },
     solana_sdk::{program_pack::Pack, pubkey::Pubkey},
-    Program,
+    Cluster, Program,
 };
 use anyhow::{Context, Result};
 use marketplace::MuState;
 use spl_token::state::Mint;
 
 use crate::config::Config;
+
+#[cfg(feature = "admin")]
+pub mod admin;
 
 pub mod escrow;
 pub mod provider;
@@ -21,11 +24,9 @@ pub mod request_signer;
 pub mod signer;
 pub mod stack;
 
-//TODO: This needs to be read from the blockchain
-const PROVIDER_INITIALIZATION_FEE: u64 = 100_000000;
-
 /// Marketplace Client for communicating with Mu smart contracts
 pub struct MarketplaceClient {
+    pub cluster: Cluster,
     pub program: Program,
 }
 
@@ -34,6 +35,7 @@ impl MarketplaceClient {
     pub fn new(config: &Config) -> Result<Self> {
         let payer = config.get_signer()?;
         Ok(Self {
+            cluster: config.cluster.clone(),
             program: anchor_client::Client::new(config.cluster.clone(), payer)
                 .program(config.program_id),
         })
