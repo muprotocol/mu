@@ -26,6 +26,8 @@ fn download_and_extract_file(url: String, dest_folder: &str, file_name: &str) {
         .context("Failed to get bytes")
         .unwrap();
 
+    std::fs::create_dir_all(dest_folder).unwrap();
+
     let file = GzDecoder::new(&bytes[..]);
     let mut archive = Archive::new(file);
     for entry in archive.entries().unwrap() {
