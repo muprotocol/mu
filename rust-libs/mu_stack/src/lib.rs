@@ -9,11 +9,12 @@ use std::{
 
 #[rustfmt::skip]
 use ::protobuf::Message;
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use base58::{FromBase58, ToBase58};
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::{BufMut, Bytes};
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
+use thiserror::Error;
 
 pub const STACK_ID_SIZE: usize = 32;
 
@@ -72,12 +73,24 @@ impl Display for StackID {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum ParseStackIDError {
+    #[error("Invalid format")]
+    InvalidFormat,
+
+    #[error("Unknown variant")]
+    UnknownVariant,
+
+    #[error("Failed to parse: {0}")]
+    FailedToParse(anyhow::Error),
+}
+
 impl FromStr for StackID {
-    type Err = ();
+    type Err = ParseStackIDError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.len() < 3 || s.chars().nth(1) != Some('_') {
-            return Err(());
+            return Err(ParseStackIDError::InvalidFormat);
         }
 
         let variant_code = s.chars().next();
@@ -85,12 +98,14 @@ impl FromStr for StackID {
         match variant_code {
             Some('s') => {
                 let (_, code) = s.split_at(2);
-                let bytes = code.from_base58().map_err(|_| ())?;
-                Ok(Self::SolanaPublicKey(
-                    bytes.as_slice().try_into().map_err(|_| ())?,
-                ))
+                let bytes = code.from_base58().map_err(|_| {
+                    ParseStackIDError::FailedToParse(anyhow!("Failed to parse base58 string"))
+                })?;
+                Ok(Self::SolanaPublicKey(bytes.as_slice().try_into().map_err(
+                    |_| ParseStackIDError::FailedToParse(anyhow!("Solana pubkey length mismatch")),
+                )?))
             }
-            _ => Err(()),
+            _ => Err(ParseStackIDError::UnknownVariant),
         }
     }
 }
@@ -142,9 +157,9 @@ impl Stack {
         crate::protos::stack::Stack::parse_from_bytes(bytes.as_ref())?.try_into()
     }
 
-    pub fn databases(&self) -> impl Iterator<Item = &Database> {
+    pub fn key_value_tables(&self) -> impl Iterator<Item = &KeyValueTable> {
         self.services.iter().filter_map(|s| match s {
-            Service::Database(db) => Some(db),
+            Service::KeyValueTable(db) => Some(db),
             _ => None,
         })
     }
@@ -167,14 +182,15 @@ impl Stack {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum Service {
-    Database(Database),
+    KeyValueTable(KeyValueTable),
     Gateway(Gateway),
     Function(Function),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Database {
+pub struct KeyValueTable {
     pub name: String,
+    pub delete: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -285,4 +301,19 @@ pub struct Function {
 pub enum AssemblyRuntime {
     #[serde(rename = "wasi1.0")]
     Wasi1_0,
+}
+
+impl Display for HttpMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            HttpMethod::Get => "Get",
+            HttpMethod::Head => "Head",
+            HttpMethod::Post => "Post",
+            HttpMethod::Put => "Put",
+            HttpMethod::Patch => "Patch",
+            HttpMethod::Delete => "Delete",
+            HttpMethod::Options => "Options",
+        };
+        std::fmt::Display::fmt(s, f)
+    }
 }

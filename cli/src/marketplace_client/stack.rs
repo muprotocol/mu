@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use anchor_client::solana_sdk::{pubkey::Pubkey, signer::Signer, system_program};
 use anyhow::{bail, Context, Result};
+use mu_stack::StackID;
 
 use super::MarketplaceClient;
 
@@ -21,9 +22,12 @@ pub fn deploy(
 ) -> Result<()> {
     let name = stack.name.clone();
 
-    if !client.account_exists(region_pda)? {
+    let Some(region) = client
+        .try_account::<marketplace::ProviderRegion>(region_pda)
+        .context("Failed to fetch region info from Solana")?
+    else {
         bail!("There is no such region registered with this provider");
-    }
+    };
 
     let stack_pda = client.get_stack_pda(&user_wallet.pubkey(), region_pda, seed);
 
@@ -75,11 +79,6 @@ pub fn deploy(
         .serialize_to_proto()
         .context("Failed to serialize stack to binary format")?;
 
-    let region = client
-        .program
-        .account::<marketplace::ProviderRegion>(*region_pda)
-        .context("Failed to fetch region from Solana")?;
-
     if update {
         let accounts = marketplace::accounts::UpdateStack {
             region: *region_pda,
@@ -103,10 +102,7 @@ pub fn deploy(
             .send_with_spinner_and_config(Default::default())
             .context("Failed to send stack update transaction")?;
 
-        println!(
-            "Stack successfully updated to version {} with key: {stack_pda}",
-            stack_version
-        );
+        println!("Stack successfully updated to version {stack_version} with key: {stack_pda}");
     } else {
         let accounts = marketplace::accounts::CreateStack {
             region: *region_pda,
@@ -131,10 +127,23 @@ pub fn deploy(
             .send_with_spinner_and_config(Default::default())
             .context("Failed to send stack creation transaction")?;
 
-        println!(
-            "Stack deployed successfully with version {} and key: {stack_pda}",
-            stack_version
-        );
+        println!("Stack deployed successfully with version {stack_version} and key: {stack_pda}");
+    }
+
+    match uriparse::uri::URI::try_from(region.base_url.as_str()) {
+        Ok(mut url) => {
+            let stack_id = StackID::SolanaPublicKey(stack_pda.to_bytes()).to_string();
+            url.map_path(|mut path| {
+                let _ = path.push(stack_id.as_str());
+                path
+            });
+
+            println!("Use this URL to access your stack: {url}",)
+        }
+        Err(_) => println!(
+            "Failed to parse region's base URL, the raw value is: {}",
+            region.base_url
+        ),
     }
 
     Ok(())

@@ -86,6 +86,7 @@ pub fn execute_list_region(config: Config, cmd: ListRegionCommand) -> Result<()>
             "\tMinimum escrow balance: {}",
             token_amount_to_ui_amount(&mint, account.1.min_escrow_balance)
         );
+        println!("\tBase URL: {}", account.1.base_url);
         println!("\tRates:");
         println!(
             "\t\tCPU/Memory: {}",

@@ -1,10 +1,8 @@
 pub mod error;
 mod types;
 
-pub use self::types::{Blob, Key, Scan, TableName};
-pub use db_embedded_tikv::{
-    IpAndPort, NodeAddress, PdConfig, RemoteNode, TikvConfig, TikvRunnerConfig,
-};
+pub use self::types::{Blob, DeleteTable, Key, Scan, TableName};
+pub use db_embedded_tikv::{PdConfig, RemoteNode, TcpPortAddress, TikvConfig, TikvRunnerConfig};
 use dyn_clonable::clonable;
 use log::warn;
 
@@ -21,18 +19,22 @@ use std::{collections::HashSet, fmt::Debug};
 use tikv_client::{self, KvPair, RawClient, Value};
 use tokio::time::{sleep, Duration};
 
-// only one should be provided
-// used struct instead of enum, only for better visual structure in config
+// Only one of the fields should be provided
+// Used struct instead of enum, only for better visual structure in config
 #[derive(Deserialize, Clone)]
 pub struct DbConfig {
-    external: Option<Vec<IpAndPort>>,
-    internal: Option<TikvRunnerConfig>,
+    pub external: Option<Vec<TcpPortAddress>>,
+    pub internal: Option<TikvRunnerConfig>,
 }
 
 #[async_trait]
 #[clonable]
 pub trait DbClient: Send + Sync + Debug + Clone {
-    async fn update_stack_tables(&self, stack_id: StackID, tables: Vec<TableName>) -> Result<()>;
+    async fn update_stack_tables(
+        &self,
+        stack_id: StackID,
+        table_action_tuples: Vec<(TableName, DeleteTable)>,
+    ) -> Result<()>;
 
     async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()>;
     async fn get(&self, key: Key) -> Result<Option<Value>>;
@@ -76,7 +78,7 @@ pub trait DbClient: Send + Sync + Debug + Clone {
 #[clonable]
 pub trait DbManager: Send + Sync + Clone {
     async fn make_client(&self) -> anyhow::Result<Box<dyn DbClient>>;
-    async fn stop_embedded_cluster(&self) -> anyhow::Result<()>;
+    async fn stop(&self) -> anyhow::Result<()>;
 }
 
 // TODO: caching
@@ -96,7 +98,7 @@ impl Debug for DbClientImpl {
 impl DbClientImpl {
     // TODO: VERY inefficient to create and drop connections continuously.
     // We need a connection pooling solution here.
-    pub async fn new(endpoints: Vec<IpAndPort>) -> Result<Self> {
+    pub async fn new(endpoints: Vec<TcpPortAddress>) -> Result<Self> {
         let new = RawClient::new(endpoints).await?;
         Ok(Self {
             inner: new.clone(),
@@ -118,7 +120,7 @@ impl DbClient for DbClientImpl {
     async fn update_stack_tables(
         &self,
         stack_id: StackID,
-        table_list: Vec<TableName>,
+        table_action_tuples: Vec<(TableName, DeleteTable)>,
     ) -> Result<()> {
         // TODO: think of something for deleting existing tables
         let existing_tables = self
@@ -129,15 +131,22 @@ impl DbClient for DbClientImpl {
             .map(|k| k.try_into().map_err(Into::into))
             .collect::<Result<HashSet<TableListKey>>>()?;
 
-        let mut kvs = vec![];
-        for t in table_list {
-            let k = TableListKey::new(stack_id, t);
-            if !existing_tables.contains(&k) {
-                kvs.push((k, vec![]))
+        let mut kvs_add = vec![];
+        let mut kvs_delete = vec![];
+        for (table, is_delete) in table_action_tuples {
+            let k = TableListKey::new(stack_id, table);
+            if !existing_tables.contains(&k) && !*is_delete {
+                kvs_add.push((k, vec![]))
+            } else if existing_tables.contains(&k) && *is_delete {
+                kvs_delete.push(k)
             }
         }
 
-        self.inner.batch_put(kvs).await.map_err(Into::into)
+        self.inner.batch_put(kvs_add).await?;
+        self.inner
+            .batch_delete(kvs_delete)
+            .await
+            .map_err(Into::into)
     }
 
     async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()> {
@@ -274,11 +283,11 @@ impl DbClient for DbClientImpl {
 #[derive(Clone)]
 struct DbManagerImpl {
     inner: Option<Box<dyn TikvRunner>>,
-    endpoints: Vec<IpAndPort>,
+    endpoints: Vec<TcpPortAddress>,
 }
 
 pub async fn new_with_embedded_cluster(
-    node_address: NodeAddress,
+    node_address: TcpPortAddress,
     known_node_config: Vec<RemoteNode>,
     config: TikvRunnerConfig,
 ) -> anyhow::Result<Box<dyn DbManager>> {
@@ -304,7 +313,7 @@ pub async fn new_with_embedded_cluster(
 }
 
 pub async fn new_with_external_cluster(
-    endpoints: Vec<IpAndPort>,
+    endpoints: Vec<TcpPortAddress>,
 ) -> anyhow::Result<Box<dyn DbManager>> {
     ensure_cluster_healthy(&endpoints, 5).await?;
     Ok(Box::new(DbManagerImpl {
@@ -314,12 +323,12 @@ pub async fn new_with_external_cluster(
 }
 
 async fn ensure_cluster_healthy(
-    endpoints: &Vec<IpAndPort>,
+    endpoints: &Vec<TcpPortAddress>,
     max_try_count: u32,
 ) -> anyhow::Result<()> {
     #[tailcall::tailcall]
     async fn helper(
-        endpoints: &Vec<IpAndPort>,
+        endpoints: &Vec<TcpPortAddress>,
         try_count: u32,
         max_try_count: u32,
     ) -> anyhow::Result<()> {
@@ -350,7 +359,7 @@ async fn ensure_cluster_healthy(
 }
 
 pub async fn start(
-    node: NodeAddress,
+    node: TcpPortAddress,
     remote_nodes: Vec<RemoteNode>,
     db_config: DbConfig,
 ) -> anyhow::Result<Box<dyn DbManager>> {
@@ -371,7 +380,7 @@ impl DbManager for DbManagerImpl {
         Ok(Box::new(DbClientImpl::new(self.endpoints.clone()).await?))
     }
 
-    async fn stop_embedded_cluster(&self) -> anyhow::Result<()> {
+    async fn stop(&self) -> anyhow::Result<()> {
         match &self.inner {
             Some(r) => r.stop().await,
             None => Ok(()),

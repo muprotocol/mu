@@ -10,12 +10,12 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-use crate::Response;
+use crate::{function::*, http_client::Request as HttpRequest};
 use db::*;
 use storage::*;
 
-#[repr(u16)]
 #[derive(FromPrimitive)]
+#[repr(u16)]
 pub enum OutgoingMessageKind {
     // Runtime messages
     FatalError = 1,
@@ -42,6 +42,9 @@ pub enum OutgoingMessageKind {
     StorageGet = 2002,
     StorageDelete = 2003,
     StorageList = 2004,
+
+    // Http Client
+    HttpRequest = 3001,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -97,6 +100,9 @@ pub enum OutgoingMessage<'a> {
     StorageGet(StorageGet<'a>),
     StorageDelete(StorageDelete<'a>),
     StorageList(StorageList<'a>),
+
+    // Http Client
+    HttpRequest(HttpRequest<'a>),
 }
 
 macro_rules! read_cases {
@@ -155,7 +161,8 @@ impl<'a> OutgoingMessage<'a> {
                 StoragePut,
                 StorageGet,
                 StorageDelete,
-                StorageList
+                StorageList,
+                HttpRequest
             ]
         )
     }
@@ -184,7 +191,8 @@ impl<'a> OutgoingMessage<'a> {
                 StoragePut,
                 StorageGet,
                 StorageDelete,
-                StorageList
+                StorageList,
+                HttpRequest
             ]
         );
 

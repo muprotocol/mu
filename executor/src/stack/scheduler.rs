@@ -19,7 +19,7 @@ use crate::{infrastructure::config::ConfigDuration, network::NodeHash};
 
 use mu_stack::{Stack, StackID};
 
-use super::StackWithMetadata;
+use super::{blockchain_monitor::StackRemovalMode, StackWithMetadata};
 
 pub enum StackDeploymentStatus {
     DeployedToSelf { deployed_to_others: Vec<NodeHash> },
@@ -37,7 +37,7 @@ pub trait Scheduler: Clone + Send + Sync {
     async fn node_undeployed_stacks(&self, node: NodeHash, stack_ids: Vec<StackID>) -> Result<()>;
 
     async fn stacks_available(&self, stacks: Vec<StackWithMetadata>) -> Result<()>;
-    async fn stacks_removed(&self, ids: Vec<StackID>) -> Result<()>;
+    async fn stacks_removed(&self, id_modes: Vec<(StackID, StackRemovalMode)>) -> Result<()>;
 
     /// We start scheduling stacks after a delay, to make sure we have
     /// an up-to-date view of the cluster.
@@ -68,7 +68,7 @@ enum SchedulerMessage {
     NodeUndeployedStacks(NodeHash, Vec<StackID>),
 
     StacksAvailable(Vec<StackWithMetadata>),
-    StacksRemoved(Vec<StackID>),
+    StacksRemoved(Vec<(StackID, StackRemovalMode)>),
 
     ReadyToScheduleStacks,
 
@@ -125,9 +125,9 @@ impl Scheduler for SchedulerImpl {
             .map_err(Into::into)
     }
 
-    async fn stacks_removed(&self, ids: Vec<StackID>) -> Result<()> {
+    async fn stacks_removed(&self, id_modes: Vec<(StackID, StackRemovalMode)>) -> Result<()> {
         self.mailbox
-            .post(SchedulerMessage::StacksRemoved(ids))
+            .post(SchedulerMessage::StacksRemoved(id_modes))
             .await
             .map_err(Into::into)
     }
@@ -422,12 +422,11 @@ async fn step(
 
                 // As soon as we get a stack definition, we want to deploy its gateways so we can
                 // route new requests to that stack to the correct node.
+                info!("Received update for {id}, deploying its gateways");
+                deploy_gateways(id, &new_stack.stack, state.gateway_manager.as_ref()).await;
 
                 match state.stacks.entry(id) {
                     Entry::Vacant(vac) => {
-                        info!("Learning about {id} for first time, deploying its gateways");
-                        deploy_gateways(id, &new_stack.stack, state.gateway_manager.as_ref()).await;
-
                         vac.insert(StackDeployment::Undeployed { stack: new_stack });
                     }
 
@@ -480,8 +479,8 @@ async fn step(
             }
         }
 
-        SchedulerMessage::StacksRemoved(ids) => {
-            for id in ids {
+        SchedulerMessage::StacksRemoved(id_modes) => {
+            for (id, mode) in id_modes {
                 undeploy_gateways(id, state.gateway_manager.as_ref()).await;
 
                 match state.stacks.entry(id) {
@@ -498,7 +497,9 @@ async fn step(
                                 debug!("Stack {id} is deployed locally, will undeploy since it was removed");
                                 if let Err(f) = undeploy_stack(
                                     id,
+                                    mode,
                                     state.runtime.as_ref(),
+                                    state.database_manager.as_ref(),
                                     &state.notification_channel,
                                 )
                                 .await
@@ -621,9 +622,14 @@ async fn tick(state: &mut SchedulerState) {
                         deployed_to_others,
                     ) {
                         info!("Stack {id} was deployed to closer node {node}, will undeploy");
-                        if let Err(f) =
-                            undeploy_stack(*id, state.runtime.as_ref(), &state.notification_channel)
-                                .await
+                        if let Err(f) = undeploy_stack(
+                            *id,
+                            StackRemovalMode::Temporary,
+                            state.runtime.as_ref(),
+                            state.database_manager.as_ref(),
+                            &state.notification_channel,
+                        )
+                        .await
                         {
                             warn!("Failed to undeploy stack {id} due to: {f:?}");
                         }
@@ -648,9 +654,14 @@ async fn tick(state: &mut SchedulerState) {
                         deployed_to_others,
                     ) {
                         info!("Stack {id} was deployed to closer node {node}, will undeploy");
-                        if let Err(f) =
-                            undeploy_stack(*id, state.runtime.as_ref(), &state.notification_channel)
-                                .await
+                        if let Err(f) = undeploy_stack(
+                            *id,
+                            StackRemovalMode::Temporary,
+                            state.runtime.as_ref(),
+                            state.database_manager.as_ref(),
+                            &state.notification_channel,
+                        )
+                        .await
                         {
                             warn!("Failed to undeploy stack {id} due to: {f:?}");
                         }
@@ -795,10 +806,12 @@ async fn deploy_stack(
 
 async fn undeploy_stack(
     id: StackID,
+    mode: StackRemovalMode,
     runtime: &dyn Runtime,
+    db_manager: &dyn DbManager,
     notification_channel: &NotificationChannel<SchedulerNotification>,
 ) -> Result<()> {
-    super::deploy::undeploy_stack(id, runtime).await?;
+    super::deploy::undeploy_stack(id, mode, runtime, db_manager).await?;
     notification_channel.send(SchedulerNotification::StackUndeployed(id));
     Ok(())
 }

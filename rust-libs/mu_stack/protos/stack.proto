@@ -12,12 +12,13 @@ message Service {
     oneof service {
         Gateway gateway = 1;
         Function function = 2;
-        Database database = 3;
+        KeyValueTable key_value_table = 3;
     }
 }
 
-message Database {
+message KeyValueTable {
     string name = 1;
+    bool delete = 2;
 }
 
 message Gateway {

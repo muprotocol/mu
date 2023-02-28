@@ -89,6 +89,8 @@ pub struct Running {
     handle: FunctionHandle,
     io_state: IOState,
 
+    http_client: Option<reqwest::blocking::Client>,
+
     //TODO: Refactor these to `week` and `strong` when we had database replication
     database_write_count: u64,
     database_read_count: u64,
@@ -154,6 +156,7 @@ impl Instance<Loaded> {
             io_state: IOState::Idle,
             database_write_count: 0,
             database_read_count: 0,
+            http_client: None,
         };
         Ok(Instance {
             id: self.id,
@@ -242,12 +245,7 @@ impl Instance<Running> {
                 &self.id
             );
 
-            return Err((
-                Error::FunctionRuntimeError(FunctionRuntimeError::FunctionEarlyExit(
-                    RuntimeError::new("Function Early Exit"),
-                )),
-                Default::default(),
-            ));
+            return Err((Error::FunctionDidntTerminateCleanly, Default::default()));
         }
 
         self.write_message(IncomingMessage::ExecuteFunction(request))
@@ -296,6 +294,8 @@ impl Instance<Running> {
                         }
 
                         OutgoingMessage::Log(log) => {
+                            self.state.io_state = IOState::InRuntimeCall;
+
                             if self.include_logs {
                                 let level = match log.level {
                                     LogLevel::Error => Level::Error,
@@ -313,6 +313,8 @@ impl Instance<Running> {
                                     log.body
                                 );
                             }
+
+                            self.state.io_state = IOState::Processing;
                         }
 
                         OutgoingMessage::Put(req) => {
@@ -524,10 +526,10 @@ impl Instance<Running> {
                                     })
                             })?
                         }
-                    }
+
+                        OutgoingMessage::HttpRequest(req) => self.send_http_request(req)?,
                 }
             }
-        }
     }
 
     fn db_request<'a, A, B>(&mut self, f: A) -> Result<(), (Error, Usage)>
@@ -535,6 +537,8 @@ impl Instance<Running> {
         A: FnOnce(Box<dyn DbClient>, StackID) -> B,
         B: Future<Output = MudbResult<IncomingMessage<'a>>>,
     {
+        self.state.io_state = IOState::InRuntimeCall;
+
         tokio::runtime::Handle::current().block_on(async {
             let stack_id = self.id.function_id.stack_id;
             // lazy db_client creation
@@ -561,7 +565,46 @@ impl Instance<Running> {
                 })),
             }
             .map_err(|e| (e, Usage::default()))
-        })
+        })?;
+
+        self.state.io_state = IOState::Processing;
+        Ok(())
+    }
+
+    fn send_http_request(
+        &mut self,
+        req: musdk_common::http_client::Request,
+    ) -> Result<(), (Error, Usage)> {
+        self.state.io_state = IOState::InRuntimeCall;
+
+        // Lazy initialization
+        if self.state.http_client.is_none() {
+            self.state.http_client = Some(reqwest::blocking::Client::new());
+        }
+
+        let mut request = self
+            .state
+            .http_client
+            .as_ref()
+            .unwrap()
+            .request(utils::http_method_to_reqwest_method(req.method), req.url)
+            .version(utils::version_to_reqwest_version(req.version));
+
+        for header in req.headers {
+            request = request.header(header.name.as_ref(), header.value.as_ref());
+        }
+
+        if !req.body.is_empty() {
+            request = request.body(req.body.to_vec());
+        }
+
+        let response = utils::reqwest_response_to_http_response(request.send());
+        let message = IncomingMessage::HttpResponse(response);
+        self.write_message(message)
+            .map_err(|e| (e, Usage::default()))?;
+
+        self.state.io_state = IOState::Processing;
+        Ok(())
     }
 
     fn storage_request<'a, A, B>(&mut self, f: A) -> Result<(), (Error, Usage)>
@@ -709,31 +752,101 @@ fn into_cas_incoming_msg<'a>(x: (Option<Vec<u8>>, bool)) -> IncomingMessage<'a> 
 enum IOState {
     Idle,
     Processing,
-    // InRuntimeCall,
+    InRuntimeCall,
     // Closed,
 }
 
 mod utils {
-    // use crate::mudb::service::DatabaseID;
-    // use mu_stack::StackID;
+    use std::{borrow::Cow, error::Error};
 
-    // pub fn create_database_id(stack_id: &StackID, db_name: String) -> DatabaseID {
-    //     DatabaseID {
-    //         stack_id: *stack_id,
-    //         db_name,
-    //     }
-    // }
+    use log::error;
+    use musdk_common::http_client::{self, *};
+    use reqwest::Method;
 
-    // pub fn key_filter_to_mudb(
-    //     key_filter: musdk_common::database::KeyFilter,
-    // ) -> crate::mudb::service::KeyFilter {
-    //     match key_filter {
-    //         musdk_common::database::KeyFilter::Exact(k) => {
-    //             crate::mudb::service::KeyFilter::Exact(k.into_owned())
-    //         }
-    //         musdk_common::database::KeyFilter::Prefix(k) => {
-    //             crate::mudb::service::KeyFilter::Prefix(k.into_owned())
-    //         }
-    //     }
-    // }
+    pub fn http_method_to_reqwest_method(method: HttpMethod) -> reqwest::Method {
+        match method {
+            HttpMethod::Get => Method::GET,
+            HttpMethod::Head => Method::HEAD,
+            HttpMethod::Post => Method::POST,
+            HttpMethod::Put => Method::PUT,
+            HttpMethod::Patch => Method::PATCH,
+            HttpMethod::Delete => Method::DELETE,
+            HttpMethod::Options => Method::OPTIONS,
+        }
+    }
+
+    pub fn version_to_reqwest_version(version: Version) -> reqwest::Version {
+        match version {
+            Version::HTTP_09 => reqwest::Version::HTTP_09,
+            Version::HTTP_10 => reqwest::Version::HTTP_10,
+            Version::HTTP_11 => reqwest::Version::HTTP_11,
+            Version::HTTP_2 => reqwest::Version::HTTP_2,
+            Version::HTTP_3 => reqwest::Version::HTTP_3,
+        }
+    }
+
+    fn error_reason(error: reqwest::Error) -> String {
+        error
+            .source()
+            .map(ToString::to_string)
+            .unwrap_or("".to_string())
+    }
+
+    pub fn reqwest_error_to_http_error(error: reqwest::Error) -> http_client::Error {
+        if error.is_builder() {
+            http_client::Error::Builder(error_reason(error))
+        } else if error.is_request() {
+            http_client::Error::Request(error_reason(error))
+        } else if error.is_redirect() {
+            http_client::Error::Redirect(error_reason(error))
+        } else if error.is_status() {
+            // Note: this should not happen and we safely map unknown statuses to 200
+            let status = Status::from_code(error.status().map(|s| s.as_u16()).unwrap_or(200))
+                .unwrap_or(Status::default());
+            http_client::Error::Status(status)
+        } else if error.is_body() {
+            http_client::Error::Body(error_reason(error))
+        } else if error.is_decode() {
+            http_client::Error::Decode(error_reason(error))
+        } else {
+            http_client::Error::Upgrade(error_reason(error))
+        }
+    }
+
+    pub fn reqwest_response_to_http_response<'a>(
+        response: reqwest::Result<reqwest::blocking::Response>,
+    ) -> Result<Response<'a>, http_client::Error> {
+        let response = response.map_err(reqwest_error_to_http_error)?;
+
+        let status = Status::from_code(response.status().as_u16()).unwrap_or(Status::default());
+
+        let headers = response
+            .headers()
+            .clone() //TODO: Maybe not?
+            .into_iter()
+            .map(|(name, value)| -> Result<Header, http_client::Error> {
+                let Some(name) = name else {return Err(http_client::Error::Decode("invalid header with empty name".to_string()))};
+
+                let value = value.to_str().map_err(|e| {
+                    error!("invalid header value in http response: {e:?}");
+                    http_client::Error::Decode("invalid header value".to_string())
+                })?;
+
+                Ok(Header {
+                    name: Cow::Owned(name.as_str().to_string()),
+                    value: Cow::Owned(value.to_string()),
+                })
+            })
+            .collect::<Result<Vec<Header>, _>>()?;
+
+        let body = response
+            .bytes()
+            .map_err(reqwest_error_to_http_error)?
+            .to_vec();
+
+        Ok(Response::builder()
+            .status(status)
+            .headers(headers)
+            .body_from_vec(body))
+    }
 }

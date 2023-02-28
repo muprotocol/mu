@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 
-use mu_cli::Args;
+use mu_cli::Arguments;
 
 fn main() -> Result<()> {
-    mu_cli::execute(Args::parse())
+    mu_cli::execute(Arguments::parse())
 }

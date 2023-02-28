@@ -53,6 +53,10 @@ chrono = "0.4"
 byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
 http = "0.2"
 protobuf = "3.2"
+actix-web = "4.2"
+ed25519-dalek = "1"
+dns-lookup = "1.0.8"
+
 musdk-common = { path = "../sdk/common" }
 mu-common = { path = "../rust-libs/common" }
 mu-runtime = { path = "../rust-libs/runtime" }
@@ -61,7 +65,6 @@ mu-db = { path = "../rust-libs/db" }
 mu-storage = { path = "../rust-libs/storage" }
 
 [dev-dependencies]
-serial_test = "0.8"
 test-log = "0.2"
 
 [build-dependencies]

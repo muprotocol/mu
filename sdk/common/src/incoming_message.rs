@@ -8,9 +8,9 @@ use std::{
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 
-use crate::Request;
+use crate::function::*;
+use crate::http_client;
 use db::*;
 use storage::*;
 
@@ -35,6 +35,9 @@ enum IncomingMessageKind {
     StorageGetResult = 2002,
     StatusResult = 2003,
     ObjectListResult = 2004,
+
+    // Http Client
+    HttpResponse = 3001,
 }
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -42,6 +45,8 @@ pub struct ExecuteFunction<'a> {
     pub function: Cow<'a, str>,
     pub request: Request<'a>,
 }
+
+pub type HttpResponse<'a> = Result<http_client::Response<'a>, http_client::error::Error>;
 
 #[derive(Debug)]
 pub enum IncomingMessage<'a> {
@@ -63,6 +68,9 @@ pub enum IncomingMessage<'a> {
     StorageGetResult(StorageGetResult<'a>),
     StatusResult(StatusResult),
     ObjectListResult(ObjectListResult<'a>),
+
+    // Http client
+    HttpResponse(HttpResponse<'a>),
 }
 
 macro_rules! read_cases {
@@ -117,7 +125,8 @@ impl<'a> IncomingMessage<'a> {
                 CasResult,
                 StorageError,
                 StorageGetResult,
-                ObjectListResult
+                ObjectListResult,
+                HttpResponse
             ] * 'static,
             [EmptyResult, StatusResult]
         )
@@ -140,7 +149,8 @@ impl<'a> IncomingMessage<'a> {
                 StorageError,
                 StorageGetResult,
                 StatusResult,
-                ObjectListResult
+                ObjectListResult,
+                HttpResponse
             ]
         );
 

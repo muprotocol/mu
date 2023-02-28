@@ -1,7 +1,12 @@
-use super::{error::Error, function::Pipe};
+use crate::FunctionLoadingError;
+
+use super::{
+    error::{Error, Result},
+    function::Pipe,
+};
+
 use mu_stack::{AssemblyID, AssemblyRuntime};
 
-use anyhow::{bail, Result};
 use bytes::Bytes;
 use mailbox_processor::ReplyChannel;
 use serde::Deserialize;
@@ -16,7 +21,7 @@ pub(super) type ExecuteFunctionResponse = musdk_common::outgoing_message::Functi
 pub struct InvokeFunctionRequest {
     pub assembly_id: AssemblyID,
     pub request: ExecuteFunctionRequest<'static>,
-    pub reply: ReplyChannel<Result<ExecuteFunctionResponse, Error>>,
+    pub reply: ReplyChannel<Result<ExecuteFunctionResponse>>,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -57,13 +62,25 @@ impl AssemblyDefinition {
         let envs: HashMap<String, String> = envs.into_iter().collect();
         for e in &envs {
             if e.0.contains('=') {
-                bail!("Key cannot contain '=' character");
+                return Err(Error::FunctionLoadingError(
+                    FunctionLoadingError::InvalidAssemblyDefinition(
+                        "Env key cannot contain '=' character".to_string(),
+                    ),
+                ));
             }
             if e.0.contains('\0') {
-                bail!("Key cannot contain null character");
+                return Err(Error::FunctionLoadingError(
+                    FunctionLoadingError::InvalidAssemblyDefinition(
+                        "Env key cannot contain null character".to_string(),
+                    ),
+                ));
             }
             if e.1.contains('\0') {
-                bail!("Value cannot contain null character");
+                return Err(Error::FunctionLoadingError(
+                    FunctionLoadingError::InvalidAssemblyDefinition(
+                        "Env value cannot contain null character".to_string(),
+                    ),
+                ));
             }
         }
         Ok(Self {
@@ -86,7 +103,7 @@ pub struct FunctionIO {
 
 #[derive(Debug)]
 pub struct FunctionHandle {
-    pub join_handle: JoinHandle<Result<MeteringPoints, (super::error::Error, MeteringPoints)>>,
+    pub join_handle: JoinHandle<Result<MeteringPoints, (Error, MeteringPoints)>>,
     is_finished_rx: tokio::sync::oneshot::Receiver<()>,
     is_finished: bool,
     pub io: FunctionIO,
@@ -94,7 +111,7 @@ pub struct FunctionHandle {
 
 impl FunctionHandle {
     pub fn new(
-        join_handle: JoinHandle<Result<MeteringPoints, (super::error::Error, MeteringPoints)>>,
+        join_handle: JoinHandle<Result<MeteringPoints, (Error, MeteringPoints)>>,
         is_finished_rx: tokio::sync::oneshot::Receiver<()>,
         io: FunctionIO,
     ) -> Self {

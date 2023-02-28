@@ -1,10 +1,10 @@
-mod serde_support;
-
-pub use serde_support::{ConfigDuration, ConfigLogLevelFilter, ConfigUri};
+pub use mu_common::serde_support::{ConfigDuration, ConfigLogLevelFilter, ConfigUri};
 
 use anyhow::{Context, Result};
 use config::{Config, Environment, File, FileFormat};
+
 use mu_db::DbConfig;
+
 use mu_gateway::GatewayManagerConfig;
 use mu_runtime::RuntimeConfig;
 use mu_storage::StorageConfig;
@@ -54,7 +54,6 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("blockchain_monitor.solana_provider_public_key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
         ("blockchain_monitor.solana_region_number", "1"),
         ("blockchain_monitor.solana_usage_signer_private_key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
-        ("db_manager.usage_report_duration", "15m"),
         ("runtime.include_function_logs", "false"),
     ];
 
@@ -102,7 +101,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
 
     let gossip_config = config.get("gossip").context("Invalid gossip config")?;
 
-    let initial_cluster_config = config.get("tikv").context("Invalid tikv_runner config")?;
+    let db_config = config.get("tikv").context("Invalid tikv_runner config")?;
 
     let storage_config = config.get("storage").context("Invalid storage config")?;
 
@@ -130,7 +129,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
         connection_manager_config,
         gossip_config,
         known_node_config,
-        initial_cluster_config,
+        db_config,
         storage_config,
         gateway_config,
         log_config,
