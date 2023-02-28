@@ -18,6 +18,7 @@ pub struct AppConfig {
     authority_keypair: PathBuf,
     pub per_request_cap: Option<u64>,
     pub per_address_cap: Option<u64>,
+    pub per_account_cap: Option<u64>,
     //pub time_slice: ConfigDuration,
 }
 
@@ -30,7 +31,7 @@ pub fn initialize_config() -> Result<AppConfig> {
     ];
 
     let env = Environment::default()
-        .prefix("MU")
+        .prefix("AIRDROP")
         .prefix_separator("__")
         .keep_prefix(false)
         .separator("__")
@@ -44,12 +45,12 @@ pub fn initialize_config() -> Result<AppConfig> {
             .context("Failed to add default config")?;
     }
 
-    builder = builder.add_source(File::new("mu-conf.yaml", FileFormat::Yaml));
+    builder = builder.add_source(File::new("conf.yaml", FileFormat::Yaml));
 
     #[cfg(debug_assertions)]
     {
-        if std::path::Path::new("mu-conf.dev.yaml").exists() {
-            builder = builder.add_source(File::new("mu-conf.dev.yaml", FileFormat::Yaml));
+        if std::path::Path::new("conf.dev.yaml").exists() {
+            builder = builder.add_source(File::new("conf.dev.yaml", FileFormat::Yaml));
         }
     }
 
@@ -67,9 +68,11 @@ pub fn initialize_config() -> Result<AppConfig> {
         authority_keypair: config.get("authority_keypair")?,
         per_request_cap: config.get("per_request_cap")?,
         per_address_cap: config.get("per_address_cap")?,
+        per_account_cap: config.get("per_account_cap")?,
     })
 }
 
+//TODO: Find better place for this.
 impl AppConfig {
     //TODO: Support all types of Signers
     pub fn authority_keypair(&self) -> anyhow::Result<Keypair> {

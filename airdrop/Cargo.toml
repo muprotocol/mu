@@ -4,13 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-actix-web = "4"
 anyhow = "1.0"
+actix-web = "4"
 config = "0.13"
 serde = { version = "1.0", features = ["serde_derive"] }
 serde_json = "1.0"
 
+rusqlite = { version = "0.28", features = ["bundled"] }
+
 spl-token = "3.5"
 solana-sdk = "1.15"
 spl-associated-token-account = "1.1"
-solana-client = "1.15.2"
+solana-client = "1.15"
+
+log = "0.4"
+env_logger = "0.10"
