@@ -104,6 +104,7 @@ pub mod marketplace {
         ctx: Context<CreateRegion>,
         region_num: u32,
         name: String,
+        base_url: String,
         rates: ServiceRates,
         min_escrow_balance: u64,
     ) -> Result<()> {
@@ -113,6 +114,7 @@ pub mod marketplace {
 
         ctx.accounts.region.set_inner(ProviderRegion {
             name,
+            base_url,
             region_num,
             rates,
             min_escrow_balance,
@@ -497,17 +499,18 @@ pub struct ProviderRegion {
     pub min_escrow_balance: u64,
     pub bump: u8,
     pub name: String,
+    pub base_url: String,
 }
 
 #[derive(Accounts)]
-#[instruction(region_num: u32, name: String)]
+#[instruction(region_num: u32, name: String, base_url: String)]
 pub struct CreateRegion<'info> {
     #[account(has_one = owner)]
     pub provider: Account<'info, Provider>,
 
     #[account(
         init,
-        space = 8 + 32 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 8 + 1 + 4 + name.as_bytes().len(),
+        space = 8 + 32 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 8 + 1 + 4 + name.as_bytes().len() + 4 + base_url.as_bytes().len(),
         payer = owner,
         seeds = [b"region", owner.key().as_ref(), region_num.to_le_bytes().as_ref()],
         bump
