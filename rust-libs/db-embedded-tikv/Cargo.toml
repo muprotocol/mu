@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 mailbox_processor = { path = "../mailbox_processor" }
-mu-common = { path = "../common"}
+mu-common = { path = "../common" }
 tokio = { version = "1", features = ["fs", "io-util"] }
 serde = { version = "1", features = ["derive"] }
 anyhow = "1.0"

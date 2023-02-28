@@ -1,16 +1,20 @@
-use std::{env, fmt, net::IpAddr, os::unix::prelude::PermissionsExt, path::PathBuf, process, vec};
+use std::process::Stdio;
+use std::{env, os::unix::prelude::PermissionsExt, path::PathBuf, process, vec};
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
+use base64::Engine;
 use dyn_clonable::clonable;
 use log::error;
 use mailbox_processor::callback::CallbackMailboxProcessor;
+use mu_common::serde_support::TcpPortAddress;
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
 use tokio::{fs::File, io::AsyncWriteExt};
 
+const ACCESS_KEY: &str = "admin";
 const BUCKET_NAME: &str = "mu-default";
 
 #[derive(Deserialize, Clone)]
@@ -110,29 +114,15 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
     Ok(temp_address)
 }
 
-#[derive(Deserialize, Clone, PartialEq, Eq)]
-pub struct IpAndPort {
-    pub address: IpAddr,
-    pub port: u16,
-}
-
-impl fmt::Display for IpAndPort {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:{}", self.address, self.port)
-    }
-}
-
 #[derive(Deserialize)]
 pub struct StorageInfo {
-    endpoint: IpAndPort,
-    access_key: String,
-    secret_key: String,
+    endpoint: TcpPortAddress,
 }
 
 #[derive(Deserialize)]
 pub struct InternalStorageConfig {
-    metadata_tikv_endpoints: Vec<IpAndPort>,
-    object_storage_tikv_endpoints: Vec<IpAndPort>,
+    metadata_tikv_endpoints: Vec<TcpPortAddress>,
+    object_storage_tikv_endpoints: Vec<TcpPortAddress>,
     storage: StorageInfo,
 }
 
@@ -142,7 +132,7 @@ struct Args {
 }
 
 fn generate_arguments(config: &InternalStorageConfig) -> Args {
-    fn tikv_endpoints(ports: &[IpAndPort]) -> String {
+    fn tikv_endpoints(ports: &[TcpPortAddress]) -> String {
         ports
             .iter()
             .map(|ip| ip.to_string())
@@ -154,18 +144,17 @@ fn generate_arguments(config: &InternalStorageConfig) -> Args {
 
     let format_args = vec![
         "format".to_owned(),
-        "--storage tikv".to_owned(),
-        format!(
-            "--bucket \"{}\"",
-            tikv_endpoints(config.object_storage_tikv_endpoints.as_ref())
-        ),
-        format!("\"tikv://{metadata_endpoints}\""),
+        "--storage".to_owned(),
+        "tikv".to_owned(),
+        "--bucket".to_owned(),
+        tikv_endpoints(config.object_storage_tikv_endpoints.as_ref()),
+        format!("tikv://{metadata_endpoints}"),
         BUCKET_NAME.to_string(),
     ];
 
     let gateway_args = vec![
         "gateway".to_owned(),
-        format!("\"tikv://{metadata_endpoints}\""),
+        format!("tikv://{metadata_endpoints}"),
         config.storage.endpoint.to_string(),
     ];
 
@@ -220,10 +209,14 @@ pub async fn start(
         );
     }
 
+    let secret_key = base64::engine::general_purpose::STANDARD.encode(rand::random::<[u8; 30]>());
+
     let gateway_process = std::process::Command::new(juicefs_exe)
         .args(args.gateway_args)
-        .env("MINIO_ROOT_USER", config.storage.access_key.clone())
-        .env("MINIO_ROOT_PASSWORD", config.storage.secret_key.clone())
+        .env("MINIO_ROOT_USER", ACCESS_KEY)
+        .env("MINIO_ROOT_PASSWORD", secret_key.clone())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .context("Failed to spawn process juicefs gateway")?;
 
@@ -232,8 +225,8 @@ pub async fn start(
 
     let live_storage_config = LiveStorageConfig {
         auth_config: AuthConfig {
-            access_key: Some(config.storage.access_key.clone()),
-            secret_key: Some(config.storage.secret_key.clone()),
+            access_key: Some(ACCESS_KEY.to_string()),
+            secret_key: Some(secret_key),
             security_token: None,
             session_token: None,
             profile: None,

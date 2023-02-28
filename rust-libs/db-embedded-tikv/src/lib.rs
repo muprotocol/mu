@@ -2,7 +2,7 @@
 //! due to the embedded resources. We moved it to a separate crate to improve
 //! type check times when developing the DB module.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::{error, warn};
@@ -12,8 +12,6 @@ use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
-use std::fmt::Display;
-use std::str::FromStr;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr},
@@ -22,6 +20,8 @@ use std::{
     process::{self, Stdio},
 };
 use tokio::{fs::File, io::AsyncWriteExt};
+
+pub use mu_common::serde_support::TcpPortAddress;
 
 #[derive(RustEmbed)]
 #[folder = "assets"]
@@ -69,40 +69,6 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
         .context("Failed to set executable permission on temp file")?;
 
     Ok(temp_address)
-}
-
-#[derive(Deserialize, Clone)]
-pub struct TcpPortAddress {
-    pub address: IpOrHostname,
-    pub port: u16,
-}
-
-impl Display for TcpPortAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.address, self.port)
-    }
-}
-
-impl FromStr for TcpPortAddress {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split(':').collect();
-        if parts.len() != 2 {
-            bail!("Can't parse, expected string in this format: ip_addr:port");
-        } else {
-            Ok(TcpPortAddress {
-                address: parts[0].parse()?,
-                port: parts[1].parse()?,
-            })
-        }
-    }
-}
-
-impl From<TcpPortAddress> for String {
-    fn from(value: TcpPortAddress) -> Self {
-        value.to_string()
-    }
 }
 
 #[derive(Deserialize, Clone)]
