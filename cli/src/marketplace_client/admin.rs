@@ -34,7 +34,7 @@ pub fn initialize(
             commission_token,
             deposit_token,
             mint: token_mint,
-            state: client.get_mu_state_pda(),
+            state: state_pda,
             system_program: system_program::id(),
             token_program: spl_token::id(),
         })
