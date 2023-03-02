@@ -1,11 +1,15 @@
 name: test
+
 on:
   pull_request:
+
 env:
   LLVM_SYS_120_PREFIX: /usr/lib/llvm-12/
+  RUST_BACKTRACE: full
+
 jobs:
   lint_and_test:
-    runs-on: [self-hosted, linux, X64]
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         dir:
@@ -42,6 +46,7 @@ jobs:
             rust-libs/mu_stack/target/
             rust-libs/runtime/target/
             sdk/target/
+            node_modules/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Install system dependencies
         run: |
@@ -65,6 +70,27 @@ jobs:
         working-directory: ${{ matrix.dir }}
         env:
           RUST_BACKTRACE: 1
+      - name: Install Node.js
+        uses: actions/setup-node@v2
+        with: 
+          node-version: 14
+      - name: Install Salona
+        run: sh -c "$(curl -sSfL https://release.solana.com/stable/install)"
+      - name: Install Anchor
+        if: matrix.dir == 'marketplace'
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          avm install latest
+          avm use latest
+      - name: Install npm dependencies
+        if: matrix.dir == 'marketplace'
+        run: npm install
+      - name: Build smart contract
+        if: matrix.dir == 'marketplace'
+        run: anchor build
+      - name: Run anchor tests
+        if: matrix.dir == 'marketplace'
+        run: anchor run test
       - name: Save dependencies cache
         uses: actions/cache@v3
         if: success()
@@ -86,4 +112,5 @@ jobs:
             rust-libs/mu_stack/target/
             rust-libs/runtime/target/
             sdk/target/
+            node_modules/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
