@@ -9,7 +9,7 @@ env:
 
 jobs:
   lint_and_test:
-    runs-on: [ubuntu-latest, self-hosted, linux, X64]
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         dir:
