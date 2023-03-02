@@ -15,7 +15,7 @@ util.asyncMain(async () => {
 
     console.log("Creating region and usage signer");
     let serviceRates: ServiceRates = {
-        billionFunctionMbInstructions: new BN(300000),
+        functionMbTeraInstructions: new BN(300000),
         gigabytesGatewayTraffic: new BN(10000000),
         millionGatewayRequests: new BN(50),
         dbGigabyteMonths: new BN(10000000),

@@ -106,6 +106,7 @@ subcommands
 SUBDIR
 sysvar
 tailcall
+tera
 thiserror
 tikv
 Tikv

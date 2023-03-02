@@ -89,22 +89,28 @@ pub fn execute_list_region(config: Config, cmd: ListRegionCommand) -> Result<()>
         println!("\tBase URL: {}", account.1.base_url);
         println!("\tRates:");
         println!(
-            "\t\tCPU/Memory: {}",
-            account.1.rates.billion_function_mb_instructions
+            "\t\t1000 billion CPU instructions, 1 megabyte of memory: {}",
+            token_amount_to_ui_amount(&mint, account.1.rates.function_mb_tera_instructions)
         );
         println!(
-            "\t\tDB Gigabytes Storage: {}",
-            account.1.rates.db_gigabyte_months
-        );
-        println!("\t\tDB Reads: {}", account.1.rates.million_db_reads);
-        println!("\t\tDB Writes: {}", account.1.rates.million_db_writes);
-        println!(
-            "\t\tGateway requests: {}",
-            account.1.rates.million_gateway_requests
+            "\t\t1 GB of DB storage per month: {}",
+            token_amount_to_ui_amount(&mint, account.1.rates.db_gigabyte_months)
         );
         println!(
-            "\t\tGateway Bandwidth: {}",
-            account.1.rates.gigabytes_gateway_traffic
+            "\t\t1 million DB reads: {}",
+            token_amount_to_ui_amount(&mint, account.1.rates.million_db_reads)
+        );
+        println!(
+            "\t\t1 million DB writes: {}",
+            token_amount_to_ui_amount(&mint, account.1.rates.million_db_writes)
+        );
+        println!(
+            "\t\t1 million gateway requests: {}",
+            token_amount_to_ui_amount(&mint, account.1.rates.million_gateway_requests)
+        );
+        println!(
+            "\t\t1 GB of gateway traffic: {}",
+            token_amount_to_ui_amount(&mint, account.1.rates.gigabytes_gateway_traffic)
         );
     }
 
