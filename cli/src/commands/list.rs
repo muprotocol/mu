@@ -90,7 +90,7 @@ pub fn execute_list_region(config: Config, cmd: ListRegionCommand) -> Result<()>
         println!("\tRates:");
         println!(
             "\t\tCPU/Memory: {}",
-            account.1.rates.billion_function_mb_instructions
+            account.1.rates.function_mb_tera_instructions
         );
         println!(
             "\t\tDB Gigabytes Storage: {}",

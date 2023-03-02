@@ -34,8 +34,11 @@ pub struct CreateArgs {
     )]
     min_escrow_balance: f64,
 
-    #[arg(long, help = "Billion function instructions and MB of RAM")]
-    billion_function_mb_instructions: u64,
+    #[arg(
+        long,
+        help = "Price per 1000 billion CPU instructions (equivalent to about 5 minutes of execution time on a 3GHz CPU) and 1 megabyte of RAM"
+    )]
+    function_mb_tera_instructions: u64,
 
     #[arg(long, help = "Database GB per month")]
     db_gigabyte_months: u64,
@@ -91,7 +94,7 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
     };
 
     let rates = marketplace::ServiceRates {
-        billion_function_mb_instructions: args.billion_function_mb_instructions,
+        function_mb_tera_instructions: args.function_mb_tera_instructions,
         db_gigabyte_months: args.db_gigabyte_months,
         million_db_reads: args.million_db_reads,
         million_db_writes: args.million_db_writes,
