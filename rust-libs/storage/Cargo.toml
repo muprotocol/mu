@@ -20,3 +20,6 @@ tokio = { version = "1", features = ["full"] }
 mailbox_processor = { path = "../mailbox_processor" }
 mu_stack = { path = "../mu_stack" }
 storage_embedded_juicefs = { path = "../storage_embedded_juicefs" }
+
+[dev-dependencies]
+mu-common = { path = "../common" }

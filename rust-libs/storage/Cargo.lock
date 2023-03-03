@@ -881,6 +881,7 @@ dependencies = [
  "dyn-clonable",
  "dyn-clone",
  "mailbox_processor",
+ "mu-common",
  "mu_stack",
  "pin-project-lite",
  "rust-s3",

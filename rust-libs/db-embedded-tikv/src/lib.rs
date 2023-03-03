@@ -31,10 +31,7 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
     let mut temp_address = env::temp_dir();
     temp_address.push(name);
 
-    // TODO: remove if and let create temp files every time.
-    // also let this to be separate for TikvRunner
-    // in test module concurrent test need to create temp files once.
-    // otherwise they get race condition of creating temp files.
+    // TODO check checksum instead existing.
     let file = if temp_address.exists() {
         File::open(temp_address.as_path())
             .await

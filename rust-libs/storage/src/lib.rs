@@ -5,9 +5,11 @@ use mu_stack::StackID;
 use pin_project_lite::pin_project;
 use s3::{creds::Credentials, Bucket};
 use serde::Deserialize;
-use std::{fmt::Debug, pin::Pin};
+use std::{fmt::Debug, ops::Deref, pin::Pin};
 use storage_embedded_juicefs::{InternalStorageConfig, JuicefsRunner, LiveStorageConfig};
 use tokio::io::{AsyncRead, AsyncWrite};
+
+const METADATA_PREFIX: &str = "!";
 
 pub struct Object {
     pub key: String,
@@ -17,6 +19,16 @@ pub struct Object {
 #[async_trait]
 #[clonable]
 pub trait StorageClient: Send + Sync + Clone {
+    async fn update_stack_storages(
+        &self,
+        stack_id: StackID,
+        table_action_tuples: Vec<(&str, DeleteStorage)>,
+    ) -> Result<()>;
+
+    async fn get_storage_list(&self, stack_id: StackID) -> Result<Vec<String>>;
+
+    async fn contains_storage(&self, stack_id: StackID, storage_name: &str) -> Result<bool>;
+
     async fn get(
         &self,
         stack_id: StackID,
@@ -72,6 +84,7 @@ struct StorageManagerImpl {
 #[async_trait]
 impl StorageManager for StorageManagerImpl {
     fn make_client(&self) -> anyhow::Result<Box<dyn StorageClient>> {
+        // TODO check healthy
         Ok(Box::new(StorageClientImpl::new(&self.config)?))
     }
 
@@ -125,6 +138,51 @@ impl StorageClientImpl {
 
 #[async_trait]
 impl StorageClient for StorageClientImpl {
+    async fn update_stack_storages(
+        &self,
+        stack_id: StackID,
+        storage_delete_pairs: Vec<(&str, DeleteStorage)>,
+    ) -> Result<()> {
+        let existing_storages = self.get_storage_list(stack_id).await?;
+
+        for (storage_name, is_delete) in storage_delete_pairs {
+            let storage_name = storage_name.to_string();
+            let path = || format!("{METADATA_PREFIX}/{stack_id}/{storage_name}");
+            if !existing_storages.contains(&storage_name) && !*is_delete {
+                self.bucket.put_object_stream(&mut &b""[..], path()).await?;
+            } else if existing_storages.contains(&storage_name) && *is_delete {
+                self.bucket.delete_object(path()).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn get_storage_list(&self, stack_id: StackID) -> Result<Vec<String>> {
+        let prefix = format!("{METADATA_PREFIX}/{stack_id}/");
+
+        let mut resp = self.bucket.list(prefix, None).await?;
+
+        assert_eq!(resp.len(), 1);
+
+        let objects = resp
+            .pop()
+            .ok_or_else(|| anyhow::anyhow!("no bucket exists"))?
+            .contents
+            .into_iter()
+            .filter_map(|x| x.key.split('/').last().map(ToString::to_string))
+            .collect();
+
+        Ok(objects)
+    }
+
+    async fn contains_storage(&self, stack_id: StackID, storage_name: &str) -> Result<bool> {
+        Ok(self
+            .get_storage_list(stack_id)
+            .await?
+            .contains(&storage_name.into()))
+    }
+
     async fn get(
         &self,
         stack_id: StackID,
@@ -236,5 +294,68 @@ impl<'a> AsyncWrite for AsyncWriterWrapper<'a> {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::result::Result<(), std::io::Error>> {
         Pin::new(self.project().writer).poll_shutdown(cx)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteStorage(pub bool);
+
+impl Deref for DeleteStorage {
+    type Target = bool;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use mu_common::serde_support::{IpOrHostname, TcpPortAddress};
+    use storage_embedded_juicefs::StorageInfo;
+
+    use super::*;
+
+    const STACK_ID: StackID = StackID::SolanaPublicKey([1; 32]);
+
+    async fn test_start() -> Result<Box<dyn StorageManager>> {
+        let storage_info = StorageInfo {
+            endpoint: TcpPortAddress {
+                address: IpOrHostname::Ip("127.0.0.1".parse().unwrap()),
+                port: 9015,
+            },
+        };
+        let interanl_conf = InternalStorageConfig {
+            metadata_tikv_endpoints: vec![],
+            object_storage_tikv_endpoints: vec![],
+            storage: storage_info,
+        };
+        let conf = StorageConfig {
+            external: None,
+            internal: Some(interanl_conf),
+        };
+        start(&conf).await
+    }
+
+    #[tokio::test]
+    #[ignore = "TODO"]
+    async fn create_update_delete_manifest() {
+        let manager = test_start().await.unwrap();
+        let client = manager.make_client().unwrap();
+
+        let insertion_storages = vec!["s1", "s2", "s3", "s4"];
+
+        let stor_del_pairs = insertion_storages
+            .clone()
+            .into_iter()
+            .map(|x| (x, DeleteStorage(false)))
+            .collect::<Vec<_>>();
+
+        client
+            .update_stack_storages(STACK_ID, stor_del_pairs)
+            .await
+            .unwrap();
+
+        let x = client.get_storage_list(STACK_ID).await.unwrap();
+
+        assert_eq!(insertion_storages, x);
     }
 }

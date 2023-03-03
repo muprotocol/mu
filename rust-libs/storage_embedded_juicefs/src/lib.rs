@@ -78,6 +78,7 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
     let mut temp_address = env::temp_dir();
     temp_address.push(name);
 
+    // TODO check checksum instead existing.
     let file = if temp_address.exists() {
         File::open(temp_address.as_path())
             .await
@@ -116,14 +117,14 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
 
 #[derive(Deserialize)]
 pub struct StorageInfo {
-    endpoint: TcpPortAddress,
+    pub endpoint: TcpPortAddress,
 }
 
 #[derive(Deserialize)]
 pub struct InternalStorageConfig {
-    metadata_tikv_endpoints: Vec<TcpPortAddress>,
-    object_storage_tikv_endpoints: Vec<TcpPortAddress>,
-    storage: StorageInfo,
+    pub metadata_tikv_endpoints: Vec<TcpPortAddress>,
+    pub object_storage_tikv_endpoints: Vec<TcpPortAddress>,
+    pub storage: StorageInfo,
 }
 
 struct Args {
