@@ -168,15 +168,11 @@ impl StorageClient for StorageClientImpl {
     async fn storage_list(&self, stack_id: StackID) -> Result<Vec<String>> {
         let prefix = format!("{METADATA_PREFIX}/{stack_id}/");
 
-        let mut resp = self.bucket.list(prefix, None).await?;
+        let resp = self.bucket.list(prefix, None).await?;
 
-        assert_eq!(resp.len(), 1);
-
-        let objects = resp
-            .pop()
-            .ok_or_else(|| anyhow::anyhow!("no bucket exists"))?
+        let objects = resp[0]
             .contents
-            .into_iter()
+            .iter()
             .filter_map(|x| x.key.split('/').last().map(ToString::to_string))
             .collect();
 
@@ -193,7 +189,6 @@ impl StorageClient for StorageClientImpl {
     async fn remove_storage(&self, stack_id: StackID, storage_name: &str) -> Result<()> {
         // remove from manifest
         let path = format!("{METADATA_PREFIX}/{stack_id}/{storage_name}");
-        self.bucket.put_object_stream(&mut &b""[..], &path).await?;
         self.bucket.delete_object(path).await?;
 
         // remove data
@@ -231,6 +226,9 @@ impl StorageClient for StorageClientImpl {
         key: &str,
         reader: &mut (dyn AsyncRead + Send + Sync + Unpin),
     ) -> Result<()> {
+        if !self.contains_storage(stack_id, storage_name).await? {
+            self.add_storage(stack_id, storage_name).await?
+        }
         let mut wrapper = AsyncReaderWrapper { reader };
         let path = Self::create_path(stack_id, storage_name, key);
 
@@ -351,14 +349,14 @@ mod test {
                 port: 9015,
             },
         };
-        let interanl_conf = InternalStorageConfig {
+        let internal_conf = InternalStorageConfig {
             metadata_tikv_endpoints: vec![],
             object_storage_tikv_endpoints: vec![],
             storage: storage_info,
         };
         let conf = StorageConfig {
             external: None,
-            internal: Some(interanl_conf),
+            internal: Some(internal_conf),
         };
         start(&conf).await
     }
