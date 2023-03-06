@@ -12,6 +12,7 @@ use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
+use std::ops::Deref;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr},
@@ -20,6 +21,57 @@ use std::{
     process::{self, Stdio},
 };
 use tokio::{fs::File, io::AsyncWriteExt};
+
+use mu_db::{DbConfig, DbManager};
+
+pub struct DbManagerWithTikv {
+    pub tikv: Box<dyn TikvRunner>,
+    db_manager: Box<dyn DbManager>,
+}
+
+impl DbManagerWithTikv {
+    pub async fn stop(&self) -> anyhow::Result<()> {
+        self.tikv.stop().await
+    }
+}
+
+impl Deref for DbManagerWithTikv {
+    type Target = Box<dyn DbManager>;
+    fn deref(&self) -> &Self::Target {
+        &self.db_manager
+    }
+}
+
+pub async fn new_with_embedded_cluster(
+    node_address: TcpPortAddress,
+    known_node_config: Vec<RemoteNode>,
+    config: TikvRunnerConfig,
+) -> anyhow::Result<DbManagerWithTikv> {
+    let tikv = start(node_address, known_node_config, config.clone())
+        .await
+        .unwrap();
+
+    let db_config = DbConfig {
+        pd_addresses: vec![config.pd.advertise_client_url()],
+    };
+
+    let inner = mu_db::start(db_config).await.unwrap();
+
+    Ok(DbManagerWithTikv {
+        tikv,
+        db_manager: inner,
+    })
+}
+
+pub async fn new_with_external_cluster(
+    endpoints: Vec<TcpPortAddress>,
+) -> anyhow::Result<Box<dyn DbManager>> {
+    let db_config = DbConfig {
+        pd_addresses: endpoints,
+    };
+
+    mu_db::start(db_config).await
+}
 
 #[derive(RustEmbed)]
 #[folder = "assets"]
