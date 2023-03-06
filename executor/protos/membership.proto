@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package mu_executor.gossip;
+
+import "google/protobuf/timestamp.proto";
+
+message IPAddress {
+    oneof address {
+        bytes ipv4 = 1;
+        bytes ipv6 = 2;
+    }
+}
+
+message NodeAddress {
+    IPAddress ip = 1;
+    uint32 port = 2;
+}
+
+message Generation {
+    uint64 upper = 1;
+    fixed64 lower = 2;
+}
+
+message StackID {
+    oneof id {
+        bytes solana = 1;
+    }
+}
+
+enum NodeState {
+    DEAD = 0;
+    ALIVE = 1;
+}
+
+message NodeStatus {
+    uint32 version = 1;
+    Generation generation = 2;
+    bytes region_id = 3;
+    google.protobuf.Timestamp last_update = 4;
+    NodeState state = 5;
+    repeated StackID deployed_stacks = 6;
+}

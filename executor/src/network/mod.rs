@@ -9,14 +9,14 @@ use serde::{Deserialize, Serialize};
 use stable_hash::{FieldAddress, StableHash};
 
 pub mod connection_manager;
-pub mod gossip;
+pub mod membership;
 pub mod rpc_handler;
 
 pub type ConnectionID = u32;
 
 /// A node in the network.
 /// Assumed to run all services (executor, gateway, DB, etc.) for now.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct NodeAddress {
     pub address: IpAddr,
     pub port: u16,

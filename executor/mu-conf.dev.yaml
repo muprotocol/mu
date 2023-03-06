@@ -1,6 +1,10 @@
 log:
   level: info
   filters:
+    - module: tikv_client_common
+      level: warn
+    - module: tikv_client
+      level: warn
     - module: quinn::connection
       level: off
     - module: wasmer_compiler_cranelift::translator::func_translator
