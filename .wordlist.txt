@@ -6,6 +6,7 @@ blockhash
 Borsh
 bufread
 chrono
+CICD
 clippy
 clonable
 codegen
