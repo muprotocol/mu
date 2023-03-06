@@ -489,7 +489,7 @@ mod mock_db {
 mod mock_storage {
     use async_trait::async_trait;
     use mu_stack::StackID;
-    use mu_storage::{Object, StorageClient, StorageManager};
+    use mu_storage::{DeleteStorage, Object, StorageClient, StorageManager};
     use tokio::io::{AsyncRead, AsyncWrite};
     #[derive(Clone)]
     pub struct EmptyStorageManager;
@@ -510,6 +510,34 @@ mod mock_storage {
 
     #[async_trait]
     impl StorageClient for EmptyStorageClient {
+        async fn update_stack_storages(
+            &self,
+            _stack_id: StackID,
+            _storage_delete_pairs: Vec<(&str, DeleteStorage)>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn storage_list(&self, _stack_id: StackID) -> anyhow::Result<Vec<String>> {
+            Ok(vec![])
+        }
+
+        async fn contains_storage(
+            &self,
+            _stack_id: StackID,
+            _storage_name: &str,
+        ) -> anyhow::Result<bool> {
+            Ok(false)
+        }
+
+        async fn remove_storage(
+            &self,
+            _stack_id: StackID,
+            _storage_name: &str,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
         async fn get(
             &self,
             _stack_id: StackID,

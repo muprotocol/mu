@@ -22,12 +22,14 @@ pub trait StorageClient: Send + Sync + Clone {
     async fn update_stack_storages(
         &self,
         stack_id: StackID,
-        table_action_tuples: Vec<(&str, DeleteStorage)>,
+        storage_delete_pairs: Vec<(&str, DeleteStorage)>,
     ) -> Result<()>;
 
-    async fn get_storage_list(&self, stack_id: StackID) -> Result<Vec<String>>;
+    async fn storage_list(&self, stack_id: StackID) -> Result<Vec<String>>;
 
     async fn contains_storage(&self, stack_id: StackID, storage_name: &str) -> Result<bool>;
+
+    async fn remove_storage(&self, stack_id: StackID, storage_name: &str) -> Result<()>;
 
     async fn get(
         &self,
@@ -134,6 +136,12 @@ impl StorageClientImpl {
             size: object.size,
         }
     }
+
+    async fn add_storage(&self, stack_id: StackID, name: &str) -> Result<()> {
+        let path = format!("{METADATA_PREFIX}/{stack_id}/{name}");
+        self.bucket.put_object_stream(&mut &b""[..], path).await?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -143,22 +151,21 @@ impl StorageClient for StorageClientImpl {
         stack_id: StackID,
         storage_delete_pairs: Vec<(&str, DeleteStorage)>,
     ) -> Result<()> {
-        let existing_storages = self.get_storage_list(stack_id).await?;
+        let existing_storages = self.storage_list(stack_id).await?;
 
         for (storage_name, is_delete) in storage_delete_pairs {
             let storage_name = storage_name.to_string();
-            let path = || format!("{METADATA_PREFIX}/{stack_id}/{storage_name}");
             if !existing_storages.contains(&storage_name) && !*is_delete {
-                self.bucket.put_object_stream(&mut &b""[..], path()).await?;
+                self.add_storage(stack_id, &storage_name).await?;
             } else if existing_storages.contains(&storage_name) && *is_delete {
-                self.bucket.delete_object(path()).await?;
+                self.remove_storage(stack_id, &storage_name).await?;
             }
         }
 
         Ok(())
     }
 
-    async fn get_storage_list(&self, stack_id: StackID) -> Result<Vec<String>> {
+    async fn storage_list(&self, stack_id: StackID) -> Result<Vec<String>> {
         let prefix = format!("{METADATA_PREFIX}/{stack_id}/");
 
         let mut resp = self.bucket.list(prefix, None).await?;
@@ -178,9 +185,30 @@ impl StorageClient for StorageClientImpl {
 
     async fn contains_storage(&self, stack_id: StackID, storage_name: &str) -> Result<bool> {
         Ok(self
-            .get_storage_list(stack_id)
+            .storage_list(stack_id)
             .await?
             .contains(&storage_name.into()))
+    }
+
+    async fn remove_storage(&self, stack_id: StackID, storage_name: &str) -> Result<()> {
+        // remove from manifest
+        let path = format!("{METADATA_PREFIX}/{stack_id}/{storage_name}");
+        self.bucket.put_object_stream(&mut &b""[..], &path).await?;
+        self.bucket.delete_object(path).await?;
+
+        // remove data
+        let keys = self
+            .list(stack_id, storage_name, "")
+            .await?
+            .into_iter()
+            .map(|o| o.key);
+
+        for key in keys {
+            let path = Self::create_path(stack_id, storage_name, &key);
+            self.bucket.delete_object(path).await?;
+        }
+
+        Ok(())
     }
 
     async fn get(
@@ -354,7 +382,7 @@ mod test {
             .await
             .unwrap();
 
-        let x = client.get_storage_list(STACK_ID).await.unwrap();
+        let x = client.storage_list(STACK_ID).await.unwrap();
 
         assert_eq!(insertion_storages, x);
     }

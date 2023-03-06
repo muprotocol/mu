@@ -248,6 +248,7 @@ pub async fn run() -> Result<()> {
         runtime.clone(),
         gateway_manager.clone(),
         database_manager.clone(),
+        storage_manager.clone(),
     );
 
     *scheduler_ref.write().await = Some(scheduler.clone());

@@ -12,6 +12,7 @@ use mu_common::replace_with::{ReplaceWith, ReplaceWithDefault};
 use mu_db::DbManager;
 use mu_gateway::GatewayManager;
 use mu_runtime::Runtime;
+use mu_storage::StorageManager;
 use num::BigInt;
 use serde::Deserialize;
 
@@ -208,6 +209,7 @@ struct SchedulerState {
     runtime: Box<dyn Runtime>,
     gateway_manager: Box<dyn GatewayManager>,
     database_manager: Box<dyn DbManager>,
+    storage_manager: Box<dyn StorageManager>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -220,6 +222,7 @@ pub fn start(
     runtime: Box<dyn Runtime>,
     gateway_manager: Box<dyn GatewayManager>,
     database_manager: Box<dyn DbManager>,
+    storage_manager: Box<dyn StorageManager>,
 ) -> Box<dyn Scheduler> {
     let tick_interval = *config.tick_interval;
 
@@ -238,6 +241,7 @@ pub fn start(
             runtime,
             gateway_manager,
             database_manager,
+            storage_manager,
         },
         10000,
     );
@@ -500,6 +504,7 @@ async fn step(
                                     mode,
                                     state.runtime.as_ref(),
                                     state.database_manager.as_ref(),
+                                    state.storage_manager.as_ref(),
                                     &state.notification_channel,
                                 )
                                 .await
@@ -580,6 +585,7 @@ async fn tick(state: &mut SchedulerState) {
                                 &state.notification_channel,
                                 state.runtime.as_ref(),
                                 state.database_manager.as_ref(),
+                                state.storage_manager.as_ref(),
                             )
                             .await
                             {
@@ -627,6 +633,7 @@ async fn tick(state: &mut SchedulerState) {
                             StackRemovalMode::Temporary,
                             state.runtime.as_ref(),
                             state.database_manager.as_ref(),
+                            state.storage_manager.as_ref(),
                             &state.notification_channel,
                         )
                         .await
@@ -659,6 +666,7 @@ async fn tick(state: &mut SchedulerState) {
                             StackRemovalMode::Temporary,
                             state.runtime.as_ref(),
                             state.database_manager.as_ref(),
+                            state.storage_manager.as_ref(),
                             &state.notification_channel,
                         )
                         .await
@@ -677,6 +685,7 @@ async fn tick(state: &mut SchedulerState) {
                             &state.notification_channel,
                             state.runtime.as_ref(),
                             state.database_manager.as_ref(),
+                            state.storage_manager.as_ref(),
                         )
                         .await
                         {
@@ -712,6 +721,7 @@ async fn tick(state: &mut SchedulerState) {
                                 &state.notification_channel,
                                 state.runtime.as_ref(),
                                 state.database_manager.as_ref(),
+                                state.storage_manager.as_ref(),
                             )
                             .await
                             {
@@ -790,8 +800,9 @@ async fn deploy_stack(
     notification_channel: &NotificationChannel<SchedulerNotification>,
     runtime: &dyn Runtime,
     database_manager: &dyn DbManager,
+    storage_manager: &dyn StorageManager,
 ) -> Result<()> {
-    match super::deploy::deploy(id, stack, runtime, database_manager).await {
+    match super::deploy::deploy(id, stack, runtime, database_manager, storage_manager).await {
         Err(f) => {
             notification_channel.send(SchedulerNotification::FailedToDeployStack(id));
             Err(f.into())
@@ -809,9 +820,10 @@ async fn undeploy_stack(
     mode: StackRemovalMode,
     runtime: &dyn Runtime,
     db_manager: &dyn DbManager,
+    storage_manager: &dyn StorageManager,
     notification_channel: &NotificationChannel<SchedulerNotification>,
 ) -> Result<()> {
-    super::deploy::undeploy_stack(id, mode, runtime, db_manager).await?;
+    super::deploy::undeploy_stack(id, mode, runtime, db_manager, storage_manager).await?;
     notification_channel.send(SchedulerNotification::StackUndeployed(id));
     Ok(())
 }
