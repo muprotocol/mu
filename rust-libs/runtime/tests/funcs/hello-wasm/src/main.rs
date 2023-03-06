@@ -32,4 +32,15 @@ mod hello_wasm {
             .reduce(|i, j| format!("{i},{j}"))
             .unwrap_or("".into())
     }
+
+    #[mu_function]
+    fn long_running<'a>(ctx: &'a mut MuContext) -> String {
+        for i in 0..1_000_000_000u64 {
+            if i.is_power_of_two() {
+                ctx.log(format!("{i} is power of 2"), LogLevel::Info)
+                    .unwrap();
+            }
+        }
+        "Hey!".into()
+    }
 }
