@@ -110,7 +110,6 @@ SUBDIR
 sysvar
 tailcall
 tera
-terminated
 thiserror
 tikv
 Tikv
