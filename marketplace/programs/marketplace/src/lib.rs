@@ -107,6 +107,7 @@ pub mod marketplace {
         base_url: String,
         rates: ServiceRates,
         min_escrow_balance: u64,
+        max_giga_instructions_per_call: u32,
     ) -> Result<()> {
         if !ctx.accounts.provider.authorized {
             return Err(Error::ProviderNotAuthorized.into());
@@ -118,6 +119,7 @@ pub mod marketplace {
             region_num,
             rates,
             min_escrow_balance,
+            max_giga_instructions_per_call,
             provider: ctx.accounts.provider.key(),
             bump: *ctx.bumps.get("region").unwrap(),
         });
@@ -497,6 +499,7 @@ pub struct ProviderRegion {
     pub region_num: u32,
     pub rates: ServiceRates,
     pub min_escrow_balance: u64,
+    pub max_giga_instructions_per_call: u32,
     pub bump: u8,
     pub name: String,
     pub base_url: String,
@@ -510,7 +513,7 @@ pub struct CreateRegion<'info> {
 
     #[account(
         init,
-        space = 8 + 32 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 8 + 1 + 4 + name.as_bytes().len() + 4 + base_url.as_bytes().len(),
+        space = 8 + 32 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 8 + 4 + 1 + 4 + name.as_bytes().len() + 4 + base_url.as_bytes().len(),
         payer = owner,
         seeds = [b"region", owner.key().as_ref(), region_num.to_le_bytes().as_ref()],
         bump

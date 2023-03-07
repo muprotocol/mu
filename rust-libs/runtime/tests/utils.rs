@@ -41,7 +41,7 @@ macro_rules! create_config {
                 RuntimeConfig {
                     cache_path: PathBuf::from(""), // We will replace this in Fixture with actual temp dir.
                     include_function_logs: $logs,
-                    giga_instructions_limit: $limit,
+                    max_giga_instructions_per_call: $limit,
                 }
             }
         }
@@ -102,21 +102,19 @@ pub async fn read_wasm_functions<'a>(
 }
 
 pub mod fixture {
-    use std::{
-        marker::PhantomData,
-        sync::atomic::{AtomicBool, Ordering},
-    };
+    use std::{marker::PhantomData, sync::Mutex};
 
     use super::*;
     use mu_common::serde_support::IpOrHostname;
     use test_context::{AsyncTestContext, TestContext};
 
-    pub static DID_INSTALL_WASM32_TARGET_RUN: AtomicBool = AtomicBool::new(false);
-    pub static DID_BUILD_TEST_FUNCS_FIXTURE_RUN: AtomicBool = AtomicBool::new(false);
-    pub static DID_IITIALIZE_LOG_RUN: AtomicBool = AtomicBool::new(false);
+    pub static DID_INSTALL_WASM32_TARGET_RUN: Mutex<bool> = Mutex::new(false);
+    pub static DID_BUILD_TEST_FUNCS_FIXTURE_RUN: Mutex<bool> = Mutex::new(false);
+    pub static DID_IITIALIZE_LOG_RUN: Mutex<bool> = Mutex::new(false);
 
     fn install_wasm32_target() {
-        if !DID_INSTALL_WASM32_TARGET_RUN.load(Ordering::Relaxed) {
+        let mut value = DID_INSTALL_WASM32_TARGET_RUN.lock().unwrap();
+        if *value {
             println!("Installing wasm32-wasi target.");
             Command::new("rustup")
                 .args(["target", "add", "wasm32-wasi"])
@@ -124,12 +122,13 @@ pub mod fixture {
                 .unwrap()
                 .wait()
                 .unwrap();
-            DID_INSTALL_WASM32_TARGET_RUN.store(true, Ordering::Relaxed);
+            *value = true;
         }
     }
 
     fn build_test_funcs() {
-        if !DID_BUILD_TEST_FUNCS_FIXTURE_RUN.load(Ordering::Relaxed) {
+        let mut value = DID_BUILD_TEST_FUNCS_FIXTURE_RUN.lock().unwrap();
+        if *value {
             println!("Building test functions.");
             for name in TEST_PROJECTS {
                 let project_dir = format!("tests/funcs/{name}");
@@ -142,15 +141,16 @@ pub mod fixture {
                     .unwrap()
                     .wait()
                     .unwrap();
-                DID_BUILD_TEST_FUNCS_FIXTURE_RUN.store(true, Ordering::Relaxed);
+                *value = true;
             }
         }
     }
 
     fn setup_logger() {
-        if !DID_IITIALIZE_LOG_RUN.load(Ordering::Relaxed) {
+        let mut value = DID_IITIALIZE_LOG_RUN.lock().unwrap();
+        if *value {
             env_logger::init();
-            DID_IITIALIZE_LOG_RUN.store(true, Ordering::Relaxed);
+            *value = true;
         }
     }
 

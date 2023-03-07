@@ -30,9 +30,11 @@ pub async fn start(
     let mut cache_path = project_root.clone();
     cache_path.push(CACHE_SUBDIR);
 
+    // Make this configurable, and show the config to user when running local run
     let runtime_config = RuntimeConfig {
         cache_path,
         include_function_logs: true,
+        max_giga_instructions_per_call: None,
     };
 
     let db_manager = super::key_value_table::start(project_root).await?;

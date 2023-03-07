@@ -40,6 +40,9 @@ pub struct CreateArgs {
     )]
     function_mb_tera_instructions: u64,
 
+    #[arg(long, help = "The maximum billion instructions per function call")]
+    max_giga_instructions_per_call: u32,
+
     #[arg(long, help = "Database GB per month")]
     db_gigabyte_months: u64,
 
@@ -107,6 +110,7 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
         name: args.name,
         base_url: url.to_string(),
         min_escrow_balance,
+        max_giga_instructions_per_call: args.max_giga_instructions_per_call,
         rates,
     };
 

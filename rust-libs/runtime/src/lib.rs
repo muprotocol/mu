@@ -155,7 +155,7 @@ impl RuntimeState {
                 .ok_or_else(|| Error::Internal(anyhow!("cache key can not be found")))?
                 .to_owned();
 
-            let store = create_store(*memory_limit, self.config.giga_instructions_limit)?;
+            let store = create_store(*memory_limit, self.config.max_giga_instructions_per_call)?;
 
             match unsafe { self.cache.load(&store, *hash) } {
                 Ok(module) => Ok((store, module)),
@@ -208,7 +208,7 @@ impl RuntimeState {
 
             let store = create_store(
                 assembly_definition.memory_limit,
-                self.config.giga_instructions_limit,
+                self.config.max_giga_instructions_per_call,
             )?;
 
             if let Ok(module) = Module::from_binary(&store, &assembly_definition.source) {
@@ -252,7 +252,7 @@ impl RuntimeState {
             store,
             module,
             definition.memory_limit,
-            self.config.giga_instructions_limit,
+            self.config.max_giga_instructions_per_call,
             self.config.include_function_logs,
             self.db_manager.clone(),
         )
