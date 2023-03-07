@@ -1113,7 +1113,7 @@ async fn can_send_http_requests_with_http_client(fixture: &mut RuntimeWithoutDB)
 
 #[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn functions_will_be_termianted_when_there_is_timeout(fixture: &mut RuntimeWithoutDB) {
+async fn functions_will_be_terminated_when_there_is_timeout(fixture: &mut RuntimeWithoutDB) {
     use mu_runtime::error::*;
 
     let projects = create_and_add_projects(
