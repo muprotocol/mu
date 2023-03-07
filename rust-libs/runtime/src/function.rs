@@ -5,16 +5,16 @@ use super::{
     pipe::Pipe,
     types::{FunctionHandle, FunctionIO},
 };
-use log::debug;
+
 use wasmer::{Instance, Module, Store};
-use wasmer_middlewares::metering::get_remaining_points;
+use wasmer_middlewares::metering::{get_remaining_points, MeteringPoints};
 use wasmer_wasi::WasiState;
 
-//TODO: configure `Builder` of tokio for huge blocking tasks
 pub fn start(
     mut store: Store,
     module: &Module,
     envs: HashMap<String, String>,
+    giga_instructions_limit: Option<u32>,
 ) -> Result<FunctionHandle> {
     //TODO: Check wasi version specified in this module and if we can run it!
 
@@ -72,7 +72,10 @@ pub fn start(
                     Error::FunctionRuntimeError(
                         FunctionRuntimeError::FunctionInitializationFailed(e),
                     ),
-                    get_remaining_points(&mut store, &instance),
+                    points_to_instruction_count(
+                        get_remaining_points(&mut store, &instance),
+                        giga_instructions_limit,
+                    ),
                 )
             })?;
         }
@@ -80,25 +83,35 @@ pub fn start(
         let start = instance.exports.get_function("_start").map_err(|e| {
             (
                 Error::FunctionRuntimeError(FunctionRuntimeError::MissingStartFunction(e)),
-                get_remaining_points(&mut store, &instance),
+                points_to_instruction_count(
+                    get_remaining_points(&mut store, &instance),
+                    giga_instructions_limit,
+                ),
             )
         })?;
 
-        let result = start.call(&mut store, &[]);
+        let result = start
+            .call(&mut store, &[])
+            .map(|_| get_remaining_points(&mut store, &instance))
+            .map_err(|e| (e, get_remaining_points(&mut store, &instance)));
 
         stdin_clone.close();
         stdout_clone.close();
         stderr_clone.close();
 
-        result
-            .map(|_| get_remaining_points(&mut store, &instance))
-            .map_err(|e| {
-                debug!("Function didn't terminated cleanly: {e:#?}");
-                (
-                    Error::FunctionDidntTerminateCleanly,
-                    get_remaining_points(&mut store, &instance),
-                )
-            })
+        match (result, giga_instructions_limit) {
+            (Ok(points), limit) => Ok(points_to_instruction_count(points, limit)),
+
+            (Err((_, MeteringPoints::Exhausted)), limit) => Err((
+                Error::Timeout,
+                points_to_instruction_count(MeteringPoints::Exhausted, limit),
+            )),
+
+            (Err((_, MeteringPoints::Remaining(points))), limit) => Err((
+                Error::FunctionDidntTerminateCleanly,
+                points_to_instruction_count(MeteringPoints::Remaining(points), limit),
+            )),
+        }
     });
 
     Ok(FunctionHandle::new(
@@ -109,4 +122,18 @@ pub fn start(
             stderr,
         },
     ))
+}
+
+#[inline]
+fn points_to_instruction_count(
+    points: MeteringPoints,
+    giga_instructions_limit: Option<u32>,
+) -> u64 {
+    let limit = giga_instructions_limit.map(|p| p as u64 * 1_000_000_000u64);
+    match (points, limit) {
+        (MeteringPoints::Remaining(r), None) => u64::MAX - r,
+        (MeteringPoints::Remaining(r), Some(limit)) => limit - r,
+        (MeteringPoints::Exhausted, None) => u64::MAX,
+        (MeteringPoints::Exhausted, Some(limit)) => limit,
+    }
 }

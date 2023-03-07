@@ -252,6 +252,7 @@ impl RuntimeState {
             store,
             module,
             definition.memory_limit,
+            self.config.giga_instructions_limit,
             self.config.include_function_logs,
             self.db_manager.clone(),
         )

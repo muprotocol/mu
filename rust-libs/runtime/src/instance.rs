@@ -7,7 +7,7 @@ use std::{borrow::Cow, collections::HashMap, future::Future};
 use crate::{
     error::{Error, FunctionRuntimeError, Result},
     function,
-    instance::utils::{create_usage, metering_point_to_instructions_count},
+    instance::utils::create_usage,
     types::{ExecuteFunctionRequest, ExecuteFunctionResponse, FunctionHandle, InstanceID},
     Usage,
 };
@@ -25,7 +25,7 @@ use wasmer::{Module, Store};
 
 const FUNCTION_LOG_TARGET: &str = "mu_function";
 
-pub type ResultWithUsage<T> = Result<T, (Error, Usage)>;
+type ResultWithUsage<T> = Result<T, (Error, Usage)>;
 
 pub(crate) struct Instance {
     id: InstanceID,
@@ -53,12 +53,13 @@ impl Instance {
         store: Store,
         module: Module,
         memory_limit: byte_unit::Byte,
+        giga_instructions_limit: Option<u32>,
         include_logs: bool,
         db_manager: Box<dyn DbManager>,
     ) -> Result<Self> {
         trace!("starting instance {}", id);
 
-        let handle = function::start(store, &module, envs)?;
+        let handle = function::start(store, &module, envs, giga_instructions_limit)?;
 
         Ok(Instance {
             id,
@@ -115,19 +116,19 @@ impl Instance {
         tokio::runtime::Handle::current()
             .block_on(self.handle.join_handle)
             .map(move |metering_points| {
-                let usage = |m| {
+                let usage = |instructions_count| {
                     create_usage(
                         self.database_read_count,
                         self.database_write_count,
-                        metering_point_to_instructions_count(m),
+                        instructions_count,
                         self.memory_limit,
                     )
                 };
                 trace!("instance {} finished", &self.id);
 
                 match metering_points {
-                    Ok(m) => Ok(usage(&m)),
-                    Err((e, m)) => Err((e, usage(&m))),
+                    Ok(m) => Ok(usage(m)),
+                    Err((e, m)) => Err((e, usage(m))),
                 }
             })
             .map_err(|_| {

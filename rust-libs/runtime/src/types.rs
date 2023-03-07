@@ -12,7 +12,6 @@ use mailbox_processor::ReplyChannel;
 use serde::Deserialize;
 use std::{collections::HashMap, fmt::Display, marker::PhantomData, path::PathBuf};
 use tokio::task::JoinHandle;
-use wasmer_middlewares::metering::MeteringPoints;
 
 pub(super) type ExecuteFunctionRequest<'a> = musdk_common::incoming_message::ExecuteFunction<'a>;
 pub(super) type ExecuteFunctionResponse = musdk_common::outgoing_message::FunctionResult<'static>;
@@ -103,15 +102,12 @@ pub struct FunctionIO {
 
 #[derive(Debug)]
 pub struct FunctionHandle {
-    pub join_handle: JoinHandle<Result<MeteringPoints, (Error, MeteringPoints)>>,
+    pub join_handle: JoinHandle<Result<u64, (Error, u64)>>,
     pub io: FunctionIO,
 }
 
 impl FunctionHandle {
-    pub fn new(
-        join_handle: JoinHandle<Result<MeteringPoints, (Error, MeteringPoints)>>,
-        io: FunctionIO,
-    ) -> Self {
+    pub fn new(join_handle: JoinHandle<Result<u64, (Error, u64)>>, io: FunctionIO) -> Self {
         Self { join_handle, io }
     }
 

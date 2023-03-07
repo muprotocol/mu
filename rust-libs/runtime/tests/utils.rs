@@ -48,8 +48,7 @@ macro_rules! create_config {
     };
 }
 
-create_config!(NormalConfig, true, Some(10));
-create_config!(HardLimitConfig, true, Some(1));
+create_config!(NormalConfig, true, Some(1));
 
 #[derive(Debug)]
 pub struct Project<'a> {

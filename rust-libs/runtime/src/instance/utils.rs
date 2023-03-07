@@ -4,7 +4,7 @@ use crate::{memory::create_memory, Error, FunctionLoadingError, Result, Usage};
 
 use wasmer::{CompilerConfig, Store};
 use wasmer_compiler_llvm::LLVM;
-use wasmer_middlewares::{metering::MeteringPoints, Metering};
+use wasmer_middlewares::Metering;
 
 #[inline]
 pub fn create_store(
@@ -44,13 +44,5 @@ pub fn create_usage(
         db_weak_writes: db_write,
         function_instructions: instructions_count,
         memory_megabytes,
-    }
-}
-
-#[inline]
-pub fn metering_point_to_instructions_count(points: &MeteringPoints) -> u64 {
-    match points {
-        MeteringPoints::Exhausted => u64::MAX,
-        MeteringPoints::Remaining(p) => u64::MAX - p,
     }
 }

@@ -16,7 +16,6 @@ mod utils;
 
 type RuntimeWithoutDB = fixture::RuntimeFixtureWithoutDB<NormalConfig>;
 type RuntimeWithDB = fixture::RuntimeFixture<NormalConfig>;
-type HardLimitRuntimeWithoutDB = fixture::RuntimeFixtureWithoutDB<HardLimitConfig>;
 
 #[test_context(RuntimeWithoutDB)]
 #[tokio::test]
@@ -1112,11 +1111,9 @@ async fn can_send_http_requests_with_http_client(fixture: &mut RuntimeWithoutDB)
         .await;
 }
 
-#[test_context(HardLimitRuntimeWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn functions_will_be_termianted_when_there_is_timeout(
-    fixture: &mut HardLimitRuntimeWithoutDB,
-) {
+async fn functions_will_be_termianted_when_there_is_timeout(fixture: &mut RuntimeWithoutDB) {
     use mu_runtime::error::*;
 
     let projects = create_and_add_projects(
@@ -1133,7 +1130,7 @@ async fn functions_will_be_termianted_when_there_is_timeout(
         .invoke_function(projects[0].function_id(0).unwrap(), request)
         .await
     {
-        Err(Error::FunctionDidntTerminateCleanly) => (),
+        Err(Error::Timeout) => (),
         e => {
             trace!("{e:#?}");
             panic!("should fail to run");
