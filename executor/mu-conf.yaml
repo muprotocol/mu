@@ -26,6 +26,7 @@ initial_cluster:
 runtime:
   cache_path: runtime-cache
   include_function_logs: false
+  giga_instructions_limit: 10
 scheduler:
   tick_interval: 1s
 blockchain_monitor:
