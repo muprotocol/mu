@@ -18,3 +18,5 @@ dyn-clonable = "0.9"
 mu_stack = { path = "../mu_stack" }
 musdk-common = { path = "../../sdk/common" }
 serde = { version = "1", features = ["derive"] }
+base64 = "0.21.0"
+rand = { version = "0.8.5", features = ["min_const_gen"] }

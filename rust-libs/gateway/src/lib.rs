@@ -6,11 +6,16 @@ use actix_web::{
     body::BoxBody,
     dev::{HttpServiceFactory, ServerHandle},
     guard,
-    http::{self, StatusCode},
+    http::{
+        self,
+        header::{HeaderName, HeaderValue},
+        StatusCode,
+    },
     web, App, HttpRequest, HttpResponse, HttpServer, Resource, Responder,
 };
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use base64::engine::{general_purpose, Engine};
 use dyn_clonable::clonable;
 use log::error;
 use mailbox_processor::NotificationChannel;
@@ -410,8 +415,19 @@ where
 
     let method = actix_http_method_to_stack(request.method());
 
-    let Ok(headers) = request
-        .headers()
+    let headers = {
+        let mut hs = request.headers().to_owned();
+        if !hs.contains_key("x-correlation-id") {
+            let rand = rand::random::<[u8; 36]>();
+            let x_id = general_purpose::STANDARD.encode(rand);
+            let h_name = HeaderName::from_lowercase(b"x-correlation-id").unwrap();
+            let h_value = HeaderValue::from_str(&x_id).unwrap();
+            hs.append(h_name, h_value);
+        };
+        hs
+    };
+
+    let Ok(headers) = headers
         .iter()
         .map(|(k, v)| Ok(Header{name: Cow::Borrowed(k.as_str()), value: Cow::Borrowed(v.to_str()?)}))
         .collect::<Result<Vec<_>>>() else {

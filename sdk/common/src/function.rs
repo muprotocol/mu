@@ -26,4 +26,11 @@ impl<'a> Request<'a> {
             }
         })
     }
+
+    pub fn x_correlation_id(&self) -> Option<Cow<'a, str>> {
+        self.headers
+            .iter()
+            .find(|h| h.name.to_lowercase() == "x-correlation-id")
+            .map(|h| h.value.clone())
+    }
 }
