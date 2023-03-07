@@ -110,11 +110,11 @@ pub mod fixture {
 
     pub static DID_INSTALL_WASM32_TARGET_RUN: Mutex<bool> = Mutex::new(false);
     pub static DID_BUILD_TEST_FUNCS_FIXTURE_RUN: Mutex<bool> = Mutex::new(false);
-    pub static DID_IITIALIZE_LOG_RUN: Mutex<bool> = Mutex::new(false);
+    pub static DID_INITIALIZE_LOG_RUN: Mutex<bool> = Mutex::new(false);
 
     fn install_wasm32_target() {
         let mut value = DID_INSTALL_WASM32_TARGET_RUN.lock().unwrap();
-        if *value {
+        if !*value {
             println!("Installing wasm32-wasi target.");
             Command::new("rustup")
                 .args(["target", "add", "wasm32-wasi"])
@@ -128,7 +128,7 @@ pub mod fixture {
 
     fn build_test_funcs() {
         let mut value = DID_BUILD_TEST_FUNCS_FIXTURE_RUN.lock().unwrap();
-        if *value {
+        if !*value {
             println!("Building test functions.");
             for name in TEST_PROJECTS {
                 let project_dir = format!("tests/funcs/{name}");
@@ -147,8 +147,8 @@ pub mod fixture {
     }
 
     fn setup_logger() {
-        let mut value = DID_IITIALIZE_LOG_RUN.lock().unwrap();
-        if *value {
+        let mut value = DID_INITIALIZE_LOG_RUN.lock().unwrap();
+        if !*value {
             env_logger::init();
             *value = true;
         }
