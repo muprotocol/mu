@@ -34,7 +34,7 @@ pub async fn start(
     let runtime_config = RuntimeConfig {
         cache_path,
         include_function_logs: true,
-        max_giga_instructions_per_call: None,
+        max_giga_instructions_per_call: Some(1),
     };
 
     let db_manager = super::key_value_table::start(project_root).await?;

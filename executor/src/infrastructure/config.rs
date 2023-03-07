@@ -146,11 +146,11 @@ pub struct PartialRuntimeConfig {
 }
 
 impl PartialRuntimeConfig {
-    pub fn complete(self, giga_instructions_limit: Option<u32>) -> RuntimeConfig {
+    pub fn complete(self, max_giga_instructions_per_call: Option<u32>) -> RuntimeConfig {
         RuntimeConfig {
             cache_path: self.cache_path,
             include_function_logs: self.include_function_logs,
-            giga_instructions_limit,
+            max_giga_instructions_per_call,
         }
     }
 }

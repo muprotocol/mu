@@ -187,7 +187,7 @@ pub async fn run() -> Result<()> {
     .await?;
 
     let runtime_config =
-        partial_runtime_config.complete(region_config.runtime_giga_instructions_limit);
+        partial_runtime_config.complete(region_config.max_giga_instructions_per_call);
     let (runtime, mut runtime_notification_receiver) =
         mu_runtime::start(database_manager.clone(), runtime_config)
             .await

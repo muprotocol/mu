@@ -415,7 +415,7 @@ pub async fn start(
 
     let region_config = RegionConfig {
         id: region_pda.to_bytes().into(),
-        runtime_giga_instructions_limit: Some(region.giga_instructions_limit),
+        max_giga_instructions_per_call: Some(region.max_giga_instructions_per_call),
     };
 
     debug!("Initialization complete");
@@ -916,7 +916,7 @@ fn report_usage(
 
 pub struct RegionConfig {
     pub id: Vec<u8>,
-    pub runtime_giga_instructions_limit: Option<u32>,
+    pub max_giga_instructions_per_call: Option<u32>,
 }
 
 fn generate_seed() -> u128 {
