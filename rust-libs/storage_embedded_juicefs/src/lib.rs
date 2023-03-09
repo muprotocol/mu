@@ -233,7 +233,7 @@ pub async fn start(
             profile: None,
         },
         region: Region {
-            region: "us-east1".to_owned(),
+            region: "us-east-1".to_owned(),
             endpoint: config.storage.endpoint.to_string(),
         },
         bucket_name: BUCKET_NAME.to_string(),
