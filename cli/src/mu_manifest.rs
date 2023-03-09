@@ -7,7 +7,9 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 use beau_collector::BeauCollector;
-use mu_stack::{AssemblyRuntime, Gateway, KeyValueTable, Stack, StackID};
+use mu_stack::{
+    stack_id_as_string_serialization, AssemblyRuntime, Gateway, NameAndDelete, Stack, StackID,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::template::Language;
@@ -21,8 +23,8 @@ pub struct MuManifest {
     name: String,
     version: String,
     #[serde(
-        serialize_with = "custom_stack_id_serialization::serialize",
-        deserialize_with = "custom_stack_id_serialization::deserialize"
+        serialize_with = "stack_id_as_string_serialization::serialize",
+        deserialize_with = "stack_id_as_string_serialization::deserialize"
     )]
     pub dev_id: StackID,
     services: Vec<Service>,
@@ -79,7 +81,7 @@ impl MuManifest {
                         let binary = match generation_mode {
                             ArtifactGenerationMode::LocalRun => wasm_module_path,
                             ArtifactGenerationMode::Publish => {
-                                crate::apipload_function(wasm_module_path)
+                                todo!()
                             }
                         };
 
@@ -113,7 +115,7 @@ impl MuManifest {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum Service {
-    KeyValueTable(KeyValueTable),
+    KeyValueTable(NameAndDelete),
     Gateway(Gateway),
     Function(Function),
 }
@@ -237,30 +239,6 @@ impl Default for ArtifactGenerationMode {
         Self::LocalRun
     }
 }
-
-mod custom_stack_id_serialization {
-    use std::str::FromStr;
-
-    use mu_stack::StackID;
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(item: &StackID, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let s = item.to_string();
-        serializer.serialize_str(&s)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<StackID, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        StackID::from_str(&s).map_err(|_| serde::de::Error::custom("invalid StackID"))
-    }
-}
-
 mod custom_byte_unit_serialization {
     use serde::Serializer;
 

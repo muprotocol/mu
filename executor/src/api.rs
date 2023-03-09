@@ -8,17 +8,14 @@ use actix_web::{
     HttpRequest,
 };
 use anyhow::{bail, Context, Result};
+use api_common::{Request, Subject, PUBLIC_KEY_HEADER_NAME, SIGNATURE_HEADER_NAME};
 use log::error;
 use mu_gateway::HttpServiceFactoryBuilder;
 use mu_stack::StackID;
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 use solana_sdk::pubkey::Pubkey;
 
 use crate::stack::{request_signer_cache::RequestSignerCache, ApiRequestSigner};
-
-const PUBLIC_KEY_HEADER_NAME: &str = "X-MU-PUBLIC-KEY";
-const SIGNATURE_HEADER_NAME: &str = "X-MU-SIGNATURE";
 
 pub fn service_factory() -> impl HttpServiceFactoryBuilder {
     || {
@@ -40,26 +37,6 @@ pub struct DependencyAccessor {
     pub request_signer_cache: Box<dyn RequestSignerCache>,
 }
 
-#[derive(Deserialize)]
-enum Subject {
-    User(Pubkey),
-    Stack(StackID),
-}
-
-//TODO: refactor request and response into concrete type
-
-#[derive(Deserialize)]
-pub struct ApiRequestTemplate {
-    request: String,
-    subject: Subject,
-    params: serde_json::Value,
-}
-
-#[derive(Serialize)]
-pub struct ApiResponseTemplate {
-    params: serde_json::Value,
-}
-
 async fn handle_request(
     request: HttpRequest,
     payload: String,
@@ -72,11 +49,11 @@ async fn handle_request(
     ) -> Result<(Json<serde_json::Value>, http::StatusCode)> {
         let headers = request.headers();
         let pubkey = verify_signature(headers, &payload)?;
-        let request = serde_json::from_str::<ApiRequestTemplate>(payload.as_str())?;
+        let request = serde_json::from_str::<Request>(payload.as_str())?;
 
         verify_subject_authority(&request.subject, &pubkey, &dependency_accessor).await?;
 
-        match execute_request(stack_id, request) {
+        match execute_request(request) {
             Ok(response) => Ok((Json(response), http::StatusCode::OK)),
             Err((response, status_code)) => Ok((Json(response), status_code)),
         }
@@ -111,8 +88,7 @@ async fn verify_subject_authority(
     match subject {
         Subject::User(user_pubkey) => todo!(), // Check user deposit account
         Subject::Stack(stack_id) => {
-            let stack_id = request.stack.parse::<StackID>()?;
-            verify_stack_ownership(&stack_id, &pubkey, &dependency_accessor).await
+            verify_stack_ownership(stack_id, &pubkey, &dependency_accessor).await
         }
     }
 }
@@ -144,10 +120,16 @@ fn bad_request(description: &'static str) -> ExecutionError {
     (json!(description), http::StatusCode::BAD_REQUEST)
 }
 
-fn execute_request(_stack_id: StackID, request: ApiRequestTemplate) -> ExecutionResult {
-    match request.request.as_str() {
-        "echo" => execute_echo(request.params),
-        "upload_function" => execute_upload_function(request.params),
+fn execute_request(request: Request) -> ExecutionResult {
+    let Request {
+        request,
+        subject,
+        params,
+    } = request;
+
+    match request.as_str() {
+        "echo" => execute_echo(params),
+        "upload_function" => upload_function::execute(subject, params),
         _ => Err(bad_request("unknown request")),
     }
 }

@@ -26,7 +26,6 @@ env_logger = "0.10"
 config = { version = "0.13", features = ["yaml"], default-features = false }
 async-trait = "0.1"
 bytes = "1.2"
-mailbox_processor = { path = "../rust-libs/mailbox_processor" }
 quinn = "0.8"
 rustls = { version = "0.20", features = ["dangerous_configuration"] }
 rcgen = "0.9"
@@ -39,8 +38,6 @@ sled = "0.34"
 assert_matches = "1.5"
 itertools = "0.10"
 validator = { version = "0.16", features = ["derive"] }
-mu_stack = { path = "../rust-libs/mu_stack" }
-marketplace = { path = "../marketplace/programs/marketplace" }
 num = "0.4"
 base64 = "0.13"
 base58 = "0.2"
@@ -63,6 +60,10 @@ mu-runtime = { path = "../rust-libs/runtime" }
 mu-gateway = { path = "../rust-libs/gateway" }
 mu-db = { path = "../rust-libs/db" }
 mu-storage = { path = "../rust-libs/storage" }
+mu_stack = { path = "../rust-libs/mu_stack" }
+marketplace = { path = "../marketplace/programs/marketplace" }
+mailbox_processor = { path = "../rust-libs/mailbox_processor" }
+api_common = { path = "../rust-libs/api_common", default_features = false }
 
 [dev-dependencies]
 test-log = "0.2"
