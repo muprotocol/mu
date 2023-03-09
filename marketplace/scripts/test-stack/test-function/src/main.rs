@@ -32,4 +32,21 @@ mod functions {
         let _ = ctx.log(&format!("Received request from {name}"), LogLevel::Info);
         format!("Hello, {name}!").into_bytes()
     }
+
+    #[mu_function]
+    fn upload<'a>(ctx: &'a mut MuContext, data: Vec<u8>) {
+        let mut storage = ctx.storage();
+
+        storage.put("test_storage", "test_file.txt", &data).unwrap();
+    }
+
+    #[mu_function]
+    fn download<'a>(ctx: &'a mut MuContext) -> Vec<u8> {
+        let mut storage = ctx.storage();
+
+        storage
+            .get("test_storage", "test_file.txt")
+            .unwrap()
+            .into_owned()
+    }
 }

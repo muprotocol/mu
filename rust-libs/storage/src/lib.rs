@@ -66,8 +66,8 @@ struct StorageClientImpl {
 // used struct instead of enum only for better representation in config file
 #[derive(Deserialize)]
 pub struct StorageConfig {
-    external: Option<LiveStorageConfig>,
-    internal: Option<InternalStorageConfig>,
+    pub external: Option<LiveStorageConfig>,
+    pub internal: Option<InternalStorageConfig>,
 }
 
 #[async_trait]

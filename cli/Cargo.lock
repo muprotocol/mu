@@ -3302,6 +3302,7 @@ dependencies = [
  "musdk-common",
  "reqwest",
  "serde",
+ "storage_embedded_juicefs",
  "thiserror",
  "tokio",
  "wasmer",

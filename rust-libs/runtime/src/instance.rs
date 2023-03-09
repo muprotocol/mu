@@ -786,7 +786,7 @@ mod utils {
         error
             .source()
             .map(ToString::to_string)
-            .unwrap_or("".to_string())
+            .unwrap_or_else(|| "".to_string())
     }
 
     pub fn reqwest_error_to_http_error(error: reqwest::Error) -> http_client::Error {
@@ -799,7 +799,7 @@ mod utils {
         } else if error.is_status() {
             // Note: this should not happen and we safely map unknown statuses to 200
             let status = Status::from_code(error.status().map(|s| s.as_u16()).unwrap_or(200))
-                .unwrap_or(Status::default());
+                .unwrap_or_default();
             http_client::Error::Status(status)
         } else if error.is_body() {
             http_client::Error::Body(error_reason(error))
@@ -815,7 +815,7 @@ mod utils {
     ) -> Result<Response<'a>, http_client::Error> {
         let response = response.map_err(reqwest_error_to_http_error)?;
 
-        let status = Status::from_code(response.status().as_u16()).unwrap_or(Status::default());
+        let status = Status::from_code(response.status().as_u16()).unwrap_or_default();
 
         let headers = response
             .headers()

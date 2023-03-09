@@ -83,6 +83,8 @@ pub mod fixture {
 
     use super::*;
     use mu_common::serde_support::IpOrHostname;
+    use mu_storage::{StorageConfig, StorageManager};
+    use storage_embedded_juicefs::{InternalStorageConfig, StorageInfo};
     use test_context::{AsyncTestContext, TestContext};
 
     pub static DID_INSTALL_WASM32_TARGET_RUN: AtomicBool = AtomicBool::new(false);
@@ -198,9 +200,44 @@ pub mod fixture {
         }
     }
 
+    pub struct StorageManagerFixture {
+        pub storage_manager: Box<dyn StorageManager>,
+    }
+
+    #[async_trait]
+    impl AsyncTestContext for StorageManagerFixture {
+        async fn setup() -> Self {
+            let addr = |port| TcpPortAddress {
+                address: IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                port,
+            };
+
+            let tikv_endpoint = addr(20163);
+
+            let config = StorageConfig {
+                external: None,
+                internal: Some(InternalStorageConfig {
+                    metadata_tikv_endpoints: vec![tikv_endpoint.clone()],
+                    object_storage_tikv_endpoints: vec![tikv_endpoint],
+                    storage: StorageInfo {
+                        endpoint: addr(3089),
+                    },
+                }),
+            };
+            Self {
+                storage_manager: mu_storage::start(&config).await.unwrap(),
+            }
+        }
+
+        async fn teardown(self) {
+            self.storage_manager.stop().await.unwrap()
+        }
+    }
+
     pub struct RuntimeFixture {
         pub runtime: Box<dyn Runtime>,
         pub db_manager_fixture: DBManagerFixture,
+        pub storage_manager_fixture: StorageManagerFixture,
         pub usages: Arc<tokio::sync::Mutex<HashMap<StackID, Usage>>>,
         data_dir: TempDir,
     }
@@ -212,7 +249,7 @@ pub mod fixture {
             build_test_funcs();
 
             let db_manager = <DBManagerFixture as AsyncTestContext>::setup().await;
-            let storage_manager = Box::new(mock_storage::EmptyStorageManager);
+            let storage_manager = <StorageManagerFixture as AsyncTestContext>::setup().await;
             let data_dir = TempDir::setup();
 
             let config = RuntimeConfig {
@@ -220,10 +257,13 @@ pub mod fixture {
                 include_function_logs: true,
             };
 
-            let (runtime, mut notifications) =
-                start(db_manager.db_manager.clone(), storage_manager, config)
-                    .await
-                    .unwrap();
+            let (runtime, mut notifications) = start(
+                db_manager.db_manager.clone(),
+                storage_manager.storage_manager.clone(),
+                config,
+            )
+            .await
+            .unwrap();
 
             let usages = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
@@ -250,6 +290,7 @@ pub mod fixture {
             RuntimeFixture {
                 runtime,
                 db_manager_fixture: db_manager,
+                storage_manager_fixture: storage_manager,
                 usages,
                 data_dir,
             }
@@ -258,6 +299,7 @@ pub mod fixture {
         async fn teardown(self) {
             self.runtime.stop().await.unwrap();
             AsyncTestContext::teardown(self.db_manager_fixture).await;
+            AsyncTestContext::teardown(self.storage_manager_fixture).await;
             self.data_dir.teardown();
         }
     }

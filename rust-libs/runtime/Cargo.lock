@@ -1656,6 +1656,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
+ "storage_embedded_juicefs",
  "test-context",
  "thiserror",
  "tikv-client",

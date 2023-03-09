@@ -20,3 +20,9 @@ services:
       /req/{name}:
         - method: get
           route_to: my_function.greet_path_user
+      /storage/upload:
+        - method: post
+          route_to: my_function.upload
+      /storage/download:
+        - method: get
+          route_to: my_function.download
