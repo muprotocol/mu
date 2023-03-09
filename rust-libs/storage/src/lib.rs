@@ -114,7 +114,8 @@ impl StorageClientImpl {
             endpoint: config.region.endpoint.clone(),
         };
 
-        let bucket = Bucket::new(&config.bucket_name, region, credentials)?;
+        let mut bucket = Bucket::new(&config.bucket_name, region, credentials)?;
+        bucket.set_path_style();
 
         Ok(StorageClientImpl { bucket })
     }
