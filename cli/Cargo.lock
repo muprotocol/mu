@@ -3117,6 +3117,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "uriparse",
+ "uuid",
 ]
 
 [[package]]
@@ -6739,6 +6740,15 @@ name = "utf8-width"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5190c9442dcdaf0ddd50f37420417d219ae5261bbf5db120d0f9bab996c9cba1"
+
+[[package]]
+name = "uuid"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1674845326ee10d37ca60470760d4288a6f80f304007d92e5c53bab78c9cfd79"
+dependencies = [
+ "getrandom 0.2.8",
+]
 
 [[package]]
 name = "vcpkg"

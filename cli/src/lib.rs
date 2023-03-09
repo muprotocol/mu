@@ -1,3 +1,4 @@
+mod api;
 mod commands;
 pub mod config;
 mod error;

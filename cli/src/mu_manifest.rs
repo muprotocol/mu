@@ -75,11 +75,12 @@ impl MuManifest {
                     Service::KeyValueTable(k) => mu_stack::Service::KeyValueTable(k.clone()),
                     Service::Gateway(g) => mu_stack::Service::Gateway(g.clone()),
                     Service::Function(f) => {
+                        let wasm_module_path = f.wasm_module_path(build_mode).display().to_string();
                         let binary = match generation_mode {
-                            ArtifactGenerationMode::LocalRun => {
-                                f.wasm_module_path(build_mode).display().to_string()
+                            ArtifactGenerationMode::LocalRun => wasm_module_path,
+                            ArtifactGenerationMode::Publish => {
+                                crate::apipload_function(wasm_module_path)
                             }
-                            ArtifactGenerationMode::Publish => bail!("Not implemented"),
                         };
 
                         let mut env = f.env.clone();
@@ -165,9 +166,7 @@ impl Function {
 
         let commands = match self.lang {
             Language::Rust => {
-                let mut manifest = project_root.to_owned();
-                manifest.push(self.root_dir());
-                manifest.push("Cargo.toml");
+                let mut manifest = project_root.join(self.root_dir()).join("Cargo.toml");
                 match build_mode {
                     BuildMode::Debug => [
                         create_cmd("rustup", &["target", "add", "wasm32-wasi"]),
@@ -207,7 +206,7 @@ impl Function {
                 .map_err(|e| anyhow::format_err!("{}", e.to_string()))?;
 
             if !exit.status.success() {
-                bail!("Failed to run pre-build script")
+                bail!("Failed to run build script")
             }
         }
 

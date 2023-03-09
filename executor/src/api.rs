@@ -1,3 +1,5 @@
+mod upload_function;
+
 use actix_web::{
     guard,
     http::header::HeaderMap,
@@ -39,9 +41,17 @@ pub struct DependencyAccessor {
 }
 
 #[derive(Deserialize)]
+enum Subject {
+    User(Pubkey),
+    Stack(StackID),
+}
+
+//TODO: refactor request and response into concrete type
+
+#[derive(Deserialize)]
 pub struct ApiRequestTemplate {
     request: String,
-    stack: String,
+    subject: Subject,
     params: serde_json::Value,
 }
 
@@ -63,8 +73,8 @@ async fn handle_request(
         let headers = request.headers();
         let pubkey = verify_signature(headers, &payload)?;
         let request = serde_json::from_str::<ApiRequestTemplate>(payload.as_str())?;
-        let stack_id = request.stack.parse::<StackID>()?;
-        verify_stack_ownership(&stack_id, &pubkey, &dependency_accessor).await?;
+
+        verify_subject_authority(&request.subject, &pubkey, &dependency_accessor).await?;
 
         match execute_request(stack_id, request) {
             Ok(response) => Ok((Json(response), http::StatusCode::OK)),
@@ -91,6 +101,20 @@ fn verify_signature(headers: &HeaderMap, payload: &String) -> Result<ed25519_dal
 fn handle_bad_request() -> (Json<serde_json::Value>, http::StatusCode) {
     let (j, s) = bad_request("bad request");
     (Json(j), s)
+}
+
+async fn verify_subject_authority(
+    subject: &Subject,
+    pubkey: &ed25519_dalek::PublicKey,
+    dependency_accessor: &DependencyAccessor,
+) -> Result<()> {
+    match subject {
+        Subject::User(user_pubkey) => todo!(), // Check user deposit account
+        Subject::Stack(stack_id) => {
+            let stack_id = request.stack.parse::<StackID>()?;
+            verify_stack_ownership(&stack_id, &pubkey, &dependency_accessor).await
+        }
+    }
 }
 
 async fn verify_stack_ownership(
@@ -123,6 +147,7 @@ fn bad_request(description: &'static str) -> ExecutionError {
 fn execute_request(_stack_id: StackID, request: ApiRequestTemplate) -> ExecutionResult {
     match request.request.as_str() {
         "echo" => execute_echo(request.params),
+        "upload_function" => execute_upload_function(request.params),
         _ => Err(bad_request("unknown request")),
     }
 }
