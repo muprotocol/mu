@@ -52,15 +52,20 @@ export const getSolanaValidatorCommand = () => {
 export const waitForLocalValidatorToStart = async () => {
     console.log("Waiting for validator to start");
     await waitUntilPortUsed(8899);
-    env.ANCHOR_WALLET = getDefaultWalletPath();
+    env.ANCHOR_WALLET = getUserWalletPath();
     while (!(await canConnectToLocalValidator())) {
         await sleep(0.5);
     }
 }
 
-export const getDefaultWalletPath = () =>
-    path.resolve(homedir(), ".config/solana/id.json");
+const getUserWalletPath = () => path.resolve(homedir(), ".config/solana/id.json");
 
+export const initializeAndGetAuthorityWalletPath = async () => {
+    env.ANCHOR_WALLET = getUserWalletPath();
+    let provider = anchor.AnchorProvider.local();
+    await createAndFundAuthorityWallet(provider);
+    return path.resolve(__dirname, "test-wallets/authority.json");
+}
 
 export interface ServiceRates {
     billionFunctionMbInstructions: BN,
@@ -146,6 +151,24 @@ export const createMint = async (provider: anchor.AnchorProvider, useStaticKeypa
 }
 
 export const readMintFromStaticKeypair = () => readOrCreateKeypair("mint");
+
+const createAndFundAuthorityWallet = async (provider: anchor.AnchorProvider): Promise<Keypair> => {
+    let wallet = readOrCreateKeypair("authority");
+
+    let account = await provider.connection.getAccountInfo(wallet.publicKey);
+
+    if (!account || account.lamports < 50000 * LAMPORTS_PER_SOL) {
+        let fundTx = new Transaction();
+        fundTx.add(SystemProgram.transfer({
+            fromPubkey: provider.wallet.publicKey,
+            toPubkey: wallet.publicKey,
+            lamports: 50000 * LAMPORTS_PER_SOL
+        }));
+        await provider.sendAndConfirm(fundTx);
+    }
+
+    return wallet;
+};
 
 const createAndFundWallet = async (provider: anchor.AnchorProvider, mint: Keypair, keypairName?: string): Promise<[Keypair, PublicKey]> => {
     let wallet = readOrCreateKeypair(keypairName);

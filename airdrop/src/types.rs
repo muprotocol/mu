@@ -29,8 +29,6 @@ pub struct AirdropRequest {
     pub amount: u64,
     #[serde(deserialize_with = "deserialize_pubkey")]
     pub to: Pubkey,
-    #[serde(default)]
-    pub confirm_transaction: bool,
 }
 
 #[derive(Serialize)]
@@ -41,7 +39,7 @@ pub struct AirdropResponse {
 
 #[derive(Debug, Serialize)]
 pub enum Error {
-    Internal(&'static str),
+    FailedToProcessTransaction,
     PerRequestCapExceeded { requested: u64, capacity: u64 },
     PerAddressCapExceeded { requested: u64, capacity: u64 },
     PerAccountCapExceeded { requested: u64, capacity: u64 },
@@ -79,7 +77,7 @@ impl State {
 
         let mut cache = self.cache.lock().map_err(|e| {
             error!("Can not lock cache: {e:?}");
-            Error::Internal("")
+            Error::FailedToProcessTransaction
         })?;
 
         if let Some(capacity) = self.config.per_address_cap {
@@ -122,7 +120,7 @@ impl State {
     pub fn revert_changes(&self, addr: IpAddr, pubkey: Pubkey, amount: u64) -> Result<(), Error> {
         let mut cache = self.cache.lock().map_err(|e| {
             error!("Can not lock cache: {e:?}");
-            Error::Internal("")
+            Error::FailedToProcessTransaction
         })?;
 
         cache
@@ -164,7 +162,7 @@ async fn get_recent_blockhash(state: &State) -> Result<Hash, Error> {
         .await
         .map_err(|e| {
             error!("Failed to get recent blockhash: {e:?}");
-            Error::Internal("Failed to get recent blockhash")
+            Error::FailedToProcessTransaction
         })
 }
 
@@ -199,7 +197,7 @@ pub async fn get_or_create_ata(state: &State, wallet: &Pubkey) -> Result<Pubkey,
 
     result.map_err(|e| {
         error!("Failed to get send transaction: {e:?}");
-        Error::Internal("Failed to create associated token account")
+        Error::FailedToProcessTransaction
     })?;
 
     Ok(token_account)
@@ -209,7 +207,6 @@ pub async fn fund_token_account(
     state: &State,
     token_account: &Pubkey,
     amount: u64,
-    confirm_transaction: bool,
 ) -> Result<Signature, Error> {
     let instruction = spl_token::instruction::mint_to(
         &spl_token::ID,
@@ -221,7 +218,7 @@ pub async fn fund_token_account(
     )
     .map_err(|e| {
         error!("Failed to create Transaction: {e:?}");
-        Error::Internal("Failed to create transaction")
+        Error::FailedToProcessTransaction
     })?;
 
     let recent_blockhash = get_recent_blockhash(state).await?;
@@ -230,18 +227,11 @@ pub async fn fund_token_account(
         Transaction::new_with_payer(&[instruction], Some(&state.authority_keypair.pubkey()));
     transaction.sign(&[&state.authority_keypair], recent_blockhash);
 
-    let result = if confirm_transaction {
-        state
-            .solana_client
-            .send_and_confirm_transaction(&transaction)
-            .await
-    } else {
-        state.solana_client.send_transaction(&transaction).await
-    };
+    let result = state.solana_client.send_transaction(&transaction).await;
 
     result.map_err(|e| {
         error!("Failed to get send transaction: {e:?}");
-        Error::Internal("Failed to send transaction")
+        Error::FailedToProcessTransaction
     })
 }
 
@@ -254,7 +244,7 @@ pub async fn account_exists(solana_client: &RpcClient, pubkey: &Pubkey) -> Resul
             }
             e => {
                 error!("Failed to check account existence: {e:?}");
-                Err(Error::Internal("Failed to check account existence"))
+                Err(Error::FailedToProcessTransaction)
             }
         },
     }

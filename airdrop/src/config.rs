@@ -12,7 +12,7 @@ use solana_sdk::{
 
 #[derive(Clone, Deserialize)]
 pub struct AppConfig {
-    pub rpc_address: std::net::SocketAddr,
+    pub rpc_address: String,
     pub listen_address: std::net::SocketAddr,
     pub mint_pubkey: Pubkey,
     authority_keypair: PathBuf,

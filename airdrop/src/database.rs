@@ -16,20 +16,20 @@ impl Database {
     pub fn open() -> Result<Self, Error> {
         let connection = Connection::open(DATABASE_FILE).map_err(|e| {
             error!("Can not open database: {e:?}");
-            Error::Internal("can not open database")
+            Error::FailedToProcessTransaction
         })?;
 
         connection
             .execute(
                 "CREATE TABLE IF NOT EXISTS users (
-                email   TEXT UNIQUE NOT NULL,
-                account TEXT NOT NULL
-            )",
+                    email   TEXT UNIQUE NOT NULL,
+                    account TEXT NOT NULL
+                )",
                 (), // empty list of parameters.
             )
             .map_err(|e| {
                 error!("Can not initialize database: {e:?}");
-                Error::Internal("can not initialize database")
+                Error::FailedToProcessTransaction
             })?;
 
         Ok(Self {
@@ -42,7 +42,7 @@ impl Database {
             .lock()
             .map_err(|e| {
                 error!("Can not lock database mutex: {e:?}");
-                Error::Internal("")
+                Error::FailedToProcessTransaction
             })?
             .execute(
                 "INSERT OR IGNORE INTO users(email, account)
@@ -51,7 +51,7 @@ impl Database {
             )
             .map_err(|e| {
                 error!("Can not insert user into database: {e:?}");
-                Error::Internal("can not insert user into database")
+                Error::FailedToProcessTransaction
             })?;
         Ok(())
     }

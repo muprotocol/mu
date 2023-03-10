@@ -5,16 +5,19 @@
 			"path": "."
 		},
 		{
+			"path": "airdrop"
+		},
+		{
 			"path": "cli"
+		},
+		{
+			"path": "rust-libs/common"
 		},
 		{
 			"path": "rust-libs/db"
 		},
 		{
 			"path": "rust-libs/db-embedded-tikv"
-		},
-		{
-			"path": "rust-libs/common"
 		},
 		{
 			"path": "executor"

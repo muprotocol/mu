@@ -1,5 +1,7 @@
+rpc_address: http://localhost:8899
 listen_address: 0.0.0.0:12000
 mint_pubkey: 00000000000000000000000000000000000000000000
 authority_keypair: path_to_keypair
 per_request_cap: 100
+per_account_cap: 1000
 per_address_cap: 1000
