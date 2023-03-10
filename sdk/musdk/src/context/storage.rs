@@ -76,7 +76,7 @@ fn resp_to_err<T>(resp: IM, kind_name: &'static str) -> Result<T> {
 
 fn from_empty_resp(resp: IM, kind_name: &'static str) -> Result<()> {
     match resp {
-        IM::EmptyResult(_) => Ok(()),
+        IM::StorageEmptyResult(_) => Ok(()),
         resp => resp_to_err(resp, kind_name),
     }
 }

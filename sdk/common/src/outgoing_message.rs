@@ -116,7 +116,7 @@ macro_rules! read_cases {
             None => Err(
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Unknown incoming message code: {}", $kind)
+                    format!("Unknown outgoing message code: {}", $kind)
                 )
             ),
         }

@@ -21,6 +21,31 @@ mod functions {
         ctx.db().put("t1", data, vec![count], false).unwrap();
         ctx.db().put("t2", "x", [0u8], false).unwrap();
 
+        ctx.log("storage is up and running", LogLevel::Info)
+            .unwrap();
+
+        ctx.storage()
+            .put("test_storage", "test_file.txt", data)
+            .unwrap();
+
+        ctx.log("successfully uploaded to storage", LogLevel::Info)
+            .unwrap();
+
+        let mut storage = ctx.storage();
+
+        let received_data = storage.get("test_storage", "test_file.txt").unwrap();
+        assert!(received_data == data);
+
+        ctx.log(
+            "successfully downloaded from storage and validated the results",
+            LogLevel::Info,
+        )
+        .unwrap();
+
+        ctx.storage()
+            .delete("test_storage", "test_file.txt")
+            .unwrap();
+
         let _ = ctx.log(&format!("Received request from {s}"), LogLevel::Info);
         format!("(#{count}) Hello, {s}!").into_bytes()
     }
@@ -31,22 +56,5 @@ mod functions {
 
         let _ = ctx.log(&format!("Received request from {name}"), LogLevel::Info);
         format!("Hello, {name}!").into_bytes()
-    }
-
-    #[mu_function]
-    fn upload<'a>(ctx: &'a mut MuContext, data: Vec<u8>) {
-        let mut storage = ctx.storage();
-
-        storage.put("test_storage", "test_file.txt", &data).unwrap();
-    }
-
-    #[mu_function]
-    fn download<'a>(ctx: &'a mut MuContext) -> Vec<u8> {
-        let mut storage = ctx.storage();
-
-        storage
-            .get("test_storage", "test_file.txt")
-            .unwrap()
-            .into_owned()
     }
 }

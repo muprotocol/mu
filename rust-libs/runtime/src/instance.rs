@@ -481,14 +481,13 @@ impl Instance<Running> {
                         }
                         OutgoingMessage::StorageGet(req) => {
                             self.storage_request(|client, stack_id| async move {
-                                let data: Vec<u8> = vec![];
-                                let mut writer = BufWriter::new(data);
+                                let mut data: Vec<u8> = vec![];
                                 client
-                                    .get(stack_id, &req.storage_name, &req.key, &mut writer)
+                                    .get(stack_id, &req.storage_name, &req.key, &mut data)
                                     .await
                                     .map(move |()| {
                                         IncomingMessage::StorageGetResult(StorageGetResult {
-                                            data: Cow::Owned(writer.into_inner()),
+                                            data: Cow::Owned(data),
                                         })
                                     })
                             })?

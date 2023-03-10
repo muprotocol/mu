@@ -17,7 +17,7 @@ use tokio::{fs::File, io::AsyncWriteExt};
 const ACCESS_KEY: &str = "admin";
 const BUCKET_NAME: &str = "mu-default";
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct AuthConfig {
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
@@ -32,7 +32,7 @@ pub struct Region {
     pub endpoint: String,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Debug)]
 pub struct LiveStorageConfig {
     pub auth_config: AuthConfig,
     pub region: Region,
@@ -234,7 +234,7 @@ pub async fn start(
         },
         region: Region {
             region: "us-east-1".to_owned(),
-            endpoint: config.storage.endpoint.to_string(),
+            endpoint: format!("http://{}", config.storage.endpoint),
         },
         bucket_name: BUCKET_NAME.to_string(),
     };
