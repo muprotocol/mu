@@ -157,10 +157,15 @@ impl DbClient for DbClientImpl {
         }
 
         self.inner.batch_put(kvs_add).await?;
-        self.inner
-            .batch_delete(kvs_delete)
-            .await
-            .map_err(Into::into)
+        self.inner.batch_delete(kvs_delete.clone()).await?;
+
+        // TODO put this and batch_delete into transaction
+        // we should do it and batch_delete atomic
+        for delete in kvs_delete {
+            self.clear_table(delete.stack_id, delete.table_name).await?
+        }
+
+        Ok(())
     }
 
     async fn get_raw(&self, key: Vec<u8>) -> Result<Option<Value>> {
@@ -235,6 +240,7 @@ impl DbClient for DbClientImpl {
         self.inner.delete_range(scan).await.map_err(Into::into)
     }
 
+    // TODO change to delete_table and delete table_name from metadata too
     async fn clear_table(&self, stack_id: StackID, table_name: TableName) -> Result<()> {
         let scan = Scan::ByTableName(stack_id, table_name);
         self.inner.delete_range(scan).await.map_err(Into::into)
