@@ -270,3 +270,37 @@ impl<'de> Visitor<'de> for ConfigUriDeserializeVisitor {
         })?))
     }
 }
+
+#[derive(Deserialize, Clone)]
+pub struct TcpPortAddress {
+    pub address: IpOrHostname,
+    pub port: u16,
+}
+
+impl Display for TcpPortAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.address, self.port)
+    }
+}
+
+impl FromStr for TcpPortAddress {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() != 2 {
+            bail!("Can't parse, expected string in this format: ip_addr:port");
+        } else {
+            Ok(TcpPortAddress {
+                address: parts[0].parse()?,
+                port: parts[1].parse()?,
+            })
+        }
+    }
+}
+
+impl From<TcpPortAddress> for String {
+    fn from(value: TcpPortAddress) -> Self {
+        value.to_string()
+    }
+}

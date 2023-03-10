@@ -1,5 +1,6 @@
 absl
 actix
+arshia
 balancer
 bcollect
 Bincode
@@ -7,6 +8,7 @@ Borsh
 bufread
 canonicalize
 chrono
+CICD
 clippy
 clonable
 codegen
@@ -23,6 +25,7 @@ docsrs
 dont
 flate
 funcs
+giga
 graphcycles
 grpcio
 hamidrezakp
@@ -107,8 +110,10 @@ stateful
 struct
 subcommands
 SUBDIR
+subsec
 sysvar
 tailcall
+tera
 thiserror
 tikv
 Tikv

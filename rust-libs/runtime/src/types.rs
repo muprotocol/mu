@@ -2,7 +2,7 @@ use crate::FunctionLoadingError;
 
 use super::{
     error::{Error, Result},
-    function::Pipe,
+    pipe::Pipe,
 };
 
 use mu_stack::{AssemblyID, AssemblyRuntime};
@@ -11,8 +11,7 @@ use bytes::Bytes;
 use mailbox_processor::ReplyChannel;
 use serde::Deserialize;
 use std::{collections::HashMap, fmt::Display, marker::PhantomData, path::PathBuf};
-use tokio::{sync::oneshot::error::TryRecvError, task::JoinHandle};
-use wasmer_middlewares::metering::MeteringPoints;
+use tokio::task::JoinHandle;
 
 pub(super) type ExecuteFunctionRequest<'a> = musdk_common::incoming_message::ExecuteFunction<'a>;
 pub(super) type ExecuteFunctionResponse = musdk_common::outgoing_message::FunctionResult<'static>;
@@ -103,42 +102,17 @@ pub struct FunctionIO {
 
 #[derive(Debug)]
 pub struct FunctionHandle {
-    pub join_handle: JoinHandle<Result<MeteringPoints, (Error, MeteringPoints)>>,
-    is_finished_rx: tokio::sync::oneshot::Receiver<()>,
-    is_finished: bool,
+    pub join_handle: JoinHandle<Result<u64, (Error, u64)>>,
     pub io: FunctionIO,
 }
 
 impl FunctionHandle {
-    pub fn new(
-        join_handle: JoinHandle<Result<MeteringPoints, (Error, MeteringPoints)>>,
-        is_finished_rx: tokio::sync::oneshot::Receiver<()>,
-        io: FunctionIO,
-    ) -> Self {
-        Self {
-            join_handle,
-            is_finished_rx,
-            io,
-            is_finished: false,
-        }
+    pub fn new(join_handle: JoinHandle<Result<u64, (Error, u64)>>, io: FunctionIO) -> Self {
+        Self { join_handle, io }
     }
 
-    pub fn is_finished(&mut self) -> bool {
-        if self.is_finished {
-            true
-        } else {
-            let is_finished = match self.is_finished_rx.try_recv() {
-                // if the second half was somehow dropped without sending a value, we can still
-                // assume the function is "finished" in the sense that it's no longer running.
-                Ok(()) | Err(TryRecvError::Closed) => true,
-                Err(TryRecvError::Empty) => false,
-            };
-
-            if is_finished {
-                self.is_finished = true;
-            }
-            is_finished
-        }
+    pub fn is_finished(&self) -> bool {
+        self.join_handle.is_finished()
     }
 }
 
@@ -146,4 +120,6 @@ impl FunctionHandle {
 pub struct RuntimeConfig {
     pub cache_path: PathBuf,
     pub include_function_logs: bool,
+    // TODO: move this into a separate struct
+    pub max_giga_instructions_per_call: Option<u32>,
 }

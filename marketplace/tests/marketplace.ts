@@ -84,7 +84,7 @@ describe("marketplace", () => {
 
     it("Fails to create region when provider isn't authorized", async () => {
         const rates: ServiceRates = {
-            billionFunctionMbInstructions: new BN(1), // TODO too cheap to be priced correctly, even with 6 decimal places
+            functionMbTeraInstructions: new BN(1000),
             dbGigabyteMonths: new BN(1000),
             gigabytesGatewayTraffic: new BN(100),
             millionDbReads: new BN(500),
@@ -93,7 +93,7 @@ describe("marketplace", () => {
         };
 
         try {
-            let _ = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000), "");
+            let _ = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000), "", 1);
             throw new Error("Region creation succeeded when it should have failed");
         } catch (e) {
             let anchorError = e as AnchorError;
@@ -107,7 +107,7 @@ describe("marketplace", () => {
 
     it("Creates a region once provider is authorized", async () => {
         const rates: ServiceRates = {
-            billionFunctionMbInstructions: new BN(1), // TODO too cheap to be priced correctly, even with 6 decimal places
+            functionMbTeraInstructions: new BN(1000),
             dbGigabyteMonths: new BN(1000),
             gigabytesGatewayTraffic: new BN(100),
             millionDbReads: new BN(500),
@@ -115,7 +115,7 @@ describe("marketplace", () => {
             millionGatewayRequests: new BN(50)
         };
 
-        region = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000), "http://localhost:12012");
+        region = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000), "http://localhost:12012", 1);
     });
 
     it("Creates an Authorized Usage Signer", async () => {

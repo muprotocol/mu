@@ -17,14 +17,14 @@ util.asyncMain(async () => {
 
     console.log("Creating region and usage signer");
     let serviceRates: ServiceRates = {
-        billionFunctionMbInstructions: new BN(300000),
+        functionMbTeraInstructions: new BN(300000),
         gigabytesGatewayTraffic: new BN(10000000),
         millionGatewayRequests: new BN(50),
         dbGigabyteMonths: new BN(10000000),
         millionDbReads: new BN(500),
         millionDbWrites: new BN(2000),
     };
-    let region = await createRegion(mu, provider, "MiddleEarth", 1, serviceRates, new BN(50_000_000), "http://localhost:12012");
+    let region = await createRegion(mu, provider, "MiddleEarth", 1, serviceRates, new BN(50_000_000), "http://localhost:12012", 1);
     console.log(`Region pubkey: ${region.pda.toBase58()}`);
 
     let usageSigner = await createAuthorizedUsageSigner(mu, provider, region, "usage_signer");

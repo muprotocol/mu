@@ -2,6 +2,7 @@ pub mod error;
 pub mod function;
 pub mod instance;
 pub mod memory;
+mod pipe;
 pub mod providers;
 mod types;
 
@@ -26,11 +27,10 @@ use mu_stack::{AssemblyID, FunctionID, StackID};
 use mu_storage::StorageManager;
 use musdk_common::{Header, Request, Response};
 
-use instance::create_store;
+use instance::{utils::create_store, Instance};
 use providers::AssemblyProvider;
 
 pub use error::{Error, FunctionLoadingError, FunctionRuntimeError, Result};
-pub use instance::{Instance, Loaded, Running};
 pub use types::{AssemblyDefinition, InvokeFunctionRequest, RuntimeConfig};
 
 #[async_trait]
@@ -159,7 +159,7 @@ impl RuntimeState {
                 .ok_or_else(|| Error::Internal(anyhow!("cache key can not be found")))?
                 .to_owned();
 
-            let store = create_store(*memory_limit)?;
+            let store = create_store(*memory_limit, self.config.max_giga_instructions_per_call)?;
 
             match unsafe { self.cache.load(&store, *hash) } {
                 Ok(module) => Ok((store, module)),
@@ -210,7 +210,10 @@ impl RuntimeState {
                 },
             );
 
-            let store = create_store(assembly_definition.memory_limit)?;
+            let store = create_store(
+                assembly_definition.memory_limit,
+                self.config.max_giga_instructions_per_call,
+            )?;
 
             if let Ok(module) = Module::from_binary(&store, &assembly_definition.source) {
                 if let Err(e) = self.cache.store(hash, &module) {
@@ -226,7 +229,7 @@ impl RuntimeState {
         }
     }
 
-    async fn instantiate_function(&mut self, assembly_id: AssemblyID) -> Result<Instance<Loaded>> {
+    async fn start_function(&mut self, assembly_id: AssemblyID) -> Result<Instance> {
         trace!("instantiate function {}", assembly_id);
         let definition = self
             .assembly_provider
@@ -239,18 +242,25 @@ impl RuntimeState {
             .to_owned();
 
         trace!("loading function {}", assembly_id);
+
         let (store, module) = self.load_module(&assembly_id)?;
-        Ok(Instance::new(
-            assembly_id,
-            self.next_instance_id.get_and_increment(),
+
+        let instance_id = types::InstanceID {
+            function_id: assembly_id,
+            instance_id: self.next_instance_id.get_and_increment(),
+        };
+
+        Instance::start(
+            instance_id,
             definition.envs,
             store,
             module,
             definition.memory_limit,
+            self.config.max_giga_instructions_per_call,
             self.config.include_function_logs,
             self.db_manager.clone(),
             self.storage_manager.clone(),
-        ))
+        )
     }
 }
 
@@ -409,37 +419,27 @@ async fn mailbox_step(
     }
     state
 }
-
 async fn execute_function(state: &mut RuntimeState, req: InvokeFunctionRequest) {
-    match state.instantiate_function(req.assembly_id.clone()).await {
+    match state.start_function(req.assembly_id.clone()).await {
         Ok(instance) => {
             let notification_channel = state.notification_channel.clone();
 
             tokio::spawn(async move {
-                match instance.start() {
-                    Err(e) => req.reply.reply(Err(e)),
-                    Ok(i) => {
-                        let result = i
-                            .run_request(req.request)
-                            .await
-                            .map(|(resp, usages)| {
-                                notification_channel.send(Notification::ReportUsage(
-                                    req.assembly_id.stack_id,
-                                    usages,
-                                ));
-                                resp
-                            })
-                            .map_err(|(error, usages)| {
-                                notification_channel.send(Notification::ReportUsage(
-                                    req.assembly_id.stack_id,
-                                    usages,
-                                ));
-                                error
-                            });
+                let result = instance
+                    .run_request(req.request)
+                    .await
+                    .map(|(resp, usages)| {
+                        notification_channel
+                            .send(Notification::ReportUsage(req.assembly_id.stack_id, usages));
+                        resp
+                    })
+                    .map_err(|(error, usages)| {
+                        notification_channel
+                            .send(Notification::ReportUsage(req.assembly_id.stack_id, usages));
+                        error
+                    });
 
-                        req.reply.reply(result);
-                    }
-                }
+                req.reply.reply(result);
             });
         }
         Err(f) => req.reply.reply(Err(f)),

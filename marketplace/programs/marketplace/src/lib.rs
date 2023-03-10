@@ -7,8 +7,8 @@ use anchor_spl::token::{Mint, Token, TokenAccount, Transfer};
 declare_id!("2MZLka8nfoAf1LKCCbgCw5ZXfpMbKGDuLjQ88MNMyti2");
 
 fn calc_usage(rates: &ServiceRates, usage: &ServiceUsage) -> u64 {
-    (rates.billion_function_mb_instructions as u128 * usage.function_mb_instructions
-        / 1_000_000_000) as u64
+    (rates.function_mb_tera_instructions as u128 * usage.function_mb_instructions
+        / 1_000_000_000_000) as u64
         + (rates.db_gigabyte_months as u128 * usage.db_bytes_seconds
             / (1024 * 1024 * 1024 * 60 * 60 * 24 * 30)) as u64
         + (rates.million_db_reads * usage.db_reads / 1_000_000)
@@ -107,6 +107,7 @@ pub mod marketplace {
         base_url: String,
         rates: ServiceRates,
         min_escrow_balance: u64,
+        max_giga_instructions_per_call: u32,
     ) -> Result<()> {
         if !ctx.accounts.provider.authorized {
             return Err(Error::ProviderNotAuthorized.into());
@@ -118,6 +119,7 @@ pub mod marketplace {
             region_num,
             rates,
             min_escrow_balance,
+            max_giga_instructions_per_call,
             provider: ctx.accounts.provider.key(),
             bump: *ctx.bumps.get("region").unwrap(),
         });
@@ -473,7 +475,7 @@ pub struct AuthorizeProvider<'info> {
 // actually 0.01 $MU.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct ServiceRates {
-    pub billion_function_mb_instructions: u64,
+    pub function_mb_tera_instructions: u64,
     pub db_gigabyte_months: u64,
     pub million_db_reads: u64,
     pub million_db_writes: u64,
@@ -497,6 +499,7 @@ pub struct ProviderRegion {
     pub region_num: u32,
     pub rates: ServiceRates,
     pub min_escrow_balance: u64,
+    pub max_giga_instructions_per_call: u32,
     pub bump: u8,
     pub name: String,
     pub base_url: String,
@@ -510,7 +513,7 @@ pub struct CreateRegion<'info> {
 
     #[account(
         init,
-        space = 8 + 32 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 8 + 1 + 4 + name.as_bytes().len() + 4 + base_url.as_bytes().len(),
+        space = 8 + 32 + 4 + (8 + 8 + 8 + 8 + 8 + 8) + 8 + 4 + 1 + 4 + name.as_bytes().len() + 4 + base_url.as_bytes().len(),
         payer = owner,
         seeds = [b"region", owner.key().as_ref(), region_num.to_le_bytes().as_ref()],
         bump

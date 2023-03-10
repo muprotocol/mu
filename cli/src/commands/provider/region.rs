@@ -2,7 +2,7 @@ use anchor_client::solana_sdk::system_program;
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser};
 
-use crate::{config::Config, marketplace_client};
+use crate::{config::Config, marketplace_client, token_utils::ui_amount_to_token_amount};
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -34,23 +34,29 @@ pub struct CreateArgs {
     )]
     min_escrow_balance: f64,
 
-    #[arg(long, help = "Billion function instructions and MB of RAM")]
-    billion_function_mb_instructions: u64,
+    #[arg(
+        long,
+        help = "Price per 1000 billion CPU instructions (equivalent to about 5 minutes of execution time on a 3GHz CPU) and 1 megabyte of RAM"
+    )]
+    function_mb_tera_instructions: f64,
+
+    #[arg(long, help = "Maximum billions of instructions per function call")]
+    max_giga_instructions_per_call: u32,
 
     #[arg(long, help = "Database GB per month")]
-    db_gigabyte_months: u64,
+    db_gigabyte_months: f64,
 
     #[arg(long, help = "Million Database reads")]
-    million_db_reads: u64,
+    million_db_reads: f64,
 
     #[arg(long, help = "Million Database writes")]
-    million_db_writes: u64,
+    million_db_writes: f64,
 
     #[arg(long, help = "Million gateway requests")]
-    million_gateway_requests: u64,
+    million_gateway_requests: f64,
 
     #[arg(long, help = "Gateway GB traffic")]
-    gigabytes_gateway_traffic: u64,
+    gigabytes_gateway_traffic: f64,
 }
 
 pub fn execute(config: Config, sub_command: Command) -> Result<()> {
@@ -66,8 +72,7 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
 
     let (_, state) = client.get_mu_state()?;
     let mint = client.get_mint(&state)?;
-    let min_escrow_balance =
-        crate::token_utils::ui_amount_to_token_amount(&mint, args.min_escrow_balance);
+    let min_escrow_balance = ui_amount_to_token_amount(&mint, args.min_escrow_balance);
 
     let provider_keypair = config.get_signer()?;
 
@@ -91,12 +96,15 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
     };
 
     let rates = marketplace::ServiceRates {
-        billion_function_mb_instructions: args.billion_function_mb_instructions,
-        db_gigabyte_months: args.db_gigabyte_months,
-        million_db_reads: args.million_db_reads,
-        million_db_writes: args.million_db_writes,
-        million_gateway_requests: args.million_gateway_requests,
-        gigabytes_gateway_traffic: args.gigabytes_gateway_traffic,
+        function_mb_tera_instructions: ui_amount_to_token_amount(
+            &mint,
+            args.function_mb_tera_instructions,
+        ),
+        db_gigabyte_months: ui_amount_to_token_amount(&mint, args.db_gigabyte_months),
+        million_db_reads: ui_amount_to_token_amount(&mint, args.million_db_reads),
+        million_db_writes: ui_amount_to_token_amount(&mint, args.million_db_writes),
+        million_gateway_requests: ui_amount_to_token_amount(&mint, args.million_gateway_requests),
+        gigabytes_gateway_traffic: ui_amount_to_token_amount(&mint, args.gigabytes_gateway_traffic),
     };
 
     let instruction = marketplace::instruction::CreateRegion {
@@ -104,6 +112,7 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
         name: args.name,
         base_url: url.to_string(),
         min_escrow_balance,
+        max_giga_instructions_per_call: args.max_giga_instructions_per_call,
         rates,
     };
 

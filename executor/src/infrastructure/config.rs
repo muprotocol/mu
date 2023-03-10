@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 pub use mu_common::serde_support::{ConfigDuration, ConfigLogLevelFilter, ConfigUri};
 
 use anyhow::{Context, Result};
@@ -8,25 +10,22 @@ use mu_db::DbConfig;
 use mu_gateway::GatewayManagerConfig;
 use mu_runtime::RuntimeConfig;
 use mu_storage::StorageConfig;
+use serde::Deserialize;
 
 use crate::{
     log_setup::LogConfig,
-    network::{
-        connection_manager::ConnectionManagerConfig,
-        gossip::{GossipConfig, KnownNodeConfig},
-    },
+    network::{connection_manager::ConnectionManagerConfig, membership::MembershipConfig},
     stack::{blockchain_monitor::BlockchainMonitorConfig, scheduler::SchedulerConfig},
 };
 
 pub struct SystemConfig(
     pub ConnectionManagerConfig,
-    pub GossipConfig,
-    pub Vec<KnownNodeConfig>,
+    pub MembershipConfig,
     pub DbConfig,
     pub StorageConfig,
     pub GatewayManagerConfig,
     pub LogConfig,
-    pub RuntimeConfig,
+    pub PartialRuntimeConfig,
     pub SchedulerConfig,
     pub BlockchainMonitorConfig,
 );
@@ -37,12 +36,8 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("connection_manager.listen_ip", "0.0.0.0"),
         ("connection_manager.listen_port", "12012"),
         ("connection_manager.max_request_size_kb", "8192"),
-        ("gossip.heartbeat_interval", "1s"),
-        ("gossip.assume_dead_after_missed_heartbeats", "10"),
-        ("gossip.max_peers", "6"),
-        ("gossip.peer_update_interval", "10s"),
-        ("gossip.liveness_check_interval", "1s"),
-        ("gossip.network_stabilization_wait_time", "5s"),
+        ("membership.update_interval", "5s"),
+        ("membership.assume_dead_after", "20s"),
         ("initial_cluster.ip", "127.0.0.1"),
         ("initial_cluster.gossip_port", "12012"),
         ("initial_cluster.pd_port", "2380"),
@@ -99,9 +94,11 @@ pub fn initialize_config() -> Result<SystemConfig> {
         .get("connection_manager")
         .context("Invalid connection_manager config")?;
 
-    let gossip_config = config.get("gossip").context("Invalid gossip config")?;
+    let membership_config = config
+        .get("membership")
+        .context("Invalid membership config")?;
 
-    let db_config = config.get("tikv").context("Invalid tikv_runner config")?;
+    let db_config = config.get("db").context("Invalid database config")?;
 
     let storage_config = config.get("storage").context("Invalid storage config")?;
 
@@ -115,7 +112,8 @@ pub fn initialize_config() -> Result<SystemConfig> {
 
     let log_config = config.get("log").context("Invalid log config")?;
 
-    let runtime_config = config.get("runtime").context("Invalid runtime config")?;
+    let partial_runtime_config: PartialRuntimeConfig =
+        config.get("runtime").context("Invalid runtime config")?;
 
     let scheduler_config = config
         .get("scheduler")
@@ -127,14 +125,30 @@ pub fn initialize_config() -> Result<SystemConfig> {
 
     Ok(SystemConfig(
         connection_manager_config,
-        gossip_config,
-        known_node_config,
+        membership_config,
         db_config,
         storage_config,
         gateway_config,
         log_config,
-        runtime_config,
+        partial_runtime_config,
         scheduler_config,
         blockchain_monitor_config,
     ))
+}
+
+//We need this so `giga_instructions_limit` is not read from config, only from blockchain.
+#[derive(Deserialize, Clone)]
+pub struct PartialRuntimeConfig {
+    pub cache_path: PathBuf,
+    pub include_function_logs: bool,
+}
+
+impl PartialRuntimeConfig {
+    pub fn complete(self, max_giga_instructions_per_call: Option<u32>) -> RuntimeConfig {
+        RuntimeConfig {
+            cache_path: self.cache_path,
+            include_function_logs: self.include_function_logs,
+            max_giga_instructions_per_call,
+        }
+    }
 }

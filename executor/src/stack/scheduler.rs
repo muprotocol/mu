@@ -216,7 +216,7 @@ struct SchedulerState {
 pub fn start(
     config: SchedulerConfig,
     my_hash: NodeHash,
-    known_nodes: Vec<NodeHash>,
+    known_nodes: Vec<(NodeHash, Vec<StackID>)>,
     available_stacks: Vec<StackWithMetadata>,
     notification_channel: NotificationChannel<SchedulerNotification>,
     runtime: Box<dyn Runtime>,
@@ -224,7 +224,28 @@ pub fn start(
     database_manager: Box<dyn DbManager>,
     storage_manager: Box<dyn StorageManager>,
 ) -> Box<dyn Scheduler> {
+    info!("Starting scheduler");
+    trace!("Known nodes: {known_nodes:?}");
+    trace!("Available stacks: {available_stacks:?}");
+
     let tick_interval = *config.tick_interval;
+
+    let mut stack_deployment = HashMap::new();
+
+    for node in &known_nodes {
+        for stack_id in &node.1 {
+            stack_deployment
+                .entry(*stack_id)
+                .or_insert_with(HashSet::new)
+                .insert(node.0);
+        }
+    }
+
+    let unknown_deployments = stack_deployment
+        .keys()
+        .cloned()
+        .filter(|k| !available_stacks.iter().any(|s| s.id() == *k))
+        .collect::<Vec<_>>();
 
     let mailbox = CallbackMailboxProcessor::start(
         step,
@@ -232,11 +253,39 @@ pub fn start(
             my_hash,
             stacks: available_stacks
                 .into_iter()
-                .map(|stack| (stack.id(), StackDeployment::Undeployed { stack }))
+                .map(|stack| {
+                    let id = stack.id();
+                    (
+                        id,
+                        match stack_deployment.get(&id) {
+                            None => {
+                                trace!("Stack {id} is initially undeployed");
+                                StackDeployment::Undeployed { stack }
+                            }
+                            Some(nodes) => {
+                                trace!("Stack {id} is initially deployed to {nodes:?}");
+                                StackDeployment::DeployedToOthers {
+                                    stack,
+                                    deployed_to: nodes.clone(),
+                                }
+                            }
+                        },
+                    )
+                })
+                .chain(unknown_deployments.into_iter().map(|id| {
+                    let nodes = stack_deployment.get(&id).unwrap();
+                    trace!("Unknown stack {id} is initially deployed to {nodes:?}");
+                    (
+                        id,
+                        StackDeployment::Unknown {
+                            deployed_to: nodes.clone(),
+                        },
+                    )
+                }))
                 .collect(),
             reevaluate_on_next_tick: HashSet::new(),
             ready_to_schedule: false,
-            known_nodes: known_nodes.into_iter().collect(),
+            known_nodes: known_nodes.into_iter().map(|n| n.0).collect(),
             notification_channel,
             runtime,
             gateway_manager,
