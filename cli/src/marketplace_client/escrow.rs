@@ -37,7 +37,7 @@ pub fn create(
         rent: rent::id(),
     };
 
-    if !client.provider_with_keypair_exists(&provider)? {
+    if !client.account_exists(&provider)? {
         bail!("There is no provider registered with this keypair");
     }
 

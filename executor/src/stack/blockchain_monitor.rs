@@ -21,6 +21,8 @@ use mu_stack::StackID;
 use serde::Deserialize;
 use solana_account_decoder::parse_token::{parse_token, TokenAccountType};
 use solana_account_decoder::{UiAccount, UiAccountEncoding};
+use solana_client::client_error::{ClientError, ClientErrorKind};
+use solana_client::rpc_request::RpcError;
 use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
     rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
@@ -459,14 +461,21 @@ async fn fetch_owner_escrow_balance(
         &[b"escrow", &owner_key.to_bytes(), &provider_pda.to_bytes()],
         &marketplace::id(),
     );
-    let token_balance = rpc_client
-        .get_token_account_balance(&escrow_pda)
-        .await
-        .context("Failed to fetch escrow balance from Solana")?;
-    token_balance
-        .amount
-        .parse()
-        .context("Failed to parse amount from token account")
+
+    let token_balance = match rpc_client.get_token_account_balance(&escrow_pda).await {
+        Ok(x) => x
+            .amount
+            .parse()
+            .context("Failed to parse amount from token account")?,
+        Err(ClientError {
+            // -32602 is "could not find account"
+            kind: ClientErrorKind::RpcError(RpcError::RpcResponseError { code: -32602, .. }),
+            ..
+        }) => 0u64,
+        Err(f) => return Err(f).context("Failed to fetch escrow balance from Solana"),
+    };
+
+    Ok(token_balance)
 }
 
 async fn get_token_decimals(rpc_client: &RpcClient) -> Result<u8> {
@@ -581,7 +590,7 @@ async fn mailbox_body(
                     warn!("Solana notification stream disconnected, attempting to reconnect");
                     // TODO: this will make the mailbox stop processing messages while waiting to reconnect
                     // should probably handle subscriptions on a separate task
-                    state = reconnect_solana_subscriber(state).await;
+                    state = reconnect_solana_subscriber(state, &config).await;
                 }
             }
 
@@ -598,7 +607,7 @@ async fn mailbox_body(
                     warn!("Solana notification stream disconnected, attempting to reconnect");
                     // TODO: this will make the mailbox stop processing messages while waiting to reconnect
                     // should probably handle subscriptions on a separate task
-                    state = reconnect_solana_subscriber(state).await;
+                    state = reconnect_solana_subscriber(state, &config).await;
                 }
             }
 
@@ -612,7 +621,7 @@ async fn mailbox_body(
                         warn!("Solana escrow update stream disconnected, attempting to reconnect");
                         // TODO: this will make the mailbox stop processing messages while waiting to reconnect
                         // should probably handle subscriptions on a separate task
-                        state = reconnect_solana_subscriber(state).await;
+                        state = reconnect_solana_subscriber(state, &config).await;
                     },
                     Ok(Some((owner_pubkey, escrow_balance))) =>
                         on_solana_escrow_updated(
@@ -934,7 +943,10 @@ fn generate_seed() -> u128 {
 
 // TODO: if the connection fails irrecoverably (such as by stopping the local validator),
 // this gets called repetitively and prevents the application from quitting cleanly.
-async fn reconnect_solana_subscriber(state: State<'_>) -> State<'_> {
+async fn reconnect_solana_subscriber<'a>(
+    state: State<'a>,
+    config: &BlockchainMonitorConfig,
+) -> State<'a> {
     debug!("Reconnecting solana subscriptions");
 
     (state.solana.pub_sub.stack_subscription.unsubscribe_callback)().await;
@@ -945,14 +957,31 @@ async fn reconnect_solana_subscriber(state: State<'_>) -> State<'_> {
         .unsubscribe_callback)()
     .await;
 
-    let client_wrapper = unsafe {
-        (state.solana.pub_sub.client_wrapper.deref() as *const SolanaPubSubClientWrapper).as_ref()
-    }
-    .unwrap();
+    let client_wrapper = loop {
+        match PubsubClient::new(&config.solana_cluster_pub_sub_url.0.to_string())
+            .await
+            .context("Failed to start Solana pub-sub client")
+        {
+            Ok(client) => {
+                break Box::pin(SolanaPubSubClientWrapper {
+                    client,
+                    _phantom_pinned: PhantomPinned,
+                })
+            }
 
+            Err(f) => {
+                warn!("{f:?}");
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }
+    };
+
+    // TODO: this will miss stacks deployed between when we were disconnected and when we managed to connect back.
+    let wrapper_ref: &SolanaPubSubClientWrapper =
+        unsafe { (client_wrapper.deref() as *const SolanaPubSubClientWrapper).as_ref() }.unwrap();
     let (stack_subscription, request_signer_subscription, escrow_subscriptions) =
         setup_solana_subscriptions(
-            client_wrapper,
+            wrapper_ref,
             &state.solana.pub_sub.get_stacks_config,
             &state.solana.pub_sub.get_request_signers_config,
             &state.solana.provider_pda,
@@ -962,12 +991,15 @@ async fn reconnect_solana_subscriber(state: State<'_>) -> State<'_> {
         )
         .await;
 
+    info!("Reconnected to Solana");
+
     State {
         solana: Solana {
             pub_sub: SolanaPubSub {
                 stack_subscription,
                 request_signer_subscription,
                 escrow_subscriptions,
+                client_wrapper,
                 ..state.solana.pub_sub
             },
             ..state.solana
@@ -999,7 +1031,8 @@ async fn setup_solana_subscriptions<'a>(
                 unsubscribe_callback,
             },
             Err(f) => {
-                warn!("{f}");
+                warn!("{f:?}");
+                tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             }
         };
@@ -1015,7 +1048,8 @@ async fn setup_solana_subscriptions<'a>(
                 unsubscribe_callback,
             },
             Err(f) => {
-                warn!("{f}");
+                warn!("{f:?}");
+                tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             }
         };
@@ -1029,7 +1063,8 @@ async fn setup_solana_subscriptions<'a>(
         {
             Ok(x) => x,
             Err(f) => {
-                warn!("{f}");
+                warn!("{f:?}");
+                tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             }
         };

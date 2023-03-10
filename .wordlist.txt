@@ -107,6 +107,7 @@ stateful
 struct
 subcommands
 SUBDIR
+subsec
 sysvar
 tailcall
 tera
