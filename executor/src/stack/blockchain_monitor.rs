@@ -200,13 +200,13 @@ pub async fn start(
         CommitmentConfig::finalized(),
     );
 
-    debug!("Verifying provider public key and usage signer");
-    if region_pda != config.solana_usage_signer_private_key.keypair.pubkey() {
-        bail!("some error message")
-    }
-
-    debug!("Verifying provider public key and region number");
-    let region = get_region(&region_pda, &rpc_client).await?;
+    debug!("Verifying provider public key and region number and usage signer");
+    let region = get_region(
+        &region_pda,
+        &rpc_client,
+        &config.solana_usage_signer_private_key.keypair.pubkey(),
+    )
+    .await?;
 
     debug!("Retrieving $MU token properties");
     let solana_token_decimals = get_token_decimals(&rpc_client).await?;
@@ -1258,10 +1258,10 @@ fn read_solana_rpc_keyed_account(stack: Response<RpcKeyedAccount>) -> Result<Sta
     read_solana_stack_account((pubkey, account))
 }
 
-// TODO: ensure we have the right usage signer for this region
 async fn get_region(
     region: &Pubkey,
     rpc_client: &RpcClient,
+    usage_signer_pubkey: &Pubkey,
 ) -> Result<marketplace::ProviderRegion> {
     debug!("Fetching region data from Solana");
 
@@ -1270,6 +1270,10 @@ async fn get_region(
             `solana_region_num` config values are correct, the region is already created, the URL in \
             `solana_cluster_rpc_url` is available and that you are not running into rate limits",
     ))?;
+
+    if account.owner() != usage_signer_pubkey {
+        bail!("usage signer is not configured correctly")
+    }
 
     let region =
         marketplace::ProviderRegion::try_deserialize(&mut &account.data[..]).context(format!(
