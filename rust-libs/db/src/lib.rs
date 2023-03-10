@@ -2,17 +2,16 @@ pub mod error;
 mod types;
 
 pub use self::types::{Blob, DeleteTable, Key, Scan, TableName};
-pub use db_embedded_tikv::{PdConfig, RemoteNode, TcpPortAddress, TikvConfig, TikvRunnerConfig};
 use dyn_clonable::clonable;
 use log::warn;
+use mu_common::serde_support::TcpPortAddress;
 
 use crate::{
     error::{Error, Result},
     types::*,
 };
-use anyhow::{bail, Context};
+use anyhow::bail;
 use async_trait::async_trait;
-use db_embedded_tikv::*;
 use mu_stack::StackID;
 use serde::Deserialize;
 use std::{collections::HashSet, fmt::Debug};
@@ -23,8 +22,7 @@ use tokio::time::{sleep, Duration};
 // Used struct instead of enum, only for better visual structure in config
 #[derive(Deserialize, Clone)]
 pub struct DbConfig {
-    pub external: Option<Vec<TcpPortAddress>>,
-    pub internal: Option<TikvRunnerConfig>,
+    pub pd_addresses: Vec<TcpPortAddress>,
 }
 
 #[async_trait]
@@ -36,8 +34,24 @@ pub trait DbClient: Send + Sync + Debug + Clone {
         table_action_tuples: Vec<(TableName, DeleteTable)>,
     ) -> Result<()>;
 
-    async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()>;
+    async fn get_raw(&self, key: Vec<u8>) -> Result<Option<Value>>;
+    async fn scan_raw(
+        &self,
+        lower_inclusive: Vec<u8>,
+        upper_exclusive: Vec<u8>,
+        limit: u32,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
+    async fn put_raw(&self, key: Vec<u8>, value: Value, is_atomic: bool) -> Result<()>;
+    async fn compare_and_swap_raw(
+        &self,
+        key: Vec<u8>,
+        previous_value: Option<Value>,
+        new_value: Value,
+    ) -> Result<(Option<Value>, bool)>;
+    async fn delete_raw(&self, key: Vec<u8>, is_atomic: bool) -> Result<()>;
+
     async fn get(&self, key: Key) -> Result<Option<Value>>;
+    async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()>;
     async fn delete(&self, key: Key, is_atomic: bool) -> Result<()>;
 
     async fn delete_by_prefix(
@@ -147,6 +161,45 @@ impl DbClient for DbClientImpl {
             .batch_delete(kvs_delete)
             .await
             .map_err(Into::into)
+    }
+
+    async fn get_raw(&self, key: Vec<u8>) -> Result<Option<Value>> {
+        Ok(self.inner.get(key).await?)
+    }
+
+    async fn scan_raw(
+        &self,
+        lower_inclusive: Vec<u8>,
+        upper_exclusive: Vec<u8>,
+        limit: u32,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        Ok(self
+            .inner
+            .scan(lower_inclusive..upper_exclusive, limit)
+            .await?
+            .into_iter()
+            .map(|kv| (kv.0.into(), kv.1))
+            .collect())
+    }
+
+    async fn put_raw(&self, key: Vec<u8>, value: Value, is_atomic: bool) -> Result<()> {
+        Ok(self.get_inner(is_atomic).put(key, value).await?)
+    }
+
+    async fn compare_and_swap_raw(
+        &self,
+        key: Vec<u8>,
+        previous_value: Option<Value>,
+        new_value: Value,
+    ) -> Result<(Option<Value>, bool)> {
+        Ok(self
+            .inner_atomic
+            .compare_and_swap(key, previous_value, new_value)
+            .await?)
+    }
+
+    async fn delete_raw(&self, key: Vec<u8>, is_atomic: bool) -> Result<()> {
+        Ok(self.get_inner(is_atomic).delete(key).await?)
     }
 
     async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()> {
@@ -282,44 +335,7 @@ impl DbClient for DbClientImpl {
 
 #[derive(Clone)]
 struct DbManagerImpl {
-    inner: Option<Box<dyn TikvRunner>>,
     endpoints: Vec<TcpPortAddress>,
-}
-
-pub async fn new_with_embedded_cluster(
-    node_address: TcpPortAddress,
-    known_node_config: Vec<RemoteNode>,
-    config: TikvRunnerConfig,
-) -> anyhow::Result<Box<dyn DbManager>> {
-    let endpoints = vec![config.pd.advertise_client_url()];
-    let inner = db_embedded_tikv::start(node_address, known_node_config, config).await?;
-
-    match ensure_cluster_healthy(&endpoints, 10)
-        .await
-        .context("Timed out while trying to connect to TiKV cluster")
-    {
-        Err(e) => {
-            inner
-                .stop()
-                .await
-                .context("Failed to stop cluster after it failed to bootstrap")?;
-            Err(e)
-        }
-        Ok(()) => Ok(Box::new(DbManagerImpl {
-            endpoints,
-            inner: Some(inner),
-        })),
-    }
-}
-
-pub async fn new_with_external_cluster(
-    endpoints: Vec<TcpPortAddress>,
-) -> anyhow::Result<Box<dyn DbManager>> {
-    ensure_cluster_healthy(&endpoints, 5).await?;
-    Ok(Box::new(DbManagerImpl {
-        inner: None,
-        endpoints,
-    }))
 }
 
 async fn ensure_cluster_healthy(
@@ -358,20 +374,10 @@ async fn ensure_cluster_healthy(
     helper(endpoints, 0, max_try_count).await
 }
 
-pub async fn start(
-    node: TcpPortAddress,
-    remote_nodes: Vec<RemoteNode>,
-    db_config: DbConfig,
-) -> anyhow::Result<Box<dyn DbManager>> {
-    match (db_config.internal, db_config.external) {
-        (Some(tikv_config), None) => {
-            new_with_embedded_cluster(node, remote_nodes, tikv_config).await
-        }
-        (None, Some(endpoints)) => new_with_external_cluster(endpoints).await,
-        _ => bail!(
-            "Exactly one of external or internal keys should be present in TiKV configuration"
-        ),
-    }
+pub async fn start(db_config: DbConfig) -> anyhow::Result<Box<dyn DbManager>> {
+    let endpoints = db_config.pd_addresses;
+    ensure_cluster_healthy(&endpoints, 5).await?;
+    Ok(Box::new(DbManagerImpl { endpoints }))
 }
 
 #[async_trait]
@@ -381,10 +387,7 @@ impl DbManager for DbManagerImpl {
     }
 
     async fn stop(&self) -> anyhow::Result<()> {
-        match &self.inner {
-            Some(r) => r.stop().await,
-            None => Ok(()),
-        }
+        Ok(())
     }
 }
 
