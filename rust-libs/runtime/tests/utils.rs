@@ -1,3 +1,4 @@
+//TODO: Organize this mess
 use std::{
     borrow::Cow,
     collections::{hash_map::Entry, HashMap},
@@ -25,6 +26,29 @@ const TEST_PROJECTS: &[&str] = &[
     "http-client",
     "instant-exit",
 ];
+
+// TODO: this is too convoluted for supplying a single integer. Remove.
+pub trait RuntimeTestConfig: Sync + Send {
+    fn make() -> RuntimeConfig;
+}
+
+macro_rules! create_config {
+    ($name: ident, $logs: expr, $limit: expr) => {
+        pub struct $name;
+
+        impl RuntimeTestConfig for $name {
+            fn make() -> RuntimeConfig {
+                RuntimeConfig {
+                    cache_path: PathBuf::from(""), // We will replace this in Fixture with actual temp dir.
+                    include_function_logs: $logs,
+                    max_giga_instructions_per_call: $limit,
+                }
+            }
+        }
+    };
+}
+
+create_config!(NormalConfig, true, Some(1));
 
 #[derive(Debug)]
 pub struct Project<'a> {
@@ -78,18 +102,20 @@ pub async fn read_wasm_functions<'a>(
 }
 
 pub mod fixture {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::{marker::PhantomData, sync::Mutex};
 
     use super::*;
     use db_embedded_tikv::{DbManagerWithTikv, PdConfig, TikvConfig, TikvRunnerConfig};
     use mu_common::serde_support::{IpOrHostname, TcpPortAddress};
     use test_context::{AsyncTestContext, TestContext};
 
-    pub static DID_INSTALL_WASM32_TARGET_RUN: AtomicBool = AtomicBool::new(false);
-    pub static DID_BUILD_TEST_FUNCS_FIXTURE_RUN: AtomicBool = AtomicBool::new(false);
+    pub static DID_INSTALL_WASM32_TARGET_RUN: Mutex<bool> = Mutex::new(false);
+    pub static DID_BUILD_TEST_FUNCS_FIXTURE_RUN: Mutex<bool> = Mutex::new(false);
+    pub static DID_INITIALIZE_LOG_RUN: Mutex<bool> = Mutex::new(false);
 
     fn install_wasm32_target() {
-        if !DID_INSTALL_WASM32_TARGET_RUN.load(Ordering::Relaxed) {
+        let mut value = DID_INSTALL_WASM32_TARGET_RUN.lock().unwrap();
+        if !*value {
             println!("Installing wasm32-wasi target.");
             Command::new("rustup")
                 .args(["target", "add", "wasm32-wasi"])
@@ -97,12 +123,13 @@ pub mod fixture {
                 .unwrap()
                 .wait()
                 .unwrap();
-            DID_INSTALL_WASM32_TARGET_RUN.store(true, Ordering::Relaxed);
+            *value = true;
         }
     }
 
     fn build_test_funcs() {
-        if !DID_BUILD_TEST_FUNCS_FIXTURE_RUN.load(Ordering::Relaxed) {
+        let mut value = DID_BUILD_TEST_FUNCS_FIXTURE_RUN.lock().unwrap();
+        if !*value {
             println!("Building test functions.");
             for name in TEST_PROJECTS {
                 let project_dir = format!("tests/funcs/{name}");
@@ -115,8 +142,16 @@ pub mod fixture {
                     .unwrap()
                     .wait()
                     .unwrap();
-                DID_BUILD_TEST_FUNCS_FIXTURE_RUN.store(true, Ordering::Relaxed);
+                *value = true;
             }
+        }
+    }
+
+    fn setup_logger() {
+        let mut value = DID_INITIALIZE_LOG_RUN.lock().unwrap();
+        if !*value {
+            env_logger::init();
+            *value = true;
         }
     }
 
@@ -202,26 +237,26 @@ pub mod fixture {
         }
     }
 
-    pub struct RuntimeFixture {
+    pub struct RuntimeFixture<Config: RuntimeTestConfig> {
         pub runtime: Box<dyn Runtime>,
         pub db_manager_fixture: DBManagerFixture,
         pub usages: Arc<tokio::sync::Mutex<HashMap<StackID, Usage>>>,
         data_dir: TempDir,
+        config: PhantomData<Config>,
     }
 
     #[async_trait]
-    impl AsyncTestContext for RuntimeFixture {
+    impl<Config: RuntimeTestConfig> AsyncTestContext for RuntimeFixture<Config> {
         async fn setup() -> Self {
             install_wasm32_target();
             build_test_funcs();
+            setup_logger();
 
             let db_manager = <DBManagerFixture as AsyncTestContext>::setup().await;
             let data_dir = TempDir::setup();
 
-            let config = RuntimeConfig {
-                cache_path: data_dir.get_rand_sub_dir(Some("runtime-cache")),
-                include_function_logs: true,
-            };
+            let mut config = Config::make();
+            config.cache_path = data_dir.get_rand_sub_dir(Some("runtime-cache"));
 
             let (runtime, mut notifications) =
                 start(db_manager.db_manager.clone(), config).await.unwrap();
@@ -253,6 +288,7 @@ pub mod fixture {
                 db_manager_fixture: db_manager,
                 usages,
                 data_dir,
+                config: PhantomData,
             }
         }
         async fn teardown(self) {
@@ -262,25 +298,25 @@ pub mod fixture {
         }
     }
 
-    pub struct RuntimeFixtureWithoutDB {
+    pub struct RuntimeFixtureWithoutDB<Config: RuntimeTestConfig> {
         pub runtime: Box<dyn Runtime>,
         pub usages: Arc<tokio::sync::Mutex<HashMap<StackID, Usage>>>,
-        pub data_dir: TempDir,
+        data_dir: TempDir,
+        config: PhantomData<Config>,
     }
 
     #[async_trait]
-    impl AsyncTestContext for RuntimeFixtureWithoutDB {
+    impl<Config: RuntimeTestConfig> AsyncTestContext for RuntimeFixtureWithoutDB<Config> {
         async fn setup() -> Self {
             install_wasm32_target();
             build_test_funcs();
+            setup_logger();
 
             let db_manager = mock_db::EmptyDBManager;
             let data_dir = TempDir::setup();
 
-            let config = RuntimeConfig {
-                cache_path: data_dir.get_rand_sub_dir(Some("runtime-cache")),
-                include_function_logs: true,
-            };
+            let mut config = Config::make();
+            config.cache_path = data_dir.get_rand_sub_dir(Some("runtime-cache"));
 
             let (runtime, mut notifications) = start(Box::new(db_manager), config).await.unwrap();
 
@@ -310,6 +346,7 @@ pub mod fixture {
                 runtime,
                 usages,
                 data_dir,
+                config: PhantomData,
             }
         }
         async fn teardown(self) {

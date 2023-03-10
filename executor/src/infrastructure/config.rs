@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 pub use mu_common::serde_support::{ConfigDuration, ConfigLogLevelFilter, ConfigUri};
 
 use anyhow::{Context, Result};
@@ -7,6 +9,7 @@ use mu_db::DbConfig;
 
 use mu_gateway::GatewayManagerConfig;
 use mu_runtime::RuntimeConfig;
+use serde::Deserialize;
 
 use crate::{
     log_setup::LogConfig,
@@ -20,7 +23,7 @@ pub struct SystemConfig(
     pub DbConfig,
     pub GatewayManagerConfig,
     pub LogConfig,
-    pub RuntimeConfig,
+    pub PartialRuntimeConfig,
     pub SchedulerConfig,
     pub BlockchainMonitorConfig,
 );
@@ -101,7 +104,8 @@ pub fn initialize_config() -> Result<SystemConfig> {
 
     let log_config = config.get("log").context("Invalid log config")?;
 
-    let runtime_config = config.get("runtime").context("Invalid runtime config")?;
+    let partial_runtime_config: PartialRuntimeConfig =
+        config.get("runtime").context("Invalid runtime config")?;
 
     let scheduler_config = config
         .get("scheduler")
@@ -117,8 +121,25 @@ pub fn initialize_config() -> Result<SystemConfig> {
         db_config,
         gateway_config,
         log_config,
-        runtime_config,
+        partial_runtime_config,
         scheduler_config,
         blockchain_monitor_config,
     ))
+}
+
+//We need this so `giga_instructions_limit` is not read from config, only from blockchain.
+#[derive(Deserialize, Clone)]
+pub struct PartialRuntimeConfig {
+    pub cache_path: PathBuf,
+    pub include_function_logs: bool,
+}
+
+impl PartialRuntimeConfig {
+    pub fn complete(self, max_giga_instructions_per_call: Option<u32>) -> RuntimeConfig {
+        RuntimeConfig {
+            cache_path: self.cache_path,
+            include_function_logs: self.include_function_logs,
+            max_giga_instructions_per_call,
+        }
+    }
 }

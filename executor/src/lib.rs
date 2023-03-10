@@ -53,7 +53,7 @@ pub async fn run() -> Result<()> {
         db_config,
         gateway_manager_config,
         log_config,
-        runtime_config,
+        partial_runtime_config,
         scheduler_config,
         blockchain_monitor_config,
     ) = config::initialize_config()?;
@@ -87,13 +87,15 @@ pub async fn run() -> Result<()> {
 
     let usage_aggregator = stack::usage_aggregator::start();
 
-    let (blockchain_monitor, mut blockchain_monitor_notification_receiver, region_id) =
+    let (blockchain_monitor, mut blockchain_monitor_notification_receiver, region_config) =
         blockchain_monitor::start(blockchain_monitor_config, usage_aggregator.clone())
             .await
             .context("Failed to start blockchain monitor")?;
 
     let database_manager = mu_db::start(db_config).await?;
 
+    let runtime_config =
+        partial_runtime_config.complete(region_config.max_giga_instructions_per_call);
     let (runtime, mut runtime_notification_receiver) =
         mu_runtime::start(database_manager.clone(), runtime_config)
             .await
@@ -109,7 +111,7 @@ pub async fn run() -> Result<()> {
     let (membership, mut membership_notification_receiver, known_nodes) = membership::start(
         my_node.clone(),
         membership_config,
-        region_id,
+        region_config.id,
         database_manager.clone(),
     )
     .await

@@ -3064,6 +3064,7 @@ dependencies = [
  "bytes",
  "dyn-clonable",
  "dyn-clone",
+ "futures 0.3.26",
  "log",
  "mailbox_processor",
  "mu-common",

@@ -87,6 +87,10 @@ pub fn execute_list_region(config: Config, cmd: ListRegionCommand) -> Result<()>
             token_amount_to_ui_amount(&mint, account.1.min_escrow_balance)
         );
         println!("\tBase URL: {}", account.1.base_url);
+        println!(
+            "\tMax Instructions per function call: {} billion",
+            account.1.max_giga_instructions_per_call,
+        );
         println!("\tRates:");
         println!(
             "\t\t1000 billion CPU instructions, 1 megabyte of memory: {}",

@@ -170,7 +170,7 @@ pub async fn start(
 ) -> Result<(
     Box<dyn BlockchainMonitor>,
     UnboundedReceiver<BlockchainMonitorNotification>,
-    Vec<u8>,
+    RegionConfig,
 )> {
     info!("Starting blockchain monitor");
 
@@ -415,8 +415,13 @@ pub async fn start(
     let res_clone = res.clone();
     tokio::spawn(async move { generate_tick(res_clone, tick_interval).await });
 
+    let region_config = RegionConfig {
+        id: region_pda.to_bytes().into(),
+        max_giga_instructions_per_call: Some(region.max_giga_instructions_per_call),
+    };
+
     debug!("Initialization complete");
-    Ok((Box::new(res), rx, region_pda.to_bytes().into()))
+    Ok((Box::new(res), rx, region_config))
 }
 
 async fn get_owner_states(
@@ -916,6 +921,11 @@ fn report_usage(
         .context("Failed to send usage update transaction")?;
 
     Ok(())
+}
+
+pub struct RegionConfig {
+    pub id: Vec<u8>,
+    pub max_giga_instructions_per_call: Option<u32>,
 }
 
 fn generate_seed() -> u128 {

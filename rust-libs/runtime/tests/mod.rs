@@ -2,6 +2,7 @@ use std::{borrow::Cow, collections::HashMap};
 
 use futures::FutureExt;
 use itertools::Itertools;
+use log::trace;
 use serial_test::serial;
 use test_context::test_context;
 
@@ -9,13 +10,16 @@ use mu_db::DeleteTable;
 use mu_runtime::*;
 use musdk_common::{Header, Status};
 
-use crate::utils::{fixture::*, *};
+use crate::utils::*;
 
 mod utils;
 
-#[test_context(RuntimeFixtureWithoutDB)]
+type RuntimeWithoutDB = fixture::RuntimeFixtureWithoutDB<NormalConfig>;
+type RuntimeWithDB = fixture::RuntimeFixture<NormalConfig>;
+
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn test_simple_func(fixture: &mut RuntimeFixtureWithoutDB) {
+async fn test_simple_func(fixture: &mut RuntimeWithoutDB) {
     let projects = create_and_add_projects(
         vec![("hello-wasm", &["say_hello"], None)],
         &*fixture.runtime,
@@ -42,9 +46,9 @@ async fn test_simple_func(fixture: &mut RuntimeFixtureWithoutDB) {
     );
 }
 
-#[test_context(RuntimeFixtureWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn can_run_multiple_instance_of_the_same_function(fixture: &mut RuntimeFixtureWithoutDB) {
+async fn can_run_multiple_instance_of_the_same_function(fixture: &mut RuntimeWithoutDB) {
     let projects = create_and_add_projects(
         vec![("hello-wasm", &["say_hello"], None)],
         &*fixture.runtime,
@@ -96,9 +100,9 @@ async fn can_run_multiple_instance_of_the_same_function(fixture: &mut RuntimeFix
     tokio::join!(instance_1, instance_2, instance_3);
 }
 
-#[test_context(RuntimeFixtureWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn can_run_instances_of_different_functions(fixture: &mut RuntimeFixtureWithoutDB) {
+async fn can_run_instances_of_different_functions(fixture: &mut RuntimeWithoutDB) {
     let projects = create_and_add_projects(
         vec![
             ("hello-wasm", &["say_hello"], None),
@@ -142,9 +146,9 @@ async fn can_run_instances_of_different_functions(fixture: &mut RuntimeFixtureWi
     tokio::join!(instance_1, instance_2);
 }
 
-#[test_context(RuntimeFixtureWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn unclean_termination_is_handled(fixture: &mut RuntimeFixtureWithoutDB) {
+async fn unclean_termination_is_handled(fixture: &mut RuntimeWithoutDB) {
     use mu_runtime::error::*;
 
     let projects = create_and_add_projects(
@@ -166,9 +170,9 @@ async fn unclean_termination_is_handled(fixture: &mut RuntimeFixtureWithoutDB) {
     }
 }
 
-#[test_context(RuntimeFixtureWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn functions_with_limited_memory_wont_run(fixture: &mut RuntimeFixtureWithoutDB) {
+async fn functions_with_limited_memory_wont_run(fixture: &mut RuntimeWithoutDB) {
     use mu_runtime::error::*;
 
     let projects = create_and_add_projects(
@@ -200,11 +204,9 @@ async fn functions_with_limited_memory_wont_run(fixture: &mut RuntimeFixtureWith
     }
 }
 
-#[test_context(RuntimeFixtureWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn functions_with_limited_memory_will_run_with_enough_memory(
-    fixture: &mut RuntimeFixtureWithoutDB,
-) {
+async fn functions_with_limited_memory_will_run_with_enough_memory(fixture: &mut RuntimeWithoutDB) {
     let projects = create_and_add_projects(
         vec![(
             "hello-wasm",
@@ -230,9 +232,9 @@ async fn functions_with_limited_memory_will_run_with_enough_memory(
         .await;
 }
 
-#[test_context(RuntimeFixtureWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn function_usage_is_reported_correctly_1(fixture: &mut RuntimeFixtureWithoutDB) {
+async fn function_usage_is_reported_correctly_1(fixture: &mut RuntimeWithoutDB) {
     let projects = create_and_add_projects(
         vec![("hello-wasm", &["say_hello"], None)],
         &*fixture.runtime,
@@ -320,9 +322,9 @@ async fn function_usage_is_reported_correctly_1(fixture: &mut RuntimeFixtureWith
 //    runtime.stop().await.unwrap();
 //}
 
-#[test_context(RuntimeFixtureWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn failing_function_should_not_hang(fixture: &mut RuntimeFixtureWithoutDB) {
+async fn failing_function_should_not_hang(fixture: &mut RuntimeWithoutDB) {
     use mu_runtime::error::*;
     let projects =
         create_and_add_projects(vec![("hello-wasm", &["failing"], None)], &*fixture.runtime)
@@ -347,9 +349,9 @@ async fn failing_function_should_not_hang(fixture: &mut RuntimeFixtureWithoutDB)
     }
 }
 
-#[test_context(RuntimeFixtureWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn json_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB) {
+async fn json_body_request_and_response(fixture: &mut RuntimeWithoutDB) {
     use serde::{Deserialize, Serialize};
 
     let projects = create_and_add_projects(
@@ -406,9 +408,9 @@ async fn json_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB) {
         .await;
 }
 
-#[test_context(RuntimeFixtureWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn string_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB) {
+async fn string_body_request_and_response(fixture: &mut RuntimeWithoutDB) {
     let projects = create_and_add_projects(
         vec![("multi-body", &["string_body"], None)],
         &*fixture.runtime,
@@ -434,10 +436,10 @@ async fn string_body_request_and_response(fixture: &mut RuntimeFixtureWithoutDB)
         .await;
 }
 
-#[test_context(RuntimeFixtureWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
 async fn string_body_request_and_response_fails_with_incorrect_charset(
-    fixture: &mut RuntimeFixtureWithoutDB,
+    fixture: &mut RuntimeWithoutDB,
 ) {
     let projects = create_and_add_projects(
         vec![("multi-body", &["string_body"], None)],
@@ -467,10 +469,10 @@ async fn string_body_request_and_response_fails_with_incorrect_charset(
         .await;
 }
 
-#[test_context(RuntimeFixtureWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
 async fn string_body_request_and_response_do_not_care_for_content_type(
-    fixture: &mut RuntimeFixtureWithoutDB,
+    fixture: &mut RuntimeWithoutDB,
 ) {
     let projects = create_and_add_projects(
         vec![("multi-body", &["string_body"], None)],
@@ -500,9 +502,9 @@ async fn string_body_request_and_response_do_not_care_for_content_type(
         .await;
 }
 
-#[test_context(RuntimeFixtureWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn can_access_path_params(fixture: &mut RuntimeFixtureWithoutDB) {
+async fn can_access_path_params(fixture: &mut RuntimeWithoutDB) {
     let projects = create_and_add_projects(
         vec![("hello-wasm", &["path_params"], None)],
         &*fixture.runtime,
@@ -536,10 +538,10 @@ async fn can_access_path_params(fixture: &mut RuntimeFixtureWithoutDB) {
         .await;
 }
 
-#[test_context(RuntimeFixture)]
+#[test_context(RuntimeWithDB)]
 #[tokio::test]
 #[serial]
-async fn db_crud(fixture: &mut RuntimeFixture) {
+async fn db_crud(fixture: &mut RuntimeWithDB) {
     use serde::{Deserialize, Serialize};
 
     let projects = create_and_add_projects(
@@ -760,12 +762,11 @@ async fn db_crud(fixture: &mut RuntimeFixture) {
         .await;
 }
 
-#[test_context(RuntimeFixture)]
+#[test_context(RuntimeWithDB)]
 #[tokio::test]
 #[serial]
-async fn db_batch_crud(fixture: &mut RuntimeFixture) {
+async fn db_batch_crud(fixture: &mut RuntimeWithDB) {
     use serde::{Deserialize, Serialize};
-    env_logger::init();
 
     let projects = create_and_add_projects(
         vec![(
@@ -1015,9 +1016,9 @@ async fn db_batch_crud(fixture: &mut RuntimeFixture) {
         .await;
 }
 
-#[test_context(RuntimeFixtureWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn instant_exit_is_handled(fixture: &mut RuntimeFixtureWithoutDB) {
+async fn instant_exit_is_handled(fixture: &mut RuntimeWithoutDB) {
     use mu_runtime::error::*;
 
     let projects = create_and_add_projects(
@@ -1039,9 +1040,9 @@ async fn instant_exit_is_handled(fixture: &mut RuntimeFixtureWithoutDB) {
     }
 }
 
-#[test_context(RuntimeFixtureWithoutDB)]
+#[test_context(RuntimeWithoutDB)]
 #[tokio::test]
-async fn can_send_http_requests_with_http_client(fixture: &mut RuntimeFixtureWithoutDB) {
+async fn can_send_http_requests_with_http_client(fixture: &mut RuntimeWithoutDB) {
     let projects = create_and_add_projects(
         vec![("http-client", &["test_download"], None)],
         &*fixture.runtime,
@@ -1108,4 +1109,31 @@ async fn can_send_http_requests_with_http_client(fixture: &mut RuntimeFixtureWit
             assert_eq!(expected_response, r.body.as_ref());
         })
         .await;
+}
+
+#[test_context(RuntimeWithoutDB)]
+#[tokio::test]
+async fn functions_will_be_terminated_when_there_is_timeout(fixture: &mut RuntimeWithoutDB) {
+    use mu_runtime::error::*;
+
+    let projects = create_and_add_projects(
+        vec![("hello-wasm", &["long_running"], None)],
+        &*fixture.runtime,
+    )
+    .await
+    .unwrap();
+
+    let request = make_request(None, vec![], HashMap::new(), HashMap::new());
+
+    match fixture
+        .runtime
+        .invoke_function(projects[0].function_id(0).unwrap(), request)
+        .await
+    {
+        Err(Error::Timeout) => (),
+        e => {
+            trace!("{e:#?}");
+            panic!("should fail to run");
+        }
+    }
 }
