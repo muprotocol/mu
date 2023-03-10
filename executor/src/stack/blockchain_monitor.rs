@@ -198,6 +198,11 @@ pub async fn start(
         CommitmentConfig::finalized(),
     );
 
+    debug!("Verifying provider public key and usage signer");
+    if region_pda != config.solana_usage_signer_private_key.keypair.pubkey() {
+        bail!("some error message")
+    }
+
     debug!("Verifying provider public key and region number");
     let region = get_region(&region_pda, &rpc_client).await?;
 
