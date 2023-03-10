@@ -7,7 +7,7 @@ edition = "2021"
 name = "mu_runtime"
 
 [dependencies]
-wasmer = { version = "3.1", features = ["wasmer-compiler-llvm"] }
+wasmer = { version = "3.1", default-features = false, features = ["sys", "wasmer-compiler-llvm"] }
 wasmer-wasi = "3.1"
 wasmer-middlewares = "3.1"
 wasmer-cache = "3.1"

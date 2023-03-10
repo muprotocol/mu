@@ -1,7 +1,8 @@
 use anyhow::Result;
 use assert_matches::assert_matches;
+use db_embedded_tikv::*;
 use futures::Future;
-use mu_common::serde_support::IpOrHostname;
+use mu_common::serde_support::{IpOrHostname, TcpPortAddress};
 use mu_db::{error::*, *};
 use mu_stack::StackID;
 use rand::Rng;
@@ -434,7 +435,7 @@ async fn start_and_query_nodes_with_different_stackids_and_tables(dbs: Vec<Box<d
 }
 
 async fn make_db_client_with_external_cluster() -> Box<dyn DbClient> {
-    let db_manager = mu_db::new_with_external_cluster(vec![
+    let db_manager = new_with_external_cluster(vec![
         "127.0.0.1:2379".parse().unwrap(),
         "127.0.0.1:2382".parse().unwrap(),
         "127.0.0.1:2384".parse().unwrap(),
@@ -446,10 +447,10 @@ async fn make_db_client_with_external_cluster() -> Box<dyn DbClient> {
         .unwrap()
 }
 
-async fn make_3_dbs() -> (Vec<Box<dyn DbManager>>, Vec<Box<dyn DbClient>>) {
+async fn make_3_dbs() -> (Vec<DbManagerWithTikv>, Vec<Box<dyn DbClient>>) {
     // dummy creation/deletion of db_manager to ensure assets have been downloaded
     // and /tmp files have created before start concurrent creation.
-    mu_db::new_with_embedded_cluster(
+    new_with_embedded_cluster(
         make_node_address(3000),
         vec![],
         make_tikv_runner_conf(3380, 3379, 20260),
@@ -470,10 +471,9 @@ async fn make_3_dbs() -> (Vec<Box<dyn DbManager>>, Vec<Box<dyn DbClient>>) {
             make_known_node_conf(2801, 2381),
             make_known_node_conf(2802, 2383),
         ];
-        let db_manager =
-            mu_db::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
-                .await
-                .unwrap();
+        let db_manager = new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+            .await
+            .unwrap();
 
         let db = try_to_make_client_or_stop_cluster(db_manager.as_ref())
             .await
@@ -490,10 +490,9 @@ async fn make_3_dbs() -> (Vec<Box<dyn DbManager>>, Vec<Box<dyn DbClient>>) {
             make_known_node_conf(2800, 2380),
             make_known_node_conf(2802, 2383),
         ];
-        let db_manager =
-            mu_db::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
-                .await
-                .unwrap();
+        let db_manager = new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+            .await
+            .unwrap();
 
         let db = try_to_make_client_or_stop_cluster(db_manager.as_ref())
             .await
@@ -510,10 +509,9 @@ async fn make_3_dbs() -> (Vec<Box<dyn DbManager>>, Vec<Box<dyn DbClient>>) {
             make_known_node_conf(2801, 2381),
         ];
 
-        let db_manager =
-            mu_db::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
-                .await
-                .unwrap();
+        let db_manager = new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+            .await
+            .unwrap();
 
         let db = try_to_make_client_or_stop_cluster(db_manager.as_ref())
             .await
@@ -545,10 +543,9 @@ async fn success_to_update_and_delete_stack_tables() {
     let node_address = make_node_address(2803);
     let known_node_conf = vec![];
     let tikv_runner_conf = make_tikv_runner_conf(2385, 2386, 20163);
-    let db_manager =
-        mu_db::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
-            .await
-            .unwrap();
+    let db_manager = new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+        .await
+        .unwrap();
 
     let db_client = try_to_make_client_or_stop_cluster(db_manager.as_ref())
         .await
@@ -566,10 +563,9 @@ async fn success_to_start_and_query_single_embedded_clustered_node() {
     let node_address = make_node_address(2803);
     let known_node_conf = vec![];
     let tikv_runner_conf = make_tikv_runner_conf(2385, 2386, 20163);
-    let db_manager =
-        mu_db::new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
-            .await
-            .unwrap();
+    let db_manager = new_with_embedded_cluster(node_address, known_node_conf, tikv_runner_conf)
+        .await
+        .unwrap();
 
     let db_client = try_to_make_client_or_stop_cluster(db_manager.as_ref())
         .await
@@ -687,7 +683,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     let ks = keys(si, tl.clone());
     let vs = values();
 
-    let db = mu_db::new_with_external_cluster(vec![
+    let db = new_with_external_cluster(vec![
         "127.0.0.1:2379".parse().unwrap(),
         // "127.0.0.1:2382".try_into().unwrap(),
         // "127.0.0.1:2384".try_into().unwrap(),
@@ -698,7 +694,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     .await
     .unwrap();
 
-    let db2 = mu_db::new_with_external_cluster(vec![
+    let db2 = new_with_external_cluster(vec![
         // "127.0.0.1:2379".try_into().unwrap(),
         "127.0.0.1:2382".parse().unwrap(),
         // "127.0.0.1:2384".try_into().unwrap(),
@@ -709,7 +705,7 @@ async fn test_multi_node_with_manual_cluster_with_different_endpoint_but_same_ti
     .await
     .unwrap();
 
-    let db3 = mu_db::new_with_external_cluster(vec![
+    let db3 = new_with_external_cluster(vec![
         // "127.0.0.1:2379".try_into().unwrap(),
         // "127.0.0.1:2382".try_into().unwrap(),
         "127.0.0.1:2384".parse().unwrap(),

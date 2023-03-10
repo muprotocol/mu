@@ -21,8 +21,8 @@ fn main() {
         .protoc()
         .protoc_path(&protoc_bin_vendored::protoc_bin_path().unwrap())
         .includes(["protos"])
-        .input("protos/gossip.proto")
-        .cargo_out_dir("protos/gossip")
+        .input("protos/membership.proto")
+        .cargo_out_dir("protos/membership")
         .run_from_script();
 
     println!("build script ran");

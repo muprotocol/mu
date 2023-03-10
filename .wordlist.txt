@@ -4,6 +4,7 @@ arshia
 balancer
 bcollect
 Bincode
+blockhash
 Borsh
 bufread
 canonicalize
@@ -89,6 +90,7 @@ rustc
 rustfmt
 rustls
 rustup
+rusqlite
 Ryzen
 scans
 scts
@@ -107,6 +109,7 @@ stateful
 struct
 subcommands
 SUBDIR
+subsec
 sysvar
 tailcall
 tera

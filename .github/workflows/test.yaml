@@ -18,6 +18,7 @@ jobs:
           - rust-libs/common
           - rust-libs/runtime
           - rust-libs/gateway
+          - airdrop
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -42,6 +43,7 @@ jobs:
             rust-libs/mu_stack/target/
             rust-libs/runtime/target/
             sdk/target/
+            airdrop/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Install system dependencies
         run: |
@@ -86,4 +88,5 @@ jobs:
             rust-libs/mu_stack/target/
             rust-libs/runtime/target/
             sdk/target/
+            airdrop/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}

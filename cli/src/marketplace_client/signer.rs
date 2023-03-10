@@ -8,9 +8,12 @@ pub fn create(
     client: &MarketplaceClient,
     provider_keypair: Rc<dyn Signer>,
     signer_keypair: Rc<dyn Signer>,
-    region_pda: Pubkey,
+    region_num: u32,
 ) -> Result<()> {
     let (_, mu_state) = client.get_mu_state()?;
+
+    let provider_pda = client.get_provider_pda(provider_keypair.pubkey());
+    let region_pda = client.get_region_pda(&provider_keypair.pubkey(), region_num);
 
     let (signer_pda, _) = Pubkey::find_program_address(
         &[b"authorized_signer", &region_pda.to_bytes()],
@@ -20,8 +23,6 @@ pub fn create(
     let provider_token_account =
         client.get_provider_token_account(provider_keypair.pubkey(), &mu_state);
 
-    let provider_pda = client.get_provider_pda(provider_keypair.pubkey());
-
     let accounts = marketplace::accounts::CreateAuthorizedUsageSigner {
         provider: provider_pda,
         region: region_pda,
@@ -30,8 +31,12 @@ pub fn create(
         system_program: system_program::id(),
     };
 
-    if !client.provider_with_keypair_exists(&provider_pda)? {
-        bail!("There is no provider with this key");
+    if !client.provider_with_keypair_exists(&provider_keypair.pubkey())? {
+        bail!(
+            "There is no provider with this key (wallet: {}, PDA: {})",
+            provider_keypair.pubkey(),
+            provider_pda
+        );
     }
 
     if !client.account_exists(&region_pda)? {

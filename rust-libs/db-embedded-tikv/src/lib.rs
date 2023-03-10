@@ -2,18 +2,17 @@
 //! due to the embedded resources. We moved it to a separate crate to improve
 //! type check times when developing the DB module.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
 use log::{error, warn};
 use mailbox_processor::callback::CallbackMailboxProcessor;
-use mu_common::serde_support::IpOrHostname;
+use mu_common::serde_support::{IpOrHostname, TcpPortAddress};
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
-use std::fmt::Display;
-use std::str::FromStr;
+use std::ops::Deref;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr},
@@ -22,6 +21,57 @@ use std::{
     process::{self, Stdio},
 };
 use tokio::{fs::File, io::AsyncWriteExt};
+
+use mu_db::{DbConfig, DbManager};
+
+pub struct DbManagerWithTikv {
+    pub tikv: Box<dyn TikvRunner>,
+    db_manager: Box<dyn DbManager>,
+}
+
+impl DbManagerWithTikv {
+    pub async fn stop(&self) -> anyhow::Result<()> {
+        self.tikv.stop().await
+    }
+}
+
+impl Deref for DbManagerWithTikv {
+    type Target = Box<dyn DbManager>;
+    fn deref(&self) -> &Self::Target {
+        &self.db_manager
+    }
+}
+
+pub async fn new_with_embedded_cluster(
+    node_address: TcpPortAddress,
+    known_node_config: Vec<RemoteNode>,
+    config: TikvRunnerConfig,
+) -> anyhow::Result<DbManagerWithTikv> {
+    let tikv = start(node_address, known_node_config, config.clone())
+        .await
+        .unwrap();
+
+    let db_config = DbConfig {
+        pd_addresses: vec![config.pd.advertise_client_url()],
+    };
+
+    let inner = mu_db::start(db_config).await.unwrap();
+
+    Ok(DbManagerWithTikv {
+        tikv,
+        db_manager: inner,
+    })
+}
+
+pub async fn new_with_external_cluster(
+    endpoints: Vec<TcpPortAddress>,
+) -> anyhow::Result<Box<dyn DbManager>> {
+    let db_config = DbConfig {
+        pd_addresses: endpoints,
+    };
+
+    mu_db::start(db_config).await
+}
 
 #[derive(RustEmbed)]
 #[folder = "assets"]
@@ -69,40 +119,6 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
         .context("Failed to set executable permission on temp file")?;
 
     Ok(temp_address)
-}
-
-#[derive(Deserialize, Clone)]
-pub struct TcpPortAddress {
-    pub address: IpOrHostname,
-    pub port: u16,
-}
-
-impl Display for TcpPortAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.address, self.port)
-    }
-}
-
-impl FromStr for TcpPortAddress {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split(':').collect();
-        if parts.len() != 2 {
-            bail!("Can't parse, expected string in this format: ip_addr:port");
-        } else {
-            Ok(TcpPortAddress {
-                address: parts[0].parse()?,
-                port: parts[1].parse()?,
-            })
-        }
-    }
-}
-
-impl From<TcpPortAddress> for String {
-    fn from(value: TcpPortAddress) -> Self {
-        value.to_string()
-    }
 }
 
 #[derive(Deserialize, Clone)]

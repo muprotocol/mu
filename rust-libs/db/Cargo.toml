@@ -7,7 +7,6 @@ edition = "2021"
 name = "mu_db"
 
 [dependencies]
-db-embedded-tikv = { path = "../db-embedded-tikv" }
 anyhow = "1.0"
 thiserror = "1.0"
 tikv-client = "0.1"
@@ -28,6 +27,7 @@ mu-common = { path = "../common" }
 dirs = "4"
 
 [dev-dependencies]
+db-embedded-tikv = { path = "../db-embedded-tikv" }
 env_logger = "0.10"
 serial_test = "0.8"
 assert_matches = "1.5"
