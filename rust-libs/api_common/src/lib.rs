@@ -1,7 +1,7 @@
 #[cfg(feature = "client")]
 mod client;
 
-mod request;
+pub mod request;
 
 use mu_stack::{stack_id_as_string_serialization, StackID};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -31,9 +31,16 @@ pub struct Response {
     pub params: serde_json::Value,
 }
 
-pub trait ApiRequest: Sized {
-    type Response: DeserializeOwned + Serialize;
-    type Error: DeserializeOwned + Serialize;
+pub trait IntoRequest: Sized {
+    type Response: DeserializeOwned;
+    type Error: DeserializeOwned;
+
+    fn make_request(&self) -> (Request, &dyn Signer);
+}
+
+pub trait FromRequest: Sized {
+    type Output: DeserializeOwned;
+    type Error: DeserializeOwned;
 
     fn make_request(&self) -> (Request, &dyn Signer);
 }

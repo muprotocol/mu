@@ -3,7 +3,7 @@ use serde_json::json;
 use solana_sdk::signer::Signer;
 use uuid::Uuid;
 
-use super::{ApiRequest, Request, Subject};
+use super::{IntoRequest, Request, Subject};
 
 pub struct UploadFunctionRequest {
     pub file_id: Uuid,
@@ -11,7 +11,7 @@ pub struct UploadFunctionRequest {
     pub bytes: Vec<u8>,
 }
 
-impl ApiRequest for UploadFunctionRequest {
+impl IntoRequest for UploadFunctionRequest {
     type Response = ();
     type Error = String;
 

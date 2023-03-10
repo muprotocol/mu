@@ -12,6 +12,7 @@ use api_common::{Request, Subject, PUBLIC_KEY_HEADER_NAME, SIGNATURE_HEADER_NAME
 use log::error;
 use mu_gateway::HttpServiceFactoryBuilder;
 use mu_stack::StackID;
+use mu_storage::StorageClient;
 use serde_json::json;
 use solana_sdk::pubkey::Pubkey;
 
@@ -35,6 +36,7 @@ pub fn service_factory() -> impl HttpServiceFactoryBuilder {
 #[derive(Clone)]
 pub struct DependencyAccessor {
     pub request_signer_cache: Box<dyn RequestSignerCache>,
+    pub storage_client: Box<dyn StorageClient>,
 }
 
 async fn handle_request(
@@ -53,7 +55,7 @@ async fn handle_request(
 
         verify_subject_authority(&request.subject, &pubkey, &dependency_accessor).await?;
 
-        match execute_request(request) {
+        match execute_request(dependency_accessor, request) {
             Ok(response) => Ok((Json(response), http::StatusCode::OK)),
             Err((response, status_code)) => Ok((Json(response), status_code)),
         }
@@ -120,7 +122,10 @@ fn bad_request(description: &'static str) -> ExecutionError {
     (json!(description), http::StatusCode::BAD_REQUEST)
 }
 
-fn execute_request(request: Request) -> ExecutionResult {
+fn execute_request(
+    dependency_accessor: web::Data<DependencyAccessor>,
+    request: Request,
+) -> ExecutionResult {
     let Request {
         request,
         subject,
@@ -129,7 +134,7 @@ fn execute_request(request: Request) -> ExecutionResult {
 
     match request.as_str() {
         "echo" => execute_echo(params),
-        "upload_function" => upload_function::execute(subject, params),
+        "upload_function" => upload_function::execute(dependency_accessor, subject, body),
         _ => Err(bad_request("unknown request")),
     }
 }

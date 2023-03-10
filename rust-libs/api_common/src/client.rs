@@ -6,7 +6,7 @@ use solana_sdk::signer::Signer;
 use uuid::Uuid;
 
 use crate::{
-    request::UploadFunctionRequest, ApiRequest, PUBLIC_KEY_HEADER_NAME, SIGNATURE_HEADER_NAME,
+    request::UploadFunctionRequest, IntoRequest, PUBLIC_KEY_HEADER_NAME, SIGNATURE_HEADER_NAME,
 };
 
 //TODO: support async clients too
@@ -40,7 +40,7 @@ impl ApiClient {
         }
     }
 
-    fn send<R: ApiRequest>(&self, request: R) -> Result<Result<R::Response, R::Error>> {
+    fn send<R: IntoRequest>(&self, request: R) -> Result<Result<R::Response, R::Error>> {
         let (payload, signer) = request.make_request();
         let payload_json = serde_json::to_vec(&payload)?;
 
