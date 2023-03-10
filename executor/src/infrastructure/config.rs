@@ -102,10 +102,6 @@ pub fn initialize_config() -> Result<SystemConfig> {
 
     let storage_config = config.get("storage").context("Invalid storage config")?;
 
-    let known_node_config: Vec<KnownNodeConfig> = config
-        .get("initial_cluster")
-        .context("Invalid known_node config")?;
-
     let gateway_config = config
         .get("gateway_manager")
         .context("Invalid gateway config")?;

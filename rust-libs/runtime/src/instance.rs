@@ -2,14 +2,8 @@ mod database;
 mod http_client;
 pub(crate) mod utils;
 
+use std::{borrow::BorrowMut, ops::Deref};
 use std::{borrow::Cow, collections::HashMap, future::Future};
-use std::{
-    borrow::{BorrowMut, Cow},
-    collections::HashMap,
-    future::Future,
-    ops::Deref,
-    sync::Arc,
-};
 
 use crate::{
     error::{Error, FunctionRuntimeError, Result},
@@ -19,12 +13,8 @@ use crate::{
     Usage,
 };
 
-use anyhow::anyhow;
-use log::{error, log, trace, Level};
-use mu_db::{error::Result as MudbResult, DbClient, DbManager, Key as MudbKey, Scan as MudbScan};
 use mu_db::{DbClient, DbManager};
 use mu_stack::StackID;
-use mu_stack::{AssemblyID, StackID};
 use mu_storage::{StorageClient, StorageManager};
 use musdk_common::{
     incoming_message::{
@@ -38,11 +28,7 @@ use musdk_common::{
 
 use anyhow::anyhow;
 use log::{error, log, trace, Level};
-use tokio::io::BufWriter;
-use wasmer::{CompilerConfig, Module, Store};
 use wasmer::{Module, Store};
-use wasmer_compiler_llvm::LLVM;
-use wasmer_middlewares::{metering::MeteringPoints, Metering};
 
 const FUNCTION_LOG_TARGET: &str = "mu_function";
 

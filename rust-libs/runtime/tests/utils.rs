@@ -106,8 +106,9 @@ pub mod fixture {
 
     use super::*;
     use db_embedded_tikv::{DbManagerWithTikv, PdConfig, TikvConfig, TikvRunnerConfig};
+    use log::trace;
     use mu_common::serde_support::IpOrHostname;
-    use mu_common::serde_support::{IpOrHostname, TcpPortAddress};
+    use mu_common::serde_support::TcpPortAddress;
     use mu_storage::{StorageConfig, StorageManager};
     use storage_embedded_juicefs::{InternalStorageConfig, StorageInfo};
     use test_context::{AsyncTestContext, TestContext};
@@ -201,6 +202,7 @@ pub mod fixture {
     #[async_trait]
     impl AsyncTestContext for DBManagerFixture {
         async fn setup() -> Self {
+            trace!("setting up db manager fixture");
             let data_dir = TempDir::setup();
             let addr = |port| TcpPortAddress {
                 address: IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -247,46 +249,13 @@ pub mod fixture {
     #[async_trait]
     impl AsyncTestContext for StorageManagerFixture {
         async fn setup() -> Self {
+            trace!("setting up storage manager fixture");
             let addr = |port| TcpPortAddress {
                 address: IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
                 port,
             };
 
-            let tikv_endpoint = addr(20163);
-
-            let config = StorageConfig {
-                external: None,
-                internal: Some(InternalStorageConfig {
-                    metadata_tikv_endpoints: vec![tikv_endpoint.clone()],
-                    object_storage_tikv_endpoints: vec![tikv_endpoint],
-                    storage: StorageInfo {
-                        endpoint: addr(3089),
-                    },
-                }),
-            };
-            Self {
-                storage_manager: mu_storage::start(&config).await.unwrap(),
-            }
-        }
-
-        async fn teardown(self) {
-            self.storage_manager.stop().await.unwrap()
-        }
-    }
-
-    pub struct StorageManagerFixture {
-        pub storage_manager: Box<dyn StorageManager>,
-    }
-
-    #[async_trait]
-    impl AsyncTestContext for StorageManagerFixture {
-        async fn setup() -> Self {
-            let addr = |port| TcpPortAddress {
-                address: IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                port,
-            };
-
-            let tikv_endpoint = addr(20163);
+            let tikv_endpoint = addr(12386);
 
             let config = StorageConfig {
                 external: None,
@@ -320,9 +289,10 @@ pub mod fixture {
     #[async_trait]
     impl<Config: RuntimeTestConfig> AsyncTestContext for RuntimeFixture<Config> {
         async fn setup() -> Self {
+            setup_logger();
+            trace!("setting up runtime fixture");
             install_wasm32_target();
             build_test_funcs();
-            setup_logger();
 
             let db_manager = <DBManagerFixture as AsyncTestContext>::setup().await;
             let storage_manager = <StorageManagerFixture as AsyncTestContext>::setup().await;
