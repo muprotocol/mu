@@ -40,7 +40,7 @@ pub struct CreateArgs {
     )]
     function_mb_tera_instructions: u64,
 
-    #[arg(long, help = "The maximum billion instructions per function call")]
+    #[arg(long, help = "Maximum billions of instructions per function call")]
     max_giga_instructions_per_call: u32,
 
     #[arg(long, help = "Database GB per month")]

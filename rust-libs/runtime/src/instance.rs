@@ -390,6 +390,7 @@ impl Instance {
                 })
             }
 
+            // TODO: separate messages into enums containing messages for one system to avoid this
             _ => Err(Error::Internal(anyhow!(
                 "invalid request type, only database requests are handled here."
             ))),

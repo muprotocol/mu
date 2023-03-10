@@ -26,7 +26,7 @@ pub enum Error {
     #[error("Function didn't terminate cleanly")]
     FunctionDidntTerminateCleanly,
 
-    #[error("Function reached time limit")]
+    #[error("Function reached instruction count limit")]
     Timeout,
 
     #[error("Failed to setup runtime cache: {0:?}")]

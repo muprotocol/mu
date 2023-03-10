@@ -120,5 +120,6 @@ impl FunctionHandle {
 pub struct RuntimeConfig {
     pub cache_path: PathBuf,
     pub include_function_logs: bool,
+    // TODO: move this into a separate struct
     pub max_giga_instructions_per_call: Option<u32>,
 }

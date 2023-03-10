@@ -28,6 +28,7 @@ const TEST_PROJECTS: &[&str] = &[
     "instant-exit",
 ];
 
+// TODO: this is too convoluted for supplying a single integer. Remove.
 pub trait RuntimeTestConfig: Sync + Send {
     fn make() -> RuntimeConfig;
 }
