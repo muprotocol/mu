@@ -1,14 +1,13 @@
+use log::error;
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use solana_client::{
+    client_error::ClientErrorKind, nonblocking::rpc_client::RpcClient, rpc_request::RpcError,
+};
 use std::{
     collections::{hash_map::Entry, HashMap},
     net::IpAddr,
     str::FromStr,
     sync::Mutex,
-};
-
-use log::error;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use solana_client::{
-    client_error::ClientErrorKind, nonblocking::rpc_client::RpcClient, rpc_request::RpcError,
 };
 
 use solana_sdk::{
@@ -19,14 +18,13 @@ use solana_sdk::{
 };
 use spl_token::solana_program::pubkey::Pubkey;
 
-use crate::{config::AppConfig, database::Database};
-
-//TODO: Add Email address too.
+use crate::{config::AppConfig, database::Database, marketplace::get_token_decimals};
 
 #[derive(Debug, Deserialize)]
 pub struct AirdropRequest {
+    #[serde(deserialize_with = "deserialize_email")]
     pub email: String,
-    pub amount: u64,
+    pub amount: f64,
     #[serde(deserialize_with = "deserialize_pubkey")]
     pub to: Pubkey,
 }
@@ -40,9 +38,9 @@ pub struct AirdropResponse {
 #[derive(Debug, Serialize)]
 pub enum Error {
     FailedToProcessTransaction,
-    PerRequestCapExceeded { requested: u64, capacity: u64 },
-    PerAddressCapExceeded { requested: u64, capacity: u64 },
-    PerAccountCapExceeded { requested: u64, capacity: u64 },
+    PerRequestCapExceeded { requested: f64, capacity: f64 },
+    PerAddressCapExceeded { requested: f64, capacity: f64 },
+    PerAccountCapExceeded { requested: f64, capacity: f64 },
 }
 
 pub struct State {
@@ -50,22 +48,40 @@ pub struct State {
     pub authority_keypair: Keypair,
 
     pub cache: Mutex<Cache>,
-    pub solana_client: RpcClient,
     pub database: Database,
+    pub solana_client: RpcClient,
+    pub token_decimals: u8,
 }
 
 #[derive(Default, Debug)]
 pub struct Cache {
-    pub addr_cache: HashMap<IpAddr, u64>,
-    pub pubkey_cache: HashMap<Pubkey, u64>,
+    pub addr_cache: HashMap<IpAddr, f64>,
+    pub pubkey_cache: HashMap<Pubkey, f64>,
 }
 
 impl State {
-    pub fn check_limits(&self, addr: IpAddr, pubkey: Pubkey, amount: u64) -> Result<(), Error> {
-        //if addr.is_loopback() {
-        //    return Ok(());
-        //}
+    pub async fn init(config: AppConfig) -> Result<Self, Error> {
+        let authority_keypair = config.authority_keypair().expect("read authority keypair");
+        let solana_client = RpcClient::new(config.rpc_address.clone());
 
+        let token_decimals = get_token_decimals(&solana_client, &config.marketplace_id)
+            .await
+            .map_err(|e| {
+                error!("Can not get token decimals: {e:?}");
+                Error::FailedToProcessTransaction
+            })?;
+
+        Ok(Self {
+            config,
+            authority_keypair,
+            cache: Default::default(),
+            database: Database::open().expect("open database"),
+            token_decimals,
+            solana_client,
+        })
+    }
+
+    pub fn check_limits(&self, addr: IpAddr, pubkey: Pubkey, amount: f64) -> Result<(), Error> {
         if let Some(capacity) = self.config.per_request_cap {
             if amount > capacity {
                 return Err(Error::PerRequestCapExceeded {
@@ -86,7 +102,7 @@ impl State {
                     a.insert(amount);
                 }
                 Entry::Occupied(mut a) if a.get() + amount <= capacity => {
-                    *a.get_mut() = a.get().saturating_add(amount);
+                    *a.get_mut() = a.get() + amount;
                 }
                 _ => {
                     return Err(Error::PerAddressCapExceeded {
@@ -103,7 +119,7 @@ impl State {
                     a.insert(amount);
                 }
                 Entry::Occupied(mut a) if a.get() + amount <= capacity => {
-                    *a.get_mut() = a.get().saturating_add(amount);
+                    *a.get_mut() = a.get() + amount;
                 }
                 _ => {
                     return Err(Error::PerAccountCapExceeded {
@@ -117,7 +133,7 @@ impl State {
         Ok(())
     }
 
-    pub fn revert_changes(&self, addr: IpAddr, pubkey: Pubkey, amount: u64) -> Result<(), Error> {
+    pub fn revert_changes(&self, addr: IpAddr, pubkey: Pubkey, amount: f64) -> Result<(), Error> {
         let mut cache = self.cache.lock().map_err(|e| {
             error!("Can not lock cache: {e:?}");
             Error::FailedToProcessTransaction
@@ -126,12 +142,12 @@ impl State {
         cache
             .addr_cache
             .entry(addr)
-            .and_modify(|total| *total = total.saturating_sub(amount));
+            .and_modify(|total| *total -= amount);
 
         cache
             .pubkey_cache
             .entry(pubkey)
-            .and_modify(|total| *total = total.saturating_sub(amount));
+            .and_modify(|total| *total -= amount);
         Ok(())
     }
 }
@@ -146,6 +162,20 @@ where
         error!("invalid input, expect valid solana pubkey: {e:?}");
         de::Error::custom("invalid input, expect valid solana pubkey".to_string())
     })
+}
+
+fn deserialize_email<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let email = String::deserialize(deserializer)?;
+
+    if !email_address::EmailAddress::is_valid(&email) {
+        error!("invalid input, expect valid email address");
+        Err(de::Error::custom("invalid email address".to_string()))
+    } else {
+        Ok(email)
+    }
 }
 
 fn serialize_signature<S>(sig: &Signature, serializer: S) -> Result<S::Ok, S::Error>
@@ -206,8 +236,9 @@ pub async fn get_or_create_ata(state: &State, wallet: &Pubkey) -> Result<Pubkey,
 pub async fn fund_token_account(
     state: &State,
     token_account: &Pubkey,
-    amount: u64,
+    amount: f64,
 ) -> Result<Signature, Error> {
+    let amount = (amount * 10u64.pow(state.token_decimals as u32) as f64).round() as u64;
     let instruction = spl_token::instruction::mint_to(
         &spl_token::ID,
         &state.config.mint_pubkey,

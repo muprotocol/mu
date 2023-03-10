@@ -1,5 +1,6 @@
 mod config;
 mod database;
+mod marketplace;
 mod types;
 
 use std::sync::Arc;
@@ -11,9 +12,7 @@ use actix_web::{
     App, HttpServer,
 };
 
-use database::Database;
 use log::trace;
-use solana_client::nonblocking::rpc_client::RpcClient;
 use types::{fund_token_account, get_or_create_ata, AirdropRequest, AirdropResponse, Error, State};
 
 async fn process_request(
@@ -58,14 +57,7 @@ async fn main() -> std::io::Result<()> {
     env_logger::init();
 
     let config = config::initialize_config().expect("initialize config");
-    let authority_keypair = config.authority_keypair().expect("read authority keypair");
-    let state = Arc::new(State {
-        config: config.clone(),
-        authority_keypair,
-        cache: Default::default(),
-        solana_client: RpcClient::new(config.rpc_address),
-        database: Database::open().expect("open database"),
-    });
+    let state = Arc::new(State::init(config.clone()).await.expect("initialize state"));
 
     HttpServer::new(move || {
         let state = state.clone(); //TODO: Don't use Arc, Data is using arc inside already

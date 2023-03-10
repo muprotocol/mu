@@ -16,10 +16,10 @@ pub struct AppConfig {
     pub listen_address: std::net::SocketAddr,
     pub mint_pubkey: Pubkey,
     authority_keypair: PathBuf,
-    pub per_request_cap: Option<u64>,
-    pub per_address_cap: Option<u64>,
-    pub per_account_cap: Option<u64>,
-    //pub time_slice: ConfigDuration,
+    pub per_request_cap: Option<f64>,
+    pub per_address_cap: Option<f64>,
+    pub per_account_cap: Option<f64>,
+    pub marketplace_id: Pubkey,
 }
 
 //TODO: check that caps are valid
@@ -69,6 +69,9 @@ pub fn initialize_config() -> Result<AppConfig> {
         per_request_cap: config.get("per_request_cap")?,
         per_address_cap: config.get("per_address_cap")?,
         per_account_cap: config.get("per_account_cap")?,
+        marketplace_id: config
+            .get::<String>("marketplace_id")
+            .map(|p| Pubkey::from_str(&p))??,
     })
 }
 
