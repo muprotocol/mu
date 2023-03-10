@@ -111,7 +111,7 @@ pub async fn run() -> Result<()> {
     let (membership, mut membership_notification_receiver, known_nodes) = membership::start(
         my_node.clone(),
         membership_config,
-        region_id,
+        region_config.id,
         database_manager.clone(),
     )
     .await
