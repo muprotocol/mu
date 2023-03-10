@@ -11,7 +11,6 @@ use anyhow::Result;
 
 use async_trait::async_trait;
 
-use mu_db::{DbManager, PdConfig, TcpPortAddress, TikvConfig, TikvRunnerConfig};
 use mu_runtime::{start, AssemblyDefinition, Notification, Runtime, RuntimeConfig, Usage};
 use mu_stack::{AssemblyID, AssemblyRuntime, FunctionID, StackID};
 use musdk_common::http_client::*;
@@ -82,7 +81,8 @@ pub mod fixture {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
-    use mu_common::serde_support::IpOrHostname;
+    use db_embedded_tikv::{DbManagerWithTikv, PdConfig, TikvConfig, TikvRunnerConfig};
+    use mu_common::serde_support::{IpOrHostname, TcpPortAddress};
     use test_context::{AsyncTestContext, TestContext};
 
     pub static DID_INSTALL_WASM32_TARGET_RUN: AtomicBool = AtomicBool::new(false);
@@ -156,7 +156,7 @@ pub mod fixture {
     }
 
     pub struct DBManagerFixture {
-        pub db_manager: Box<dyn DbManager>,
+        pub db_manager: DbManagerWithTikv,
         data_dir: TempDir,
     }
 
@@ -184,9 +184,13 @@ pub mod fixture {
             };
 
             Self {
-                db_manager: mu_db::new_with_embedded_cluster(addr(12803), vec![], tikv_config)
-                    .await
-                    .unwrap(),
+                db_manager: db_embedded_tikv::new_with_embedded_cluster(
+                    addr(12803),
+                    vec![],
+                    tikv_config,
+                )
+                .await
+                .unwrap(),
 
                 data_dir,
             }
@@ -391,7 +395,33 @@ mod mock_db {
             Ok(())
         }
 
+        async fn get_raw(&self, key: Vec<u8>) -> Result<Option<Value>> {
+            Ok(None)
+        }
+
         async fn put(&self, key: Key, value: Value, is_atomic: bool) -> Result<()> {
+            Ok(())
+        }
+
+        async fn scan_raw(
+            &self,
+            lower_inclusive: Vec<u8>,
+            upper_exclusive: Vec<u8>,
+            limit: u32,
+        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            Ok(vec![])
+        }
+
+        async fn compare_and_swap_raw(
+            &self,
+            key: Vec<u8>,
+            previous_value: Option<Value>,
+            new_value: Value,
+        ) -> Result<(Option<Value>, bool)> {
+            Ok((None, false))
+        }
+
+        async fn delete_raw(&self, key: Vec<u8>, is_atomic: bool) -> Result<()> {
             Ok(())
         }
 
@@ -400,6 +430,10 @@ mod mock_db {
         }
 
         async fn delete(&self, key: Key, is_atomic: bool) -> Result<()> {
+            Ok(())
+        }
+
+        async fn put_raw(&self, key: Vec<u8>, value: Value, is_atomic: bool) -> Result<()> {
             Ok(())
         }
 

@@ -21,6 +21,8 @@ use mu_stack::StackID;
 use serde::Deserialize;
 use solana_account_decoder::parse_token::{parse_token, TokenAccountType};
 use solana_account_decoder::{UiAccount, UiAccountEncoding};
+use solana_client::client_error::{ClientError, ClientErrorKind};
+use solana_client::rpc_request::RpcError;
 use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
     rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
@@ -459,14 +461,21 @@ async fn fetch_owner_escrow_balance(
         &[b"escrow", &owner_key.to_bytes(), &provider_pda.to_bytes()],
         &marketplace::id(),
     );
-    let token_balance = rpc_client
-        .get_token_account_balance(&escrow_pda)
-        .await
-        .context("Failed to fetch escrow balance from Solana")?;
-    token_balance
-        .amount
-        .parse()
-        .context("Failed to parse amount from token account")
+
+    let token_balance = match rpc_client.get_token_account_balance(&escrow_pda).await {
+        Ok(x) => x
+            .amount
+            .parse()
+            .context("Failed to parse amount from token account")?,
+        Err(ClientError {
+            // -32602 is "could not find account"
+            kind: ClientErrorKind::RpcError(RpcError::RpcResponseError { code: -32602, .. }),
+            ..
+        }) => 0u64,
+        Err(f) => return Err(f).context("Failed to fetch escrow balance from Solana"),
+    };
+
+    Ok(token_balance)
 }
 
 async fn get_token_decimals(rpc_client: &RpcClient) -> Result<u8> {
