@@ -53,7 +53,7 @@ impl fmt::Display for Error {
                 } else {
                     "HTTP status server error"
                 };
-                write!(f, "{} ({})", prefix, status)?;
+                write!(f, "{prefix} ({status})")?;
             }
         };
 

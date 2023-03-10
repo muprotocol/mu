@@ -113,8 +113,8 @@ fn generate_context_factory_function(r#mod: &FunctionsMod) -> TokenStream2 {
 
     for f in &r#mod.mu_functions {
         let name = &f.sig.ident;
-        let fn_name = Ident::new(format!("fn_{}", name).as_str(), name.span());
-        let invoker_name = Ident::new(format!("_invoker_{}", name).as_str(), name.span());
+        let fn_name = Ident::new(format!("fn_{name}").as_str(), name.span());
+        let invoker_name = Ident::new(format!("_invoker_{name}").as_str(), name.span());
         fns.push(quote!(
             let #fn_name: ::musdk::MuFunction = ::std::rc::Rc::new(|c, r| #invoker_name(c, r));
         ));
@@ -173,7 +173,7 @@ fn generate_invokers(r#mod: &FunctionsMod) -> Vec<TokenStream2> {
 
     for f in &r#mod.mu_functions {
         let name = &f.sig.ident;
-        let invoker_name = Ident::new(format!("_invoker_{}", name).as_str(), name.span());
+        let invoker_name = Ident::new(format!("_invoker_{name}").as_str(), name.span());
 
         let (generics, context_lifetime) = {
             match f.sig.generics.params.iter().find_map(|g| match g {
