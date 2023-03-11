@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, rc::Rc};
 
 use anyhow::{Context, Result};
 use solana_sdk::signer::Signer;
@@ -25,7 +25,7 @@ impl ApiClient {
     pub fn upload_function(
         &self,
         file_path: PathBuf,
-        user: Box<dyn Signer>,
+        user: Rc<dyn Signer>,
     ) -> Result<UploadFunctionResponse> {
         let bytes = std::fs::read(file_path).context("Reading function wasm module")?;
 

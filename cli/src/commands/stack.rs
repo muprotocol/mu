@@ -1,8 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fs,
-    path::PathBuf,
-};
+use std::collections::{HashMap, HashSet};
 
 use anchor_client::{
     solana_client::rpc_filter::{Memcmp, RpcFilterType},
@@ -36,10 +32,6 @@ pub struct ListStacksCommand {
 
 #[derive(Debug, Args)]
 pub struct DeployStackCommand {
-    #[arg(long, short('f'))]
-    /// Path to the yaml file containing the stack definition.
-    yaml_file: PathBuf,
-
     #[arg(long, short)]
     /// Seed numbers are used to distinguish stacks deployed to the same region.
     /// The seed can be thought of as an ID, which is used again when updating
@@ -169,18 +161,25 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
 }
 
 pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
-    let yaml = fs::read_to_string(cmd.yaml_file).context("Failed to read stack file")?;
+    let (mu_manifest, _) = crate::mu_manifest::read_manifest()?;
 
-    let stack = serde_yaml::from_str::<mu_stack::Stack>(yaml.as_str())
-        .context("Failed to deserialize stack from YAML file")?;
-
-    let client = config.build_marketplace_client()?;
+    let marketplace_client = config.build_marketplace_client()?;
     let user_wallet = config.get_signer()?;
+
+    let region_base_url =
+        marketplace_client::region::get_base_url(&marketplace_client, cmd.region)?;
+    let region_api_client = api_common::client::ApiClient::new(region_base_url);
+
+    let stack = mu_manifest.generate_stack_manifest_for_publish(|p| {
+        region_api_client
+            .upload_function(std::path::PathBuf::from(p), user_wallet.clone())
+            .map(|r| r.file_id)
+    })?;
 
     let deploy_mode = marketplace_client::stack::get_deploy_mode(cmd.init, cmd.update)?;
 
     marketplace_client::stack::deploy(
-        &client,
+        &marketplace_client,
         user_wallet,
         &cmd.region,
         stack,

@@ -3,15 +3,16 @@ use std::{
     fmt::Display,
     path::{Path, PathBuf},
     process::Stdio,
-    str::FromStr,
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use itertools::Itertools;
 use mu_stack::StackID;
 use rust_embed::RustEmbed;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use thiserror::Error;
+
+use crate::mu_manifest::Language;
 
 //TODO: Currently we embed the `templates` folder in our binary, but it's good to be able to read
 //other templates from user local system.
@@ -37,31 +38,6 @@ impl Display for TemplateSet {
 pub struct Template {
     pub lang: Language,
     files: Vec<File>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Language {
-    Rust,
-}
-
-impl Display for Language {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            Language::Rust => "Rust",
-        };
-        std::fmt::Display::fmt(s, f)
-    }
-}
-
-impl FromStr for Language {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "rust" => Ok(Self::Rust),
-            _ => Err(anyhow!("Invalid language")),
-        }
-    }
 }
 
 #[derive(Deserialize)]

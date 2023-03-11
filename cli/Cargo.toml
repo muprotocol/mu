@@ -58,3 +58,4 @@ mu_stack = { path = "../rust-libs/mu_stack" }
 mu-common = { path = "../rust-libs/common" }
 musdk-common = { path = "../sdk/common" }
 mu-db = { path = "../rust-libs/db", optional = true }
+api_common = { path = "../rust-libs/api_common", features = ["client"] }

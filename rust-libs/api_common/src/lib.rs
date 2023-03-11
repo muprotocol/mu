@@ -1,6 +1,5 @@
 #[cfg(feature = "client")]
-mod client;
-
+pub mod client;
 mod error;
 pub mod requests;
 
@@ -11,7 +10,7 @@ use requests::UploadFunctionRequest;
 use serde::{Deserialize, Serialize};
 use solana_sdk::{pubkey::Pubkey, signer::Signer};
 
-pub use error::Error;
+pub use error::{ClientError, Error, ServerError};
 
 pub const SUBJECT_HEADER_NAME: &str = "X-MU-SUBJECT";
 pub const SIGNATURE_HEADER_NAME: &str = "X-MU-SIGNATURE";

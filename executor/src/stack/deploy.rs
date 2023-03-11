@@ -154,7 +154,7 @@ pub(super) async fn deploy(
         .collect();
 
     storage_client
-        .update_stack_storages(id, storage_delete_pairs)
+        .update_stack_storages(mu_storage::Owner::Stack(id), storage_delete_pairs)
         .await
         .map_err(StackDeploymentError::FailedToDeployStorageNames)?;
 
@@ -242,11 +242,13 @@ async fn delete_user_data_permanently_from_storage(
     storage_manager: &dyn StorageManager,
     stack_id: StackID,
 ) -> anyhow::Result<()> {
+    let owner = mu_storage::Owner::Stack(stack_id);
+
     let storage_client = storage_manager.make_client()?;
-    let storage_names = storage_client.storage_list(stack_id).await?;
+    let storage_names = storage_client.storage_list(owner).await?;
 
     for name in storage_names.clone() {
-        storage_client.remove_storage(stack_id, &name).await?;
+        storage_client.remove_storage(owner, &name).await?;
     }
 
     let storage_and_deletes = storage_names
@@ -255,7 +257,7 @@ async fn delete_user_data_permanently_from_storage(
         .collect();
 
     storage_client
-        .update_stack_storages(stack_id, storage_and_deletes)
+        .update_stack_storages(owner, storage_and_deletes)
         .await?;
 
     Ok(())

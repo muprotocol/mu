@@ -494,6 +494,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "224afbd727c3d6e4b90103ece64b8d1b67fbb1973b1046c2281eed3f3803f800"
 
 [[package]]
+name = "api_common"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.21.0",
+ "bytes",
+ "ed25519-dalek",
+ "log",
+ "mu_stack",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha256",
+ "solana-sdk",
+ "thiserror",
+]
+
+[[package]]
 name = "ark-bn254"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3083,6 +3101,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-client",
  "anyhow",
+ "api_common",
  "async-trait",
  "base64 0.21.0",
  "beau_collector",
@@ -3214,6 +3233,7 @@ dependencies = [
  "pin-project-lite",
  "rust-s3",
  "serde",
+ "solana-program",
  "storage_embedded_juicefs",
  "thiserror",
  "tokio",
@@ -5044,6 +5064,16 @@ dependencies = [
  "cfg-if 1.0.0",
  "cpufeatures",
  "digest 0.10.6",
+]
+
+[[package]]
+name = "sha256"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "328169f167261957e83d82be47f9e36629e257c62308129033d7f7e7c173d180"
+dependencies = [
+ "hex",
+ "sha2 0.9.9",
 ]
 
 [[package]]

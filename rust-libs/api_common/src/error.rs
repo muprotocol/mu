@@ -21,7 +21,13 @@ pub enum Error {
 #[derive(thiserror::Error, Debug, Serialize, Deserialize)]
 pub enum ServerError {
     #[error("Failed to upload function source")]
-    UploadFunctionError,
+    UploadFunction,
+
+    #[error("Unexpected subject type, expected {0}, got {1}")]
+    UnexpectedSubject(String, String),
+
+    #[error("Failed to Serialize response")]
+    FailedToSerializeResponse,
 }
 
 #[derive(thiserror::Error, Debug, Serialize, Deserialize)]

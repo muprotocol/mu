@@ -8,13 +8,15 @@ use actix_web::{
     HttpRequest,
 };
 use anyhow::{bail, Context, Result};
-use api_common::{Request, Subject, SIGNATURE_HEADER_NAME, SUBJECT_HEADER_NAME};
+use api_common::{Request, ServerError, Subject, SIGNATURE_HEADER_NAME, SUBJECT_HEADER_NAME};
 use bytes::Bytes;
 use ed25519_dalek::PublicKey;
 use log::error;
 use mu_gateway::HttpServiceFactoryBuilder;
 use mu_stack::StackID;
 use mu_storage::StorageClient;
+use reqwest::StatusCode;
+use serde::Serialize;
 use serde_json::json;
 use solana_sdk::pubkey::Pubkey;
 
@@ -101,7 +103,7 @@ async fn verify_subject_authority(
     dependency_accessor: &DependencyAccessor,
 ) -> Result<()> {
     match subject {
-        Subject::User(user_pubkey) => todo!(), // Check user deposit account
+        Subject::User(_user_pubkey) => Ok(()), // Check user deposit account
         Subject::Stack { id, .. } => {
             verify_stack_ownership(id, &public_key, &dependency_accessor).await
         }
@@ -136,10 +138,23 @@ async fn execute_request(
     request: Request,
     subject: Subject,
 ) -> ExecutionResult {
+    fn helper<T: Serialize>(output: T) -> ExecutionResult {
+        match serde_json::to_value(output) {
+            Ok(r) => Ok(r),
+            Err(e) => {
+                error!("Can not serialize response: {e:?}");
+                Err((
+                    serde_json::to_value(ServerError::FailedToSerializeResponse).unwrap(), //TODO: what else?
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                ))
+            }
+        }
+    }
+
     match request {
-        Request::Ping => Ok(json! {"pong"}),
+        Request::Ping => helper(Ok::<serde_json::Value, ()>(json! {"pong"})),
         Request::UploadFunction(req) => {
-            upload_function::execute(dependency_accessor, subject, req).await
+            helper(upload_function::execute(dependency_accessor, subject, req).await)
         }
     }
 }
