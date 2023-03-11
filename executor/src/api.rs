@@ -8,7 +8,9 @@ use actix_web::{
     HttpRequest,
 };
 use anyhow::{bail, Context, Result};
-use api_common::{Request, Subject, PUBLIC_KEY_HEADER_NAME, SIGNATURE_HEADER_NAME};
+use api_common::{Request, Subject, SIGNATURE_HEADER_NAME, SUBJECT_HEADER_NAME};
+use bytes::Bytes;
+use ed25519_dalek::PublicKey;
 use log::error;
 use mu_gateway::HttpServiceFactoryBuilder;
 use mu_stack::StackID;
@@ -24,7 +26,7 @@ pub fn service_factory() -> impl HttpServiceFactoryBuilder {
             web::resource("/api")
                 .guard(guard::All(guard::Post()).and(guard::fn_guard(|ctx| {
                     let headers = ctx.head().headers();
-                    headers.contains_key(PUBLIC_KEY_HEADER_NAME)
+                    headers.contains_key(SUBJECT_HEADER_NAME)
                         && headers.contains_key(SIGNATURE_HEADER_NAME)
                 })))
                 .to(handle_request),
@@ -41,21 +43,21 @@ pub struct DependencyAccessor {
 
 async fn handle_request(
     request: HttpRequest,
-    payload: String,
+    payload: Bytes,
     dependency_accessor: web::Data<DependencyAccessor>,
 ) -> (Json<serde_json::Value>, http::StatusCode) {
     async fn helper(
         request: HttpRequest,
-        payload: String,
+        payload: Bytes,
         dependency_accessor: web::Data<DependencyAccessor>,
     ) -> Result<(Json<serde_json::Value>, http::StatusCode)> {
         let headers = request.headers();
-        let pubkey = verify_signature(headers, &payload)?;
-        let request = serde_json::from_str::<Request>(payload.as_str())?;
+        let (subject, public_key) = verify_signature(headers, &payload)?;
+        let request = serde_json::from_slice::<Request>(&payload)?;
 
-        verify_subject_authority(&request.subject, &pubkey, &dependency_accessor).await?;
+        verify_subject_authority(&subject, &public_key, &dependency_accessor).await?;
 
-        match execute_request(dependency_accessor, request) {
+        match execute_request(dependency_accessor, request, subject).await {
             Ok(response) => Ok((Json(response), http::StatusCode::OK)),
             Err((response, status_code)) => Ok((Json(response), status_code)),
         }
@@ -66,15 +68,22 @@ async fn handle_request(
         .unwrap_or_else(|_| handle_bad_request())
 }
 
-fn verify_signature(headers: &HeaderMap, payload: &String) -> Result<ed25519_dalek::PublicKey> {
-    let pubkey_header = headers.get(PUBLIC_KEY_HEADER_NAME).context("")?;
-    let pubkey_bytes = base64::decode(pubkey_header)?;
-    let pubkey = ed25519_dalek::PublicKey::from_bytes(&pubkey_bytes[..])?;
+fn verify_signature(headers: &HeaderMap, payload: &[u8]) -> Result<(Subject, PublicKey)> {
+    let subject_header = headers.get(SUBJECT_HEADER_NAME).context("")?;
+    let subject = Subject::decode_base64(subject_header)?;
+
+    let pubkey = match subject {
+        Subject::User(pk) => pk,
+        Subject::Stack { owner, .. } => owner,
+    };
+    let public_key = ed25519_dalek::PublicKey::from_bytes(&pubkey.to_bytes())?;
+
     let signature_header = headers.get(SIGNATURE_HEADER_NAME).context("")?;
     let signature_bytes = base64::decode(signature_header)?;
     let signature = ed25519_dalek::Signature::from_bytes(&signature_bytes[..])?;
-    pubkey.verify_strict(payload.as_bytes(), &signature)?;
-    Ok(pubkey)
+
+    public_key.verify_strict(payload, &signature)?;
+    Ok((subject, public_key))
 }
 
 fn handle_bad_request() -> (Json<serde_json::Value>, http::StatusCode) {
@@ -82,15 +91,19 @@ fn handle_bad_request() -> (Json<serde_json::Value>, http::StatusCode) {
     (Json(j), s)
 }
 
+fn bad_request(description: &'static str) -> ExecutionError {
+    (json!(description), http::StatusCode::BAD_REQUEST)
+}
+
 async fn verify_subject_authority(
     subject: &Subject,
-    pubkey: &ed25519_dalek::PublicKey,
+    public_key: &ed25519_dalek::PublicKey,
     dependency_accessor: &DependencyAccessor,
 ) -> Result<()> {
     match subject {
         Subject::User(user_pubkey) => todo!(), // Check user deposit account
-        Subject::Stack(stack_id) => {
-            verify_stack_ownership(stack_id, &pubkey, &dependency_accessor).await
+        Subject::Stack { id, .. } => {
+            verify_stack_ownership(id, &public_key, &dependency_accessor).await
         }
     }
 }
@@ -115,31 +128,18 @@ async fn verify_stack_ownership(
     }
 }
 
-type ExecutionError = (serde_json::Value, http::StatusCode);
 type ExecutionResult = std::result::Result<serde_json::Value, ExecutionError>;
+type ExecutionError = (serde_json::Value, http::StatusCode);
 
-fn bad_request(description: &'static str) -> ExecutionError {
-    (json!(description), http::StatusCode::BAD_REQUEST)
-}
-
-fn execute_request(
+async fn execute_request(
     dependency_accessor: web::Data<DependencyAccessor>,
     request: Request,
+    subject: Subject,
 ) -> ExecutionResult {
-    let Request {
-        request,
-        subject,
-        params,
-    } = request;
-
-    match request.as_str() {
-        "echo" => execute_echo(params),
-        "upload_function" => upload_function::execute(dependency_accessor, subject, body),
-        _ => Err(bad_request("unknown request")),
+    match request {
+        Request::Ping => Ok(json! {"pong"}),
+        Request::UploadFunction(req) => {
+            upload_function::execute(dependency_accessor, subject, req).await
+        }
     }
-}
-
-fn execute_echo(params: serde_json::Value) -> ExecutionResult {
-    let req = serde_json::from_value::<String>(params).map_err(|_| bad_request("invalid input"))?;
-    Ok(json!(req))
 }

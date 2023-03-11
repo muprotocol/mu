@@ -131,6 +131,9 @@ pub async fn run() -> Result<()> {
         api::service_factory(),
         Some(api::DependencyAccessor {
             request_signer_cache: request_signer_cache.clone(),
+            storage_client: storage_manager
+                .make_client()
+                .context("Failed to create storage client for executor api")?,
         }),
         {
             let connection_manager = connection_manager.clone();

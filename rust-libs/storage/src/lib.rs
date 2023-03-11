@@ -5,6 +5,7 @@ use mu_stack::StackID;
 use pin_project_lite::pin_project;
 use s3::{creds::Credentials, Bucket};
 use serde::Deserialize;
+use solana_program::pubkey::Pubkey;
 use std::{fmt::Debug, ops::Deref, pin::Pin};
 use storage_embedded_juicefs::{InternalStorageConfig, JuicefsRunner, LiveStorageConfig};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -16,24 +17,39 @@ pub struct Object {
     pub size: u64,
 }
 
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+pub enum Owner {
+    User(Pubkey),
+    Stack(StackID),
+}
+
+impl std::fmt::Display for Owner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Owner::User(pk) => f.write_fmt(format_args!("user__{pk}")),
+            Owner::Stack(id) => f.write_fmt(format_args!("stack__{id}")),
+        }
+    }
+}
+
 #[async_trait]
 #[clonable]
 pub trait StorageClient: Send + Sync + Clone {
     async fn update_stack_storages(
         &self,
-        stack_id: StackID,
+        owner: Owner,
         storage_delete_pairs: Vec<(&str, DeleteStorage)>,
     ) -> Result<()>;
 
-    async fn storage_list(&self, stack_id: StackID) -> Result<Vec<String>>;
+    async fn storage_list(&self, owner: Owner) -> Result<Vec<String>>;
 
-    async fn contains_storage(&self, stack_id: StackID, storage_name: &str) -> Result<bool>;
+    async fn contains_storage(&self, owner: Owner, storage_name: &str) -> Result<bool>;
 
-    async fn remove_storage(&self, stack_id: StackID, storage_name: &str) -> Result<()>;
+    async fn remove_storage(&self, owner: Owner, storage_name: &str) -> Result<()>;
 
     async fn get(
         &self,
-        stack_id: StackID,
+        owner: Owner,
         storage_name: &str,
         key: &str,
         writer: &mut (dyn AsyncWrite + Send + Sync + Unpin),
@@ -41,20 +57,15 @@ pub trait StorageClient: Send + Sync + Clone {
 
     async fn put(
         &self,
-        stack_id: StackID,
+        owner: Owner,
         storage_name: &str,
         key: &str,
         reader: &mut (dyn AsyncRead + Send + Sync + Unpin),
     ) -> Result<()>;
 
-    async fn delete(&self, stack_id: StackID, storage_name: &str, key: &str) -> Result<()>;
+    async fn delete(&self, owner: Owner, storage_name: &str, key: &str) -> Result<()>;
 
-    async fn list(
-        &self,
-        stack_id: StackID,
-        storage_name: &str,
-        prefix: &str,
-    ) -> Result<Vec<Object>>;
+    async fn list(&self, owner: Owner, storage_name: &str, prefix: &str) -> Result<Vec<Object>>;
 }
 
 #[derive(Clone, Debug)]
@@ -120,8 +131,8 @@ impl StorageClientImpl {
         Ok(StorageClientImpl { bucket })
     }
 
-    fn create_path(stack_id: StackID, storage_name: &str, key: &str) -> String {
-        format!("{stack_id}/{storage_name}/{key}")
+    fn create_path(owner: Owner, storage_name: &str, key: &str) -> String {
+        format!("{owner}/{storage_name}/{key}")
     }
 
     fn create_object(object: &s3::serde_types::Object) -> Object {
@@ -138,8 +149,8 @@ impl StorageClientImpl {
         }
     }
 
-    async fn add_storage(&self, stack_id: StackID, name: &str) -> Result<()> {
-        let path = format!("{METADATA_PREFIX}/{stack_id}/{name}");
+    async fn add_storage(&self, owner: Owner, name: &str) -> Result<()> {
+        let path = format!("{METADATA_PREFIX}/{owner}/{name}");
         self.bucket.put_object_stream(&mut &b""[..], path).await?;
         Ok(())
     }
@@ -149,25 +160,25 @@ impl StorageClientImpl {
 impl StorageClient for StorageClientImpl {
     async fn update_stack_storages(
         &self,
-        stack_id: StackID,
+        owner: Owner,
         storage_delete_pairs: Vec<(&str, DeleteStorage)>,
     ) -> Result<()> {
-        let existing_storages = self.storage_list(stack_id).await?;
+        let existing_storages = self.storage_list(owner).await?;
 
         for (storage_name, is_delete) in storage_delete_pairs {
             let storage_name = storage_name.to_string();
             if !existing_storages.contains(&storage_name) && !*is_delete {
-                self.add_storage(stack_id, &storage_name).await?;
+                self.add_storage(owner, &storage_name).await?;
             } else if existing_storages.contains(&storage_name) && *is_delete {
-                self.remove_storage(stack_id, &storage_name).await?;
+                self.remove_storage(owner, &storage_name).await?;
             }
         }
 
         Ok(())
     }
 
-    async fn storage_list(&self, stack_id: StackID) -> Result<Vec<String>> {
-        let prefix = format!("{METADATA_PREFIX}/{stack_id}/");
+    async fn storage_list(&self, owner: Owner) -> Result<Vec<String>> {
+        let prefix = format!("{METADATA_PREFIX}/stack_id__{owner}/");
 
         let resp = self.bucket.list(prefix, None).await?;
 
@@ -180,27 +191,27 @@ impl StorageClient for StorageClientImpl {
         Ok(objects)
     }
 
-    async fn contains_storage(&self, stack_id: StackID, storage_name: &str) -> Result<bool> {
+    async fn contains_storage(&self, owner: Owner, storage_name: &str) -> Result<bool> {
         Ok(self
-            .storage_list(stack_id)
+            .storage_list(owner)
             .await?
             .contains(&storage_name.into()))
     }
 
-    async fn remove_storage(&self, stack_id: StackID, storage_name: &str) -> Result<()> {
+    async fn remove_storage(&self, owner: Owner, storage_name: &str) -> Result<()> {
         // remove from manifest
-        let path = format!("{METADATA_PREFIX}/{stack_id}/{storage_name}");
+        let path = format!("{METADATA_PREFIX}/{owner}/{storage_name}");
         self.bucket.delete_object(path).await?;
 
         // remove data
         let keys = self
-            .list(stack_id, storage_name, "")
+            .list(owner, storage_name, "")
             .await?
             .into_iter()
             .map(|o| o.key);
 
         for key in keys {
-            let path = Self::create_path(stack_id, storage_name, &key);
+            let path = Self::create_path(owner, storage_name, &key);
             self.bucket.delete_object(path).await?;
         }
 
@@ -209,49 +220,44 @@ impl StorageClient for StorageClientImpl {
 
     async fn get(
         &self,
-        stack_id: StackID,
+        owner: Owner,
         storage_name: &str,
         key: &str,
         writer: &mut (dyn AsyncWrite + Send + Sync + Unpin),
     ) -> Result<()> {
         let mut wrapper = AsyncWriterWrapper { writer };
-        let path = Self::create_path(stack_id, storage_name, key);
+        let path = Self::create_path(owner, storage_name, key);
         self.bucket.get_object_stream(path, &mut wrapper).await?;
         Ok(())
     }
 
     async fn put(
         &self,
-        stack_id: StackID,
+        owner: Owner,
         storage_name: &str,
         key: &str,
         reader: &mut (dyn AsyncRead + Send + Sync + Unpin),
     ) -> Result<()> {
-        if !self.contains_storage(stack_id, storage_name).await? {
-            self.add_storage(stack_id, storage_name).await?
+        if !self.contains_storage(owner, storage_name).await? {
+            self.add_storage(owner, storage_name).await?
         }
         let mut wrapper = AsyncReaderWrapper { reader };
-        let path = Self::create_path(stack_id, storage_name, key);
+        let path = Self::create_path(owner, storage_name, key);
 
         self.bucket.put_object_stream(&mut wrapper, path).await?;
         Ok(())
     }
 
-    async fn delete(&self, stack_id: StackID, storage_name: &str, key: &str) -> Result<()> {
-        let path = Self::create_path(stack_id, storage_name, key);
+    async fn delete(&self, owner: Owner, storage_name: &str, key: &str) -> Result<()> {
+        let path = Self::create_path(owner, storage_name, key);
 
         self.bucket.delete_object(path).await?;
 
         Ok(())
     }
 
-    async fn list(
-        &self,
-        stack_id: StackID,
-        storage_name: &str,
-        prefix: &str,
-    ) -> Result<Vec<Object>> {
-        let prefix = Self::create_path(stack_id, storage_name, prefix);
+    async fn list(&self, owner: Owner, storage_name: &str, prefix: &str) -> Result<Vec<Object>> {
+        let prefix = Self::create_path(owner, storage_name, prefix);
 
         let resp = self.bucket.list(prefix, None).await?;
 
@@ -341,7 +347,7 @@ mod test {
 
     use super::*;
 
-    const STACK_ID: StackID = StackID::SolanaPublicKey([1; 32]);
+    const OWNER: Owner = Owner::Stack(StackID::SolanaPublicKey([1; 32]));
 
     async fn test_start() -> Result<Box<dyn StorageManager>> {
         let storage_info = StorageInfo {
@@ -377,11 +383,11 @@ mod test {
             .collect::<Vec<_>>();
 
         client
-            .update_stack_storages(STACK_ID, stor_del_pairs)
+            .update_stack_storages(OWNER, stor_del_pairs)
             .await
             .unwrap();
 
-        let x = client.storage_list(STACK_ID).await.unwrap();
+        let x = client.storage_list(OWNER).await.unwrap();
 
         assert_eq!(insertion_storages, x);
     }

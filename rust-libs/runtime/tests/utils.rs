@@ -606,9 +606,9 @@ mod mock_db {
 
 mod mock_storage {
     use async_trait::async_trait;
-    use mu_stack::StackID;
-    use mu_storage::{DeleteStorage, Object, StorageClient, StorageManager};
+    use mu_storage::{DeleteStorage, Object, Owner, StorageClient, StorageManager};
     use tokio::io::{AsyncRead, AsyncWrite};
+
     #[derive(Clone)]
     pub struct EmptyStorageManager;
 
@@ -630,35 +630,31 @@ mod mock_storage {
     impl StorageClient for EmptyStorageClient {
         async fn update_stack_storages(
             &self,
-            _stack_id: StackID,
+            _owner: Owner,
             _storage_delete_pairs: Vec<(&str, DeleteStorage)>,
         ) -> anyhow::Result<()> {
             Ok(())
         }
 
-        async fn storage_list(&self, _stack_id: StackID) -> anyhow::Result<Vec<String>> {
+        async fn storage_list(&self, _owner: Owner) -> anyhow::Result<Vec<String>> {
             Ok(vec![])
         }
 
         async fn contains_storage(
             &self,
-            _stack_id: StackID,
+            _owner: Owner,
             _storage_name: &str,
         ) -> anyhow::Result<bool> {
             Ok(false)
         }
 
-        async fn remove_storage(
-            &self,
-            _stack_id: StackID,
-            _storage_name: &str,
-        ) -> anyhow::Result<()> {
+        async fn remove_storage(&self, _owner: Owner, _storage_name: &str) -> anyhow::Result<()> {
             Ok(())
         }
 
         async fn get(
             &self,
-            _stack_id: StackID,
+            _owner: Owner,
             _storage_name: &str,
             _key: &str,
             _writer: &mut (dyn AsyncWrite + Send + Sync + Unpin),
@@ -668,7 +664,7 @@ mod mock_storage {
 
         async fn put(
             &self,
-            _stack_id: StackID,
+            _owner: Owner,
             _storage_name: &str,
             _key: &str,
             _reader: &mut (dyn AsyncRead + Send + Sync + Unpin),
@@ -678,7 +674,7 @@ mod mock_storage {
 
         async fn delete(
             &self,
-            _stack_id: StackID,
+            _owner: Owner,
             _storage_name: &str,
             _key: &str,
         ) -> anyhow::Result<()> {
@@ -687,7 +683,7 @@ mod mock_storage {
 
         async fn list(
             &self,
-            _stack_id: StackID,
+            _owner: Owner,
             _storage_name: &str,
             _prefix: &str,
         ) -> anyhow::Result<Vec<Object>> {

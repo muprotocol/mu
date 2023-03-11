@@ -1,12 +1,11 @@
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Context, Result};
-use base64::{engine::general_purpose, Engine};
+use anyhow::{Context, Result};
 use solana_sdk::signer::Signer;
-use uuid::Uuid;
 
 use crate::{
-    request::UploadFunctionRequest, IntoRequest, PUBLIC_KEY_HEADER_NAME, SIGNATURE_HEADER_NAME,
+    requests::{UploadFunctionRequest, UploadFunctionResponse},
+    Error, Request, SignedRequest, Subject, SIGNATURE_HEADER_NAME, SUBJECT_HEADER_NAME,
 };
 
 //TODO: support async clients too
@@ -23,43 +22,48 @@ impl ApiClient {
         }
     }
 
-    pub fn upload_function(&self, file_path: PathBuf, user: Box<dyn Signer>) -> Result<Uuid> {
+    pub fn upload_function(
+        &self,
+        file_path: PathBuf,
+        user: Box<dyn Signer>,
+    ) -> Result<UploadFunctionResponse> {
         let bytes = std::fs::read(file_path).context("Reading function wasm module")?;
-        let file_id = Uuid::new_v4();
 
-        let request = UploadFunctionRequest {
-            user,
-            bytes,
-            file_id,
-        };
+        let subject = Subject::User(user.pubkey());
 
-        if let Err(e) = self.send(request).context("Upload function wasm module")? {
-            Err(anyhow!("Failed to upload function: {e}"))
-        } else {
-            Ok(file_id)
+        let request = Request::UploadFunction(UploadFunctionRequest { bytes })
+            .into_signed(subject, &*user)?;
+
+        match self.send(request).context("Send request")? {
+            Ok(ref bytes) => serde_json::from_slice(bytes).context("can't deserialize response"),
+            Err(e) => Err(e.into()),
         }
     }
 
-    fn send<R: IntoRequest>(&self, request: R) -> Result<Result<R::Response, R::Error>> {
-        let (payload, signer) = request.make_request();
-        let payload_json = serde_json::to_vec(&payload)?;
+    pub fn ping(&self, user: Box<dyn Signer>) -> Result<()> {
+        let subject = Subject::User(user.pubkey());
+        let request = Request::Ping.into_signed(subject, &*user)?;
 
-        let pk_base64 = general_purpose::STANDARD.encode(signer.pubkey());
+        match self.send(request).context("Send request")? {
+            Ok(ref bytes) => serde_json::from_slice(bytes).context("can't deserialize response"),
+            Err(e) => Err(e.into()),
+        }
+    }
 
-        let sig_payload = signer
-            .try_sign_message(&payload_json)
-            .context("Signing request payload")?;
-        let sig_payload_base64 = general_purpose::STANDARD.encode(sig_payload);
-
+    fn send(&self, request: SignedRequest) -> Result<Result<bytes::Bytes, Error>> {
         let response = self
             .client
             .post(&self.region_api_endpoint)
-            .header(PUBLIC_KEY_HEADER_NAME, pk_base64)
-            .header(SIGNATURE_HEADER_NAME, sig_payload_base64)
-            .body(payload_json)
+            .header(SUBJECT_HEADER_NAME, request.subject)
+            .header(SIGNATURE_HEADER_NAME, request.signature)
+            .body(request.body)
             .send()
             .context("Sending API request")?;
 
-        response.json().context("Deserializing API response")
+        Ok(if response.status().is_success() {
+            Ok(response.bytes()?)
+        } else {
+            Err(response.json()?)
+        })
     }
 }

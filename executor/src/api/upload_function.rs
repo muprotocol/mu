@@ -1,16 +1,20 @@
 use actix_web::web;
-use api_common::Subject;
-use serde_json::json;
+use api_common::{requests::UploadFunctionRequest, Subject};
+use sha2::{Digest, Sha256};
 
-use api_common::request::UploadFunctionRequest;
+use super::{DependencyAccessor, ExecutionResult};
 
-use super::{bad_request, DependencyAccessor, ExecutionResult};
-
-pub fn execute(
+pub async fn execute(
     dependency_accessor: web::Data<DependencyAccessor>,
     subject: Subject,
-    params: serde_json::Value,
+    request: UploadFunctionRequest,
 ) -> ExecutionResult {
-    let req = serde_json::from_value::<String>(params).map_err(|_| bad_request("invalid input"))?;
-    Ok(json!(req))
+    let mut hasher = Sha256::new();
+    hasher.update(subject.pubkey());
+    hasher.update(request.bytes);
+
+    let file_id = base64::encode(hasher.finalize());
+    dependency_accessor.storage_client.put(stack_id, storage_name, key, reader)
+
+    todo!()
 }

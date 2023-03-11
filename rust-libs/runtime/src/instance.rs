@@ -249,10 +249,10 @@ impl Instance {
                         | OutgoingMessage::CompareAndSwap(_) => self.handle_db_request(message)?,
 
                         OutgoingMessage::StoragePut(req) => {
-                            self.storage_request(|client, stack_id| async move {
+                            self.storage_request(|client, owner| async move {
                                 client
                                     .put(
-                                        stack_id,
+                                        owner,
                                         &req.storage_name,
                                         &req.key,
                                         req.reader.deref().borrow_mut(),
@@ -264,10 +264,10 @@ impl Instance {
                             })?
                         }
                         OutgoingMessage::StorageGet(req) => {
-                            self.storage_request(|client, stack_id| async move {
+                            self.storage_request(|client, owner| async move {
                                 let mut data: Vec<u8> = vec![];
                                 client
-                                    .get(stack_id, &req.storage_name, &req.key, &mut data)
+                                    .get(owner, &req.storage_name, &req.key, &mut data)
                                     .await
                                     .map(move |()| {
                                         IncomingMessage::StorageGetResult(StorageGetResult {
@@ -277,9 +277,9 @@ impl Instance {
                             })?
                         }
                         OutgoingMessage::StorageDelete(req) => {
-                            self.storage_request(|client, stack_id| async move {
+                            self.storage_request(|client, owner| async move {
                                 client
-                                    .delete(stack_id, &req.storage_name, &req.key)
+                                    .delete(owner, &req.storage_name, &req.key)
                                     .await
                                     .map(|()| {
                                         IncomingMessage::StorageEmptyResult(StorageEmptyResult)
@@ -287,9 +287,9 @@ impl Instance {
                             })?
                         }
                         OutgoingMessage::StorageList(req) => {
-                            self.storage_request(|client, stack_id| async move {
+                            self.storage_request(|client, owner| async move {
                                 client
-                                    .list(stack_id, &req.storage_name, &req.prefix)
+                                    .list(owner, &req.storage_name, &req.prefix)
                                     .await
                                     .map(|res| {
                                         IncomingMessage::ObjectListResult(ObjectListResult {
@@ -534,11 +534,11 @@ impl Instance {
     }
     fn storage_request<'a, A, B>(&mut self, f: A) -> Result<(), (Error, Usage)>
     where
-        A: FnOnce(Box<dyn StorageClient>, StackID) -> B,
+        A: FnOnce(Box<dyn StorageClient>, mu_storage::Owner) -> B,
         B: Future<Output = anyhow::Result<IncomingMessage<'a>>>,
     {
         tokio::runtime::Handle::current().block_on(async {
-            let stack_id = self.id.function_id.stack_id;
+            let owner = mu_storage::Owner::Stack(self.id.function_id.stack_id);
             let storage_client_res = match &self.storage_client {
                 Some(client) => Ok(client.clone()),
                 None => {
@@ -550,7 +550,7 @@ impl Instance {
 
             match storage_client_res {
                 Ok(client) => {
-                    let msg = f(client, stack_id).await.unwrap_or_else(|e| {
+                    let msg = f(client, owner).await.unwrap_or_else(|e| {
                         IncomingMessage::StorageError(StorageError {
                             error: Cow::from(format!("{e:?}")),
                         })
