@@ -59,10 +59,7 @@ pub(super) async fn deploy(
     let mut function_names = vec![];
     let mut function_defs = vec![];
     for func in stack.functions() {
-        let binary_url = Url::parse(&func.binary)
-            .map_err(|e| StackDeploymentError::CannotFetchFunction(func.name.clone(), e.into()))?;
-
-        let function_source = download_function(binary_url)
+        let function_source = download_function(func.binary)
             .await
             .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
 
@@ -139,7 +136,11 @@ pub(super) async fn deploy(
     Ok(())
 }
 
-async fn download_function(url: Url) -> Result<bytes::Bytes, StackDeploymentError> {
+async fn download_function(
+    storage_manager: &dyn StorageManager,
+    owner_id: &Owner,
+    file_id: &str,
+) -> Result<bytes::Bytes, StackDeploymentError> {
     // TODO: implement a better function storage scenario
     reqwest::get(url)
         .await

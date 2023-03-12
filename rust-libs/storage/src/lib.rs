@@ -1,11 +1,10 @@
 use anyhow::{bail, Error, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
-use mu_stack::StackID;
+use mu_stack::{StackID, StackOwner};
 use pin_project_lite::pin_project;
 use s3::{creds::Credentials, Bucket};
 use serde::Deserialize;
-use solana_program::pubkey::Pubkey;
 use std::{fmt::Debug, ops::Deref, pin::Pin};
 use storage_embedded_juicefs::{InternalStorageConfig, JuicefsRunner, LiveStorageConfig};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -19,15 +18,15 @@ pub struct Object {
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Owner {
-    User(Pubkey),
+    User(StackOwner),
     Stack(StackID),
 }
 
-impl std::fmt::Display for Owner {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Owner {
+    fn path_prefix(&self) -> String {
         match self {
-            Owner::User(pk) => f.write_fmt(format_args!("user__{pk}")),
-            Owner::Stack(id) => f.write_fmt(format_args!("stack__{id}")),
+            Owner::User(pk) => format!("u!{pk}"),
+            Owner::Stack(id) => format!("s!{id}"),
         }
     }
 }
@@ -132,7 +131,7 @@ impl StorageClientImpl {
     }
 
     fn create_path(owner: Owner, storage_name: &str, key: &str) -> String {
-        format!("{owner}/{storage_name}/{key}")
+        format!("{}/{storage_name}/{key}", owner.path_prefix())
     }
 
     fn create_object(object: &s3::serde_types::Object) -> Object {
@@ -150,8 +149,10 @@ impl StorageClientImpl {
     }
 
     async fn add_storage(&self, owner: Owner, name: &str) -> Result<()> {
-        let path = format!("{METADATA_PREFIX}/{owner}/{name}");
-        self.bucket.put_object_stream(&mut &b""[..], path).await?;
+        if let Owner::Stack(_) = owner {
+            let path = format!("{METADATA_PREFIX}/{}/{name}", owner.path_prefix());
+            self.bucket.put_object_stream(&mut &b""[..], path).await?;
+        }
         Ok(())
     }
 }
@@ -178,7 +179,7 @@ impl StorageClient for StorageClientImpl {
     }
 
     async fn storage_list(&self, owner: Owner) -> Result<Vec<String>> {
-        let prefix = format!("{METADATA_PREFIX}/stack_id__{owner}/");
+        let prefix = format!("{METADATA_PREFIX}/{}/", owner.path_prefix());
 
         let resp = self.bucket.list(prefix, None).await?;
 
@@ -192,16 +193,21 @@ impl StorageClient for StorageClientImpl {
     }
 
     async fn contains_storage(&self, owner: Owner, storage_name: &str) -> Result<bool> {
-        Ok(self
-            .storage_list(owner)
-            .await?
-            .contains(&storage_name.into()))
+        match owner {
+            Owner::User(_) => Ok(true),
+            _ => Ok(self
+                .storage_list(owner)
+                .await?
+                .contains(&storage_name.into())),
+        }
     }
 
     async fn remove_storage(&self, owner: Owner, storage_name: &str) -> Result<()> {
         // remove from manifest
-        let path = format!("{METADATA_PREFIX}/{owner}/{storage_name}");
-        self.bucket.delete_object(path).await?;
+        if let Owner::Stack(_) = owner {
+            let path = format!("{METADATA_PREFIX}/{}/{storage_name}", owner.path_prefix());
+            self.bucket.delete_object(path).await?;
+        }
 
         // remove data
         let keys = self
@@ -225,6 +231,10 @@ impl StorageClient for StorageClientImpl {
         key: &str,
         writer: &mut (dyn AsyncWrite + Send + Sync + Unpin),
     ) -> Result<()> {
+        if !self.contains_storage(owner, storage_name).await? {
+            bail!("Storage not found")
+        }
+
         let mut wrapper = AsyncWriterWrapper { writer };
         let path = Self::create_path(owner, storage_name, key);
         self.bucket.get_object_stream(path, &mut wrapper).await?;
@@ -239,8 +249,9 @@ impl StorageClient for StorageClientImpl {
         reader: &mut (dyn AsyncRead + Send + Sync + Unpin),
     ) -> Result<()> {
         if !self.contains_storage(owner, storage_name).await? {
-            self.add_storage(owner, storage_name).await?
+            bail!("Storage not found")
         }
+
         let mut wrapper = AsyncReaderWrapper { reader };
         let path = Self::create_path(owner, storage_name, key);
 
@@ -249,6 +260,10 @@ impl StorageClient for StorageClientImpl {
     }
 
     async fn delete(&self, owner: Owner, storage_name: &str, key: &str) -> Result<()> {
+        if !self.contains_storage(owner, storage_name).await? {
+            bail!("Storage not found")
+        }
+
         let path = Self::create_path(owner, storage_name, key);
 
         self.bucket.delete_object(path).await?;
@@ -257,6 +272,10 @@ impl StorageClient for StorageClientImpl {
     }
 
     async fn list(&self, owner: Owner, storage_name: &str, prefix: &str) -> Result<Vec<Object>> {
+        if !self.contains_storage(owner, storage_name).await? {
+            bail!("Storage not found")
+        }
+
         let prefix = Self::create_path(owner, storage_name, prefix);
 
         let resp = self.bucket.list(prefix, None).await?;

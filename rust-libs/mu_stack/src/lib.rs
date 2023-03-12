@@ -20,22 +20,22 @@ use bytes::{BufMut, Bytes};
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
-pub const STACK_ID_SIZE: usize = 32;
+pub const SOLANA_PUBKEY_SIZE: usize = 32;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StackID {
-    SolanaPublicKey([u8; STACK_ID_SIZE]),
+    SolanaPublicKey([u8; SOLANA_PUBKEY_SIZE]),
 }
 
 impl StackID {
-    pub fn get_bytes(&self) -> &[u8; STACK_ID_SIZE] {
+    pub fn get_bytes(&self) -> &[u8; SOLANA_PUBKEY_SIZE] {
         match self {
             Self::SolanaPublicKey(key) => key,
         }
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut res = Vec::with_capacity(STACK_ID_SIZE + 1);
+        let mut res = Vec::with_capacity(SOLANA_PUBKEY_SIZE + 1);
         match self {
             Self::SolanaPublicKey(key) => {
                 res.push(1u8);
@@ -46,7 +46,7 @@ impl StackID {
     }
 
     pub fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() != STACK_ID_SIZE + 1 {
+        if bytes.len() != SOLANA_PUBKEY_SIZE + 1 {
             bail!("Incorrect byte count");
         }
 
@@ -73,6 +73,19 @@ impl Display for StackID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::SolanaPublicKey(pk) => write!(f, "s_{}", pk.to_base58()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum StackOwner {
+    Solana([u8; SOLANA_PUBKEY_SIZE]),
+}
+
+impl Display for StackOwner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Solana(pk) => write!(f, "s_{}", pk.to_base58()),
         }
     }
 }

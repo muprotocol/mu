@@ -31,11 +31,6 @@ pub enum StackMetadata {
     Solana(SolanaStackMetadata),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum StackOwner {
-    Solana(Pubkey),
-}
-
 impl StackMetadata {
     pub fn id(&self) -> StackID {
         match self {

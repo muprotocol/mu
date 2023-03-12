@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UploadFunctionRequest {
-    pub bytes: Vec<u8>,
+    pub bytes: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
