@@ -39,7 +39,7 @@ impl From<super::Stack> for Stack {
                         })),
                         ..Default::default()
                     },
-                    super::Service::StorageName(s) => Service {
+                    super::Service::Storage(s) => Service {
                         service: Some(service::Service::StorageName(StorageName {
                             name: s.name,
                             delete: matches!(s.delete, Some(true)),
@@ -144,7 +144,7 @@ impl TryFrom<Stack> for super::Stack {
                     }
 
                     Some(service::Service::StorageName(s)) => {
-                        Ok(super::Service::StorageName(super::NameAndDelete {
+                        Ok(super::Service::Storage(super::NameAndDelete {
                             name: s.name,
                             delete: Some(s.delete),
                         }))

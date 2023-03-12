@@ -5,13 +5,13 @@ use anyhow::{Context, Result};
 use beau_collector::BeauCollector;
 use env_logger::Builder;
 use log::LevelFilter;
-use mu_stack::{Stack, StackID};
+use mu_stack::{StackID, ValidatedStack};
 use tokio_util::sync::CancellationToken;
 
 mod key_value_table;
 mod runtime;
 
-pub type StackWithID = (Stack, StackID);
+pub type StackWithID = (ValidatedStack, StackID);
 
 pub async fn start_local_node(stack: StackWithID, project_root: PathBuf) -> Result<()> {
     println!("Starting local mu runtime . . .");
