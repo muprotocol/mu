@@ -161,13 +161,21 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
 }
 
 pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
-    let (mu_manifest, _) = crate::mu_manifest::read_manifest()?;
+    let (mu_manifest, project_root) = crate::mu_manifest::read_manifest()?;
+    mu_manifest.build_all(crate::mu_manifest::BuildMode::Release, &project_root)?;
 
     let marketplace_client = config.build_marketplace_client()?;
     let user_wallet = config.get_signer()?;
 
     let region_base_url =
         marketplace_client::region::get_base_url(&marketplace_client, cmd.region)?;
+
+    let region_base_url = if region_base_url.starts_with("http") {
+        region_base_url
+    } else {
+        format!("http://{region_base_url}")
+    };
+
     let region_api_client = api_common::client::ApiClient::new(region_base_url);
 
     let stack = mu_manifest.generate_stack_manifest_for_publish(|p| {

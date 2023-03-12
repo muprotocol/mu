@@ -4,35 +4,35 @@ use actix_web::{
     guard,
     http::header::HeaderMap,
     services,
-    web::{self, Json},
+    web::{self, Json, PayloadConfig},
     HttpRequest,
 };
 use anyhow::{bail, Context, Result};
-use api_common::{Request, ServerError, Subject, SIGNATURE_HEADER_NAME, SUBJECT_HEADER_NAME};
+use api_common::{Request, Subject, SIGNATURE_HEADER_NAME, SUBJECT_HEADER_NAME};
 use bytes::Bytes;
 use ed25519_dalek::PublicKey;
-use log::error;
+use log::{debug, error};
 use mu_gateway::HttpServiceFactoryBuilder;
 use mu_stack::StackID;
 use mu_storage::StorageClient;
-use reqwest::StatusCode;
-use serde::Serialize;
-use serde_json::json;
 use solana_sdk::pubkey::Pubkey;
 
 use crate::stack::{request_signer_cache::RequestSignerCache, ApiRequestSigner};
+
+const MAXIMUM_PAYLOAD_SIZE: usize = 10 * 1024 * 1024; // 10 Mebibyte
 
 pub fn service_factory() -> impl HttpServiceFactoryBuilder {
     || {
         services![
             web::resource("/api")
+                .app_data(PayloadConfig::new(MAXIMUM_PAYLOAD_SIZE))
                 .guard(guard::All(guard::Post()).and(guard::fn_guard(|ctx| {
                     let headers = ctx.head().headers();
                     headers.contains_key(SUBJECT_HEADER_NAME)
                         && headers.contains_key(SIGNATURE_HEADER_NAME)
                 })))
                 .to(handle_request),
-            web::resource("/api").to(|| async { handle_bad_request() })
+            web::resource("/api").to(|| async { bad_request("not found") })
         ]
     }
 }
@@ -47,27 +47,29 @@ async fn handle_request(
     request: HttpRequest,
     payload: Bytes,
     dependency_accessor: web::Data<DependencyAccessor>,
-) -> (Json<serde_json::Value>, http::StatusCode) {
-    async fn helper(
-        request: HttpRequest,
-        payload: Bytes,
-        dependency_accessor: web::Data<DependencyAccessor>,
-    ) -> Result<(Json<serde_json::Value>, http::StatusCode)> {
-        let headers = request.headers();
-        let (subject, public_key) = verify_signature(headers, &payload)?;
-        let request = serde_json::from_slice::<Request>(&payload)?;
+) -> Json<Result<api_common::Response, api_common::Error>> {
+    debug!("Got new api request: {request:?}");
 
-        verify_subject_authority(&subject, &public_key, &dependency_accessor).await?;
+    let headers = request.headers();
+    let Ok((subject, public_key)) = verify_signature(headers, &payload) else {
+        return bad_request("can not verify request signature");
+    };
 
-        match execute_request(dependency_accessor, request, subject).await {
-            Ok(response) => Ok((Json(response), http::StatusCode::OK)),
-            Err((response, status_code)) => Ok((Json(response), status_code)),
-        }
-    }
+    let Ok(request) = serde_json::from_slice::<Request>(&payload) else {
+        return bad_request("can not deserialize request");
+    };
 
-    helper(request, payload, dependency_accessor)
-        .await
-        .unwrap_or_else(|_| handle_bad_request())
+    let Ok(_) = verify_subject_authority(&subject, &public_key, &dependency_accessor).await else {
+        return bad_request("Unauthorized request");
+    };
+
+    Json(execute_request(dependency_accessor, request, subject).await)
+}
+
+fn bad_request<S: ToString>(reason: S) -> Json<Result<api_common::Response, api_common::Error>> {
+    Json(Err(
+        api_common::ServerError::BadRequest(reason.to_string()).into()
+    ))
 }
 
 fn verify_signature(headers: &HeaderMap, payload: &[u8]) -> Result<(Subject, PublicKey)> {
@@ -86,15 +88,6 @@ fn verify_signature(headers: &HeaderMap, payload: &[u8]) -> Result<(Subject, Pub
 
     public_key.verify_strict(payload, &signature)?;
     Ok((subject, public_key))
-}
-
-fn handle_bad_request() -> (Json<serde_json::Value>, http::StatusCode) {
-    let (j, s) = bad_request("bad request");
-    (Json(j), s)
-}
-
-fn bad_request(description: &'static str) -> ExecutionError {
-    (json!(description), http::StatusCode::BAD_REQUEST)
 }
 
 async fn verify_subject_authority(
@@ -130,31 +123,17 @@ async fn verify_stack_ownership(
     }
 }
 
-type ExecutionResult = std::result::Result<serde_json::Value, ExecutionError>;
-type ExecutionError = (serde_json::Value, http::StatusCode);
+type ExecutionResult = std::result::Result<api_common::Response, api_common::Error>;
 
 async fn execute_request(
     dependency_accessor: web::Data<DependencyAccessor>,
     request: Request,
     subject: Subject,
 ) -> ExecutionResult {
-    fn helper<T: Serialize>(output: T) -> ExecutionResult {
-        match serde_json::to_value(output) {
-            Ok(r) => Ok(r),
-            Err(e) => {
-                error!("Can not serialize response: {e:?}");
-                Err((
-                    serde_json::to_value(ServerError::FailedToSerializeResponse).unwrap(), //TODO: what else?
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                ))
-            }
-        }
-    }
-
     match request {
-        Request::Ping => helper(Ok::<serde_json::Value, ()>(json! {"pong"})),
+        Request::Ping => Ok(api_common::Response::Ping),
         Request::UploadFunction(req) => {
-            helper(upload_function::execute(dependency_accessor, subject, req).await)
+            upload_function::execute(dependency_accessor, subject, req).await
         }
     }
 }

@@ -102,8 +102,8 @@ pub fn execute_init(cmd: InitCommand) -> Result<()> {
 
 pub fn print_template_sets(sets: &[TemplateSet]) {
     println!("Available templates:\n");
-    println!("{: ^10}|{: ^15}", "Name", "Languages");
-    println!("{}", "-".repeat(26));
+    println!("{: <20}| {: <15}", "Name", "Languages");
+    println!("{}", "-".repeat(39));
 
     sets.iter().for_each(|t| println!("{t}"));
 }

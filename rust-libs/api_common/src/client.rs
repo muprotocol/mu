@@ -1,11 +1,13 @@
 use std::{path::PathBuf, rc::Rc};
 
 use anyhow::{Context, Result};
+use serde_json::json;
 use solana_sdk::signer::Signer;
 
 use crate::{
     requests::{UploadFunctionRequest, UploadFunctionResponse},
-    Error, Request, SignedRequest, Subject, SIGNATURE_HEADER_NAME, SUBJECT_HEADER_NAME,
+    ClientError, Error, Request, Response, SignedRequest, Subject, SIGNATURE_HEADER_NAME,
+    SUBJECT_HEADER_NAME,
 };
 
 //TODO: support async clients too
@@ -35,7 +37,8 @@ impl ApiClient {
             .into_signed(subject, &*user)?;
 
         match self.send(request).context("Send request")? {
-            Ok(ref bytes) => serde_json::from_slice(bytes).context("can't deserialize response"),
+            Ok(Response::UploadFunction(resp)) => Ok(resp),
+            Ok(_) => Err(ClientError::UnexpectedResponse("UploadFunction".into()).into()),
             Err(e) => Err(e.into()),
         }
     }
@@ -45,25 +48,22 @@ impl ApiClient {
         let request = Request::Ping.into_signed(subject, &*user)?;
 
         match self.send(request).context("Send request")? {
-            Ok(ref bytes) => serde_json::from_slice(bytes).context("can't deserialize response"),
+            Ok(Response::Ping) => Ok(()),
+            Ok(_) => Err(ClientError::UnexpectedResponse("Ping".into()).into()),
             Err(e) => Err(e.into()),
         }
     }
 
-    fn send(&self, request: SignedRequest) -> Result<Result<bytes::Bytes, Error>> {
-        let response = self
+    fn send(&self, request: SignedRequest) -> Result<Result<Response, Error>> {
+        let request = self
             .client
             .post(&self.region_api_endpoint)
             .header(SUBJECT_HEADER_NAME, request.subject)
             .header(SIGNATURE_HEADER_NAME, request.signature)
-            .body(request.body)
-            .send()
-            .context("Sending API request")?;
+            .body(request.body);
 
-        Ok(if response.status().is_success() {
-            Ok(response.bytes()?)
-        } else {
-            Err(response.json()?)
-        })
+        let resp: Result<Response, Error> =
+            request.send().context("Sending API request")?.json()?;
+        Ok(resp)
     }
 }

@@ -30,7 +30,7 @@ pub struct TemplateSet {
 impl Display for TemplateSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let langs = concat_string(self.templates.iter().map(|t| t.lang.to_string()));
-        write!(f, "{: ^10}|{: ^15}", self.name, langs)
+        write!(f, "{: <20}| {: <15}", self.name, langs)
     }
 }
 

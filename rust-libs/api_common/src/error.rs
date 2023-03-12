@@ -28,10 +28,16 @@ pub enum ServerError {
 
     #[error("Failed to Serialize response")]
     FailedToSerializeResponse,
+
+    #[error("BadRequest: {0}")]
+    BadRequest(String),
 }
 
 #[derive(thiserror::Error, Debug, Serialize, Deserialize)]
-pub enum ClientError {}
+pub enum ClientError {
+    #[error("Unexpected resposne type, expected {0}")]
+    UnexpectedResponse(String),
+}
 
 impl From<ClientError> for Error {
     fn from(value: ClientError) -> Self {

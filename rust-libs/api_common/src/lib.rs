@@ -6,7 +6,7 @@ pub mod requests;
 use base64::{engine::general_purpose, Engine};
 use log::error;
 use mu_stack::{stack_id_as_string_serialization, StackID};
-use requests::UploadFunctionRequest;
+use requests::{UploadFunctionRequest, UploadFunctionResponse};
 use serde::{Deserialize, Serialize};
 use solana_sdk::{pubkey::Pubkey, signer::Signer};
 
@@ -57,7 +57,7 @@ impl Subject {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum Request {
     Ping,
     UploadFunction(UploadFunctionRequest),
@@ -92,4 +92,10 @@ impl Request {
             subject: subject.encode_base64()?,
         })
     }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Response {
+    Ping,
+    UploadFunction(UploadFunctionResponse),
 }
