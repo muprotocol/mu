@@ -1614,6 +1614,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23d8666cb01533c39dde32bcbab8e227b4ed6679b2c925eba05feabea39508fb"
 
 [[package]]
+name = "db-embedded-tikv"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "dyn-clonable",
+ "dyn-clone",
+ "flate2",
+ "log",
+ "mailbox_processor",
+ "mu-common",
+ "mu-db",
+ "nix 0.26.2",
+ "reqwest",
+ "rust-embed",
+ "serde",
+ "tar",
+ "tokio",
+]
+
+[[package]]
 name = "der"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3108,6 +3129,7 @@ dependencies = [
  "byte-unit",
  "clap 4.1.4",
  "ctrlc",
+ "db-embedded-tikv",
  "dirs",
  "env_logger 0.10.0",
  "itertools 0.10.5",
@@ -3117,6 +3139,7 @@ dependencies = [
  "mu-db",
  "mu-gateway",
  "mu-runtime",
+ "mu-storage",
  "mu_stack",
  "musdk-common",
  "rand 0.8.5",
@@ -3132,6 +3155,7 @@ dependencies = [
  "solana-remote-wallet",
  "spl-associated-token-account",
  "spl-token",
+ "storage_embedded_juicefs",
  "thiserror",
  "tokio",
  "tokio-util",

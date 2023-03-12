@@ -9,7 +9,8 @@ default-run = "mu"
 
 [features]
 admin = []
-dev-env = ["mu-runtime", "mu-gateway", "mu-db"]
+dev-env = ["mu-runtime", "mu-gateway", "mu-db", "db-embedded-tikv",
+		"mu-storage", "storage_embedded_juicefs"]
 
 [[bin]]
 name = "mu"
@@ -59,3 +60,6 @@ mu-common = { path = "../rust-libs/common" }
 musdk-common = { path = "../sdk/common" }
 mu-db = { path = "../rust-libs/db", optional = true }
 api_common = { path = "../rust-libs/api_common", features = ["client"] }
+db-embedded-tikv = { path = "../rust-libs/db-embedded-tikv", optional = true }
+mu-storage = { path = "../rust-libs/storage", optional = true }
+storage_embedded_juicefs = { path = "../rust-libs/storage_embedded_juicefs", optional = true }

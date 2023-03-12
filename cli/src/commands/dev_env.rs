@@ -5,8 +5,8 @@ use clap::Args;
 
 use crate::{
     local_run,
-    mu_manifest::{read_manifest, BuildMode},
-    template::{Language, TemplateSet},
+    mu_manifest::{read_manifest, BuildMode, Language},
+    template::TemplateSet,
 };
 
 #[derive(Debug, Args)]
