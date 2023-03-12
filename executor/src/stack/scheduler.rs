@@ -18,7 +18,7 @@ use serde::Deserialize;
 
 use crate::{infrastructure::config::ConfigDuration, network::NodeHash};
 
-use mu_stack::{Stack, StackID};
+use mu_stack::{Stack, StackID, ValidatedStack};
 
 use super::{blockchain_monitor::StackRemovalMode, StackWithMetadata};
 
@@ -845,7 +845,7 @@ async fn undeploy_gateways(id: StackID, gateway_manager: &dyn GatewayManager) {
 
 async fn deploy_stack(
     id: StackID,
-    stack: Stack,
+    stack: ValidatedStack,
     notification_channel: &NotificationChannel<SchedulerNotification>,
     runtime: &dyn Runtime,
     database_manager: &dyn DbManager,

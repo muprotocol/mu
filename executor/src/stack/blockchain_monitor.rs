@@ -1231,8 +1231,13 @@ fn read_solana_stack_account((pubkey, account): (Pubkey, Account)) -> Result<Sta
             let stack_definition = mu_stack::Stack::try_deserialize_proto(stack_data)
                 .context("Failed to deserialize stack definition")?;
 
+            let validated_stack = stack_definition
+                .validate()
+                .map_err(|(_, e)| e)
+                .context("Invalid stack definition")?;
+
             Ok(StackWithState::Active(StackWithMetadata {
-                stack: stack_definition,
+                stack: validated_stack,
                 name,
                 revision,
                 metadata: StackMetadata::Solana(super::SolanaStackMetadata {

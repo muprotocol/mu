@@ -5,47 +5,17 @@ use thiserror::Error;
 use mu_db::{DbManager, DeleteTable};
 use mu_gateway::GatewayManager;
 use mu_runtime::{AssemblyDefinition, Runtime};
-use mu_stack::{AssemblyID, HttpMethod, Stack, StackID};
+use mu_stack::{AssemblyID, Stack, StackID, ValidatedStack};
 
 use super::blockchain_monitor::StackRemovalMode;
 
 #[derive(Error, Debug)]
-pub enum StackValidationError {
-    #[error("Duplicate function name '{0}'")]
-    DuplicateFunctionName(String),
-
-    #[error("Duplicate table name '{0}'")]
-    DuplicateTableName(String),
-
-    #[error("Duplicate gateway name '{0}'")]
-    DuplicateGatewayName(String),
+pub enum StackDeploymentError {
+    #[error("Bad assembly definition")]
+    BadAssemblyDefinition,
 
     #[error("Failed to fetch binary for function '{0}' due to {1}")]
     CannotFetchFunction(String, anyhow::Error),
-
-    #[error("Invalid URL for function '{0}': {1}")]
-    InvalidFunctionUrl(String, anyhow::Error),
-
-    #[error("Unknown function name '{function}' in gateway '{gateway}'")]
-    UnknownFunctionInGateway { function: String, gateway: String },
-
-    #[error(
-        "Duplicate endpoint with path '{path}' and method '{method:?}' in gateway '{gateway}'"
-    )]
-    DuplicateEndpointInGateway {
-        gateway: String,
-        path: String,
-        method: HttpMethod,
-    },
-}
-
-#[derive(Error, Debug)]
-pub enum StackDeploymentError {
-    #[error("Validation error: {0}")]
-    ValidationError(StackValidationError),
-
-    #[error("Bad assembly definition")]
-    BadAssemblyDefinition,
 
     #[error("Failed to deploy functions due to: {0}")]
     FailedToDeployFunctions(anyhow::Error),
@@ -68,13 +38,11 @@ pub enum StackDeploymentError {
 
 pub(super) async fn deploy(
     id: StackID,
-    stack: Stack,
+    stack: ValidatedStack,
     runtime: &dyn Runtime,
     db_manager: &dyn DbManager,
     storage_manager: &dyn StorageManager,
 ) -> Result<(), StackDeploymentError> {
-    let stack = validate(stack).map_err(StackDeploymentError::ValidationError)?;
-
     let db_client = db_manager
         .make_client()
         .await
@@ -91,12 +59,8 @@ pub(super) async fn deploy(
     let mut function_names = vec![];
     let mut function_defs = vec![];
     for func in stack.functions() {
-        let binary_url = Url::parse(&func.binary).map_err(|e| {
-            StackDeploymentError::ValidationError(StackValidationError::InvalidFunctionUrl(
-                func.name.clone(),
-                e.into(),
-            ))
-        })?;
+        let binary_url = Url::parse(&func.binary)
+            .map_err(|e| StackDeploymentError::CannotFetchFunction(func.name.clone(), e.into()))?;
 
         let function_source = download_function(binary_url)
             .await
@@ -144,7 +108,7 @@ pub(super) async fn deploy(
 
     // Step 3: Storage names
     let storage_delete_pairs = stack
-        .storage_names()
+        .storages()
         .into_iter()
         .map(|n| {
             let name = n.name.as_str();
@@ -173,11 +137,6 @@ pub(super) async fn deploy(
     }
 
     Ok(())
-}
-
-fn validate(stack: Stack) -> Result<Stack, StackValidationError> {
-    // TODO - implement this in mu_stack, use it in CLI too
-    Ok(stack)
 }
 
 async fn download_function(url: Url) -> Result<bytes::Bytes, StackDeploymentError> {

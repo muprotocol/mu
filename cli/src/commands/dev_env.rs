@@ -134,6 +134,11 @@ pub fn execute_run(cmd: RunCommand) -> Result<()> {
         .generate_stack_manifest_for_local_run(build_mode)
         .context("failed to generate stack definition")?;
 
+    let stack = stack
+        .validate()
+        .map_err(|(_, e)| e)
+        .context("Invalid stack manifest")?;
+
     tokio::runtime::Runtime::new()?.block_on(local_run::start_local_node(
         (stack, manifest.dev_id),
         project_root,

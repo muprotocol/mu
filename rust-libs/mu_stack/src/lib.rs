@@ -1,6 +1,9 @@
 pub mod protobuf;
 pub mod protos;
 pub mod stack_id_as_string_serialization;
+mod validation;
+
+pub use validation::*;
 
 use std::{
     collections::HashMap,
@@ -149,6 +152,11 @@ pub struct Stack {
 }
 
 impl Stack {
+    #[allow(clippy::result_large_err)]
+    pub fn validate(self) -> Result<ValidatedStack, (Self, StackValidationError)> {
+        validate(self)
+    }
+
     pub fn serialize_to_proto(self) -> Result<Bytes> {
         let stack: crate::protos::stack::Stack = self.into();
         Ok(stack.write_to_bytes()?.into())
@@ -165,9 +173,9 @@ impl Stack {
         })
     }
 
-    pub fn storage_names(&self) -> impl Iterator<Item = &NameAndDelete> {
+    pub fn storages(&self) -> impl Iterator<Item = &NameAndDelete> {
         self.services.iter().filter_map(|s| match s {
-            Service::StorageName(x) => Some(x),
+            Service::Storage(x) => Some(x),
             _ => None,
         })
     }
@@ -191,7 +199,7 @@ impl Stack {
 #[serde(tag = "type")]
 pub enum Service {
     KeyValueTable(NameAndDelete),
-    StorageName(NameAndDelete),
+    Storage(NameAndDelete),
     Gateway(Gateway),
     Function(Function),
 }
@@ -284,7 +292,16 @@ impl<'de> Visitor<'de> for AssemblyAndFunctionDeserializeVisitor {
 }
 
 #[derive(
-    Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone, Copy, PartialEq, Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum HttpMethod {
