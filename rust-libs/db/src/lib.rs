@@ -148,22 +148,20 @@ impl DbClient for DbClientImpl {
         let mut kvs_add = vec![];
         let mut kvs_delete = vec![];
         for (table, is_delete) in table_action_tuples {
-            let k = TableListKey::new(stack_id, table);
+            let k = TableListKey::new(stack_id, table.clone());
             if !existing_tables.contains(&k) && !*is_delete {
                 kvs_add.push((k, vec![]))
             } else if existing_tables.contains(&k) && *is_delete {
-                kvs_delete.push(k)
+                let meta_data_key: tikv_client::Key = k.into();
+                kvs_delete.push(meta_data_key);
+                let s = Scan::ByTableName(stack_id, table);
+                let mut data_key = self.inner.scan_keys(s, 10000).await?;
+                kvs_delete.append(&mut data_key)
             }
         }
 
         self.inner.batch_put(kvs_add).await?;
         self.inner.batch_delete(kvs_delete.clone()).await?;
-
-        // TODO put this and batch_delete into transaction
-        // we should do it and batch_delete atomic
-        for delete in kvs_delete {
-            self.clear_table(delete.stack_id, delete.table_name).await?
-        }
 
         Ok(())
     }
