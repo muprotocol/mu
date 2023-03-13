@@ -131,7 +131,7 @@ pub fn execute_run(cmd: RunCommand) -> Result<()> {
     manifest.build_all(build_mode, &project_root)?;
 
     let stack = manifest
-        .generate_stack_manifest_for_local_run(build_mode)
+        .generate_stack_manifest_for_local_run(build_mode, &project_root)
         .context("failed to generate stack definition")?;
 
     let stack = stack

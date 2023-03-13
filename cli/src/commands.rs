@@ -140,9 +140,10 @@ pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
     let region_api_client = api_common::client::ApiClient::new(region_base_url);
 
     println!("Signing function upload request ...");
-    let stack = mu_manifest.generate_stack_manifest_for_publish(|p| {
-        region_api_client.upload_function(std::path::PathBuf::from(p), user_wallet.clone())
-    })?;
+    let stack = mu_manifest.generate_stack_manifest_for_publish(
+        |p| region_api_client.upload_function(std::path::PathBuf::from(p), user_wallet.clone()),
+        &project_root,
+    )?;
 
     let deploy_mode = marketplace_client::stack::get_deploy_mode(cmd.init, cmd.update)?;
 
