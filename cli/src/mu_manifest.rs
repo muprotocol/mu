@@ -54,7 +54,7 @@ impl MuManifest {
 
     #[cfg(feature = "dev-env")]
     pub fn generate_stack_manifest_for_local_run(&self, build_mode: BuildMode) -> Result<Stack> {
-        self.generate_stack_manifest(build_mode, ArtifactGenerationMode::LocalRun, |p| Ok(p))
+        self.generate_stack_manifest(build_mode, ArtifactGenerationMode::LocalRun, Ok)
     }
 
     pub fn generate_stack_manifest_for_publish<F>(&self, function_uploader: F) -> Result<Stack>
