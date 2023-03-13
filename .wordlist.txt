@@ -47,6 +47,7 @@ kvpair
 LAMPORTS
 libclang
 libudev
+Litepaper
 Localnet
 MacOS
 middlewares
@@ -89,11 +90,11 @@ reqwest
 rngs
 runtime
 Runtime
+rusqlite
 rustc
 rustfmt
 rustls
 rustup
-rusqlite
 Ryzen
 scans
 scts
