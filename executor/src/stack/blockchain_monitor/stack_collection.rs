@@ -4,9 +4,9 @@
 use std::collections::{hash_map, HashMap, HashSet};
 use std::default::Default;
 
-use mu_stack::StackID;
+use mu_stack::{StackID, StackOwner};
 
-use crate::stack::{StackOwner, StackWithMetadata};
+use crate::stack::StackWithMetadata;
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum OwnerState {
@@ -42,7 +42,7 @@ impl StackCollection {
     }
 
     pub fn from_known(
-        known_stacks: HashMap<StackOwner, (OwnerState, Vec<StackWithMetadata>)>,
+        known_stacks: impl IntoIterator<Item = (StackOwner, (OwnerState, Vec<StackWithMetadata>))>,
     ) -> Self {
         let mut result = Self::default();
         for (owner, (state, stacks)) in known_stacks {
@@ -55,7 +55,7 @@ impl StackCollection {
                 owner_data.stacks.insert(id);
             }
 
-            result.owners.insert(owner.clone(), owner_data);
+            result.owners.insert(owner, owner_data);
 
             let index = result.get_owner_index(state);
             index.insert(owner);
@@ -75,7 +75,7 @@ impl StackCollection {
             if let OwnerState::Active = owner_data.state {
                 owner_data.state = OwnerState::Inactive;
                 self.active_owners.remove(owner);
-                self.inactive_owners.insert(owner.clone());
+                self.inactive_owners.insert(*owner);
             }
         }
     }
@@ -85,7 +85,7 @@ impl StackCollection {
             if let OwnerState::Inactive = owner_data.state {
                 owner_data.state = OwnerState::Active;
                 self.inactive_owners.remove(owner);
-                self.active_owners.insert(owner.clone());
+                self.active_owners.insert(*owner);
             }
         }
     }
@@ -185,8 +185,8 @@ impl<'a> VacantOwnerEntry<'a> {
         state: OwnerState,
         stack: StackWithMetadata,
     ) -> OccupiedOwnerEntry<'a> {
-        self.0.owners.insert(self.1.clone(), OwnerData::new(state));
-        self.0.get_owner_index(state).insert(self.1.clone());
+        self.0.owners.insert(self.1, OwnerData::new(state));
+        self.0.get_owner_index(state).insert(self.1);
         let mut result = OccupiedOwnerEntry(self.0, self.1);
         result.add_stack(stack);
         result

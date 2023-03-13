@@ -8,6 +8,9 @@
 			"path": "airdrop"
 		},
 		{
+			"path": "rust-libs/api_common"
+		},
+		{
 			"path": "cli"
 		},
 		{

@@ -17,6 +17,8 @@ pin-project-lite = "0.2"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 
+solana-program = { version = "1.15"}
+
 mailbox_processor = { path = "../mailbox_processor" }
 mu_stack = { path = "../mu_stack" }
 storage_embedded_juicefs = { path = "../storage_embedded_juicefs" }

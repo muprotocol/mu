@@ -1,19 +1,12 @@
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    fs,
-    path::{Path, PathBuf},
-    process::exit,
-    str::FromStr,
-};
+use std::{borrow::Cow, collections::HashMap, fs, path::Path, process::exit, str::FromStr};
 
 use anyhow::{bail, Context, Result};
 use clap::Args;
 
 use crate::{
     local_run,
-    mu_manifest::{self, BuildMode, MuManifest},
-    template::{Language, TemplateSet},
+    mu_manifest::{read_manifest, BuildMode, Language},
+    template::TemplateSet,
 };
 
 #[derive(Debug, Args)]
@@ -109,8 +102,8 @@ pub fn execute_init(cmd: InitCommand) -> Result<()> {
 
 pub fn print_template_sets(sets: &[TemplateSet]) {
     println!("Available templates:\n");
-    println!("{: ^10}|{: ^15}", "Name", "Languages");
-    println!("{}", "-".repeat(26));
+    println!("{: <20}| {: <15}", "Name", "Languages");
+    println!("{}", "-".repeat(39));
 
     sets.iter().for_each(|t| println!("{t}"));
 }
@@ -138,7 +131,7 @@ pub fn execute_run(cmd: RunCommand) -> Result<()> {
     manifest.build_all(build_mode, &project_root)?;
 
     let stack = manifest
-        .generate_stack_manifest(build_mode, mu_manifest::ArtifactGenerationMode::LocalRun)
+        .generate_stack_manifest_for_local_run(build_mode)
         .context("failed to generate stack definition")?;
 
     let stack = stack
@@ -150,25 +143,4 @@ pub fn execute_run(cmd: RunCommand) -> Result<()> {
         (stack, manifest.dev_id),
         project_root,
     ))
-}
-
-fn read_manifest() -> Result<(MuManifest, PathBuf)> {
-    let mut path = std::env::current_dir()?;
-
-    loop {
-        let manifest_path = path.join(mu_manifest::MU_MANIFEST_FILE_NAME);
-        if manifest_path.try_exists()? {
-            let mut file = std::fs::File::open(&manifest_path)?;
-            return Ok((mu_manifest::MuManifest::read(&mut file)?, path));
-        }
-        let Some(parent) = path.parent() else {
-            break
-        };
-        path = parent.into();
-    }
-
-    bail!(
-        "Not in a mu project, `{}` file not found.",
-        mu_manifest::MU_MANIFEST_FILE_NAME
-    );
 }

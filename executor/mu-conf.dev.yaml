@@ -27,4 +27,3 @@ db:
 runtime:
   cache_path: runtime-cache
   include_function_logs: true
-

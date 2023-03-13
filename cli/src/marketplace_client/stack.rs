@@ -2,7 +2,6 @@ use std::rc::Rc;
 
 use anchor_client::solana_sdk::{pubkey::Pubkey, signer::Signer, system_program};
 use anyhow::{bail, Context, Result};
-use mu_stack::StackID;
 
 use super::MarketplaceClient;
 
@@ -132,7 +131,7 @@ pub fn deploy(
 
     match uriparse::uri::URI::try_from(region.base_url.as_str()) {
         Ok(mut url) => {
-            let stack_id = StackID::SolanaPublicKey(stack_pda.to_bytes()).to_string();
+            let stack_id = mu_stack::StackID::SolanaPublicKey(stack_pda.to_bytes()).to_string();
             url.map_path(|mut path| {
                 let _ = path.push(stack_id.as_str());
                 path

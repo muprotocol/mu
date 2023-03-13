@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 
 mod key_value_table;
 mod runtime;
+mod storage;
 
 pub type StackWithID = (ValidatedStack, StackID);
 
@@ -19,7 +20,7 @@ pub async fn start_local_node(stack: StackWithID, project_root: PathBuf) -> Resu
     //TODO: make this configurable
     setup_logging();
 
-    let (runtime, gateway, database, gateways, stack_id) =
+    let (runtime, gateway, database, storage, gateways, stack_id) =
         runtime::start(stack, project_root).await?;
 
     let cancellation_token = CancellationToken::new();
@@ -54,6 +55,7 @@ pub async fn start_local_node(stack: StackWithID, project_root: PathBuf) -> Resu
         runtime.stop().await.map_err(Into::into),
         gateway.stop().await,
         database.stop().await,
+        storage.stop().await,
     ]
     .into_iter()
     .bcollect::<()>()

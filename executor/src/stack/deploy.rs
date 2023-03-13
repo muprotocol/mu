@@ -1,13 +1,12 @@
-use mu_storage::{DeleteStorage, StorageManager};
-use reqwest::Url;
+use mu_storage::{DeleteStorage, StorageClient, StorageManager};
 use thiserror::Error;
 
 use mu_db::{DbManager, DeleteTable};
 use mu_gateway::GatewayManager;
 use mu_runtime::{AssemblyDefinition, Runtime};
-use mu_stack::{AssemblyID, Stack, StackID, ValidatedStack};
+use mu_stack::{AssemblyID, Stack, StackID, StackOwner};
 
-use super::blockchain_monitor::StackRemovalMode;
+use super::{blockchain_monitor::StackRemovalMode, StackWithMetadata};
 
 #[derive(Error, Debug)]
 pub enum StackDeploymentError {
@@ -38,11 +37,14 @@ pub enum StackDeploymentError {
 
 pub(super) async fn deploy(
     id: StackID,
-    stack: ValidatedStack,
+    stack: StackWithMetadata,
     runtime: &dyn Runtime,
     db_manager: &dyn DbManager,
     storage_manager: &dyn StorageManager,
 ) -> Result<(), StackDeploymentError> {
+    let stack_owner = stack.metadata.owner();
+    let stack = stack.stack;
+
     let db_client = db_manager
         .make_client()
         .await
@@ -59,10 +61,7 @@ pub(super) async fn deploy(
     let mut function_names = vec![];
     let mut function_defs = vec![];
     for func in stack.functions() {
-        let binary_url = Url::parse(&func.binary)
-            .map_err(|e| StackDeploymentError::CannotFetchFunction(func.name.clone(), e.into()))?;
-
-        let function_source = download_function(binary_url)
+        let function_source = download_function(&*storage_client, &stack_owner, &func.binary)
             .await
             .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
 
@@ -118,7 +117,7 @@ pub(super) async fn deploy(
         .collect();
 
     storage_client
-        .update_stack_storages(id, storage_delete_pairs)
+        .update_stack_storages(mu_storage::Owner::Stack(id), storage_delete_pairs)
         .await
         .map_err(StackDeploymentError::FailedToDeployStorageNames)?;
 
@@ -139,14 +138,22 @@ pub(super) async fn deploy(
     Ok(())
 }
 
-async fn download_function(url: Url) -> Result<bytes::Bytes, StackDeploymentError> {
-    // TODO: implement a better function storage scenario
-    reqwest::get(url)
+async fn download_function(
+    storage_client: &dyn StorageClient,
+    owner: &StackOwner,
+    file_id: &str,
+) -> Result<bytes::Bytes, StackDeploymentError> {
+    let mut buf = vec![];
+    storage_client
+        .get(
+            mu_storage::Owner::User(*owner),
+            crate::api::FUNCTION_STORAGE_NAME,
+            file_id,
+            &mut buf,
+        )
         .await
-        .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?
-        .bytes()
-        .await
-        .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))
+        .map_err(StackDeploymentError::FailedToDeployFunctions)?;
+    Ok(buf.into())
 }
 
 pub(super) async fn undeploy_stack(
@@ -201,11 +208,13 @@ async fn delete_user_data_permanently_from_storage(
     storage_manager: &dyn StorageManager,
     stack_id: StackID,
 ) -> anyhow::Result<()> {
+    let owner = mu_storage::Owner::Stack(stack_id);
+
     let storage_client = storage_manager.make_client()?;
-    let storage_names = storage_client.storage_list(stack_id).await?;
+    let storage_names = storage_client.storage_list(owner).await?;
 
     for name in storage_names.clone() {
-        storage_client.remove_storage(stack_id, &name).await?;
+        storage_client.remove_storage(owner, &name).await?;
     }
 
     let storage_and_deletes = storage_names
@@ -214,7 +223,7 @@ async fn delete_user_data_permanently_from_storage(
         .collect();
 
     storage_client
-        .update_stack_storages(stack_id, storage_and_deletes)
+        .update_stack_storages(owner, storage_and_deletes)
         .await?;
 
     Ok(())
