@@ -121,8 +121,13 @@ where
 
 fn match_path_and_extract_path_params<'a>(
     request_path: &'a str,
-    endpoint_path: &str,
+    mut endpoint_path: &str,
 ) -> Option<PathParams<'a>> {
+    //TODO: Should do this when deploying stack or gateway.
+    if endpoint_path.starts_with('/') {
+        endpoint_path = &endpoint_path[1..];
+    }
+
     //TODO: Cache `endpoint_path` path segments for future matches
     let mut request_path_segments = request_path.split('/');
     let mut endpoint_path_segments = endpoint_path.split('/');

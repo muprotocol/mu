@@ -41,7 +41,7 @@ pub async fn start(
         max_giga_instructions_per_call: None,
     };
 
-    let db_manager = super::key_value_table::start(project_root).await?;
+    let db_manager = super::database::start(project_root).await?;
 
     let storage_manager = super::storage::start().await?;
 
