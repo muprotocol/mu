@@ -42,7 +42,7 @@ impl StackCollection {
     }
 
     pub fn from_known(
-        known_stacks: HashMap<StackOwner, (OwnerState, Vec<StackWithMetadata>)>,
+        known_stacks: impl IntoIterator<Item = (StackOwner, (OwnerState, Vec<StackWithMetadata>))>,
     ) -> Self {
         let mut result = Self::default();
         for (owner, (state, stacks)) in known_stacks {

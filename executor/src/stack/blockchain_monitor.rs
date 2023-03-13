@@ -19,7 +19,9 @@ use mailbox_processor::{
 use marketplace::ServiceUsage;
 use mu_stack::StackID;
 use serde::Deserialize;
-use solana_account_decoder::parse_token::{parse_token, TokenAccountType};
+use solana_account_decoder::parse_token::{
+    parse_token, token_amount_to_ui_amount, TokenAccountType,
+};
 use solana_account_decoder::{UiAccount, UiAccountEncoding};
 use solana_client::client_error::{ClientError, ClientErrorKind};
 use solana_client::rpc_request::RpcError;
@@ -50,7 +52,19 @@ use crate::stack::StackOwner;
 pub trait BlockchainMonitor: Clone + Send + Sync {
     async fn get_stack(&self, stack_id: StackID) -> Result<Option<StackWithMetadata>>;
     async fn get_metadata(&self, stack_id: StackID) -> Result<Option<StackMetadata>>;
+    async fn get_escrow_balance(&self, owner: StackOwner) -> Result<Option<EscrowBalance>>;
     async fn stop(&self) -> Result<()>;
+}
+
+pub struct EscrowBalance {
+    pub user_balance: f64,
+    pub min_balance: f64,
+}
+
+impl EscrowBalance {
+    pub fn is_over_minimum(&self) -> bool {
+        self.user_balance > self.min_balance
+    }
 }
 
 pub enum BlockchainMonitorNotification {
@@ -111,6 +125,7 @@ struct Solana<'a> {
     provider_pda: Pubkey,
     token_decimals: u8,
     min_escrow_balance: u64,
+    escrow_balances: HashMap<Pubkey, u64>,
 }
 
 struct State<'a> {
@@ -123,6 +138,7 @@ struct State<'a> {
 enum BlockchainMonitorMessage {
     GetStack(StackID, ReplyChannel<Option<StackWithMetadata>>),
     GetMetadata(StackID, ReplyChannel<Option<StackMetadata>>),
+    GetEscrowBalance(StackOwner, ReplyChannel<Option<EscrowBalance>>),
     Tick(ReplyChannel<()>),
     Stop(ReplyChannel<()>),
 }
@@ -152,6 +168,13 @@ impl BlockchainMonitor for BlockchainMonitorImpl {
     async fn get_metadata(&self, stack_id: StackID) -> Result<Option<StackMetadata>> {
         self.mailbox
             .post_and_reply(|r| BlockchainMonitorMessage::GetMetadata(stack_id, r))
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_escrow_balance(&self, owner: StackOwner) -> Result<Option<EscrowBalance>> {
+        self.mailbox
+            .post_and_reply(|r| BlockchainMonitorMessage::GetEscrowBalance(owner, r))
             .await
             .map_err(Into::into)
     }
@@ -369,7 +392,12 @@ pub async fn start(
         region.min_escrow_balance,
     )
     .await?;
-    let stacks = StackCollection::from_known(owner_states);
+    let escrow_balances = owner_states
+        .iter()
+        .map(|(k, v)| (k.to_inner(), v.1))
+        .collect();
+    let stacks =
+        StackCollection::from_known(owner_states.into_iter().map(|(k, v)| (k, (v.0, v.2))));
 
     debug!("Setting up escrow subscriptions");
     solana_pub_sub.escrow_subscriptions = setup_solana_escrow_subscriptions(
@@ -393,6 +421,7 @@ pub async fn start(
             token_decimals: solana_token_decimals,
             region_pda,
             min_escrow_balance: region.min_escrow_balance,
+            escrow_balances,
         },
         usage_aggregator,
     };
@@ -429,7 +458,7 @@ async fn get_owner_states(
     provider_pda: &Pubkey,
     stacks: impl IntoIterator<Item = StackWithMetadata>,
     min_escrow_balance: u64,
-) -> Result<HashMap<StackOwner, (OwnerState, Vec<StackWithMetadata>)>> {
+) -> Result<HashMap<StackOwner, (OwnerState, u64, Vec<StackWithMetadata>)>> {
     let by_owner = stacks.into_iter().group_by(|s| s.owner());
 
     let mut res = HashMap::new();
@@ -444,7 +473,7 @@ async fn get_owner_states(
         };
 
         trace!("Developer {owner:?} has escrow balance {escrow_balance} and state {state:?}");
-        res.insert(owner, (state, stacks.collect()));
+        res.insert(owner, (state, escrow_balance, stacks.collect()));
     }
 
     Ok(res)
@@ -554,6 +583,28 @@ async fn mailbox_body(
                                 _ => None
                             }
                         );
+                    }
+
+                    Some(BlockchainMonitorMessage::GetEscrowBalance(owner, r)) => {
+                        let StackOwner::Solana(pubkey) = owner;
+                        r.reply(
+                            state.solana.escrow_balances.get(&pubkey).map(|b| EscrowBalance {
+                                user_balance:
+                                    token_amount_to_ui_amount(
+                                        *b,
+                                        state.solana.token_decimals
+                                    )
+                                    .ui_amount
+                                    .unwrap(),
+                                min_balance:
+                                    token_amount_to_ui_amount(
+                                        state.solana.min_escrow_balance,
+                                        state.solana.token_decimals
+                                    )
+                                    .ui_amount
+                                    .unwrap(),
+                            })
+                        )
                     }
 
                     Some(BlockchainMonitorMessage::GetStack(stack_id, r)) => {
@@ -704,6 +755,11 @@ fn on_solana_escrow_updated(
     owner_pubkey: Pubkey,
     escrow_balance: u64,
 ) {
+    state
+        .solana
+        .escrow_balances
+        .insert(owner_pubkey, escrow_balance);
+
     let new_state = if escrow_balance >= state.solana.min_escrow_balance {
         OwnerState::Active
     } else {

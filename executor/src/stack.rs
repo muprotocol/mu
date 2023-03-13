@@ -36,6 +36,14 @@ pub enum StackOwner {
     Solana(Pubkey),
 }
 
+impl StackOwner {
+    // TODO: violates multi-chain
+    pub fn to_inner(&self) -> Pubkey {
+        let StackOwner::Solana(pk) = self;
+        *pk
+    }
+}
+
 impl StackMetadata {
     pub fn id(&self) -> StackID {
         match self {
