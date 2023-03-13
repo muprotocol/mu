@@ -154,9 +154,14 @@ impl DbClient for DbClientImpl {
             } else if existing_tables.contains(&k) && *is_delete {
                 let meta_data_key: tikv_client::Key = k.into();
                 kvs_delete.push(meta_data_key);
-                let s = Scan::ByTableName(stack_id, table);
-                let mut data_key = self.inner.scan_keys(s, 10000).await?;
-                kvs_delete.append(&mut data_key)
+                loop {
+                    let s = Scan::ByTableName(stack_id, table.clone());
+                    let data_keys = self.inner.scan_keys(s, 10000).await?;
+                    if data_keys.is_empty() {
+                        break;
+                    }
+                    self.inner.batch_delete(data_keys).await?;
+                }
             }
         }
 
