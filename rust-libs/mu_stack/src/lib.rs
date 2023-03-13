@@ -157,9 +157,16 @@ impl Stack {
         crate::protos::stack::Stack::parse_from_bytes(bytes.as_ref())?.try_into()
     }
 
-    pub fn key_value_tables(&self) -> impl Iterator<Item = &KeyValueTable> {
+    pub fn key_value_tables(&self) -> impl Iterator<Item = &NameAndDelete> {
         self.services.iter().filter_map(|s| match s {
-            Service::KeyValueTable(db) => Some(db),
+            Service::KeyValueTable(x) => Some(x),
+            _ => None,
+        })
+    }
+
+    pub fn storage_names(&self) -> impl Iterator<Item = &NameAndDelete> {
+        self.services.iter().filter_map(|s| match s {
+            Service::StorageName(x) => Some(x),
             _ => None,
         })
     }
@@ -182,13 +189,14 @@ impl Stack {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum Service {
-    KeyValueTable(KeyValueTable),
+    KeyValueTable(NameAndDelete),
+    StorageName(NameAndDelete),
     Gateway(Gateway),
     Function(Function),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct KeyValueTable {
+pub struct NameAndDelete {
     pub name: String,
     pub delete: Option<bool>,
 }

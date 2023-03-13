@@ -1,3 +1,4 @@
+use mu_storage::{DeleteStorage, StorageManager};
 use reqwest::Url;
 use thiserror::Error;
 
@@ -55,22 +56,33 @@ pub enum StackDeploymentError {
     #[error("Failed to deploy tables due to: {0}")]
     FailedToDeployTables(anyhow::Error),
 
+    #[error("Failed to deploy storage names due to: {0}")]
+    FailedToDeployStorageNames(anyhow::Error),
+
     #[error("Failed to connect to muDB: {0}")]
     FailedToConnectToDatabase(anyhow::Error),
+
+    #[error("Failed to connect to muStorage: {0}")]
+    FailedToConnectToStorage(anyhow::Error),
 }
 
 pub(super) async fn deploy(
     id: StackID,
     stack: Stack,
     runtime: &dyn Runtime,
-    db: &dyn DbManager,
+    db_manager: &dyn DbManager,
+    storage_manager: &dyn StorageManager,
 ) -> Result<(), StackDeploymentError> {
     let stack = validate(stack).map_err(StackDeploymentError::ValidationError)?;
 
-    let db_client = db
+    let db_client = db_manager
         .make_client()
         .await
         .map_err(StackDeploymentError::FailedToConnectToDatabase)?;
+
+    let storage_client = storage_manager
+        .make_client()
+        .map_err(StackDeploymentError::FailedToConnectToStorage)?;
 
     // TODO: handle partial deployments
 
@@ -111,21 +123,40 @@ pub(super) async fn deploy(
         .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
 
     // Step 2: Database tables
-    let mut table_actions = vec![];
-    for kvt in stack.key_value_tables() {
-        let table_name = kvt
-            .name
-            .clone()
-            .try_into()
-            .map_err(StackDeploymentError::FailedToDeployTables)?;
-        let delete = DeleteTable(matches!(kvt.delete, Some(true)));
-        table_actions.push((table_name, delete));
-    }
+    let table_delete_paris = stack
+        .key_value_tables()
+        .into_iter()
+        .map(|kvt| {
+            let table_name = kvt
+                .name
+                .clone()
+                .try_into()
+                .map_err(StackDeploymentError::FailedToDeployTables)?;
+            let delete = DeleteTable(matches!(kvt.delete, Some(true)));
+            Ok((table_name, delete))
+        })
+        .collect::<anyhow::Result<_, _>>()?;
 
     db_client
-        .update_stack_tables(id, table_actions)
+        .update_stack_tables(id, table_delete_paris)
         .await
         .map_err(|e| StackDeploymentError::FailedToDeployTables(e.into()))?;
+
+    // Step 3: Storage names
+    let storage_delete_pairs = stack
+        .storage_names()
+        .into_iter()
+        .map(|n| {
+            let name = n.name.as_str();
+            let del = DeleteStorage(matches!(n.delete, Some(true)));
+            (name, del)
+        })
+        .collect();
+
+    storage_client
+        .update_stack_storages(id, storage_delete_pairs)
+        .await
+        .map_err(StackDeploymentError::FailedToDeployStorageNames)?;
 
     let existing_function_names = runtime.get_function_names(id).await.unwrap_or_default();
     let mut functions_to_delete = vec![];
@@ -164,24 +195,68 @@ pub(super) async fn undeploy_stack(
     mode: StackRemovalMode,
     runtime: &dyn Runtime,
     db_manager: &dyn DbManager,
+    storage_manager: &dyn StorageManager,
 ) -> anyhow::Result<()> {
-    // TODO: have a policy for deleting user data from the database
-    // It should handle deleted and suspended stacks differently
-
     if let StackRemovalMode::Permanent = mode {
-        let db_client = db_manager.make_client().await?;
-        let tables = db_client.table_list(id, None).await?;
-        for table in tables.clone() {
-            db_client.clear_table(id, table).await?;
-        }
-        let table_deletes = tables
-            .into_iter()
-            .map(|table| (table, DeleteTable(true)))
-            .collect();
-        db_client.update_stack_tables(id, table_deletes).await?;
+        delete_user_data_permanently(db_manager, storage_manager, id).await?;
     }
 
     runtime.remove_all_functions(id).await?;
+
+    Ok(())
+}
+
+async fn delete_user_data_permanently(
+    db_manager: &dyn DbManager,
+    storage_manager: &dyn StorageManager,
+    stack_id: StackID,
+) -> anyhow::Result<()> {
+    delete_user_data_permanently_from_database(db_manager, stack_id).await?;
+    delete_user_data_permanently_from_storage(storage_manager, stack_id).await
+}
+
+async fn delete_user_data_permanently_from_database(
+    db_manager: &dyn DbManager,
+    stack_id: StackID,
+) -> anyhow::Result<()> {
+    let db_client = db_manager.make_client().await?;
+    let table_names = db_client.table_list(stack_id, None).await?;
+
+    for name in table_names.clone() {
+        db_client.clear_table(stack_id, name).await?;
+    }
+
+    let table_delete_pairs = table_names
+        .into_iter()
+        .map(|name| (name, DeleteTable(true)))
+        .collect();
+
+    db_client
+        .update_stack_tables(stack_id, table_delete_pairs)
+        .await?;
+
+    Ok(())
+}
+
+async fn delete_user_data_permanently_from_storage(
+    storage_manager: &dyn StorageManager,
+    stack_id: StackID,
+) -> anyhow::Result<()> {
+    let storage_client = storage_manager.make_client()?;
+    let storage_names = storage_client.storage_list(stack_id).await?;
+
+    for name in storage_names.clone() {
+        storage_client.remove_storage(stack_id, &name).await?;
+    }
+
+    let storage_and_deletes = storage_names
+        .iter()
+        .map(|name| (name.as_str(), DeleteStorage(true)))
+        .collect();
+
+    storage_client
+        .update_stack_storages(stack_id, storage_and_deletes)
+        .await?;
 
     Ok(())
 }

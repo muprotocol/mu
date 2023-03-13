@@ -51,6 +51,7 @@ pub async fn run() -> Result<()> {
         connection_manager_config,
         membership_config,
         db_config,
+        storage_config,
         gateway_manager_config,
         log_config,
         partial_runtime_config,
@@ -94,12 +95,17 @@ pub async fn run() -> Result<()> {
 
     let database_manager = mu_db::start(db_config).await?;
 
+    let storage_manager = mu_storage::start(&storage_config).await?;
+
     let runtime_config =
         partial_runtime_config.complete(region_config.max_giga_instructions_per_call);
-    let (runtime, mut runtime_notification_receiver) =
-        mu_runtime::start(database_manager.clone(), runtime_config)
-            .await
-            .context("Failed to initiate runtime")?;
+    let (runtime, mut runtime_notification_receiver) = mu_runtime::start(
+        database_manager.clone(),
+        storage_manager.clone(),
+        runtime_config,
+    )
+    .await
+    .context("Failed to initiate runtime")?;
 
     let rpc_handler = rpc_handler::new(
         connection_manager.clone(),
@@ -164,6 +170,7 @@ pub async fn run() -> Result<()> {
         runtime.clone(),
         gateway_manager.clone(),
         database_manager.clone(),
+        storage_manager.clone(),
     );
 
     info!("Will start to schedule stacks now");

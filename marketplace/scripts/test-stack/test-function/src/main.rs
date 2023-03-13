@@ -19,6 +19,31 @@ mod functions {
         ctx.db().put("t1", &name, vec![count], false).unwrap();
         ctx.db().put("t2", "x", [0u8], false).unwrap();
 
+        ctx.log("storage is up and running", LogLevel::Info)
+            .unwrap();
+
+        ctx.storage()
+            .put("test_storage", "test_file.txt", name.as_bytes())
+            .unwrap();
+
+        ctx.log("successfully uploaded to storage", LogLevel::Info)
+            .unwrap();
+
+        let mut storage = ctx.storage();
+
+        let received_data = storage.get("test_storage", "test_file.txt").unwrap();
+        assert!(received_data == name.as_bytes());
+
+        ctx.log(
+            "successfully downloaded from storage and validated the results",
+            LogLevel::Info,
+        )
+        .unwrap();
+
+        ctx.storage()
+            .delete("test_storage", "test_file.txt")
+            .unwrap();
+
         let _ = ctx.log(&format!("Received request from {name}"), LogLevel::Info);
         format!("(#{count}) Hello, {name}!")
     }

@@ -9,6 +9,7 @@ use mu_db::DbConfig;
 
 use mu_gateway::GatewayManagerConfig;
 use mu_runtime::RuntimeConfig;
+use mu_storage::StorageConfig;
 use serde::Deserialize;
 
 use crate::{
@@ -21,6 +22,7 @@ pub struct SystemConfig(
     pub ConnectionManagerConfig,
     pub MembershipConfig,
     pub DbConfig,
+    pub StorageConfig,
     pub GatewayManagerConfig,
     pub LogConfig,
     pub PartialRuntimeConfig,
@@ -98,6 +100,8 @@ pub fn initialize_config() -> Result<SystemConfig> {
 
     let db_config = config.get("db").context("Invalid database config")?;
 
+    let storage_config = config.get("storage").context("Invalid storage config")?;
+
     let gateway_config = config
         .get("gateway_manager")
         .context("Invalid gateway config")?;
@@ -119,6 +123,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
         connection_manager_config,
         membership_config,
         db_config,
+        storage_config,
         gateway_config,
         log_config,
         partial_runtime_config,

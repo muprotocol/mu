@@ -2,6 +2,7 @@ mod database;
 mod http_client;
 pub(crate) mod utils;
 
+use std::{borrow::BorrowMut, ops::Deref};
 use std::{borrow::Cow, collections::HashMap, future::Future};
 
 use crate::{
@@ -14,8 +15,14 @@ use crate::{
 
 use mu_db::{DbClient, DbManager};
 use mu_stack::StackID;
+use mu_storage::{StorageClient, StorageManager};
 use musdk_common::{
-    incoming_message::{db::*, IncomingMessage},
+    incoming_message::{
+        self,
+        db::*,
+        storage::{ObjectListResult, StorageEmptyResult, StorageError, StorageGetResult},
+        IncomingMessage,
+    },
     outgoing_message::{LogLevel, OutgoingMessage},
 };
 
@@ -37,8 +44,10 @@ pub(crate) struct Instance {
 
     // Resources
     db_manager: Box<dyn DbManager>,
+    storage_manager: Box<dyn StorageManager>,
     db_client: Option<Box<dyn DbClient>>,
     http_client: Option<reqwest::blocking::Client>,
+    storage_client: Option<Box<dyn StorageClient>>,
 
     // Usage calculation
     database_write_count: u64,
@@ -56,6 +65,7 @@ impl Instance {
         giga_instructions_limit: Option<u32>,
         include_logs: bool,
         db_manager: Box<dyn DbManager>,
+        storage_manager: Box<dyn StorageManager>,
     ) -> Result<Self> {
         trace!("starting instance {}", id);
 
@@ -69,7 +79,9 @@ impl Instance {
             include_logs,
 
             db_manager,
+            storage_manager,
             db_client: None,
+            storage_client: None,
             http_client: None,
 
             database_write_count: 0,
@@ -253,6 +265,63 @@ impl Instance {
                         | OutgoingMessage::BatchScan(_)
                         | OutgoingMessage::BatchScanKeys(_)
                         | OutgoingMessage::CompareAndSwap(_) => self.handle_db_request(message)?,
+
+                        OutgoingMessage::StoragePut(req) => {
+                            self.storage_request(|client, stack_id| async move {
+                                client
+                                    .put(
+                                        stack_id,
+                                        &req.storage_name,
+                                        &req.key,
+                                        req.reader.deref().borrow_mut(),
+                                    )
+                                    .await
+                                    .map(|()| {
+                                        IncomingMessage::StorageEmptyResult(StorageEmptyResult)
+                                    })
+                            })?
+                        }
+                        OutgoingMessage::StorageGet(req) => {
+                            self.storage_request(|client, stack_id| async move {
+                                let mut data: Vec<u8> = vec![];
+                                client
+                                    .get(stack_id, &req.storage_name, &req.key, &mut data)
+                                    .await
+                                    .map(move |()| {
+                                        IncomingMessage::StorageGetResult(StorageGetResult {
+                                            data: Cow::Owned(data),
+                                        })
+                                    })
+                            })?
+                        }
+                        OutgoingMessage::StorageDelete(req) => {
+                            self.storage_request(|client, stack_id| async move {
+                                client
+                                    .delete(stack_id, &req.storage_name, &req.key)
+                                    .await
+                                    .map(|()| {
+                                        IncomingMessage::StorageEmptyResult(StorageEmptyResult)
+                                    })
+                            })?
+                        }
+                        OutgoingMessage::StorageList(req) => {
+                            self.storage_request(|client, stack_id| async move {
+                                client
+                                    .list(stack_id, &req.storage_name, &req.prefix)
+                                    .await
+                                    .map(|res| {
+                                        IncomingMessage::ObjectListResult(ObjectListResult {
+                                            list: res
+                                                .into_iter()
+                                                .map(|o| incoming_message::storage::Object {
+                                                    key: Cow::Owned(o.key),
+                                                    size: o.size,
+                                                })
+                                                .collect(),
+                                        })
+                                    })
+                            })?
+                        }
                     }
                 }
             }
@@ -480,5 +549,37 @@ impl Instance {
             .map_err(|e| (e, Usage::default()))?;
 
         Ok(())
+    }
+    fn storage_request<'a, A, B>(&mut self, f: A) -> Result<(), (Error, Usage)>
+    where
+        A: FnOnce(Box<dyn StorageClient>, StackID) -> B,
+        B: Future<Output = anyhow::Result<IncomingMessage<'a>>>,
+    {
+        tokio::runtime::Handle::current().block_on(async {
+            let stack_id = self.id.function_id.stack_id;
+            let storage_client_res = match &self.storage_client {
+                Some(client) => Ok(client.clone()),
+                None => {
+                    let client = self.storage_manager.make_client();
+                    self.storage_client = client.as_ref().ok().map(ToOwned::to_owned);
+                    client
+                }
+            };
+
+            match storage_client_res {
+                Ok(client) => {
+                    let msg = f(client, stack_id).await.unwrap_or_else(|e| {
+                        IncomingMessage::StorageError(StorageError {
+                            error: Cow::from(format!("{e:?}")),
+                        })
+                    });
+                    self.write_message(msg)
+                }
+                Err(e) => self.write_message(IncomingMessage::StorageError(StorageError {
+                    error: Cow::from(format!("{e:?}")),
+                })),
+            }
+            .map_err(|e| (e, Usage::default()))
+        })
     }
 }

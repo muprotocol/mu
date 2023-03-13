@@ -13,10 +13,16 @@ message Service {
         Gateway gateway = 1;
         Function function = 2;
         KeyValueTable key_value_table = 3;
+        StorageName storage_name = 4;
     }
 }
 
 message KeyValueTable {
+    string name = 1;
+    bool delete = 2;
+}
+
+message StorageName {
     string name = 1;
     bool delete = 2;
 }

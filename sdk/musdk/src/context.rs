@@ -1,4 +1,5 @@
 pub mod db;
+pub mod storage;
 
 use std::{
     borrow::Cow,
@@ -43,6 +44,10 @@ impl MuContext {
 
     pub fn db(&mut self) -> db::DbHandle {
         db::DbHandle { context: self }
+    }
+
+    pub fn storage(&mut self) -> storage::StorageHandle {
+        storage::StorageHandle { context: self }
     }
 
     pub fn http_client(&mut self) -> HttpClient {

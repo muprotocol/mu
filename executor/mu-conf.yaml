@@ -41,3 +41,38 @@ db:
       port: 2379
   # TODO
   #   usage_report_duration: 15m
+# TODO
+# db_manager:
+#   usage_report_duration: 15m
+storage:
+  # If you already have an S3-compatible storage running, use
+  # this instead of the internal template below:
+  #
+  # external:
+  #   auth_config:
+  #     access_key: some_access_key
+  #     secret_key: some_secret_key
+  #     security_token: null
+  #     session_token: null
+  #     profile: null
+  #   region:
+  #     region: us-east1
+  #     endpoint: 127.0.0.1:8080
+  #   bucket_name: some_bucket_name
+  internal:
+    # the internal configuration starts an instance of [JuiceFS](https://juicefs.com/).
+    # JuiceFS supports many storage backends, including TiKV, and exposes an S3 API
+    # which mu Storage connects to. You may configure JuiceFS to store its data within
+    # the same TiKV instance as mu DB, but note that this is not recommended for serious
+    # deployments. Also note that JuiceFS recommends using different TiKV clusters for
+    # metadata and object storage.
+    metadata_tikv_endpoints:
+      - address: 127.0.0.1
+        port: 2379
+    object_storage_tikv_endpoints:
+      - address: 127.0.0.1
+        port: 2379
+    storage:
+      endpoint:
+        address: 127.0.0.1
+        port: 8001

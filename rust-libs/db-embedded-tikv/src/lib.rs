@@ -81,10 +81,7 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
     let mut temp_address = env::temp_dir();
     temp_address.push(name);
 
-    // TODO: remove if and let create temp files every time.
-    // also let this to be separate for TikvRunner
-    // in test module concurrent test need to create temp files once.
-    // otherwise they get race condition of creating temp files.
+    // TODO check checksum instead existing.
     let file = if temp_address.exists() {
         File::open(temp_address.as_path())
             .await
@@ -343,15 +340,15 @@ pub async fn start(
         10000,
     );
 
-    let res = TikvRunnerImpl { mailbox };
-
-    Ok(Box::new(res))
+    Ok(Box::new(TikvRunnerImpl { mailbox }))
 }
 
 #[async_trait]
 impl TikvRunner for TikvRunnerImpl {
     async fn stop(&self) -> Result<()> {
         self.mailbox.post(Message::Stop).await?;
+        // do we need to stop this ? and clone it too?
+        // based on the comment on mailbox.stop it seems like we dont need to stop it.
         self.mailbox.clone().stop().await;
         Ok(())
     }

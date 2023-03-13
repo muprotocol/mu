@@ -20,6 +20,9 @@ pub enum Error {
     #[error("Database error: {0}")]
     DatabaseError(String),
 
+    #[error("Storage error: {0}")]
+    StorageError(String),
+
     #[error("Unexpected message kind, was expecting {0}")]
     UnexpectedMessageKind(&'static str),
 }

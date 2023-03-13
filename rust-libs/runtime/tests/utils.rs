@@ -106,7 +106,11 @@ pub mod fixture {
 
     use super::*;
     use db_embedded_tikv::{DbManagerWithTikv, PdConfig, TikvConfig, TikvRunnerConfig};
-    use mu_common::serde_support::{IpOrHostname, TcpPortAddress};
+    use log::trace;
+    use mu_common::serde_support::IpOrHostname;
+    use mu_common::serde_support::TcpPortAddress;
+    use mu_storage::{StorageConfig, StorageManager};
+    use storage_embedded_juicefs::{InternalStorageConfig, StorageInfo};
     use test_context::{AsyncTestContext, TestContext};
 
     pub static DID_INSTALL_WASM32_TARGET_RUN: Mutex<bool> = Mutex::new(false);
@@ -198,6 +202,7 @@ pub mod fixture {
     #[async_trait]
     impl AsyncTestContext for DBManagerFixture {
         async fn setup() -> Self {
+            trace!("setting up db manager fixture");
             let data_dir = TempDir::setup();
             let addr = |port| TcpPortAddress {
                 address: IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -237,9 +242,45 @@ pub mod fixture {
         }
     }
 
+    pub struct StorageManagerFixture {
+        pub storage_manager: Box<dyn StorageManager>,
+    }
+
+    #[async_trait]
+    impl AsyncTestContext for StorageManagerFixture {
+        async fn setup() -> Self {
+            trace!("setting up storage manager fixture");
+            let addr = |port| TcpPortAddress {
+                address: IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                port,
+            };
+
+            let tikv_endpoint = addr(12386);
+
+            let config = StorageConfig {
+                external: None,
+                internal: Some(InternalStorageConfig {
+                    metadata_tikv_endpoints: vec![tikv_endpoint.clone()],
+                    object_storage_tikv_endpoints: vec![tikv_endpoint],
+                    storage: StorageInfo {
+                        endpoint: addr(3089),
+                    },
+                }),
+            };
+            Self {
+                storage_manager: mu_storage::start(&config).await.unwrap(),
+            }
+        }
+
+        async fn teardown(self) {
+            self.storage_manager.stop().await.unwrap()
+        }
+    }
+
     pub struct RuntimeFixture<Config: RuntimeTestConfig> {
         pub runtime: Box<dyn Runtime>,
         pub db_manager_fixture: DBManagerFixture,
+        pub storage_manager_fixture: StorageManagerFixture,
         pub usages: Arc<tokio::sync::Mutex<HashMap<StackID, Usage>>>,
         data_dir: TempDir,
         config: PhantomData<Config>,
@@ -248,18 +289,25 @@ pub mod fixture {
     #[async_trait]
     impl<Config: RuntimeTestConfig> AsyncTestContext for RuntimeFixture<Config> {
         async fn setup() -> Self {
+            setup_logger();
+            trace!("setting up runtime fixture");
             install_wasm32_target();
             build_test_funcs();
-            setup_logger();
 
             let db_manager = <DBManagerFixture as AsyncTestContext>::setup().await;
+            let storage_manager = <StorageManagerFixture as AsyncTestContext>::setup().await;
             let data_dir = TempDir::setup();
 
             let mut config = Config::make();
             config.cache_path = data_dir.get_rand_sub_dir(Some("runtime-cache"));
 
-            let (runtime, mut notifications) =
-                start(db_manager.db_manager.clone(), config).await.unwrap();
+            let (runtime, mut notifications) = start(
+                db_manager.db_manager.clone(),
+                storage_manager.storage_manager.clone(),
+                config,
+            )
+            .await
+            .unwrap();
 
             let usages = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
@@ -286,14 +334,17 @@ pub mod fixture {
             RuntimeFixture {
                 runtime,
                 db_manager_fixture: db_manager,
+                storage_manager_fixture: storage_manager,
                 usages,
                 data_dir,
                 config: PhantomData,
             }
         }
+
         async fn teardown(self) {
             self.runtime.stop().await.unwrap();
             AsyncTestContext::teardown(self.db_manager_fixture).await;
+            AsyncTestContext::teardown(self.storage_manager_fixture).await;
             self.data_dir.teardown();
         }
     }
@@ -313,12 +364,16 @@ pub mod fixture {
             setup_logger();
 
             let db_manager = mock_db::EmptyDBManager;
+            let storage_manager = mock_storage::EmptyStorageManager;
             let data_dir = TempDir::setup();
 
             let mut config = Config::make();
             config.cache_path = data_dir.get_rand_sub_dir(Some("runtime-cache"));
 
-            let (runtime, mut notifications) = start(Box::new(db_manager), config).await.unwrap();
+            let (runtime, mut notifications) =
+                start(Box::new(db_manager), Box::new(storage_manager), config)
+                    .await
+                    .unwrap();
 
             let usages = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
@@ -545,6 +600,98 @@ mod mock_db {
 
         async fn stop(&self) -> anyhow::Result<()> {
             Ok(())
+        }
+    }
+}
+
+mod mock_storage {
+    use async_trait::async_trait;
+    use mu_stack::StackID;
+    use mu_storage::{DeleteStorage, Object, StorageClient, StorageManager};
+    use tokio::io::{AsyncRead, AsyncWrite};
+    #[derive(Clone)]
+    pub struct EmptyStorageManager;
+
+    #[derive(Clone)]
+    pub struct EmptyStorageClient;
+
+    #[async_trait]
+    impl StorageManager for EmptyStorageManager {
+        fn make_client(&self) -> anyhow::Result<Box<dyn mu_storage::StorageClient>> {
+            Ok(Box::new(EmptyStorageClient))
+        }
+
+        async fn stop(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl StorageClient for EmptyStorageClient {
+        async fn update_stack_storages(
+            &self,
+            _stack_id: StackID,
+            _storage_delete_pairs: Vec<(&str, DeleteStorage)>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn storage_list(&self, _stack_id: StackID) -> anyhow::Result<Vec<String>> {
+            Ok(vec![])
+        }
+
+        async fn contains_storage(
+            &self,
+            _stack_id: StackID,
+            _storage_name: &str,
+        ) -> anyhow::Result<bool> {
+            Ok(false)
+        }
+
+        async fn remove_storage(
+            &self,
+            _stack_id: StackID,
+            _storage_name: &str,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn get(
+            &self,
+            _stack_id: StackID,
+            _storage_name: &str,
+            _key: &str,
+            _writer: &mut (dyn AsyncWrite + Send + Sync + Unpin),
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn put(
+            &self,
+            _stack_id: StackID,
+            _storage_name: &str,
+            _key: &str,
+            _reader: &mut (dyn AsyncRead + Send + Sync + Unpin),
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn delete(
+            &self,
+            _stack_id: StackID,
+            _storage_name: &str,
+            _key: &str,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn list(
+            &self,
+            _stack_id: StackID,
+            _storage_name: &str,
+            _prefix: &str,
+        ) -> anyhow::Result<Vec<Object>> {
+            Ok(vec![])
         }
     }
 }

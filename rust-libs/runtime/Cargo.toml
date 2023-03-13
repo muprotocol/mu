@@ -29,7 +29,9 @@ mailbox_processor = { path = "../mailbox_processor" }
 mu_stack = { path = "../mu_stack" }
 mu-common = { path = "../common" }
 mu-db = { path = "../db" }
+mu-storage = { path = "../storage" }
 musdk-common = { path = "../../sdk/common" }
+storage_embedded_juicefs = { path = "../storage_embedded_juicefs"}
 
 [dev-dependencies]
 test-context = "0.1.4"
