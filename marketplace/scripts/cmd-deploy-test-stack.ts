@@ -32,8 +32,7 @@ util.asyncMain(async () => {
         `npx ts-node ${path.resolve(__dirname, "deploy-contract.ts")} && ` +
         `npx ts-node ${path.resolve(__dirname, "initialize-mu.ts")} && ` +
         `npx ts-node ${path.resolve(__dirname, "deploy-provider.ts")} && ` +
-        `npx ts-node ${path.resolve(__dirname, "deploy-developer.ts")} && ` +
-        `npx ts-node ${path.resolve(__dirname, "deploy-stack.ts")}`,
+        `npx ts-node ${path.resolve(__dirname, "deploy-developer.ts")}`,
         "deploy"
     );
 

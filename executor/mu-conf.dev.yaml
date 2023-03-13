@@ -1,5 +1,5 @@
 log:
-  level: debug
+  level: info
   filters:
     - module: tikv_client_common
       level: warn
@@ -27,4 +27,3 @@ db:
 runtime:
   cache_path: runtime-cache
   include_function_logs: true
-

@@ -720,6 +720,10 @@ async fn select_next_escrow_update(
     subs: &mut HashMap<Pubkey, SolanaSubscription<'_, UiAccount>>,
     token_decimals: u8,
 ) -> Result<Option<(Pubkey, u64)>> {
+    if subs.is_empty() {
+        std::future::pending::<()>().await;
+    }
+
     let next = futures::future::select_all(
         subs.iter_mut()
             .map(|x| Box::pin(next_escrow_update(x, token_decimals))),

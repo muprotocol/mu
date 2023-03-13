@@ -13,7 +13,6 @@ use crate::{config::Config, marketplace_client};
 #[derive(Debug, Parser)]
 pub enum Command {
     List(ListStacksCommand),
-    Deploy(DeployStackCommand),
     Delete(DeleteStackCommand),
 }
 
@@ -28,27 +27,6 @@ pub struct ListStacksCommand {
     #[arg(long)]
     /// Perform a prefix search on stack names (case-sensitive).
     name_prefix: Option<String>,
-}
-
-#[derive(Debug, Args)]
-pub struct DeployStackCommand {
-    #[arg(long, short)]
-    /// Seed numbers are used to distinguish stacks deployed to the same region.
-    /// The seed can be thought of as an ID, which is used again when updating
-    /// the same stack.
-    seed: u64,
-
-    #[arg(long)]
-    /// The region to deploy to.
-    region: Pubkey,
-
-    #[arg(long)]
-    /// If specified, only deploy the stack if it doesn't already exist
-    init: bool,
-
-    #[arg(long)]
-    /// If specified, only update the stack if a previous version already exists
-    update: bool,
 }
 
 #[derive(Debug, Args)]
@@ -67,7 +45,6 @@ pub struct DeleteStackCommand {
 pub fn execute(config: Config, cmd: Command) -> Result<()> {
     match cmd {
         Command::List(sub_command) => execute_list(config, sub_command),
-        Command::Deploy(sub_command) => execute_deploy(config, sub_command),
         Command::Delete(sub_command) => execute_delete(config, sub_command),
     }
 }
@@ -158,41 +135,6 @@ pub fn execute_list(config: Config, cmd: ListStacksCommand) -> Result<()> {
     }
 
     Ok(())
-}
-
-pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
-    let (mu_manifest, project_root) = crate::mu_manifest::read_manifest()?;
-    mu_manifest.build_all(crate::mu_manifest::BuildMode::Release, &project_root)?;
-
-    let marketplace_client = config.build_marketplace_client()?;
-    let user_wallet = config.get_signer()?;
-
-    let region_base_url =
-        marketplace_client::region::get_base_url(&marketplace_client, cmd.region)?;
-
-    let region_base_url = if region_base_url.starts_with("http") {
-        region_base_url
-    } else {
-        format!("http://{region_base_url}")
-    };
-
-    let region_api_client = api_common::client::ApiClient::new(region_base_url);
-
-    println!("Signing function upload request ...");
-    let stack = mu_manifest.generate_stack_manifest_for_publish(|p| {
-        region_api_client.upload_function(std::path::PathBuf::from(p), user_wallet.clone())
-    })?;
-
-    let deploy_mode = marketplace_client::stack::get_deploy_mode(cmd.init, cmd.update)?;
-
-    marketplace_client::stack::deploy(
-        &marketplace_client,
-        user_wallet,
-        &cmd.region,
-        stack,
-        cmd.seed,
-        deploy_mode,
-    )
 }
 
 pub fn execute_delete(config: Config, cmd: DeleteStackCommand) -> Result<()> {

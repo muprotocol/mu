@@ -7,7 +7,7 @@ use actix_web::{
 };
 use anyhow::Result;
 use api_common::{
-    requests::{EchoRequest, EchoResponse, UploadFunctionRequest, UploadFunctionResponse},
+    requests::{UploadFunctionRequest, UploadFunctionResponse},
     ApiRequestTemplate, SIGNATURE_HEADER_NAME,
 };
 use log::error;
@@ -69,7 +69,7 @@ async fn handle_request(
             verify_escrow_account_balance(dependency_accessor.blockchain_monitor.clone(), &owner)
                 .await?;
         } else {
-            return bad_request("invalid signature");
+            return Err(bad_request("invalid signature"));
         }
 
         execute_request(
