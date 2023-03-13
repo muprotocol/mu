@@ -590,7 +590,7 @@ async fn mailbox_body(
 
                     Some(BlockchainMonitorMessage::GetEscrowBalance(owner, r)) => {
                         let StackOwner::Solana(pubkey) = owner;
-                        let mut balance = state.solana.escrow_balances.get(&pubkey).map(|b| *b);
+                        let mut balance = state.solana.escrow_balances.get(&pubkey).copied();
                         if balance.is_none() {
                             match fetch_owner_escrow_balance(&state.solana.rpc_client, &owner, &state.solana.provider_pda).await {
                                 Ok(x) => balance = x,
@@ -1248,7 +1248,8 @@ async fn on_new_stack_received(
                         &stack.owner(),
                         &state.solana.provider_pda,
                     )
-                    .await?;
+                    .await?
+                    .unwrap_or(0);
                     let state = if escrow_balance >= state.solana.min_escrow_balance {
                         OwnerState::Active
                     } else {
