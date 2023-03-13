@@ -16,6 +16,6 @@ pub struct EchoRequest {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct EchoResposne {
+pub struct EchoResponse {
     pub message: String,
 }

@@ -7,7 +7,7 @@ use actix_web::{
 };
 use anyhow::{bail, Context, Result};
 use api_common::{
-    requests::{EchoRequest, EchoResposne, UploadFunctionRequest, UploadFunctionResponse},
+    requests::{EchoRequest, EchoResponse, UploadFunctionRequest, UploadFunctionResponse},
     ApiRequestTemplate, SIGNATURE_HEADER_NAME,
 };
 use log::error;
@@ -183,12 +183,12 @@ fn execute_echo(params: serde_json::Value) -> ExecutionResult {
     let req =
         serde_json::from_value::<EchoRequest>(params).map_err(|_| bad_request("invalid input"))?;
 
-    match serde_json::to_value(EchoResposne {
+    match serde_json::to_value(EchoResponse {
         message: req.message,
     }) {
         Ok(r) => Ok(r),
         Err(e) => {
-            error!("Failed to serialize resposne: {e:?}");
+            error!("Failed to serialize response: {e:?}");
             Err(internal_server_error("failed to serialize response"))
         }
     }
@@ -244,7 +244,7 @@ async fn execute_upload_function(
     match serde_json::to_value(UploadFunctionResponse { file_id }) {
         Ok(r) => Ok(r),
         Err(e) => {
-            error!("Failed to serialize resposne: {e:?}");
+            error!("Failed to serialize response: {e:?}");
             Err(internal_server_error("failed to serialize response"))
         }
     }

@@ -6,7 +6,7 @@ use mu_stack::StackOwner;
 use solana_sdk::signer::Signer;
 
 use crate::{
-    requests::{EchoRequest, EchoResposne, UploadFunctionRequest, UploadFunctionResponse},
+    requests::{EchoRequest, EchoResponse, UploadFunctionRequest, UploadFunctionResponse},
     sign_request, SIGNATURE_HEADER_NAME,
 };
 
@@ -48,7 +48,7 @@ impl ApiClient {
 
         let (request_body, sign) = sign_request(request, "echo".to_string(), None, signer)?;
 
-        let response: EchoResposne = serde_json::from_slice(&self.send(request_body, sign)?)?;
+        let response: EchoResponse = serde_json::from_slice(&self.send(request_body, sign)?)?;
         Ok(response.message)
     }
 
