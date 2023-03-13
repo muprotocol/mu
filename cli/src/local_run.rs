@@ -59,8 +59,8 @@ pub async fn start_local_node(stack: StackWithID, project_root: PathBuf) -> Resu
     [
         runtime.stop().await.map_err(Into::into),
         gateway.stop().await,
-        database.stop().await,
         storage.stop().await,
+        database.stop().await,
     ]
     .into_iter()
     .bcollect::<()>()
