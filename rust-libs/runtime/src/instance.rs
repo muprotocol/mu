@@ -174,6 +174,15 @@ impl Instance {
                     if e.kind() == std::io::ErrorKind::InvalidInput =>
                 {
                     error!("Function did not write a FunctionResult or FatalError to its stdout before stopping");
+
+                    log!(
+                        target: FUNCTION_LOG_TARGET,
+                        Level::Error,
+                        "{}: {}",
+                        self.id,
+                        "Function did not write a FunctionResult or FatalError to its stdout before stopping"
+                    );
+
                     return match self.wait_to_finish_and_get_usage() {
                         Ok(u) => {
                             trace!("USAGE: {}", u.function_instructions);
@@ -202,12 +211,21 @@ impl Instance {
                             };
                         }
                         OutgoingMessage::FatalError(e) => {
-                            let e = Error::FunctionRuntimeError(FunctionRuntimeError::FatalError(
-                                e.error.into_owned(),
-                            ));
+                            log!(
+                                target: FUNCTION_LOG_TARGET,
+                                Level::Error,
+                                "{}: {}",
+                                self.id,
+                                e.error
+                            );
+
+                            let error = Error::FunctionRuntimeError(
+                                FunctionRuntimeError::FatalError(e.error.into_owned()),
+                            );
+
                             return match self.wait_to_finish_and_get_usage() {
-                                Ok(u) => Err((e, u)),
-                                Err((_, u)) => Err((e, u)),
+                                Ok(u) => Err((error, u)),
+                                Err((_, u)) => Err((error, u)),
                             };
                         }
 

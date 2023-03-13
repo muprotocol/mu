@@ -4,6 +4,7 @@
         "executor": true,
         "cli": true,
         "sdk": true,
-        "rust-libs": true
+        "rust-libs": true,
+        "airdrop": true
     }
 }
