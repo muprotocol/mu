@@ -121,6 +121,7 @@ thiserror
 tikv
 Tikv
 tiup
+todos
 tokio
 tunables
 undeployed
