@@ -5,7 +5,7 @@ use actix_web::{
     web::{self, Json, PayloadConfig},
     HttpRequest,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::Result;
 use api_common::{
     requests::{EchoRequest, EchoResponse, UploadFunctionRequest, UploadFunctionResponse},
     ApiRequestTemplate, SIGNATURE_HEADER_NAME,
@@ -58,9 +58,10 @@ async fn handle_request(
         request: HttpRequest,
         payload: String,
         dependency_accessor: web::Data<DependencyAccessor>,
-    ) -> Result<(Json<serde_json::Value>, http::StatusCode)> {
+    ) -> Result<Json<serde_json::Value>, Error> {
         let headers = request.headers();
-        let request = serde_json::from_str::<ApiRequestTemplate>(payload.as_str())?;
+        let request = serde_json::from_str::<ApiRequestTemplate>(payload.as_str())
+            .map_err(|_| bad_request("can not deserialize request"))?;
 
         if let Some(owner) = request.user {
             let _pubkey = verify_signature(&owner, headers, &payload)?;
@@ -69,43 +70,52 @@ async fn handle_request(
                 .await?;
         }
 
-        match execute_request(
+        execute_request(
             request.user,
             request,
             dependency_accessor.storage_client.clone(),
         )
         .await
-        {
-            Ok(response) => Ok((Json(response), http::StatusCode::OK)),
-            Err((response, status_code)) => Ok((Json(response), status_code)),
-        }
+        .map(Json)
     }
 
-    helper(request, payload, dependency_accessor)
-        .await
-        .unwrap_or_else(|_| handle_bad_request())
+    match helper(request, payload, dependency_accessor).await {
+        Ok(response) => (response, http::StatusCode::OK),
+        Err((response, status_code)) => (Json(response), status_code),
+    }
 }
 
 fn verify_signature(
     user: &StackOwner,
     headers: &HeaderMap,
     payload: &String,
-) -> Result<ed25519_dalek::PublicKey> {
+) -> Result<ed25519_dalek::PublicKey, Error> {
     let pubkey = match user {
-        StackOwner::Solana(pk) => ed25519_dalek::PublicKey::from_bytes(pk)?,
+        StackOwner::Solana(pk) => ed25519_dalek::PublicKey::from_bytes(pk)
+            .map_err(|_| internal_server_error("parsing pubkey"))?,
     };
 
-    let signature_header = headers.get(SIGNATURE_HEADER_NAME).context("")?;
-    let signature_bytes = base64::decode(signature_header)?;
-    let signature = ed25519_dalek::Signature::from_bytes(&signature_bytes[..])?;
-    pubkey.verify_strict(payload.as_bytes(), &signature)?;
+    let signature_header = headers
+        .get(SIGNATURE_HEADER_NAME)
+        .ok_or_else(|| bad_request("signature header not found"))?;
+
+    let signature_bytes = base64::decode(signature_header)
+        .map_err(|_| bad_request("invalid base64 encoded signature"))?;
+
+    let signature = ed25519_dalek::Signature::from_bytes(&signature_bytes[..])
+        .map_err(|_| bad_request("invalid signature"))?;
+
+    pubkey
+        .verify_strict(payload.as_bytes(), &signature)
+        .map_err(|_| bad_request("invalid signature"))?;
+
     Ok(pubkey)
 }
 
 async fn verify_escrow_account_balance(
     blockchain_monitor: Box<dyn BlockchainMonitor>,
     owner: &StackOwner,
-) -> Result<()> {
+) -> Result<(), Error> {
     match blockchain_monitor.get_escrow_balance(*owner).await {
         Ok(Some(balance)) => {
             if balance.is_over_minimum() {
@@ -115,18 +125,18 @@ async fn verify_escrow_account_balance(
                     "Escrow account does not have enough balance, was: {}, minimum needed: {}",
                     balance.user_balance, balance.min_balance
                 );
-                bail!("Escrow account does not have enough balance");
+                Err(bad_request("Escrow account does not have enough balance"))
             }
         }
 
         Ok(None) => {
             error!("escrow account is not created yet");
-            bail!("Escrow account is not created yet");
+            Err(bad_request("Escrow account is not created yet"))
         }
 
         Err(e) => {
             error!("can not check for escrow account balance: {e:?}");
-            bail!("can not check escrow account");
+            Err(internal_server_error("can not check escrow account"))
         }
     }
 }
@@ -156,14 +166,14 @@ fn handle_bad_request() -> (Json<serde_json::Value>, http::StatusCode) {
 //    }
 //}
 
-type ExecutionError = (serde_json::Value, http::StatusCode);
-type ExecutionResult = std::result::Result<serde_json::Value, ExecutionError>;
+type Error = (serde_json::Value, http::StatusCode);
+type ExecutionResult = std::result::Result<serde_json::Value, Error>;
 
-fn bad_request(description: &'static str) -> ExecutionError {
+fn bad_request(description: &'static str) -> Error {
     (json!(description), http::StatusCode::BAD_REQUEST)
 }
 
-fn internal_server_error(description: &'static str) -> ExecutionError {
+fn internal_server_error(description: &'static str) -> Error {
     (json!(description), http::StatusCode::INTERNAL_SERVER_ERROR)
 }
 
