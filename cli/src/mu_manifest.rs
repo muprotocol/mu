@@ -93,6 +93,7 @@ impl MuManifest {
             .map(|s| {
                 anyhow::Ok(match s {
                     Service::KeyValueTable(k) => mu_stack::Service::KeyValueTable(k.clone()),
+                    Service::Storage(s) => mu_stack::Service::Storage(s.clone()),
                     Service::Gateway(g) => mu_stack::Service::Gateway(g.clone()),
                     Service::Function(f) => {
                         let wasm_module_path = f.wasm_module_path(build_mode).display().to_string();
@@ -154,6 +155,7 @@ impl FromStr for Language {
 #[serde(tag = "type")]
 pub enum Service {
     KeyValueTable(NameAndDelete),
+    Storage(NameAndDelete),
     Gateway(Gateway),
     Function(Function),
 }
