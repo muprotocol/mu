@@ -23,6 +23,7 @@ pub struct ApiRequestTemplate {
     #[serde(serialize_with = "serialize_stack_owner")]
     #[serde(deserialize_with = "deserialize_stack_owner")]
     pub user: Option<StackOwner>,
+    // TODO: Stack ID
 }
 
 #[derive(Serialize, Deserialize, Debug)]

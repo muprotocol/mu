@@ -68,6 +68,8 @@ async fn handle_request(
             //verify_stack_ownership(&stack_id, &pubkey, &dependency_accessor).await?; //TODO
             verify_escrow_account_balance(dependency_accessor.blockchain_monitor.clone(), &owner)
                 .await?;
+        } else {
+            return bad_request("invalid signature");
         }
 
         execute_request(
@@ -183,26 +185,26 @@ async fn execute_request(
     storage_client: Box<dyn StorageClient>,
 ) -> ExecutionResult {
     match request.request.as_str() {
-        "echo" => execute_echo(request.params),
+        // "echo" => execute_echo(request.params),
         "upload_function" => execute_upload_function(request.params, user, storage_client).await,
         _ => Err(bad_request("unknown request")),
     }
 }
 
-fn execute_echo(params: serde_json::Value) -> ExecutionResult {
-    let req =
-        serde_json::from_value::<EchoRequest>(params).map_err(|_| bad_request("invalid input"))?;
+// fn execute_echo(params: serde_json::Value) -> ExecutionResult {
+//     let req =
+//         serde_json::from_value::<EchoRequest>(params).map_err(|_| bad_request("invalid input"))?;
 
-    match serde_json::to_value(EchoResponse {
-        message: req.message,
-    }) {
-        Ok(r) => Ok(r),
-        Err(e) => {
-            error!("Failed to serialize response: {e:?}");
-            Err(internal_server_error("failed to serialize response"))
-        }
-    }
-}
+//     match serde_json::to_value(EchoResponse {
+//         message: req.message,
+//     }) {
+//         Ok(r) => Ok(r),
+//         Err(e) => {
+//             error!("Failed to serialize response: {e:?}");
+//             Err(internal_server_error("failed to serialize response"))
+//         }
+//     }
+// }
 
 async fn execute_upload_function(
     params: serde_json::Value,
