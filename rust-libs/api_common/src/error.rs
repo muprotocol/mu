@@ -35,7 +35,7 @@ pub enum ServerError {
 
 #[derive(thiserror::Error, Debug, Serialize, Deserialize)]
 pub enum ClientError {
-    #[error("Unexpected resposne type, expected {0}")]
+    #[error("Unexpected response type, expected {0}")]
     UnexpectedResponse(String),
 }
 
