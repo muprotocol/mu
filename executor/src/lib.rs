@@ -131,7 +131,8 @@ pub async fn run() -> Result<()> {
         gateway_manager_config,
         api::service_factory(api_config),
         Some(api::DependencyAccessor {
-            request_signer_cache: request_signer_cache.clone(),
+            //request_signer_cache: request_signer_cache.clone(),
+            blockchain_monitor: blockchain_monitor.clone(),
             storage_client: storage_manager
                 .make_client()
                 .context("Failed to create storage client for executor api")?,

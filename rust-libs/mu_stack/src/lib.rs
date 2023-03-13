@@ -119,6 +119,14 @@ pub enum StackOwner {
     Solana([u8; SOLANA_PUBKEY_SIZE]),
 }
 
+impl StackOwner {
+    // TODO: violates multi-chain
+    pub fn to_inner(&self) -> [u8; SOLANA_PUBKEY_SIZE] {
+        let StackOwner::Solana(pk) = self;
+        *pk
+    }
+}
+
 impl Display for StackOwner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

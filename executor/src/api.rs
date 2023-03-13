@@ -12,13 +12,12 @@ use api_common::{
 };
 use log::error;
 use mu_gateway::HttpServiceFactoryBuilder;
-use mu_stack::{StackID, StackOwner};
+use mu_stack::StackOwner;
 use mu_storage::StorageClient;
 use serde::Deserialize;
 use serde_json::json;
-use solana_sdk::pubkey::Pubkey;
 
-use crate::stack::{request_signer_cache::RequestSignerCache, ApiRequestSigner};
+use crate::stack::blockchain_monitor::BlockchainMonitor;
 
 pub const FUNCTION_STORAGE_NAME: &str = "FUNCTIONS";
 
@@ -45,7 +44,8 @@ pub fn service_factory(config: ApiConfig) -> impl HttpServiceFactoryBuilder {
 
 #[derive(Clone)]
 pub struct DependencyAccessor {
-    pub request_signer_cache: Box<dyn RequestSignerCache>,
+    //pub request_signer_cache: Box<dyn RequestSignerCache>,
+    pub blockchain_monitor: Box<dyn BlockchainMonitor>,
     pub storage_client: Box<dyn StorageClient>,
 }
 
@@ -62,9 +62,11 @@ async fn handle_request(
         let headers = request.headers();
         let request = serde_json::from_str::<ApiRequestTemplate>(payload.as_str())?;
 
-        if let Some(user) = request.user {
-            let pubkey = verify_signature(&user, headers, &payload)?;
+        if let Some(owner) = request.user {
+            let _pubkey = verify_signature(&owner, headers, &payload)?;
             //verify_stack_ownership(&stack_id, &pubkey, &dependency_accessor).await?; //TODO
+            verify_escrow_account_balance(dependency_accessor.blockchain_monitor.clone(), &owner)
+                .await?;
         }
 
         match execute_request(
@@ -100,30 +102,59 @@ fn verify_signature(
     Ok(pubkey)
 }
 
+async fn verify_escrow_account_balance(
+    blockchain_monitor: Box<dyn BlockchainMonitor>,
+    owner: &StackOwner,
+) -> Result<()> {
+    match blockchain_monitor.get_escrow_balance(*owner).await {
+        Ok(Some(balance)) => {
+            if balance.is_over_minimum() {
+                Ok(())
+            } else {
+                error!(
+                    "Escrow account does not have enough balance, was: {}, minimum needed: {}",
+                    balance.user_balance, balance.min_balance
+                );
+                bail!("Escrow account does not have enough balance");
+            }
+        }
+
+        Ok(None) => {
+            error!("escrow account is not created yet");
+            bail!("Escrow account is not created yet");
+        }
+
+        Err(e) => {
+            error!("can not check for escrow account balance: {e:?}");
+            bail!("can not check escrow account");
+        }
+    }
+}
+
 fn handle_bad_request() -> (Json<serde_json::Value>, http::StatusCode) {
     let (j, s) = bad_request("bad request");
     (Json(j), s)
 }
 
-async fn verify_stack_ownership(
-    stack_id: &StackID,
-    pubkey: &ed25519_dalek::PublicKey,
-    dependency_accessor: &DependencyAccessor,
-) -> Result<()> {
-    let signer_key = Pubkey::new_from_array(*pubkey.as_bytes());
-    match dependency_accessor
-        .request_signer_cache
-        .validate_signer(*stack_id, ApiRequestSigner::Solana(signer_key))
-        .await
-    {
-        Err(e) => {
-            error!("Failed to validate request signer: {e:?}");
-            Err(e)
-        }
-        Ok(true) => Ok(()),
-        Ok(false) => bail!("Invalid request signer key"),
-    }
-}
+//async fn verify_stack_ownership(
+//    stack_id: &StackID,
+//    pubkey: &ed25519_dalek::PublicKey,
+//    dependency_accessor: &DependencyAccessor,
+//) -> Result<()> {
+//    let signer_key = Pubkey::new_from_array(*pubkey.as_bytes());
+//    match dependency_accessor
+//        .request_signer_cache
+//        .validate_signer(*stack_id, ApiRequestSigner::Solana(signer_key))
+//        .await
+//    {
+//        Err(e) => {
+//            error!("Failed to validate request signer: {e:?}");
+//            Err(e)
+//        }
+//        Ok(true) => Ok(()),
+//        Ok(false) => bail!("Invalid request signer key"),
+//    }
+//}
 
 type ExecutionError = (serde_json::Value, http::StatusCode);
 type ExecutionResult = std::result::Result<serde_json::Value, ExecutionError>;
