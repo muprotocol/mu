@@ -31,10 +31,18 @@ impl From<super::Stack> for Stack {
                 .services
                 .into_iter()
                 .map(|s| match s {
-                    super::Service::KeyValueTable(d) => Service {
+                    super::Service::KeyValueTable(t) => Service {
                         service: Some(service::Service::KeyValueTable(KeyValueTable {
-                            name: d.name,
-                            delete: matches!(d.delete, Some(true)),
+                            name: t.name,
+                            delete: matches!(t.delete, Some(true)),
+                            ..Default::default()
+                        })),
+                        ..Default::default()
+                    },
+                    super::Service::Storage(s) => Service {
+                        service: Some(service::Service::StorageName(StorageName {
+                            name: s.name,
+                            delete: matches!(s.delete, Some(true)),
                             ..Default::default()
                         })),
                         ..Default::default()
@@ -129,9 +137,16 @@ impl TryFrom<Stack> for super::Stack {
                     None => Err(anyhow!("Blank service encountered")),
 
                     Some(service::Service::KeyValueTable(d)) => {
-                        Ok(super::Service::KeyValueTable(super::KeyValueTable {
+                        Ok(super::Service::KeyValueTable(super::NameAndDelete {
                             name: d.name,
                             delete: Some(d.delete),
+                        }))
+                    }
+
+                    Some(service::Service::StorageName(s)) => {
+                        Ok(super::Service::Storage(super::NameAndDelete {
+                            name: s.name,
+                            delete: Some(s.delete),
                         }))
                     }
 

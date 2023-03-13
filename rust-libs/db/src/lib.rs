@@ -148,19 +148,27 @@ impl DbClient for DbClientImpl {
         let mut kvs_add = vec![];
         let mut kvs_delete = vec![];
         for (table, is_delete) in table_action_tuples {
-            let k = TableListKey::new(stack_id, table);
+            let k = TableListKey::new(stack_id, table.clone());
             if !existing_tables.contains(&k) && !*is_delete {
                 kvs_add.push((k, vec![]))
             } else if existing_tables.contains(&k) && *is_delete {
-                kvs_delete.push(k)
+                let meta_data_key: tikv_client::Key = k.into();
+                kvs_delete.push(meta_data_key);
+                loop {
+                    let s = Scan::ByTableName(stack_id, table.clone());
+                    let data_keys = self.inner.scan_keys(s, 10000).await?;
+                    if data_keys.is_empty() {
+                        break;
+                    }
+                    self.inner.batch_delete(data_keys).await?;
+                }
             }
         }
 
         self.inner.batch_put(kvs_add).await?;
-        self.inner
-            .batch_delete(kvs_delete)
-            .await
-            .map_err(Into::into)
+        self.inner.batch_delete(kvs_delete.clone()).await?;
+
+        Ok(())
     }
 
     async fn get_raw(&self, key: Vec<u8>) -> Result<Option<Value>> {
@@ -235,6 +243,7 @@ impl DbClient for DbClientImpl {
         self.inner.delete_range(scan).await.map_err(Into::into)
     }
 
+    // TODO change to delete_table and delete table_name from metadata too
     async fn clear_table(&self, stack_id: StackID, table_name: TableName) -> Result<()> {
         let scan = Scan::ByTableName(stack_id, table_name);
         self.inner.delete_range(scan).await.map_err(Into::into)

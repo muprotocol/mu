@@ -1,4 +1,4 @@
-use mu_stack::{Stack, StackID};
+use mu_stack::{StackID, StackOwner, ValidatedStack};
 use solana_sdk::pubkey::Pubkey;
 
 pub mod blockchain_monitor;
@@ -10,7 +10,7 @@ pub mod usage_aggregator;
 
 #[derive(Clone, Debug)]
 pub struct StackWithMetadata {
-    pub stack: Stack,
+    pub stack: ValidatedStack,
     pub name: String,
     pub revision: u32,
     pub metadata: StackMetadata,
@@ -31,11 +31,6 @@ pub enum StackMetadata {
     Solana(SolanaStackMetadata),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum StackOwner {
-    Solana(Pubkey),
-}
-
 impl StackMetadata {
     pub fn id(&self) -> StackID {
         match self {
@@ -45,7 +40,7 @@ impl StackMetadata {
 
     pub fn owner(&self) -> StackOwner {
         match self {
-            Self::Solana(solana) => StackOwner::Solana(solana.owner),
+            Self::Solana(solana) => StackOwner::Solana(solana.owner.to_bytes()),
         }
     }
 }

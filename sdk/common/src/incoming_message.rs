@@ -1,4 +1,5 @@
 pub mod db;
+pub mod storage;
 
 use std::{
     borrow::Cow,
@@ -12,9 +13,10 @@ use num_traits::FromPrimitive;
 use crate::function::*;
 use crate::http_client;
 use db::*;
+use storage::*;
 
-#[repr(u16)]
 #[derive(FromPrimitive)]
+#[repr(u16)]
 enum IncomingMessageKind {
     // Runtime messages
     ExecuteFunction = 1,
@@ -28,6 +30,12 @@ enum IncomingMessageKind {
     TableKeyValueListResult = 1006,
     EmptyResult = 1007,
     CasResult = 1008,
+
+    // Storage messages
+    StorageError = 2001,
+    StorageGetResult = 2002,
+    StorageEmptyResult = 2003,
+    ObjectListResult = 2004,
 
     // Http Client
     HttpResponse = 3001,
@@ -55,6 +63,12 @@ pub enum IncomingMessage<'a> {
     TableKeyValueListResult(TableKeyValueListResult<'a>),
     EmptyResult(EmptyResult),
     CasResult(CasResult<'a>),
+
+    // Storage messages
+    StorageError(StorageError<'a>),
+    StorageGetResult(StorageGetResult<'a>),
+    StorageEmptyResult(StorageEmptyResult),
+    ObjectListResult(ObjectListResult<'a>),
 
     // Http client
     HttpResponse(HttpResponse<'a>),
@@ -110,9 +124,12 @@ impl<'a> IncomingMessage<'a> {
                 TableKeyListResult,
                 TableKeyValueListResult,
                 CasResult,
+                StorageError,
+                StorageGetResult,
+                ObjectListResult,
                 HttpResponse
             ] * 'static,
-            [EmptyResult]
+            [EmptyResult, StorageEmptyResult]
         )
     }
 
@@ -130,6 +147,10 @@ impl<'a> IncomingMessage<'a> {
                 TableKeyValueListResult,
                 EmptyResult,
                 CasResult,
+                StorageError,
+                StorageGetResult,
+                StorageEmptyResult,
+                ObjectListResult,
                 HttpResponse
             ]
         );

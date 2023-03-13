@@ -315,6 +315,7 @@ dependencies = [
  "log",
  "mailbox_processor",
  "mu-common",
+ "mu-db",
  "nix",
  "reqwest",
  "rust-embed",

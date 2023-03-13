@@ -5,10 +5,12 @@ use std::{
 
 use anyhow::{Context, Result};
 
-use mu_db::{DbManager, DeleteTable};
+use db_embedded_tikv::DbManagerWithTikv;
+use mu_db::DeleteTable;
 use mu_gateway::{GatewayManager, GatewayManagerConfig};
 use mu_runtime::{AssemblyDefinition, Runtime, RuntimeConfig};
 use mu_stack::{AssemblyID, FunctionID, Gateway, StackID};
+use mu_storage::StorageManager;
 use musdk_common::{Request, Response};
 
 use super::StackWithID;
@@ -21,7 +23,8 @@ pub async fn start(
 ) -> Result<(
     Box<dyn Runtime>,
     Box<dyn GatewayManager>,
-    Box<dyn DbManager>,
+    DbManagerWithTikv,
+    Box<dyn StorageManager>,
     Vec<Gateway>,
     StackID,
 )> {
@@ -30,15 +33,21 @@ pub async fn start(
     let mut cache_path = project_root.clone();
     cache_path.push(CACHE_SUBDIR);
 
+    // TODO: print usages at end of each function call/session to let users
+    // know how much resources they are consuming
     let runtime_config = RuntimeConfig {
         cache_path,
         include_function_logs: true,
+        max_giga_instructions_per_call: None,
     };
 
     let db_manager = super::key_value_table::start(project_root).await?;
 
+    let storage_manager = super::storage::start().await?;
+
     //TODO: Report usage using the notifications
-    let (runtime, _) = mu_runtime::start(db_manager.clone(), runtime_config).await?;
+    let (runtime, _) =
+        mu_runtime::start(db_manager.clone(), storage_manager.clone(), runtime_config).await?;
 
     let mut function_defs = vec![];
 
@@ -104,7 +113,14 @@ pub async fn start(
 
     let gateways = stack.gateways().map(ToOwned::to_owned).collect();
 
-    Ok((runtime, gateway, db_manager, gateways, stack_id))
+    Ok((
+        runtime,
+        gateway,
+        db_manager,
+        storage_manager,
+        gateways,
+        stack_id,
+    ))
 }
 
 async fn handle_request(

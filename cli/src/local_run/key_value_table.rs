@@ -6,12 +6,12 @@ use std::{
 
 use anyhow::Result;
 
-use mu_common::serde_support::IpOrHostname;
-use mu_db::{DbConfig, DbManager, PdConfig, TcpPortAddress, TikvConfig, TikvRunnerConfig};
+use db_embedded_tikv::{DbManagerWithTikv, PdConfig, TikvConfig, TikvRunnerConfig};
+use mu_common::serde_support::{IpOrHostname, TcpPortAddress};
 
 pub const DATA_SUBDIR: &str = ".mu/key_value_table";
 
-pub async fn start(project_root: PathBuf) -> Result<Box<dyn DbManager>> {
+pub async fn start(project_root: PathBuf) -> Result<DbManagerWithTikv> {
     fn local_addr(port: u16) -> TcpPortAddress {
         TcpPortAddress {
             address: IpOrHostname::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -43,13 +43,5 @@ pub async fn start(project_root: PathBuf) -> Result<Box<dyn DbManager>> {
         },
     };
 
-    mu_db::start(
-        node_address,
-        vec![],
-        DbConfig {
-            external: None,
-            internal: Some(tikv_config),
-        },
-    )
-    .await
+    db_embedded_tikv::new_with_embedded_cluster(node_address, vec![], tikv_config).await
 }

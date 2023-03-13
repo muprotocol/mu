@@ -1,8 +1,8 @@
 import path from "path";
 import util from "./util"
 import {
-    getDefaultWalletPath,
     getSolanaValidatorCommand,
+    initializeAndGetAuthorityWalletPath,
     promptForRemovalIfLedgerExists,
     waitForLocalValidatorToStart
 } from "./anchor-utils";
@@ -26,14 +26,13 @@ util.asyncMain(async () => {
 
     console.log("Deploying Mu smart contract");
     muxer.spawnNew(
-        `export BROWSER='' ANCHOR_WALLET='${getDefaultWalletPath()}' && ` +
+        `export BROWSER='' ANCHOR_WALLET='${await initializeAndGetAuthorityWalletPath()}' && ` +
         `cd '${process.cwd()}' && ` +
         `env -C ${path.resolve(__dirname, "..")} anchor build && ` +
         `npx ts-node ${path.resolve(__dirname, "deploy-contract.ts")} && ` +
         `npx ts-node ${path.resolve(__dirname, "initialize-mu.ts")} && ` +
         `npx ts-node ${path.resolve(__dirname, "deploy-provider.ts")} && ` +
-        `npx ts-node ${path.resolve(__dirname, "deploy-developer.ts")} && ` +
-        `npx ts-node ${path.resolve(__dirname, "deploy-stack.ts")}`,
+        `npx ts-node ${path.resolve(__dirname, "deploy-developer.ts")}`,
         "deploy"
     );
 

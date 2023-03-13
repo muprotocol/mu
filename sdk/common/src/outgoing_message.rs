@@ -1,4 +1,5 @@
 pub mod db;
+pub mod storage;
 
 use std::{
     borrow::Cow,
@@ -11,9 +12,10 @@ use num_traits::FromPrimitive;
 
 use crate::{function::*, http_client::Request as HttpRequest};
 use db::*;
+use storage::*;
 
-#[repr(u16)]
 #[derive(FromPrimitive)]
+#[repr(u16)]
 pub enum OutgoingMessageKind {
     // Runtime messages
     FatalError = 1,
@@ -34,6 +36,12 @@ pub enum OutgoingMessageKind {
     BatchScan = 1011,
     BatchScanKeys = 1012,
     CompareAndSwap = 1013,
+
+    // Storage messages
+    StoragePut = 2001,
+    StorageGet = 2002,
+    StorageDelete = 2003,
+    StorageList = 2004,
 
     // Http Client
     HttpRequest = 3001,
@@ -87,6 +95,12 @@ pub enum OutgoingMessage<'a> {
     BatchScanKeys(BatchScanKeys<'a>),
     CompareAndSwap(CompareAndSwap<'a>),
 
+    // Storage messages
+    StoragePut(StoragePut<'a>),
+    StorageGet(StorageGet<'a>),
+    StorageDelete(StorageDelete<'a>),
+    StorageList(StorageList<'a>),
+
     // Http Client
     HttpRequest(HttpRequest<'a>),
 }
@@ -102,7 +116,7 @@ macro_rules! read_cases {
             None => Err(
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Unknown incoming message code: {}", $kind)
+                    format!("Unknown outgoing message code: {}", $kind)
                 )
             ),
         }
@@ -144,6 +158,10 @@ impl<'a> OutgoingMessage<'a> {
                 BatchScan,
                 BatchScanKeys,
                 CompareAndSwap,
+                StoragePut,
+                StorageGet,
+                StorageDelete,
+                StorageList,
                 HttpRequest
             ]
         )
@@ -170,6 +188,10 @@ impl<'a> OutgoingMessage<'a> {
                 BatchScan,
                 BatchScanKeys,
                 CompareAndSwap,
+                StoragePut,
+                StorageGet,
+                StorageDelete,
+                StorageList,
                 HttpRequest
             ]
         );

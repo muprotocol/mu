@@ -51,11 +51,13 @@ pub async fn run() -> Result<()> {
         connection_manager_config,
         membership_config,
         db_config,
+        storage_config,
         gateway_manager_config,
         log_config,
-        runtime_config,
+        partial_runtime_config,
         scheduler_config,
         blockchain_monitor_config,
+        api_config,
     ) = config::initialize_config()?;
 
     let my_node = NodeAddress {
@@ -87,17 +89,24 @@ pub async fn run() -> Result<()> {
 
     let usage_aggregator = stack::usage_aggregator::start();
 
-    let (blockchain_monitor, mut blockchain_monitor_notification_receiver, region_id) =
+    let (blockchain_monitor, mut blockchain_monitor_notification_receiver, region_config) =
         blockchain_monitor::start(blockchain_monitor_config, usage_aggregator.clone())
             .await
             .context("Failed to start blockchain monitor")?;
 
     let database_manager = mu_db::start(db_config).await?;
 
-    let (runtime, mut runtime_notification_receiver) =
-        mu_runtime::start(database_manager.clone(), runtime_config)
-            .await
-            .context("Failed to initiate runtime")?;
+    let storage_manager = mu_storage::start(&storage_config).await?;
+
+    let runtime_config =
+        partial_runtime_config.complete(region_config.max_giga_instructions_per_call);
+    let (runtime, mut runtime_notification_receiver) = mu_runtime::start(
+        database_manager.clone(),
+        storage_manager.clone(),
+        runtime_config,
+    )
+    .await
+    .context("Failed to initiate runtime")?;
 
     let rpc_handler = rpc_handler::new(
         connection_manager.clone(),
@@ -109,7 +118,7 @@ pub async fn run() -> Result<()> {
     let (membership, mut membership_notification_receiver, known_nodes) = membership::start(
         my_node.clone(),
         membership_config,
-        region_id,
+        region_config.id,
         database_manager.clone(),
     )
     .await
@@ -120,9 +129,13 @@ pub async fn run() -> Result<()> {
     let scheduler_ref = Arc::new(RwLock::new(None));
     let (gateway_manager, mut gateway_notification_receiver) = mu_gateway::start(
         gateway_manager_config,
-        api::service_factory(),
+        api::service_factory(api_config),
         Some(api::DependencyAccessor {
-            request_signer_cache: request_signer_cache.clone(),
+            //request_signer_cache: request_signer_cache.clone(),
+            blockchain_monitor: blockchain_monitor.clone(),
+            storage_client: storage_manager
+                .make_client()
+                .context("Failed to create storage client for executor api")?,
         }),
         {
             let connection_manager = connection_manager.clone();
@@ -162,6 +175,7 @@ pub async fn run() -> Result<()> {
         runtime.clone(),
         gateway_manager.clone(),
         database_manager.clone(),
+        storage_manager.clone(),
     );
 
     info!("Will start to schedule stacks now");

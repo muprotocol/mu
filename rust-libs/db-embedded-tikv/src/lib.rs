@@ -12,6 +12,7 @@ use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
+use std::ops::Deref;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr},
@@ -21,6 +22,57 @@ use std::{
 };
 use tokio::{fs::File, io::AsyncWriteExt};
 
+use mu_db::{DbConfig, DbManager};
+
+pub struct DbManagerWithTikv {
+    pub tikv: Box<dyn TikvRunner>,
+    db_manager: Box<dyn DbManager>,
+}
+
+impl DbManagerWithTikv {
+    pub async fn stop(&self) -> anyhow::Result<()> {
+        self.tikv.stop().await
+    }
+}
+
+impl Deref for DbManagerWithTikv {
+    type Target = Box<dyn DbManager>;
+    fn deref(&self) -> &Self::Target {
+        &self.db_manager
+    }
+}
+
+pub async fn new_with_embedded_cluster(
+    node_address: TcpPortAddress,
+    known_node_config: Vec<RemoteNode>,
+    config: TikvRunnerConfig,
+) -> anyhow::Result<DbManagerWithTikv> {
+    let tikv = start(node_address, known_node_config, config.clone())
+        .await
+        .unwrap();
+
+    let db_config = DbConfig {
+        pd_addresses: vec![config.pd.advertise_client_url()],
+    };
+
+    let inner = mu_db::start(db_config).await.unwrap();
+
+    Ok(DbManagerWithTikv {
+        tikv,
+        db_manager: inner,
+    })
+}
+
+pub async fn new_with_external_cluster(
+    endpoints: Vec<TcpPortAddress>,
+) -> anyhow::Result<Box<dyn DbManager>> {
+    let db_config = DbConfig {
+        pd_addresses: endpoints,
+    };
+
+    mu_db::start(db_config).await
+}
+
 #[derive(RustEmbed)]
 #[folder = "assets"]
 pub struct Assets;
@@ -29,10 +81,7 @@ async fn check_and_extract_embedded_executable(name: &str) -> Result<PathBuf> {
     let mut temp_address = env::temp_dir();
     temp_address.push(name);
 
-    // TODO: remove if and let create temp files every time.
-    // also let this to be separate for TikvRunner
-    // in test module concurrent test need to create temp files once.
-    // otherwise they get race condition of creating temp files.
+    // TODO check checksum instead existing.
     let file = if temp_address.exists() {
         File::open(temp_address.as_path())
             .await
@@ -291,15 +340,15 @@ pub async fn start(
         10000,
     );
 
-    let res = TikvRunnerImpl { mailbox };
-
-    Ok(Box::new(res))
+    Ok(Box::new(TikvRunnerImpl { mailbox }))
 }
 
 #[async_trait]
 impl TikvRunner for TikvRunnerImpl {
     async fn stop(&self) -> Result<()> {
         self.mailbox.post(Message::Stop).await?;
+        // do we need to stop this ? and clone it too?
+        // based on the comment on mailbox.stop it seems like we dont need to stop it.
         self.mailbox.clone().stop().await;
         Ok(())
     }

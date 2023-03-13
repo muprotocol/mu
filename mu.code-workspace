@@ -5,16 +5,22 @@
 			"path": "."
 		},
 		{
+			"path": "airdrop"
+		},
+		{
+			"path": "rust-libs/api_common"
+		},
+		{
 			"path": "cli"
+		},
+		{
+			"path": "rust-libs/common"
 		},
 		{
 			"path": "rust-libs/db"
 		},
 		{
 			"path": "rust-libs/db-embedded-tikv"
-		},
-		{
-			"path": "rust-libs/common"
 		},
 		{
 			"path": "executor"
@@ -36,6 +42,12 @@
 		},
 		{
 			"path": "sdk"
+		},
+		{
+			"path": "rust-libs/storage"
+		},
+		{
+			"path": "rust-libs/storage_embedded_juicefs"
 		}
 	]
 }

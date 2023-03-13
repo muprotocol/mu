@@ -93,7 +93,7 @@ describe("marketplace", () => {
         };
 
         try {
-            let _ = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000), "");
+            let _ = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000), "", 1);
             throw new Error("Region creation succeeded when it should have failed");
         } catch (e) {
             let anchorError = e as AnchorError;
@@ -115,7 +115,7 @@ describe("marketplace", () => {
             millionGatewayRequests: new BN(50)
         };
 
-        region = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000), "http://localhost:12012");
+        region = await createRegion(mu, provider, "Region", 1, rates, new BN(50_000_000), "http://localhost:12012", 1);
     });
 
     it("Creates an Authorized Usage Signer", async () => {

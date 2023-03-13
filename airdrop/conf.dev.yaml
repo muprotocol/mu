@@ -1,0 +1,8 @@
+rpc_address: http://localhost:8899
+listen_address: 127.0.0.1:13140
+mint_pubkey: 3v4rZHozXcjViwordtaatQz8rSD6mVKMXrkFyqSUDdLL
+authority_keypair: ../marketplace/scripts/test-wallets/authority.json
+per_request_cap: 1000
+per_account_cap: 10000
+per_address_cap: 20000
+marketplace_id: 2MZLka8nfoAf1LKCCbgCw5ZXfpMbKGDuLjQ88MNMyti2

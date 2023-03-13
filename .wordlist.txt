@@ -1,8 +1,10 @@
 absl
 actix
+arshia
 balancer
 bcollect
 Bincode
+blockhash
 Borsh
 bufread
 canonicalize
@@ -13,6 +15,7 @@ clonable
 codegen
 Condvar
 cranelift
+creds
 dalek
 datagram
 Datagram
@@ -23,6 +26,7 @@ docsrs
 dont
 flate
 funcs
+giga
 graphcycles
 grpcio
 hamidrezakp
@@ -34,6 +38,7 @@ hostnames
 idgen
 ipaddress
 itertools
+juicefs
 keygen
 keypair
 keypairs
@@ -42,9 +47,11 @@ kvpair
 LAMPORTS
 libclang
 libudev
+Litepaper
 Localnet
 MacOS
 middlewares
+MINIO
 mreqs
 mspc
 mudb
@@ -83,6 +90,7 @@ reqwest
 rngs
 runtime
 Runtime
+rusqlite
 rustc
 rustfmt
 rustls

@@ -162,7 +162,7 @@ impl<'a, 'c: 'a> RequestBuilder<'a, 'c> {
     where
         T: fmt::Display,
     {
-        let header_value = format!("Bearer {}", token);
+        let header_value = format!("Bearer {token}");
         self.header(AUTHORIZATION_HEADER, header_value)
     }
 

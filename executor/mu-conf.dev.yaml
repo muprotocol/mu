@@ -20,14 +20,10 @@ blockchain_monitor:
   solana_usage_report_interval: 5s
 db_manager:
   usage_report_duration: 30s
+db:
+  pd_addresses:
+    - address: 127.0.0.1
+      port: 2379
 runtime:
   cache_path: runtime-cache
   include_function_logs: true
-tikv:
-  internal:
-    pd:
-      data_dir: ./db/pd-data/
-      log_file: ./db/log/pd-server
-    node:
-      data_dir: ./db/tikv-data/
-      log_file: ./db/log/tikv-server

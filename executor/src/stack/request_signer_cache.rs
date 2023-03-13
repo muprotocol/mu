@@ -139,7 +139,7 @@ fn is_valid_signer(state: &State, stack_id: &StackID, signer: &ApiRequestSigner)
     let StackOwner::Solana(stack_owner_pubkey) = stack_owner;
     let ApiRequestSigner::Solana(signer_pubkey) = signer;
 
-    if *signer_pubkey == *stack_owner_pubkey {
+    if signer_pubkey.to_bytes() == *stack_owner_pubkey {
         return true;
     }
 
