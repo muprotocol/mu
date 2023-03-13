@@ -152,7 +152,7 @@ async fn download_function(
             &mut buf,
         )
         .await
-        .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
+        .map_err(StackDeploymentError::FailedToDeployFunctions)?;
     Ok(buf.into())
 }
 

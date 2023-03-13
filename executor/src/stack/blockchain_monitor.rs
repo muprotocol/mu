@@ -781,7 +781,7 @@ fn on_solana_escrow_updated(
     trace!("Developer {owner_pubkey} should be in state {new_state:?} due to escrow update");
 
     let owner = StackOwner::Solana(owner_pubkey.to_bytes());
-    let owner_entry = state.stacks.owner_entry(owner.clone());
+    let owner_entry = state.stacks.owner_entry(owner);
     match owner_entry {
         OwnerEntry::Vacant(_) => {
             warn!("Received escrow update for unknown developer {owner_pubkey}");
@@ -1054,7 +1054,7 @@ async fn reconnect_solana_subscriber<'a>(
             &state.solana.pub_sub.get_request_signers_config,
             &state.solana.provider_pda,
             state.stacks.owners().map(|o| match o {
-                StackOwner::Solana(pk) => Pubkey::new_from_array(pk.clone()),
+                StackOwner::Solana(pk) => Pubkey::new_from_array(*pk),
             }),
         )
         .await;
