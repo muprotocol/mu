@@ -132,7 +132,7 @@ version: 0.1
 services:
   - type: Function
     name: greeter_function
-    binary: 8MdU7CQGkZazPjpgxDwMoikV
+    binary: 8MdU7CQGkZaZPjPgXDwMoIkV
     runtime: wasi1.0
     memory_limit: 256MiB
     env: {}
