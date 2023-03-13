@@ -139,7 +139,7 @@ impl StorageClientImpl {
             .key
             .match_indices('/')
             .nth(1)
-            .map(|(i, _)| object.key.split_at(i).1.to_string());
+            .map(|(i, _)| object.key.split_at(i + 1).1.to_string());
 
         // TODO: deserialize last modified date
         Object {
