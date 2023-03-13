@@ -1,13 +1,12 @@
-use mu_storage::{DeleteStorage, StorageManager};
-use reqwest::Url;
+use mu_storage::{DeleteStorage, StorageClient, StorageManager};
 use thiserror::Error;
 
 use mu_db::{DbManager, DeleteTable};
 use mu_gateway::GatewayManager;
 use mu_runtime::{AssemblyDefinition, Runtime};
-use mu_stack::{AssemblyID, Stack, StackID, ValidatedStack};
+use mu_stack::{AssemblyID, Stack, StackID, StackOwner};
 
-use super::blockchain_monitor::StackRemovalMode;
+use super::{blockchain_monitor::StackRemovalMode, StackWithMetadata};
 
 #[derive(Error, Debug)]
 pub enum StackDeploymentError {
@@ -38,11 +37,14 @@ pub enum StackDeploymentError {
 
 pub(super) async fn deploy(
     id: StackID,
-    stack: ValidatedStack,
+    stack: StackWithMetadata,
     runtime: &dyn Runtime,
     db_manager: &dyn DbManager,
     storage_manager: &dyn StorageManager,
 ) -> Result<(), StackDeploymentError> {
+    let stack_owner = stack.metadata.owner();
+    let stack = stack.stack;
+
     let db_client = db_manager
         .make_client()
         .await
@@ -59,7 +61,7 @@ pub(super) async fn deploy(
     let mut function_names = vec![];
     let mut function_defs = vec![];
     for func in stack.functions() {
-        let function_source = download_function(func.binary)
+        let function_source = download_function(&*storage_client, &stack_owner, &func.binary)
             .await
             .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
 
@@ -137,17 +139,21 @@ pub(super) async fn deploy(
 }
 
 async fn download_function(
-    storage_manager: &dyn StorageManager,
-    owner_id: &Owner,
+    storage_client: &dyn StorageClient,
+    owner: &StackOwner,
     file_id: &str,
 ) -> Result<bytes::Bytes, StackDeploymentError> {
-    // TODO: implement a better function storage scenario
-    reqwest::get(url)
+    let mut buf = vec![];
+    storage_client
+        .get(
+            mu_storage::Owner::User(*owner),
+            crate::api::FUNCTION_STORAGE_NAME,
+            file_id,
+            &mut buf,
+        )
         .await
-        .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?
-        .bytes()
-        .await
-        .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))
+        .map_err(|e| StackDeploymentError::FailedToDeployFunctions(e.into()))?;
+    Ok(buf.into())
 }
 
 pub(super) async fn undeploy_stack(

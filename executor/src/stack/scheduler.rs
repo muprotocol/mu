@@ -18,7 +18,7 @@ use serde::Deserialize;
 
 use crate::{infrastructure::config::ConfigDuration, network::NodeHash};
 
-use mu_stack::{Stack, StackID, ValidatedStack};
+use mu_stack::{Stack, StackID};
 
 use super::{blockchain_monitor::StackRemovalMode, StackWithMetadata};
 
@@ -630,7 +630,7 @@ async fn tick(state: &mut SchedulerState) {
                             info!("Deploying stack {id} locally");
                             match deploy_stack(
                                 *id,
-                                stack.stack.clone(),
+                                stack.clone(),
                                 &state.notification_channel,
                                 state.runtime.as_ref(),
                                 state.database_manager.as_ref(),
@@ -730,7 +730,7 @@ async fn tick(state: &mut SchedulerState) {
                         debug!("I'm closest, will perform update");
                         match deploy_stack(
                             *id,
-                            new_stack.stack.clone(),
+                            new_stack.clone(),
                             &state.notification_channel,
                             state.runtime.as_ref(),
                             state.database_manager.as_ref(),
@@ -766,7 +766,7 @@ async fn tick(state: &mut SchedulerState) {
                             info!("I am closest to stack {id}, will deploy locally");
                             match deploy_stack(
                                 *id,
-                                stack.stack.clone(),
+                                stack.clone(),
                                 &state.notification_channel,
                                 state.runtime.as_ref(),
                                 state.database_manager.as_ref(),
@@ -845,7 +845,7 @@ async fn undeploy_gateways(id: StackID, gateway_manager: &dyn GatewayManager) {
 
 async fn deploy_stack(
     id: StackID,
-    stack: ValidatedStack,
+    stack: StackWithMetadata,
     notification_channel: &NotificationChannel<SchedulerNotification>,
     runtime: &dyn Runtime,
     database_manager: &dyn DbManager,

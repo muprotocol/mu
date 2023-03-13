@@ -9,3 +9,13 @@ pub struct UploadFunctionRequest {
 pub struct UploadFunctionResponse {
     pub file_id: String,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct EchoRequest {
+    pub message: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct EchoResposne {
+    pub message: String,
+}

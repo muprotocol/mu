@@ -1,12 +1,13 @@
 use std::{path::PathBuf, rc::Rc};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose, Engine};
+use mu_stack::StackOwner;
 use solana_sdk::signer::Signer;
 
 use crate::{
-    requests::{UploadFunctionRequest, UploadFunctionResponse},
-    ApiRequestTemplate, ClientError, Error, Request, Response, SIGNATURE_HEADER_NAME,
+    requests::{EchoRequest, EchoResposne, UploadFunctionRequest, UploadFunctionResponse},
+    sign_request, SIGNATURE_HEADER_NAME,
 };
 
 //TODO: support async clients too
@@ -23,44 +24,47 @@ impl ApiClient {
         }
     }
 
-    pub fn upload_function(
-        &self,
-        file_path: PathBuf,
-        user: Rc<dyn Signer>,
-    ) -> Result<UploadFunctionResponse> {
+    pub fn upload_function(&self, file_path: PathBuf, signer: Rc<dyn Signer>) -> Result<String> {
         let bytes = std::fs::read(file_path).context("Reading function wasm module")?;
-
-        let (request, sign) = Request::UploadFunction(UploadFunctionRequest {
+        let request = UploadFunctionRequest {
             bytes: general_purpose::STANDARD.encode(bytes),
-        })
-        .sign(&*user)?;
+        };
 
-        match self.send(request, sign).context("Send request")? {
-            Ok(Response::UploadFunction(resp)) => Ok(resp),
-            Ok(_) => Err(ClientError::UnexpectedResponse("UploadFunction".into()).into()),
-            Err(e) => Err(e.into()),
-        }
+        let (request_body, sign) = sign_request(
+            request,
+            "upload_function".to_string(),
+            Some(StackOwner::Solana(signer.pubkey().to_bytes())),
+            signer,
+        )?;
+
+        let response: UploadFunctionResponse =
+            serde_json::from_slice(&self.send(request_body, sign)?)?;
+
+        Ok(response.file_id)
     }
 
-    pub fn echo(&self, message: String, user: Box<dyn Signer>) -> Result<String> {
-        let (request, sign) = Request::Echo(message).sign(&*user)?;
+    pub fn echo(&self, message: String, signer: Rc<dyn Signer>) -> Result<String> {
+        let request = EchoRequest { message };
 
-        match self.send(request, sign).context("Send request")? {
-            Ok(Response::Echo(resp)) => Ok(resp),
-            Ok(_) => Err(ClientError::UnexpectedResponse("Echo".into()).into()),
-            Err(e) => Err(e.into()),
-        }
+        let (request_body, sign) = sign_request(request, "echo".to_string(), None, signer)?;
+
+        let response: EchoResposne = serde_json::from_slice(&self.send(request_body, sign)?)?;
+        Ok(response.message)
     }
 
-    fn send(&self, request: ApiRequestTemplate, sign: String) -> Result<Result<Response, Error>> {
+    fn send(&self, request: Vec<u8>, sign: String) -> Result<bytes::Bytes> {
         let request = self
             .client
             .post(&self.region_api_endpoint)
             .header(SIGNATURE_HEADER_NAME, sign)
-            .body(serde_json::to_string(&request)?);
+            .body(request);
 
-        let resp: Result<Response, Error> =
-            request.send().context("Sending API request")?.json()?;
-        Ok(resp)
+        let resp = request.send().context("Sending API request")?;
+
+        if resp.status().is_success() {
+            resp.bytes().context("")
+        } else {
+            bail!("Api Error: {}", resp.text()?)
+        }
     }
 }

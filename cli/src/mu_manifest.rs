@@ -9,9 +9,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Result};
 use beau_collector::BeauCollector;
-use mu_stack::{
-    stack_id_as_string_serialization, AssemblyRuntime, Gateway, NameAndDelete, Stack, StackID,
-};
+use mu_stack::{AssemblyRuntime, Gateway, NameAndDelete, Stack, StackID};
 use serde::{Deserialize, Serialize};
 
 pub const MU_MANIFEST_FILE_NAME: &str = "mu.yaml";
@@ -21,8 +19,8 @@ pub struct MuManifest {
     name: String,
     version: String,
     #[serde(
-        serialize_with = "stack_id_as_string_serialization::serialize",
-        deserialize_with = "stack_id_as_string_serialization::deserialize"
+        serialize_with = "mu_stack::string_serialization::serialize_stack_id",
+        deserialize_with = "mu_stack::string_serialization::deserialize_stack_id"
     )]
     pub dev_id: StackID,
     services: Vec<Service>,
@@ -280,6 +278,7 @@ impl Default for ArtifactGenerationMode {
         Self::LocalRun
     }
 }
+
 mod custom_byte_unit_serialization {
     use serde::Serializer;
 

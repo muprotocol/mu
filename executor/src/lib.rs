@@ -57,6 +57,7 @@ pub async fn run() -> Result<()> {
         partial_runtime_config,
         scheduler_config,
         blockchain_monitor_config,
+        api_config,
     ) = config::initialize_config()?;
 
     let my_node = NodeAddress {
@@ -128,7 +129,7 @@ pub async fn run() -> Result<()> {
     let scheduler_ref = Arc::new(RwLock::new(None));
     let (gateway_manager, mut gateway_notification_receiver) = mu_gateway::start(
         gateway_manager_config,
-        api::service_factory(),
+        api::service_factory(api_config),
         Some(api::DependencyAccessor {
             request_signer_cache: request_signer_cache.clone(),
             storage_client: storage_manager

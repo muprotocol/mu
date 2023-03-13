@@ -4,9 +4,9 @@
 use std::collections::{hash_map, HashMap, HashSet};
 use std::default::Default;
 
-use mu_stack::StackID;
+use mu_stack::{StackID, StackOwner};
 
-use crate::stack::{StackOwner, StackWithMetadata};
+use crate::stack::StackWithMetadata;
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum OwnerState {

@@ -13,6 +13,7 @@ use mu_storage::StorageConfig;
 use serde::Deserialize;
 
 use crate::{
+    api::ApiConfig,
     log_setup::LogConfig,
     network::{connection_manager::ConnectionManagerConfig, membership::MembershipConfig},
     stack::{blockchain_monitor::BlockchainMonitorConfig, scheduler::SchedulerConfig},
@@ -28,6 +29,7 @@ pub struct SystemConfig(
     pub PartialRuntimeConfig,
     pub SchedulerConfig,
     pub BlockchainMonitorConfig,
+    pub ApiConfig,
 );
 
 pub fn initialize_config() -> Result<SystemConfig> {
@@ -50,6 +52,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
         ("blockchain_monitor.solana_region_number", "1"),
         ("blockchain_monitor.solana_usage_signer_private_key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
         ("runtime.include_function_logs", "false"),
+        ("api.payload_size_limit", "10Mib"),
     ];
 
     let default_arrays = vec!["log.filters", "gossip.seeds"];
@@ -119,6 +122,8 @@ pub fn initialize_config() -> Result<SystemConfig> {
         .get("blockchain_monitor")
         .context("Invalid blockchain monitor config")?;
 
+    let api_config = config.get("api").context("Invalid api config")?;
+
     Ok(SystemConfig(
         connection_manager_config,
         membership_config,
@@ -129,6 +134,7 @@ pub fn initialize_config() -> Result<SystemConfig> {
         partial_runtime_config,
         scheduler_config,
         blockchain_monitor_config,
+        api_config,
     ))
 }
 

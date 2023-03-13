@@ -17,7 +17,7 @@ use mailbox_processor::{
     NotificationChannel, ReplyChannel,
 };
 use marketplace::ServiceUsage;
-use mu_stack::StackID;
+use mu_stack::{StackID, StackOwner};
 use serde::Deserialize;
 use solana_account_decoder::parse_token::{parse_token, TokenAccountType};
 use solana_account_decoder::{UiAccount, UiAccountEncoding};
@@ -43,7 +43,6 @@ use crate::infrastructure::config::{ConfigDuration, ConfigUri};
 use crate::stack::blockchain_monitor::stack_collection::{OwnerEntry, OwnerState, StackCollection};
 use crate::stack::config_types::Base58PrivateKey;
 use crate::stack::usage_aggregator::{UsageAggregator, UsageCategory};
-use crate::stack::StackOwner;
 
 #[async_trait]
 #[clonable]
@@ -348,7 +347,7 @@ pub async fn start(
         .map(|r| {
             (
                 ApiRequestSigner::Solana(r.signer),
-                StackOwner::Solana(r.user),
+                StackOwner::Solana(r.user.to_bytes()),
             )
         })
         .collect::<Vec<_>>();
@@ -379,7 +378,7 @@ pub async fn start(
         .unwrap(),
         &solana_provider_pda,
         stacks.owners().map(|o| match o {
-            StackOwner::Solana(pk) => pk,
+            StackOwner::Solana(pk) => Pubkey::new_from_array(*pk),
         }),
     )
     .await?;
@@ -458,7 +457,7 @@ async fn fetch_owner_escrow_balance(
     let StackOwner::Solana(owner_key) = owner;
     //b"escrow", user.key().as_ref(), provider.key().as_ref()
     let (escrow_pda, _) = Pubkey::find_program_address(
-        &[b"escrow", &owner_key.to_bytes(), &provider_pda.to_bytes()],
+        &[b"escrow", owner_key, &provider_pda.to_bytes()],
         &marketplace::id(),
     );
 
@@ -712,7 +711,7 @@ fn on_solana_escrow_updated(
 
     trace!("Developer {owner_pubkey} should be in state {new_state:?} due to escrow update");
 
-    let owner = StackOwner::Solana(owner_pubkey);
+    let owner = StackOwner::Solana(owner_pubkey.to_bytes());
     let owner_entry = state.stacks.owner_entry(owner.clone());
     match owner_entry {
         OwnerEntry::Vacant(_) => {
@@ -986,7 +985,7 @@ async fn reconnect_solana_subscriber<'a>(
             &state.solana.pub_sub.get_request_signers_config,
             &state.solana.provider_pda,
             state.stacks.owners().map(|o| match o {
-                StackOwner::Solana(pk) => pk,
+                StackOwner::Solana(pk) => Pubkey::new_from_array(pk.clone()),
             }),
         )
         .await;
@@ -1013,7 +1012,7 @@ async fn setup_solana_subscriptions<'a>(
     get_stacks_config: &RpcProgramAccountsConfig,
     get_request_signers_config: &RpcProgramAccountsConfig,
     provider_pda: &Pubkey,
-    owners: impl Iterator<Item = &Pubkey> + Clone,
+    owners: impl Iterator<Item = Pubkey> + Clone,
 ) -> (
     SolanaSubscription<'a, RpcKeyedAccount>,
     SolanaSubscription<'a, RpcKeyedAccount>,
@@ -1080,7 +1079,7 @@ async fn setup_solana_subscriptions<'a>(
 async fn setup_solana_escrow_subscriptions<'a>(
     pub_sub_client_wrapper: &'a SolanaPubSubClientWrapper,
     provider_pda: &Pubkey,
-    owners: impl Iterator<Item = &Pubkey>,
+    owners: impl Iterator<Item = Pubkey>,
 ) -> Result<HashMap<Pubkey, SolanaSubscription<'a, UiAccount>>> {
     let mut escrow_subscriptions = HashMap::<Pubkey, SolanaSubscription<'a, UiAccount>>::new();
 
@@ -1105,7 +1104,7 @@ async fn setup_solana_escrow_subscriptions<'a>(
             .context("Failed to setup Solana subscription for new stacks")?;
 
         escrow_subscriptions.insert(
-            *owner_id,
+            owner_id,
             SolanaSubscription {
                 stream,
                 unsubscribe_callback,
@@ -1132,7 +1131,7 @@ fn on_request_signer_received(
         notification_channel.send(BlockchainMonitorNotification::RequestSignersAvailable(
             vec![(
                 ApiRequestSigner::Solana(request_signer_account.signer),
-                StackOwner::Solana(request_signer_account.user),
+                StackOwner::Solana(request_signer_account.user.to_bytes()),
             )],
         ));
     } else {
@@ -1249,7 +1248,7 @@ fn read_solana_stack_account((pubkey, account): (Pubkey, Account)) -> Result<Sta
 
         marketplace::StackState::Deleted => Ok(StackWithState::Deleted {
             stack_id: StackID::SolanaPublicKey(pubkey.to_bytes()),
-            owner_id: StackOwner::Solana(stack_account.user),
+            owner_id: StackOwner::Solana(stack_account.user.to_bytes()),
         }),
     }
 }

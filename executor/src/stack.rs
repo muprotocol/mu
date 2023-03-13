@@ -1,4 +1,4 @@
-use mu_stack::{StackID, ValidatedStack};
+use mu_stack::{StackID, StackOwner, ValidatedStack};
 use solana_sdk::pubkey::Pubkey;
 
 pub mod blockchain_monitor;
@@ -40,7 +40,7 @@ impl StackMetadata {
 
     pub fn owner(&self) -> StackOwner {
         match self {
-            Self::Solana(solana) => StackOwner::Solana(solana.owner),
+            Self::Solana(solana) => StackOwner::Solana(solana.owner.to_bytes()),
         }
     }
 }

@@ -2,29 +2,37 @@ use actix_web::{
     guard,
     http::header::HeaderMap,
     services,
-    web::{self, Json},
+    web::{self, Json, PayloadConfig},
     HttpRequest,
 };
 use anyhow::{bail, Context, Result};
 use api_common::{
-    requests::{UploadFunctionRequest, UploadFunctionResponse},
+    requests::{EchoRequest, EchoResposne, UploadFunctionRequest, UploadFunctionResponse},
     ApiRequestTemplate, SIGNATURE_HEADER_NAME,
 };
 use log::error;
 use mu_gateway::HttpServiceFactoryBuilder;
 use mu_stack::{StackID, StackOwner};
 use mu_storage::StorageClient;
+use serde::Deserialize;
 use serde_json::json;
 use solana_sdk::pubkey::Pubkey;
 
 use crate::stack::{request_signer_cache::RequestSignerCache, ApiRequestSigner};
 
-const FUNCTION_STORAGE_NAME: &str = "FUNCTIONS";
+pub const FUNCTION_STORAGE_NAME: &str = "FUNCTIONS";
 
-pub fn service_factory() -> impl HttpServiceFactoryBuilder {
-    || {
+pub fn service_factory(config: ApiConfig) -> impl HttpServiceFactoryBuilder {
+    move || {
         services![
             web::resource("/api")
+                .app_data(PayloadConfig::new(
+                    config
+                        .payload_size_limit
+                        .get_bytes()
+                        .try_into()
+                        .unwrap_or(usize::MAX)
+                ))
                 .guard(guard::All(guard::Post()).and(guard::fn_guard(|ctx| {
                     let headers = ctx.head().headers();
                     headers.contains_key(SIGNATURE_HEADER_NAME)
@@ -54,11 +62,18 @@ async fn handle_request(
         let headers = request.headers();
         let request = serde_json::from_str::<ApiRequestTemplate>(payload.as_str())?;
 
-        let pubkey = verify_signature(headers, &payload)?;
+        if let Some(user) = request.user {
+            let pubkey = verify_signature(&user, headers, &payload)?;
+            //verify_stack_ownership(&stack_id, &pubkey, &dependency_accessor).await?; //TODO
+        }
 
-        //verify_stack_ownership(&stack_id, &pubkey, &dependency_accessor).await?; //TODO
-
-        match execute_request(user, request, dependency_accessor.storage_client).await {
+        match execute_request(
+            request.user,
+            request,
+            dependency_accessor.storage_client.clone(),
+        )
+        .await
+        {
             Ok(response) => Ok((Json(response), http::StatusCode::OK)),
             Err((response, status_code)) => Ok((Json(response), status_code)),
         }
@@ -74,7 +89,10 @@ fn verify_signature(
     headers: &HeaderMap,
     payload: &String,
 ) -> Result<ed25519_dalek::PublicKey> {
-    let pubkey = ed25519_dalek::PublicKey::from_bytes(user.0)?;
+    let pubkey = match user {
+        StackOwner::Solana(pk) => ed25519_dalek::PublicKey::from_bytes(pk)?,
+    };
+
     let signature_header = headers.get(SIGNATURE_HEADER_NAME).context("")?;
     let signature_bytes = base64::decode(signature_header)?;
     let signature = ed25519_dalek::Signature::from_bytes(&signature_bytes[..])?;
@@ -119,7 +137,7 @@ fn internal_server_error(description: &'static str) -> ExecutionError {
 }
 
 async fn execute_request(
-    user: StackOwner,
+    user: Option<StackOwner>,
     request: ApiRequestTemplate,
     storage_client: Box<dyn StorageClient>,
 ) -> ExecutionResult {
@@ -131,15 +149,29 @@ async fn execute_request(
 }
 
 fn execute_echo(params: serde_json::Value) -> ExecutionResult {
-    let req = serde_json::from_value::<String>(params).map_err(|_| bad_request("invalid input"))?;
-    Ok(json!(req))
+    let req =
+        serde_json::from_value::<EchoRequest>(params).map_err(|_| bad_request("invalid input"))?;
+
+    match serde_json::to_value(EchoResposne {
+        message: req.message,
+    }) {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            error!("Failed to serialize resposne: {e:?}");
+            Err(internal_server_error("failed to serialize response"))
+        }
+    }
 }
 
 async fn execute_upload_function(
     params: serde_json::Value,
-    user: StackOwner,
+    user: Option<StackOwner>,
     storage_client: Box<dyn StorageClient>,
 ) -> ExecutionResult {
+    let Some(user) = user else {
+        return Err(bad_request("this request needs user field"));
+    };
+
     let req = serde_json::from_value::<UploadFunctionRequest>(params)
         .map_err(|_| bad_request("invalid input"))?;
 
@@ -149,6 +181,21 @@ async fn execute_upload_function(
 
     let file_id = base64::encode(stable_hash::fast_stable_hash(&bytes).to_be_bytes());
     let storage_owner = mu_storage::Owner::User(user);
+
+    match storage_client
+        .list(storage_owner, FUNCTION_STORAGE_NAME, &file_id)
+        .await
+    {
+        Ok(l) if l.is_empty() => (),
+        Ok(_) => {
+            error!("Function upload failed, Use function is already uploaded into storage, file_id: {file_id}");
+            return Err(bad_request("this file is already uploaded"));
+        }
+        Err(e) => {
+            error!("Failed to upload user function in storage: {e:?}");
+            return Err(internal_server_error("failed to upload function"));
+        }
+    }
 
     if let Err(e) = storage_client
         .put(
@@ -170,4 +217,9 @@ async fn execute_upload_function(
             Err(internal_server_error("failed to serialize response"))
         }
     }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ApiConfig {
+    payload_size_limit: byte_unit::Byte,
 }
