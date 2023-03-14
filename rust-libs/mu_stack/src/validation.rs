@@ -93,7 +93,7 @@ pub(super) fn validate(stack: Stack) -> Result<ValidatedStack, (Stack, StackVali
         if let Err(e) = ensure_all_unique(
             gw.endpoints
                 .iter()
-                .flat_map(|(path, eps)| eps.iter().map(|ep| (path.clone(), ep.method))),
+                .flat_map(|(path, eps)| eps.iter().map(|ep| (path.clone(), *ep.0))),
         ) {
             err = Some(StackValidationError::DuplicateEndpointInGateway {
                 gateway: gw.name.clone(),
@@ -114,9 +114,9 @@ fn ensure_gateway_functions_correct(stack: &Stack) -> Result<(), StackValidation
     for gw in stack.gateways() {
         for eps in gw.endpoints.values() {
             for ep in eps {
-                if !stack.functions().any(|f| f.name == ep.route_to.assembly) {
+                if !stack.functions().any(|f| f.name == ep.1.assembly) {
                     return Err(StackValidationError::UnknownFunctionInGateway {
-                        function: ep.route_to.assembly.clone(),
+                        function: ep.1.assembly.clone(),
                         gateway: gw.name.clone(),
                     });
                 }

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::protos::stack::*;
 use anyhow::{anyhow, Result};
 use protobuf::EnumOrUnknown;
@@ -58,9 +60,9 @@ impl From<super::Stack> for Stack {
                                     endpoints: eps
                                         .into_iter()
                                         .map(|ep| GatewayEndpoint {
-                                            method: convert_http_method(ep.method),
-                                            route_to_assembly: ep.route_to.assembly,
-                                            route_to_function: ep.route_to.function,
+                                            method: convert_http_method(ep.0),
+                                            route_to_assembly: ep.1.assembly,
+                                            route_to_function: ep.1.function,
                                             ..Default::default()
                                         })
                                         .collect(),
@@ -162,15 +164,15 @@ impl TryFrom<Stack> for super::Stack {
                                         eps.endpoints
                                             .into_iter()
                                             .map(|ep| {
-                                                anyhow::Ok(super::GatewayEndpoint {
-                                                    method: convert_http_method(ep.method)?,
-                                                    route_to: crate::AssemblyAndFunction {
+                                                anyhow::Ok((
+                                                    convert_http_method(ep.method)?,
+                                                    crate::AssemblyAndFunction {
                                                         assembly: ep.route_to_assembly,
                                                         function: ep.route_to_function,
                                                     },
-                                                })
+                                                ))
                                             })
-                                            .collect::<Result<Vec<_>, _>>()?,
+                                            .collect::<Result<HashMap<_, _>, _>>()?,
                                     ))
                                 })
                                 .collect::<Result<super::HashMap<_, _>, _>>()?,

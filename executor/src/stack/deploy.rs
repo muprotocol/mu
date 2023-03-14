@@ -88,7 +88,6 @@ pub(super) async fn deploy(
     // Step 2: Database tables
     let table_delete_paris = stack
         .key_value_tables()
-        .into_iter()
         .map(|kvt| {
             let table_name = kvt
                 .name
@@ -108,7 +107,6 @@ pub(super) async fn deploy(
     // Step 3: Storage names
     let storage_delete_pairs = stack
         .storages()
-        .into_iter()
         .map(|n| {
             let name = n.name.as_str();
             let del = DeleteStorage(matches!(n.delete, Some(true)));

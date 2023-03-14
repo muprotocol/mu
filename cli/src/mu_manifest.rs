@@ -53,17 +53,31 @@ impl MuManifest {
     }
 
     #[cfg(feature = "dev-env")]
-    pub fn generate_stack_manifest_for_local_run(&self, build_mode: BuildMode) -> Result<Stack> {
-        self.generate_stack_manifest(build_mode, ArtifactGenerationMode::LocalRun, Ok)
+    pub fn generate_stack_manifest_for_local_run(
+        &self,
+        build_mode: BuildMode,
+        project_root: &Path,
+    ) -> Result<Stack> {
+        self.generate_stack_manifest(
+            build_mode,
+            ArtifactGenerationMode::LocalRun,
+            project_root,
+            Ok,
+        )
     }
 
-    pub fn generate_stack_manifest_for_publish<F>(&self, function_uploader: F) -> Result<Stack>
+    pub fn generate_stack_manifest_for_publish<F>(
+        &self,
+        function_uploader: F,
+        project_root: &Path,
+    ) -> Result<Stack>
     where
         F: Fn(String) -> Result<String>,
     {
         self.generate_stack_manifest(
             BuildMode::Release,
             ArtifactGenerationMode::LocalRun,
+            project_root,
             function_uploader,
         )
     }
@@ -72,6 +86,7 @@ impl MuManifest {
         &self,
         build_mode: BuildMode,
         generation_mode: ArtifactGenerationMode,
+        project_root: &Path,
         function_uploader: F,
     ) -> Result<Stack>
     where
@@ -93,9 +108,13 @@ impl MuManifest {
             .map(|s| {
                 anyhow::Ok(match s {
                     Service::KeyValueTable(k) => mu_stack::Service::KeyValueTable(k.clone()),
+                    Service::Storage(s) => mu_stack::Service::Storage(s.clone()),
                     Service::Gateway(g) => mu_stack::Service::Gateway(g.clone()),
                     Service::Function(f) => {
-                        let wasm_module_path = f.wasm_module_path(build_mode).display().to_string();
+                        let wasm_module_path = f
+                            .wasm_module_path(build_mode, project_root)
+                            .display()
+                            .to_string();
                         let binary = function_uploader(wasm_module_path)?;
 
                         let mut env = f.env.clone();
@@ -154,6 +173,7 @@ impl FromStr for Language {
 #[serde(tag = "type")]
 pub enum Service {
     KeyValueTable(NameAndDelete),
+    Storage(NameAndDelete),
     Gateway(Gateway),
     Function(Function),
 }
@@ -170,7 +190,7 @@ pub struct Function {
 }
 
 impl Function {
-    fn wasm_module_path(&self, build_mode: BuildMode) -> PathBuf {
+    fn wasm_module_path(&self, build_mode: BuildMode, project_root: &Path) -> PathBuf {
         match self.lang {
             Language::Rust => {
                 let cargo_target_dir = std::env::var_os("CARGO_TARGET_DIR")
@@ -178,7 +198,7 @@ impl Function {
                         let path: &Path = x.as_ref();
                         path.to_owned()
                     })
-                    .unwrap_or(self.root_dir().join("target"));
+                    .unwrap_or(self.root_dir(project_root).join("target"));
 
                 let build_mode = match build_mode {
                     BuildMode::Debug => "debug",
@@ -190,8 +210,8 @@ impl Function {
         }
     }
 
-    pub fn root_dir(&self) -> PathBuf {
-        format!("functions/{}", self.name).into()
+    pub fn root_dir(&self, project_root: &Path) -> PathBuf {
+        project_root.join("functions").join(&self.name)
     }
 
     #[allow(dead_code)]
@@ -207,7 +227,7 @@ impl Function {
 
         let commands = match self.lang {
             Language::Rust => {
-                let manifest = project_root.join(self.root_dir()).join("Cargo.toml");
+                let manifest = self.root_dir(project_root).join("Cargo.toml");
                 match build_mode {
                     BuildMode::Debug => [
                         create_cmd("rustup", &["target", "add", "wasm32-wasi"]),
