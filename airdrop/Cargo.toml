@@ -25,4 +25,5 @@ solana-account-decoder = "1.15"
 log = "0.4"
 env_logger = "0.10"
 email_address = "0.2.4"
+actix-cors = "0.6.4"
 

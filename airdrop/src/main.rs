@@ -5,6 +5,7 @@ mod types;
 
 use std::sync::Arc;
 
+use actix_cors::Cors;
 use actix_web::{
     dev::PeerAddr,
     http, post,
@@ -61,7 +62,16 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         let state = state.clone(); //TODO: Don't use Arc, Data is using arc inside already
+
+        let cors = Cors::default()
+            .allow_any_origin()
+            .allowed_methods(vec!["POST"])
+            .allowed_headers(vec![http::header::ACCEPT])
+            .allowed_header(http::header::CONTENT_TYPE)
+            .max_age(3600);
+
         App::new()
+            .wrap(cors)
             .app_data(Data::new(state))
             .service(request_airdrop)
     })
