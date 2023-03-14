@@ -3252,6 +3252,7 @@ dependencies = [
  "async-trait",
  "dyn-clonable",
  "dyn-clone",
+ "log",
  "mailbox_processor",
  "mu_stack",
  "pin-project-lite",
@@ -3259,6 +3260,7 @@ dependencies = [
  "serde",
  "solana-program",
  "storage_embedded_juicefs",
+ "tailcall",
  "thiserror",
  "tokio",
 ]
