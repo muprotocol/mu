@@ -1,4 +1,4 @@
-use std::{path::PathBuf, rc::Rc};
+use std::{path::PathBuf, rc::Rc, time::Duration};
 
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose, Engine};
@@ -18,13 +18,22 @@ pub struct ApiClient {
 
 impl ApiClient {
     pub fn new<S: AsRef<str>>(region_base_url: S) -> Self {
+        let mut uri = uriparse::uri::URI::try_from(region_base_url.as_ref()).unwrap();
+        uri.map_path(|mut p| {
+            p.push("api").unwrap();
+            p
+        });
         Self {
-            client: reqwest::blocking::Client::new(),
-            region_api_endpoint: format!("{}/api", region_base_url.as_ref()),
+            client: reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(5 * 60))
+                .build()
+                .unwrap(),
+            region_api_endpoint: uri.to_string(),
         }
     }
 
     pub fn upload_function(&self, file_path: PathBuf, signer: Rc<dyn Signer>) -> Result<String> {
+        println!("Uploading function code to mu Storage...");
         let bytes = std::fs::read(file_path).context("Reading function wasm module")?;
         let request = UploadFunctionRequest {
             bytes: general_purpose::STANDARD.encode(bytes),
@@ -64,7 +73,7 @@ impl ApiClient {
         if resp.status().is_success() {
             resp.bytes().context("")
         } else {
-            bail!("Api Error: {}", resp.text()?)
+            bail!("Api status {}, error: {}", resp.status(), resp.text()?)
         }
     }
 }
