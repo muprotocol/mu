@@ -1,0 +1,23 @@
+name: todo
+version: 0.1.0
+dev_id: s_DfGaQSo67uZKUcC8zecSsLxdikFL9jefp8NJxj41CeEu
+services:
+  - type: Function
+    name: todo
+    lang: Rust
+    runtime: wasi1.0
+    memory_limit: 64MiB
+    env: {}
+    env_dev: {}
+  - type: KeyValueTable
+    name: todos
+  - type: Storage
+    name: todo-attachments
+  - type: Gateway
+    name: todo
+    endpoints:
+      /:
+        get: todo.get_all
+        post: todo.add_todo
+      /{title}:
+        get: todo.get_todo

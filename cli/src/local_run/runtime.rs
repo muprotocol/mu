@@ -10,7 +10,7 @@ use mu_db::DeleteTable;
 use mu_gateway::{GatewayManager, GatewayManagerConfig};
 use mu_runtime::{AssemblyDefinition, Runtime, RuntimeConfig};
 use mu_stack::{AssemblyID, FunctionID, Gateway, StackID};
-use mu_storage::StorageManager;
+use mu_storage::{DeleteStorage, StorageManager};
 use musdk_common::{Request, Response};
 
 use super::StackWithID;
@@ -41,9 +41,24 @@ pub async fn start(
         max_giga_instructions_per_call: None,
     };
 
-    let db_manager = super::key_value_table::start(project_root).await?;
+    let db_manager = super::database::start(project_root).await?;
 
     let storage_manager = super::storage::start().await?;
+    let storage_client = storage_manager.make_client()?;
+
+    let storage_delete_pairs = stack
+        .storages()
+        .into_iter()
+        .map(|n| {
+            let name = n.name.as_str();
+            let del = DeleteStorage(matches!(n.delete, Some(true)));
+            (name, del)
+        })
+        .collect();
+
+    storage_client
+        .update_stack_storages(mu_storage::Owner::Stack(stack_id), storage_delete_pairs)
+        .await?;
 
     //TODO: Report usage using the notifications
     let (runtime, _) =

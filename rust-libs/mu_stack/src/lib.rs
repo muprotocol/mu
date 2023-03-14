@@ -271,7 +271,7 @@ pub struct NameAndDelete {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Gateway {
     pub name: String,
-    pub endpoints: HashMap<String, Vec<GatewayEndpoint>>,
+    pub endpoints: HashMap<String, HashMap<HttpMethod, AssemblyAndFunction>>,
 }
 
 impl Gateway {
@@ -291,12 +291,6 @@ impl Gateway {
             endpoints: ep,
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct GatewayEndpoint {
-    pub method: HttpMethod,
-    pub route_to: AssemblyAndFunction,
 }
 
 #[derive(Debug, Clone)]

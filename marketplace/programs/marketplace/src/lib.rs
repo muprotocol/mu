@@ -4,7 +4,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount, Transfer};
 
-declare_id!("2MZLka8nfoAf1LKCCbgCw5ZXfpMbKGDuLjQ88MNMyti2");
+declare_id!("H7eDBkyrr5jLcjmNmyTbDo45sS6U6MvHx6fFGiF9AL8r");
 
 fn calc_usage(rates: &ServiceRates, usage: &ServiceUsage) -> u64 {
     (rates.function_mb_tera_instructions as u128 * usage.function_mb_instructions
