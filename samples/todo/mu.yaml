@@ -16,11 +16,8 @@ services:
   - type: Gateway
     name: todo
     endpoints:
-      /{title}:
-        - method: get
-          route_to: todo.get_todo
       /:
-        - method: get
-          route_to: todo.get_all
-        - method: post
-          route_to: todo.add_todo
+        get: todo.get_all
+        post: todo.add_todo
+      /{title}:
+        get: todo.get_todo
