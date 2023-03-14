@@ -509,6 +509,7 @@ dependencies = [
  "sha256",
  "solana-sdk",
  "thiserror",
+ "uriparse",
 ]
 
 [[package]]

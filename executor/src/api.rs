@@ -222,7 +222,10 @@ async fn execute_upload_function(
         return Err(bad_request("invalid base64 encoded bytes"));
     };
 
-    let file_id = base64::encode(stable_hash::fast_stable_hash(&bytes).to_be_bytes());
+    let file_id = base64::encode_config(
+        stable_hash::fast_stable_hash(&bytes).to_be_bytes(),
+        base64::URL_SAFE_NO_PAD,
+    );
     let storage_owner = mu_storage::Owner::User(user);
 
     match storage_client
