@@ -73,7 +73,19 @@ impl GatewayManager for GatewayManagerImpl {
         let mut gateways = self.gateways.write().await;
         let entry = gateways.entry(stack_id).or_insert_with(HashMap::new);
 
-        for incoming in incoming_gateways {
+        for mut incoming in incoming_gateways {
+            incoming.endpoints = incoming
+                .endpoints
+                .into_iter()
+                .map(|(k, v)| {
+                    if k.starts_with('/') {
+                        (k.strip_prefix('/').unwrap().to_string(), v)
+                    } else {
+                        (k, v)
+                    }
+                })
+                .collect();
+
             entry.insert(incoming.name.clone(), incoming);
         }
         Ok(())
@@ -121,13 +133,8 @@ where
 
 fn match_path_and_extract_path_params<'a>(
     request_path: &'a str,
-    mut endpoint_path: &str,
+    endpoint_path: &str,
 ) -> Option<PathParams<'a>> {
-    //TODO: Should do this when deploying stack or gateway.
-    if endpoint_path.starts_with('/') {
-        endpoint_path = &endpoint_path[1..];
-    }
-
     //TODO: Cache `endpoint_path` path segments for future matches
     let mut request_path_segments = request_path.split('/');
     let mut endpoint_path_segments = endpoint_path.split('/');
