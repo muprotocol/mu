@@ -16,12 +16,11 @@ services:
   - type: Gateway
     name: todo
     endpoints:
-      /get/{title}:
+      /{title}:
         - method: get
           route_to: todo.get_todo
-      /new:
-        - method: post
-          route_to: todo.add_todo
-      /all:
+      /:
         - method: get
           route_to: todo.get_all
+        - method: post
+          route_to: todo.add_todo
