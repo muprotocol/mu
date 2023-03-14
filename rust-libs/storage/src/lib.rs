@@ -1,13 +1,17 @@
 use anyhow::{bail, Error, Result};
 use async_trait::async_trait;
 use dyn_clonable::clonable;
+use log::warn;
 use mu_stack::{StackID, StackOwner};
 use pin_project_lite::pin_project;
 use s3::{creds::Credentials, Bucket};
 use serde::Deserialize;
-use std::{fmt::Debug, ops::Deref, pin::Pin};
+use std::{fmt::Debug, ops::Deref, pin::Pin, time::Duration};
 use storage_embedded_juicefs::{InternalStorageConfig, JuicefsRunner, LiveStorageConfig};
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    time::sleep,
+};
 
 const METADATA_PREFIX: &str = "!";
 
@@ -95,8 +99,8 @@ struct StorageManagerImpl {
 
 #[async_trait]
 impl StorageManager for StorageManagerImpl {
+    //TODO: Useless Ok??
     fn make_client(&self) -> anyhow::Result<Box<dyn StorageClient>> {
-        // TODO check healthy
         Ok(Box::new(StorageClientImpl::new(&self.config)?))
     }
 
@@ -290,6 +294,41 @@ impl StorageClient for StorageClientImpl {
     }
 }
 
+async fn ensure_storage_backend_is_healthy(
+    client: &dyn StorageClient,
+    max_try_count: u32,
+) -> anyhow::Result<()> {
+    #[tailcall::tailcall]
+    async fn helper(
+        client: &dyn StorageClient,
+        try_count: u32,
+        max_try_count: u32,
+    ) -> anyhow::Result<()> {
+        // This call will not succeed unless the bucket is made successfully.
+
+        let mut a = vec![];
+        match client
+            .get(Owner::User(StackOwner::Solana([0u8; 32])), "", "", &mut a)
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(e) if e.to_string().contains("HTTP 404") => Ok(()),
+
+            Err(e) if try_count < max_try_count => {
+                warn!("Failed to storage client due to: {e:?}");
+                sleep(Duration::from_millis(
+                    (1.5_f64.powf(try_count as f64) * 1000.0).round() as u64,
+                ))
+                .await;
+                helper(client, try_count + 1, max_try_count)
+            }
+            Err(e) => bail!(e),
+        }
+    }
+
+    helper(client, 0, max_try_count).await
+}
+
 pub async fn start(config: &StorageConfig) -> Result<Box<dyn StorageManager>> {
     let (inner, config) = match (&config.external, &config.internal) {
         (Some(ext_config), None) => (None, ext_config.clone()),
@@ -300,7 +339,10 @@ pub async fn start(config: &StorageConfig) -> Result<Box<dyn StorageManager>> {
         _ => bail!("Exactly one of internal or external storage config should be provided"),
     };
 
-    Ok(Box::new(StorageManagerImpl { inner, config }))
+    let storage_manager = Box::new(StorageManagerImpl { inner, config });
+    ensure_storage_backend_is_healthy(storage_manager.make_client().unwrap().as_ref(), 5).await?;
+
+    Ok(storage_manager)
 }
 
 pin_project! {
