@@ -73,7 +73,19 @@ impl GatewayManager for GatewayManagerImpl {
         let mut gateways = self.gateways.write().await;
         let entry = gateways.entry(stack_id).or_insert_with(HashMap::new);
 
-        for incoming in incoming_gateways {
+        for mut incoming in incoming_gateways {
+            incoming.endpoints = incoming
+                .endpoints
+                .into_iter()
+                .map(|(k, v)| {
+                    if k.starts_with('/') {
+                        (k.strip_prefix('/').unwrap().to_string(), v)
+                    } else {
+                        (k, v)
+                    }
+                })
+                .collect();
+
             entry.insert(incoming.name.clone(), incoming);
         }
         Ok(())
@@ -119,20 +131,18 @@ where
     }
 }
 
+type MatchScore = usize;
+
 fn match_path_and_extract_path_params<'a>(
     request_path: &'a str,
-    mut endpoint_path: &str,
-) -> Option<PathParams<'a>> {
-    //TODO: Should do this when deploying stack or gateway.
-    if endpoint_path.starts_with('/') {
-        endpoint_path = &endpoint_path[1..];
-    }
-
+    endpoint_path: &str,
+) -> Option<(MatchScore, PathParams<'a>)> {
     //TODO: Cache `endpoint_path` path segments for future matches
     let mut request_path_segments = request_path.split('/');
     let mut endpoint_path_segments = endpoint_path.split('/');
 
     let mut path_params = HashMap::new();
+    let mut match_score = 0;
 
     loop {
         match (request_path_segments.next(), endpoint_path_segments.next()) {
@@ -141,6 +151,7 @@ fn match_path_and_extract_path_params<'a>(
                 //is two variables in one segment -> should happen during stack validation
 
                 if req_segment == ep_segment {
+                    match_score += req_segment.len();
                     continue;
                 } else if ep_segment.starts_with('{') && ep_segment.ends_with('}') {
                     path_params.insert(
@@ -152,7 +163,7 @@ fn match_path_and_extract_path_params<'a>(
                 }
             }
 
-            (None, None) => return Some(path_params),
+            (None, None) => return Some((match_score, path_params)),
             (None, Some(_)) | (Some(_), None) => return None,
         }
     }
@@ -436,22 +447,27 @@ where
         return ResponseWrapper::not_found();
     };
 
-    let path_match_result = gateway
+    let mut matched_endpoints = gateway
         .endpoints
         .iter()
-        .find_map(|(path, eps)| {
+        .filter_map(|(path, eps)| {
             match_path_and_extract_path_params(request_path, path)
                 .map(|path_params| (path_params, eps))
         })
-        .and_then(|(path_params, eps)| {
-            eps.iter().find(|ep| ep.method == method).map(|ep| {
-                (
-                    ep.route_to.assembly.clone(),
-                    ep.route_to.function.clone(),
-                    path_params,
-                )
-            })
-        });
+        .collect::<Vec<_>>();
+
+    matched_endpoints.sort_by_cached_key(|((score, _), _)| *score);
+
+    let path_match_result =
+        matched_endpoints
+            .into_iter()
+            .rev()
+            .next()
+            .and_then(|((_, path_params), eps)| {
+                eps.iter()
+                    .find(|ep| *ep.0 == method)
+                    .map(|ep| (ep.1.assembly.clone(), ep.1.function.clone(), path_params))
+            });
 
     drop(gateways);
 
@@ -513,7 +529,7 @@ mod tests {
         let endpoint_path = "/get/users/";
 
         assert_eq!(
-            Some(HashMap::new()),
+            Some((8, HashMap::new())),
             match_path_and_extract_path_params(request_path, endpoint_path)
         );
     }
@@ -521,7 +537,7 @@ mod tests {
     #[test]
     fn can_extract_single_path_param() {
         assert_eq!(
-            Some([("id".into(), "12".into())].into()),
+            Some((7, [("id".into(), "12".into())].into())),
             match_path_and_extract_path_params("/get/user/12", "/get/user/{id}")
         );
     }
@@ -529,7 +545,10 @@ mod tests {
     #[test]
     fn can_extract_multi_path_param() {
         assert_eq!(
-            Some([("type".into(), "user".into()), ("id".into(), "12".into())].into()),
+            Some((
+                3,
+                [("type".into(), "user".into()), ("id".into(), "12".into())].into()
+            )),
             match_path_and_extract_path_params("/get/user/12", "/get/{type}/{id}")
         );
     }
@@ -575,6 +594,22 @@ mod tests {
         assert_eq!(
             None,
             match_path_and_extract_path_params("/get/user/12/45", "get/{type}/{id}/")
+        );
+    }
+
+    #[test]
+    fn path_with_more_fixed_segments_has_higher_score() {
+        assert_eq!(
+            Some((7, [("id".into(), "12".into())].into())),
+            match_path_and_extract_path_params("/get/user/12", "/get/user/{id}")
+        );
+
+        assert_eq!(
+            Some((
+                3,
+                [("id".into(), "12".into()), ("user".into(), "john".into())].into()
+            )),
+            match_path_and_extract_path_params("/get/john/12", "/get/{user}/{id}")
         );
     }
 }
