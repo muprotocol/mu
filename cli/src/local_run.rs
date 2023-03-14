@@ -8,7 +8,7 @@ use log::LevelFilter;
 use mu_stack::{StackID, ValidatedStack};
 use tokio_util::sync::CancellationToken;
 
-mod key_value_table;
+mod database;
 mod runtime;
 mod storage;
 
@@ -35,7 +35,12 @@ pub async fn start_local_node(stack: StackWithID, project_root: PathBuf) -> Resu
 
     println!("Done. The following endpoints are deployed:");
     for gateway in gateways {
-        for (path, endpoints) in gateway.endpoints {
+        for (mut path, endpoints) in gateway.endpoints {
+            //TODO: Fix this in better places, not here
+            if path.starts_with('/') {
+                path = path[1..].to_string();
+            }
+
             for endpoint in endpoints {
                 println!(
                     "\t- {} {}/{path} -> {}:{}",
@@ -54,8 +59,8 @@ pub async fn start_local_node(stack: StackWithID, project_root: PathBuf) -> Resu
     [
         runtime.stop().await.map_err(Into::into),
         gateway.stop().await,
-        database.stop().await,
         storage.stop().await,
+        database.stop().await,
     ]
     .into_iter()
     .bcollect::<()>()
