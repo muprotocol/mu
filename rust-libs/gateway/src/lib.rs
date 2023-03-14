@@ -464,13 +464,9 @@ where
             .rev()
             .next()
             .and_then(|((_, path_params), eps)| {
-                eps.iter().find(|ep| ep.method == method).map(|ep| {
-                    (
-                        ep.route_to.assembly.clone(),
-                        ep.route_to.function.clone(),
-                        path_params,
-                    )
-                })
+                eps.iter()
+                    .find(|ep| *ep.0 == method)
+                    .map(|ep| (ep.1.assembly.clone(), ep.1.function.clone(), path_params))
             });
 
     drop(gateways);

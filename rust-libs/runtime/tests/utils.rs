@@ -442,7 +442,7 @@ pub async fn create_and_add_projects<'a>(
     }
 
     let functions = read_wasm_functions(&projects).await?;
-    let function_defs = functions.clone().into_values().into_iter().collect();
+    let function_defs = functions.clone().into_values().collect();
     runtime.add_functions(function_defs).await?;
 
     Ok(projects)

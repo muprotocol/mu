@@ -44,10 +44,7 @@ pub async fn start_local_node(stack: StackWithID, project_root: PathBuf) -> Resu
             for endpoint in endpoints {
                 println!(
                     "\t- {} {}/{path} -> {}:{}",
-                    endpoint.method,
-                    gateway.name,
-                    endpoint.route_to.assembly,
-                    endpoint.route_to.function,
+                    endpoint.0, gateway.name, endpoint.1.assembly, endpoint.1.function,
                 );
             }
         }
