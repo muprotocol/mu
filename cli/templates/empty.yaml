@@ -48,8 +48,7 @@ templates:
               name: default-gateway
               endpoints:
                 greet/{name}:
-                  - method: get
-                    route_to: {{name}}.greet_user
+                  get: {{name}}.greet_user
         args:
           - name
           - dev_id
