@@ -49,7 +49,7 @@ software.
   service provider listed in the Mu Marketplace, or the use of the Programs by
   service providers to host Mu cloud infrastructure.
 
-###License Rights and Restrictions
+### License Rights and Restrictions
 Mu PROTOCOL grants You a nonexclusive,
 nontransferable, limited license to use the Programs, subject to the restrictions
 stated in this Agreement and Program Documentation, only for:
