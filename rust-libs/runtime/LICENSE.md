@@ -56,6 +56,7 @@ stated in this Agreement and Program Documentation, only for:
   - Personal Use,
   - Development Use, and/or
   - Mu PROTOCOL Cloud Infrastructure Use.
+
 You may allow Your Contractor(s) to use the Programs, provided they are acting 
 on Your behalf to exercise license rights granted in this Agreement and further
 provided that You are responsible for their compliance with this Agreement in
@@ -91,10 +92,12 @@ a valid Program license under a separate agreement permitting such use.
 ### Ownership
 Mu PROTOCOL or its licensors retain all ownership and intellectual
 property rights to the Programs.
-Third-Party Technology The Programs may contain or require the use of third party
-technology that is provided with the Programs. Mu PROTOCOL may provide certain
-notices to You in Program Documentation, readmes or notice files in connection
-with such third party technology. Third party technology will be licensed to You
+
+### Third-Party Technology
+The Programs may contain or require the use of third party technology that
+is provided with the Programs. Mu PROTOCOL may provide certain notices to
+You in Program Documentation, readmes or notice files in connection with
+such third party technology. Third party technology will be licensed to You
 either under the terms of this Agreement or, if specified in the Program
 Documentation, readmes or notice files, under Separate Terms. Your rights to use
 Separately Licensed Third Party Technology under Separate Terms are not restricted
