@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 repository = "https://github.com/muprotocol/mu"
 description = "Mu CLI"
-license = "Apache-2.0"
 default-run = "mu"
 
 [features]
