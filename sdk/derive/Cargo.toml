@@ -2,6 +2,10 @@
 name = "musdk-derive"
 version = "0.1.0"
 edition = "2021"
+authors = ["mu Protocol Team <info@030labs.org>"]
+license = "MIT"
+description = "Derive macros for mu Protocol app development SDK"
+repository = "https://github.com/muprotocol/mu"
 
 [lib]
 proc-macro = true

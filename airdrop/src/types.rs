@@ -22,8 +22,6 @@ use crate::{config::AppConfig, database::Database, marketplace::get_token_decima
 
 #[derive(Debug, Deserialize)]
 pub struct AirdropRequest {
-    #[serde(deserialize_with = "deserialize_email")]
-    pub email: String,
     pub amount: f64,
     #[serde(deserialize_with = "deserialize_pubkey")]
     pub to: Pubkey,
@@ -162,20 +160,6 @@ where
         error!("invalid input, expect valid solana pubkey: {e:?}");
         de::Error::custom("invalid input, expect valid solana pubkey".to_string())
     })
-}
-
-fn deserialize_email<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let email = String::deserialize(deserializer)?;
-
-    if !email_address::EmailAddress::is_valid(&email) {
-        error!("invalid input, expect valid email address");
-        Err(de::Error::custom("invalid email address".to_string()))
-    } else {
-        Ok(email)
-    }
 }
 
 fn serialize_signature<S>(sig: &Signature, serializer: S) -> Result<S::Ok, S::Error>

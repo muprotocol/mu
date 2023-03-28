@@ -5,4 +5,4 @@ authority_keypair: ../marketplace/scripts/test-wallets/authority.json
 per_request_cap: 1000
 per_account_cap: 10000
 per_address_cap: 20000
-marketplace_id: 2MZLka8nfoAf1LKCCbgCw5ZXfpMbKGDuLjQ88MNMyti2
+marketplace_id: H7eDBkyrr5jLcjmNmyTbDo45sS6U6MvHx6fFGiF9AL8r

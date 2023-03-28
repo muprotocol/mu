@@ -22,8 +22,7 @@ impl Database {
         connection
             .execute(
                 "CREATE TABLE IF NOT EXISTS users (
-                    email   TEXT UNIQUE NOT NULL,
-                    account TEXT NOT NULL
+                    account TEXT UNIQUE NOT NULL
                 )",
                 (), // empty list of parameters.
             )
@@ -37,7 +36,7 @@ impl Database {
         })
     }
 
-    pub fn insert_user(&self, email: &str, pubkey: &Pubkey) -> Result<(), Error> {
+    pub fn insert_user(&self, pubkey: &Pubkey) -> Result<(), Error> {
         self.connection
             .lock()
             .map_err(|e| {
@@ -45,9 +44,9 @@ impl Database {
                 Error::FailedToProcessTransaction
             })?
             .execute(
-                "INSERT OR IGNORE INTO users(email, account)
-                 VALUES (?1, ?2)",
-                (&email, &pubkey.to_string()),
+                "INSERT OR IGNORE INTO users(account)
+                 VALUES (?1)",
+                &[&pubkey.to_string()],
             )
             .map_err(|e| {
                 error!("Can not insert user into database: {e:?}");
