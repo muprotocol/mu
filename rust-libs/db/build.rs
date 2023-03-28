@@ -29,7 +29,7 @@ fn patch_file(path: &Path) {
 fn patch_abseil_source() {
     let home = dirs::home_dir().unwrap();
 
-    let path1 = home.join(".cargo/registry/src/github.com-1ecc6299db9ec823/grpcio-sys-0.8.1/grpc/third_party/abseil-cpp/absl/synchronization/internal/graphcycles.cc");
+    let path1 = home.join(".cargo/registry/src/index.crates.io-6f17d22bba15001f/grpcio-sys-0.8.1/grpc/third_party/abseil-cpp/absl/synchronization/internal/graphcycles.cc");
     let path2 = home.join(".cargo/registry/src/github.com-1ecc6299db9ec823/grpcio-sys-0.8.1/grpc/third_party/abseil-cpp/absl/synchronization/internal/graphcycles.cc");
 
     patch_file(&path1);
