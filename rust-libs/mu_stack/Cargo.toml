@@ -15,8 +15,7 @@ protobuf = "3.2"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
-# This has the reader-deserialization feature we need
-borsh = { git = "https://github.com/near/borsh-rs", rev = "e82b47bdc14f65d464e9efa1237195a6b9770830" }
+borsh = "0.10"
 
 [build-dependencies]
 protobuf-codegen = "3.2"
