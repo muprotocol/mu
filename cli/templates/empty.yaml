@@ -4,7 +4,6 @@ templates:
   - lang: Rust
     files:
       - path: functions/{{name}}/Cargo.toml
-        #TODO: replace `musdk` path with published one on Crates.io
         contents: !String |-
           [package]
           name = "{{name}}"

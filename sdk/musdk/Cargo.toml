@@ -2,6 +2,10 @@
 name = "musdk"
 version = "0.1.0"
 edition = "2021"
+authors = ["mu Protocol Team <info@030labs.org>"]
+license = "MIT"
+description = "mu Protocol app development SDK"
+repository = "https://github.com/muprotocol/mu"
 
 [features]
 default = ["json", "http"]
@@ -10,8 +14,8 @@ http = ["serde_urlencoded"]
 
 
 [dependencies]
-musdk-common = { path = "../common" }
-musdk-derive = { path = "../derive" }
+musdk-common = "0.1"
+musdk-derive = "0.1"
 
 thiserror = "1.0"
 serde_json = { version = "1.0", optional = true }
