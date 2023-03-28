@@ -29,7 +29,7 @@ async fn process_request(
 
     let signature = fund_token_account(state, &token_account, request.amount).await?;
 
-    let _ = state.database.insert_user(&request.email, &request.to);
+    let _ = state.database.insert_user(&request.to);
 
     Ok(AirdropResponse { signature })
 }
