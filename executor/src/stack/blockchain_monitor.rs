@@ -222,8 +222,17 @@ pub async fn start(
         CommitmentConfig::finalized(),
     );
 
-    debug!("Verifying provider public key and region number");
+    debug!("Verifying provider public key and region number and usage signer");
     let region = get_region(&region_pda, &rpc_client).await?;
+
+    let pubkey = config.solana_usage_signer_private_key.keypair.pubkey();
+    if rpc_client.get_balance(&pubkey).await? == 0 {
+        bail!(
+            "The authorized signer account is used to send usage report \
+            transactions to Solana, and must have SOL balance to pay for the \
+            transactions."
+        );
+    }
 
     debug!("Retrieving $MU token properties");
     let solana_token_decimals = get_token_decimals(&rpc_client).await?;
@@ -1341,7 +1350,6 @@ fn read_solana_rpc_keyed_account(stack: Response<RpcKeyedAccount>) -> Result<Sta
     read_solana_stack_account((pubkey, account))
 }
 
-// TODO: ensure we have the right usage signer for this region
 async fn get_region(
     region: &Pubkey,
     rpc_client: &RpcClient,
