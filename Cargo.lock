@@ -30,6 +30,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "actix-cors"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0346d8c1f762b41b458ed3145eea914966bb9ad20b9be0d6d463b20d45586370"
+dependencies = [
+ "actix-utils",
+ "actix-web",
+ "derive_more",
+ "futures-util",
+ "log",
+ "once_cell",
+ "smallvec",
+]
+
+[[package]]
 name = "actix-http"
 version = "3.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -276,6 +291,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "airdrop"
+version = "0.1.0"
+dependencies = [
+ "actix-cors",
+ "actix-web",
+ "anchor-client",
+ "anyhow",
+ "config",
+ "email_address",
+ "env_logger 0.10.1",
+ "log",
+ "marketplace",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "solana-account-decoder",
+ "solana-client",
+ "solana-sdk",
+ "spl-associated-token-account 1.1.3",
+ "spl-token 3.5.0",
+]
+
+[[package]]
 name = "alloc-no-stdlib"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -289,6 +327,12 @@ checksum = "94fb8275041c72129eb51b7d0322c29b8387a0386127718b096429201a5d6ece"
 dependencies = [
  "alloc-no-stdlib",
 ]
+
+[[package]]
+name = "allocator-api2"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
 
 [[package]]
 name = "anchor-attribute-access-control"
@@ -571,14 +615,13 @@ dependencies = [
  "anyhow",
  "base64 0.21.5",
  "bytes",
- "ed25519-dalek",
  "log",
  "mu_stack",
+ "pwr-rs",
  "reqwest",
  "serde",
  "serde_json",
  "sha256",
- "solana-sdk",
  "thiserror",
  "uriparse",
 ]
@@ -1003,6 +1046,16 @@ name = "base64ct"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
+
+[[package]]
+name = "beau_collector"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33a143066d3cbd3d32c15b51c39449e50e32a68293d31589fb941d6a9df0df4f"
+dependencies = [
+ "anyhow",
+ "itertools 0.9.0",
+]
 
 [[package]]
 name = "bincode"
@@ -1957,6 +2010,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e962a19be5cfc3f3bf6dd8f61eb50107f356ad6270fbb3ed41476571db78be5"
 
 [[package]]
+name = "db-embedded-tikv"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "dyn-clonable",
+ "dyn-clone",
+ "flate2",
+ "log",
+ "mailbox_processor",
+ "mu-common",
+ "mu-db",
+ "nix 0.26.4",
+ "reqwest",
+ "rust-embed",
+ "serde",
+ "tar",
+ "tokio",
+]
+
+[[package]]
 name = "der"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2240,6 +2314,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a26ae43d7bcc3b814de94796a5e736d4029efb0ee900c12e2d54c993ad1a1e07"
 
 [[package]]
+name = "email_address"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2153bd83ebc09db15bcbdc3e2194d901804952e3dc96967e1cd3b0c5c32d112"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "encode_unicode"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2368,13 +2451,14 @@ name = "executor"
 version = "0.1.0"
 dependencies = [
  "actix-web",
- "anchor-client",
  "anyhow",
  "api_common",
  "assert_matches",
  "async-trait",
  "base58",
- "base64 0.13.1",
+ "base64 0.21.5",
+ "bincode",
+ "borsh 0.0.0",
  "byte-unit",
  "bytes",
  "chrono",
@@ -2403,6 +2487,7 @@ dependencies = [
  "protobuf 3.3.0",
  "protobuf-codegen",
  "protoc-bin-vendored",
+ "pwr-rs",
  "quinn 0.8.5",
  "rand 0.8.5",
  "rcgen 0.9.3",
@@ -2412,10 +2497,6 @@ dependencies = [
  "serde_json",
  "serde_yaml 0.9.30",
  "sled",
- "solana-account-decoder",
- "solana-client",
- "solana-sdk",
- "spl-token 3.5.0",
  "stable-hash",
  "test-log",
  "thiserror",
@@ -2441,6 +2522,12 @@ name = "fallible-iterator"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4443176a9f2c162692bd3d352d745ef9413eec5782a80d8fd6f8a1ac692a07f7"
+
+[[package]]
+name = "fallible-streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
 name = "fastrand"
@@ -2779,6 +2866,19 @@ name = "hashbrown"
 version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "290f1a1d9242c78d09ce40a5e87e7554ee637af1351968159f4952f028f75604"
+dependencies = [
+ "ahash 0.8.7",
+ "allocator-api2",
+]
+
+[[package]]
+name = "hashlink"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8094feaf31ff591f651a2664fb9cfd92bba7a60ce3197265e9482ebe753c8f7"
+dependencies = [
+ "hashbrown 0.14.3",
+]
 
 [[package]]
 name = "heapless"
@@ -3146,6 +3246,15 @@ dependencies = [
 
 [[package]]
 name = "itertools"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "284f18f85651fe11e8a991b2adb42cb078325c996ed026d994719efcfca1d54b"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
@@ -3303,6 +3412,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "libsqlite3-sys"
+version = "0.25.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29f835d03d717946d28b1d1ed632eb6f0e24a299388ee623d0c23118d3e8a7fa"
+dependencies = [
+ "cc",
+ "pkg-config",
+ "vcpkg",
+]
+
+[[package]]
 name = "light-poseidon"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3392,6 +3512,7 @@ version = "0.3.0"
 dependencies = [
  "thiserror",
  "tokio",
+ "tokio-test",
 ]
 
 [[package]]
@@ -3528,6 +3649,46 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7843ec2de400bcbc6a6328c958dc38e5359da6e93e72e37bc5246bf1ae776389"
 
 [[package]]
+name = "mu-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "api_common",
+ "async-trait",
+ "base64 0.21.5",
+ "beau_collector",
+ "byte-unit",
+ "clap 4.4.12",
+ "ctrlc",
+ "db-embedded-tikv",
+ "dirs",
+ "env_logger 0.10.1",
+ "itertools 0.10.5",
+ "log",
+ "mu-common",
+ "mu-db",
+ "mu-gateway",
+ "mu-runtime",
+ "mu-storage",
+ "mu_stack",
+ "musdk-common",
+ "pwr-rs",
+ "rand 0.8.5",
+ "reqwest",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "serde_yaml 0.9.30",
+ "shellexpand",
+ "storage-embedded-juicefs",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "uriparse",
+ "uuid",
+]
+
+[[package]]
 name = "mu-common"
 version = "0.1.0"
 dependencies = [
@@ -3544,17 +3705,23 @@ name = "mu-db"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "assert_matches",
  "async-trait",
  "bytes",
+ "db-embedded-tikv",
  "dirs",
  "dyn-clonable",
  "dyn-clone",
+ "env_logger 0.10.1",
+ "futures",
  "log",
  "mailbox_processor",
  "mu-common",
  "mu_stack",
  "nix 0.26.4",
+ "rand 0.8.5",
  "serde",
+ "serial_test",
  "tailcall",
  "thiserror",
  "tikv-client",
@@ -3586,9 +3753,12 @@ dependencies = [
  "async-trait",
  "byte-unit",
  "bytes",
+ "db-embedded-tikv",
  "dyn-clonable",
  "dyn-clone",
+ "env_logger 0.10.1",
  "futures",
+ "itertools 0.10.5",
  "log",
  "mailbox_processor",
  "mu-common",
@@ -3596,10 +3766,15 @@ dependencies = [
  "mu-storage",
  "mu_stack",
  "musdk-common",
+ "rand 0.8.5",
  "reqwest",
  "serde",
- "storage_embedded_juicefs",
+ "serde_json",
+ "serial_test",
+ "storage-embedded-juicefs",
+ "test-context",
  "thiserror",
+ "tikv-client",
  "tokio",
  "wasmer",
  "wasmer-cache",
@@ -3618,12 +3793,14 @@ dependencies = [
  "dyn-clone",
  "log",
  "mailbox_processor",
+ "mu-common",
  "mu_stack",
  "pin-project-lite",
+ "pwr-rs",
  "rust-s3",
  "serde",
  "solana-program",
- "storage_embedded_juicefs",
+ "storage-embedded-juicefs",
  "tailcall",
  "thiserror",
  "tokio",
@@ -3644,9 +3821,11 @@ dependencies = [
  "protobuf 3.3.0",
  "protobuf-codegen",
  "protoc-bin-vendored",
+ "pwr-rs",
  "serde",
  "serde_yaml 0.9.30",
  "thiserror",
+ "uuid",
 ]
 
 [[package]]
@@ -4494,6 +4673,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "pwr-rs"
+version = "0.1.1"
+dependencies = [
+ "hex",
+ "rand 0.8.5",
+ "reqwest",
+ "secp256k1",
+ "serde",
+ "serde_json",
+ "sha3 0.10.8",
+ "url",
+]
+
+[[package]]
 name = "qstring"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4977,6 +5170,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusqlite"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01e213bc3ecb39ac32e81e51ebe31fd888a940515173e3a18a35f8c6e896422a"
+dependencies = [
+ "bitflags 1.3.2",
+ "fallible-iterator",
+ "fallible-streaming-iterator",
+ "hashlink",
+ "libsqlite3-sys",
+ "smallvec",
+]
+
+[[package]]
 name = "rust-embed"
 version = "6.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5281,6 +5488,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c107b6f4780854c8b126e228ea8869f4d7b71260f962fefb57b996b8959ba6b"
 
 [[package]]
+name = "secp256k1"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "550fc3b723a478be77bf74718947cdcdd75144d508aaa70f0a320036905df2a8"
+dependencies = [
+ "rand 0.8.5",
+ "secp256k1-sys",
+]
+
+[[package]]
+name = "secp256k1-sys"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8058e28ae464daf5ac14c5c0f78110b58616e796c4e4e28cfcca38fdb13d8f22"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "security-framework"
 version = "2.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5460,6 +5686,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "serial_test"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7eec42e7232e5ca56aa59d63af3c7f991fe71ee6a3ddd2d3480834cf3902b007"
+dependencies = [
+ "futures",
+ "lazy_static",
+ "log",
+ "parking_lot 0.12.1",
+ "serial_test_derive",
+]
+
+[[package]]
+name = "serial_test_derive"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1b95bb2f4f624565e8fe8140c789af7e2082c0e0561b5a82a1b678baa9703dc"
+dependencies = [
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "sha1"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5544,6 +5796,15 @@ name = "shell-words"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "24188a676b6ae68c3b2cb3a01be17fbf7240ce009799bb56d5b1409051e78fde"
+
+[[package]]
+name = "shellexpand"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da03fa3b94cc19e3ebfc88c4229c49d8f08cdbd1228870a45f0ffdf84988e14b"
+dependencies = [
+ "dirs",
+]
 
 [[package]]
 name = "signal-hook-registry"
@@ -6697,7 +6958,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
-name = "storage_embedded_juicefs"
+name = "storage-embedded-juicefs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -6879,6 +7140,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "411c5bf740737c7918b8b1fe232dca4dc9f8e754b8ad5e20966814001ed0ac6b"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "test-context"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "055831a02a4f5aa28fede67f2902014273eb8c21b958ac5ebbd59b71ef30dbc3"
+dependencies = [
+ "async-trait",
+ "futures",
+ "test-context-macros",
+]
+
+[[package]]
+name = "test-context-macros"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8901a55b0a7a06ebc4a674dcca925170da8e613fa3b163a1df804ed10afb154d"
+dependencies = [
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -7096,6 +7378,19 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+]
+
+[[package]]
+name = "tokio-test"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e89b3cbabd3ae862100094ae433e1def582cf86451b4e9bf83aa7ac1d8a7d719"
+dependencies = [
+ "async-stream",
+ "bytes",
+ "futures-core",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]

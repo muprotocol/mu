@@ -3,7 +3,7 @@ use std::{path::PathBuf, rc::Rc, time::Duration};
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose, Engine};
 use mu_stack::StackOwner;
-use solana_sdk::signer::Signer;
+use pwr_rs::PrivateKey;
 
 use crate::{
     requests::{EchoRequest, EchoResponse, UploadFunctionRequest, UploadFunctionResponse},
@@ -32,7 +32,7 @@ impl ApiClient {
         }
     }
 
-    pub fn upload_function(&self, file_path: PathBuf, signer: Rc<dyn Signer>) -> Result<String> {
+    pub fn upload_function(&self, file_path: PathBuf, signer: &PrivateKey) -> Result<String> {
         println!("Uploading function code to mu Storage...");
         let bytes = std::fs::read(file_path).context("Reading function wasm module")?;
         let request = UploadFunctionRequest {
@@ -42,7 +42,7 @@ impl ApiClient {
         let (request_body, sign) = sign_request(
             request,
             "upload_function".to_string(),
-            Some(StackOwner::Solana(signer.pubkey().to_bytes())),
+            Some(StackOwner::PWR(signer.public_key())),
             signer,
         )?;
 
@@ -52,7 +52,7 @@ impl ApiClient {
         Ok(response.file_id)
     }
 
-    pub fn echo(&self, message: String, signer: Rc<dyn Signer>) -> Result<String> {
+    pub fn echo(&self, message: String, signer: &PrivateKey) -> Result<String> {
         let request = EchoRequest { message };
 
         let (request_body, sign) = sign_request(request, "echo".to_string(), None, signer)?;

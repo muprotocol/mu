@@ -3,13 +3,13 @@ pub mod client;
 mod error;
 pub mod requests;
 
-use std::{rc::Rc, str::FromStr};
+use std::str::FromStr;
 
 use base64::{engine::general_purpose, Engine};
 use log::error;
 use mu_stack::StackOwner;
+use pwr_rs::PrivateKey;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use solana_sdk::signer::Signer;
 
 pub use error::{ClientError, Error, ServerError};
 
@@ -35,7 +35,7 @@ pub fn sign_request<T: Serialize>(
     request: T,
     request_type: String,
     user: Option<StackOwner>,
-    signer: Rc<dyn Signer>,
+    signer: &PrivateKey,
 ) -> Result<(Vec<u8>, String), Error> {
     let body = ApiRequestTemplate {
         request: request_type,
@@ -51,11 +51,11 @@ pub fn sign_request<T: Serialize>(
         Error::SerializeRequest
     })?;
 
-    let sig_payload = signer.try_sign_message(&body_json).map_err(|e| {
+    let sig_payload = signer.sign_message(&body_json).map_err(|e| {
         error!("Failed to sign request payload: {e:?}");
         Error::SignRequest
     })?;
-    let sig_payload_base64 = general_purpose::STANDARD.encode(sig_payload);
+    let sig_payload_base64 = general_purpose::STANDARD.encode(sig_payload.1);
 
     Ok((body_json, sig_payload_base64))
 }

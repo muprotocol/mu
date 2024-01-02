@@ -4,20 +4,19 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-mu_stack = { path = "../mu_stack" }
+mu_stack.workspace = true
 
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-reqwest = { version = "0.11", features = ["blocking", "json"] }
-solana-sdk = "1.15"
-anyhow = "1.0"
-base64 = "0.21"
-log = "0.4"
-ed25519-dalek = "1.0"
-bytes = "1.4"
-sha256 = "1.1"
-thiserror = "1.0"
-uriparse = "0.6"
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+anyhow.workspace = true
+base64.workspace = true
+log.workspace = true
+bytes.workspace = true
+sha256.workspace = true
+thiserror.workspace = true
+uriparse.workspace = true
+pwr-rs.workspace = true
 
 [features]
 default = ["client"]

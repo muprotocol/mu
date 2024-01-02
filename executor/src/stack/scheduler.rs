@@ -888,20 +888,23 @@ fn get_closest_node<'a>(
     my_hash: NodeHash,
     others: impl Iterator<Item = &'a NodeHash>,
 ) -> GetClosestNodeResult {
-    fn to_bigint(x: &[u8; 32]) -> BigInt {
+    fn to_bigint_16(x: &[u8; 16]) -> BigInt {
+        BigInt::from_bytes_le(num::bigint::Sign::Plus, x)
+    }
+    fn to_bigint_32(x: &[u8; 32]) -> BigInt {
         BigInt::from_bytes_le(num::bigint::Sign::Plus, x)
     }
 
     trace!("Determining closest node to {id}");
 
-    let id_int = to_bigint(id.get_bytes());
+    let id_int = to_bigint_16(id.get_bytes());
 
-    let mut min_distance = id_int.clone() ^ to_bigint(&my_hash.0);
+    let mut min_distance = id_int.clone() ^ to_bigint_32(&my_hash.0);
     trace!("Distance to self: {min_distance:?}");
     let mut result = GetClosestNodeResult::Me;
 
     for hash in others {
-        let distance = id_int.clone() ^ to_bigint(&hash.0);
+        let distance = id_int.clone() ^ to_bigint_32(&hash.0);
         trace!("Distance to {hash}: {distance}");
         if distance < min_distance {
             min_distance = distance;
@@ -918,9 +921,9 @@ fn useless_stack_with_metadata() -> StackWithMetadata {
         stack: Default::default(),
         name: Default::default(),
         revision: 0,
-        metadata: super::StackMetadata::Solana(super::SolanaStackMetadata {
-            account_id: Default::default(),
-            owner: Default::default(),
+        metadata: super::StackMetadata::PWR(super::PWRStackMetadata {
+            stack_id: Default::default(),
+            owner: pwr_rs::PublicKey::from_bytes([0u8; 64]).unwrap(),
         }),
     }
 }

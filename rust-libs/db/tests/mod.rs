@@ -23,7 +23,7 @@ fn clean_data_dir() {
     });
 }
 
-const STACK_ID: StackID = StackID::SolanaPublicKey([1; 32]);
+const STACK_ID: StackID = StackID::PWRStackID([1; 32]);
 const TABLE_NAME_1: &str = "a::a::a";
 const TABLE_NAME_2: &str = "a::a::b";
 
@@ -409,7 +409,7 @@ async fn start_and_query_nodes_with_different_stackids_and_tables(dbs: Vec<Box<d
     let mut handles = vec![];
     for (i, db) in dbs.into_iter().enumerate() {
         let i = i as u8;
-        let si = StackID::SolanaPublicKey([i; 32]);
+        let si = StackID::PWRStackID([i; 32]);
         let tl = [
             format!("{i}").try_into().unwrap(),
             format!("{}", 100 + i).try_into().unwrap(),

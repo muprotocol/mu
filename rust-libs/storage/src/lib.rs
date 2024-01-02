@@ -4,6 +4,7 @@ use dyn_clonable::clonable;
 use log::warn;
 use mu_stack::{StackID, StackOwner};
 use pin_project_lite::pin_project;
+use pwr_rs::PrivateKey;
 use s3::{creds::Credentials, Bucket};
 use serde::Deserialize;
 use std::{fmt::Debug, ops::Deref, pin::Pin, time::Duration};
@@ -308,7 +309,12 @@ async fn ensure_storage_backend_is_healthy(
 
         let mut a = vec![];
         match client
-            .get(Owner::User(StackOwner::Solana([0u8; 32])), "", "", &mut a)
+            .get(
+                Owner::User(StackOwner::PWR(PrivateKey::random().public_key())),
+                "",
+                "",
+                &mut a,
+            )
             .await
         {
             Ok(_) => Ok(()),
@@ -408,7 +414,7 @@ mod test {
 
     use super::*;
 
-    const OWNER: Owner = Owner::Stack(StackID::SolanaPublicKey([1; 32]));
+    const OWNER: Owner = Owner::Stack(StackID::PWRStackID([1; 32]));
 
     async fn test_start() -> Result<Box<dyn StorageManager>> {
         let storage_info = StorageInfo {

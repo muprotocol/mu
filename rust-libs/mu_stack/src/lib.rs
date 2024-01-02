@@ -14,45 +14,46 @@ use std::{
 #[rustfmt::skip]
 use ::protobuf::Message;
 use anyhow::{anyhow, bail, Result};
-use base58::{FromBase58, ToBase58};
+use base58::FromBase58;
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::{BufMut, Bytes};
+use pwr_rs::wallet::PublicKey as PWRPublicKey;
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
-pub const SOLANA_PUBKEY_SIZE: usize = 32;
-
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StackID {
-    SolanaPublicKey([u8; SOLANA_PUBKEY_SIZE]),
+    PWRStackID(uuid::Uuid),
 }
 
 impl StackID {
-    pub fn get_bytes(&self) -> &[u8; SOLANA_PUBKEY_SIZE] {
+    pub fn get_bytes(&self) -> &[u8; 16] {
         match self {
-            Self::SolanaPublicKey(key) => key,
+            Self::PWRStackID(key) => key.as_bytes(),
         }
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut res = Vec::with_capacity(SOLANA_PUBKEY_SIZE + 1);
+        let mut res = Vec::with_capacity(16 + 1);
         match self {
-            Self::SolanaPublicKey(key) => {
-                res.push(1u8);
-                res.put_slice(key);
+            Self::PWRStackID(key) => {
+                res.push(2u8);
+                res.put_slice(key.as_bytes());
             }
         }
         res
     }
 
     pub fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() != SOLANA_PUBKEY_SIZE + 1 {
+        if bytes.len() != 16 + 1 {
             bail!("Incorrect byte count");
         }
 
         match bytes[0] {
             // We already know we have exactly enough bytes, so it's safe to unwrap
-            1u8 => Ok(Self::SolanaPublicKey(bytes[1..].try_into().unwrap())),
+            2u8 => Ok(Self::PWRStackID(
+                uuid::Uuid::from_slice(&bytes[1..]).unwrap(),
+            )),
 
             x => bail!("Unknown StackID discriminator {x}"),
         }
@@ -62,8 +63,8 @@ impl StackID {
 impl Debug for StackID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::SolanaPublicKey(pk) => {
-                write!(f, "<Solana public key (base58): {}>", pk.to_base58())
+            Self::PWRStackID(id) => {
+                write!(f, "<PWR StackID (uuid): {}>", id)
             }
         }
     }
@@ -72,7 +73,7 @@ impl Debug for StackID {
 impl Display for StackID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::SolanaPublicKey(pk) => write!(f, "s_{}", pk.to_base58()),
+            Self::PWRStackID(id) => write!(f, "p_{}", id),
         }
     }
 }
@@ -105,8 +106,8 @@ impl FromStr for StackID {
                 let bytes = code.from_base58().map_err(|_| {
                     ParseStackIDError::FailedToParse(anyhow!("Failed to parse base58 string"))
                 })?;
-                Ok(Self::SolanaPublicKey(bytes.as_slice().try_into().map_err(
-                    |_| ParseStackIDError::FailedToParse(anyhow!("Solana pubkey length mismatch")),
+                Ok(Self::PWRStackID(uuid::Uuid::from_slice(&bytes).map_err(
+                    |_| ParseStackIDError::FailedToParse(anyhow!("Uuid length mismatch")),
                 )?))
             }
             _ => Err(ParseStackIDError::UnknownVariant),
@@ -116,21 +117,27 @@ impl FromStr for StackID {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum StackOwner {
-    Solana([u8; SOLANA_PUBKEY_SIZE]),
+    PWR(PWRPublicKey),
 }
 
 impl StackOwner {
     // TODO: violates multi-chain
-    pub fn to_inner(&self) -> [u8; SOLANA_PUBKEY_SIZE] {
-        let StackOwner::Solana(pk) = self;
-        *pk
+    pub fn to_inner(&self) -> &PWRPublicKey {
+        let Self::PWR(pk) = self;
+        pk
+    }
+
+    pub fn from_bytes(bytes: [u8; 64]) -> Result<Self, ParseStackOwnerError> {
+        PWRPublicKey::from_bytes(bytes)
+            .map(Self::PWR)
+            .map_err(|e| ParseStackOwnerError::FailedToParse(e.into()))
     }
 }
 
 impl Display for StackOwner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Solana(pk) => write!(f, "s_{}", pk.to_base58()),
+            Self::PWR(id) => write!(f, "p_{}", id),
         }
     }
 }
@@ -158,14 +165,14 @@ impl FromStr for StackOwner {
         let variant_code = s.chars().next();
 
         match variant_code {
-            Some('s') => {
+            Some('p') => {
                 let (_, code) = s.split_at(2);
-                let bytes = code.from_base58().map_err(|_| {
-                    ParseStackOwnerError::FailedToParse(anyhow!("Failed to parse base58 string"))
+                let pk = PWRPublicKey::from_str(code).map_err(|_| {
+                    ParseStackOwnerError::FailedToParse(anyhow!(
+                        "Failed to parse PWR public key string"
+                    ))
                 })?;
-                Ok(Self::Solana(bytes.as_slice().try_into().map_err(|_| {
-                    ParseStackOwnerError::FailedToParse(anyhow!("Solana pubkey length mismatch"))
-                })?))
+                Ok(Self::PWR(pk))
             }
             _ => Err(ParseStackOwnerError::UnknownVariant),
         }

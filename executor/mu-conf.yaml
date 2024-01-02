@@ -29,12 +29,12 @@ runtime:
 scheduler:
   tick_interval: 1s
 blockchain_monitor:
-  solana_cluster_rpc_url: https://api.mainnet-beta.solana.com:8899/
-  solana_cluster_pub_sub_url: wss://api.mainnet-beta.solana.com:8900/
-  solana_provider_public_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-  solana_region_number: 1
-  solana_usage_signer_private_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-  solana_usage_report_interval: 1d
+  pwr_rpc_url: https://pwrrpc.pwrlabs.io/
+  pwr_provider_public_key: 046F66FCF4A5B30DF33236B46D2DD6998CC6A5F2D11CDB6F4BEA390CE780E89601388E43C435C2BBC4F3BEBF83208FBAA92D6BEC0F115340EBA4BEB5D382B1312F
+  pwr_start_block_number: 249
+  pwr_region_number: 1
+  pwr_usage_signer_private_key: 2634A9EA8959E8C1CAA42646399602975316ACE1C60E5E2916F9044510D8BE15
+  pwr_usage_report_interval: 60s
 db:
   pd_addresses:
     - address: 127.0.0.1

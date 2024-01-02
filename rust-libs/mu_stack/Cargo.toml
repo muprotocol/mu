@@ -4,19 +4,20 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0"
-thiserror = "1.0"
-base58 = "0.2"
-base64 = "0.21"
-bytes = "1.2"
+anyhow.workspace = true
+thiserror.workspace = true
+base58.workspace = true
+base64.workspace = true
+bytes.workspace = true
+log.workspace = true
+protobuf.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+byte-unit.workspace = true
+uuid.workspace = true
+pwr-rs.workspace = true
 clap = { version = "4.0", features = ["derive"] }
-log = "0.4"
-protobuf = "3.2"
-serde = { version = "1", features = ["derive"] }
-serde_yaml = "0.9"
-byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
-# This has the reader-deserialization feature we need
-borsh = { git = "https://github.com/near/borsh-rs", rev = "e82b47bdc14f65d464e9efa1237195a6b9770830" }
+borsh.workspace = true
 
 [build-dependencies]
 protobuf-codegen = "3.2"

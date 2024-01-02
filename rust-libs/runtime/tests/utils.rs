@@ -423,7 +423,7 @@ pub fn create_project<'a>(
         name,
         path: Path::new(&format!("tests/funcs/{name}")).into(),
         id: AssemblyID {
-            stack_id: StackID::SolanaPublicKey(rand::random()),
+            stack_id: StackID::PWRStackID(rand::random()),
             assembly_name: name.into(),
         },
         memory_limit,

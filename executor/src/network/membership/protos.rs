@@ -78,7 +78,7 @@ impl From<super::NodeStatus> for membership::NodeStatus {
 
         fn convert_stack_id(id: mu_stack::StackID) -> membership::StackID {
             match id {
-                mu_stack::StackID::SolanaPublicKey(k) => membership::StackID {
+                mu_stack::StackID::PWRStackID(k) => membership::StackID {
                     id: Some(membership::stack_id::Id::Solana(k.into())),
                     ..Default::default()
                 },
@@ -138,7 +138,7 @@ impl TryFrom<(membership::NodeAddress, membership::NodeStatus)> for super::NodeS
             Ok(match id.id {
                 None => anyhow::bail!("Received empty stack ID"),
 
-                Some(membership::stack_id::Id::Solana(k)) => mu_stack::StackID::SolanaPublicKey(
+                Some(membership::stack_id::Id::Solana(k)) => mu_stack::StackID::PWRStackID(
                     k.try_into()
                         .map_err(|_| anyhow::anyhow!("Expected 32 bytes for a Solana stack ID"))?,
                 ),

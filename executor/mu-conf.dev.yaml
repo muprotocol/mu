@@ -12,12 +12,12 @@ log:
 gateway_manager:
   listen_port: 12012
 blockchain_monitor:
-  solana_cluster_rpc_url: http://127.0.0.1:8899/
-  solana_cluster_pub_sub_url: ws://127.0.0.1:8900/
-  solana_provider_public_key: 9pezZJ6JK3f7Sn1ycodPTBXAMDuAphCragQ3dGM6Nv2i
-  solana_region_number: 1
-  solana_usage_signer_private_key: 4GhpeXmHAsQW1K29Q3PBuKzq7fdQzAQS4Bsh5uP3oev1HvZg3tEgT8nZpYAVVikBdKtWGauYBXBDGCeseqyM9R4p
-  solana_usage_report_interval: 5s
+  pwr_rpc_url: https://pwrrpc.pwrlabs.io/
+  pwr_public_key: 046F66FCF4A5B30DF33236B46D2DD6998CC6A5F2D11CDB6F4BEA390CE780E89601388E43C435C2BBC4F3BEBF83208FBAA92D6BEC0F115340EBA4BEB5D382B1312F
+  pwr_start_block_number: 249
+  pwr_region_number: 1
+  pwr_usage_signer_private_key: 2634A9EA8959E8C1CAA42646399602975316ACE1C60E5E2916F9044510D8BE15
+  pwr_usage_report_interval: 5s
 db_manager:
   usage_report_duration: 30s
 db:

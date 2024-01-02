@@ -10,10 +10,12 @@ use api_common::{
     requests::{UploadFunctionRequest, UploadFunctionResponse},
     ApiRequestTemplate, SIGNATURE_HEADER_NAME,
 };
+use base64::Engine;
 use log::error;
 use mu_gateway::HttpServiceFactoryBuilder;
 use mu_stack::StackOwner;
 use mu_storage::StorageClient;
+use pwr_rs::PublicKey;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -64,10 +66,10 @@ async fn handle_request(
             .map_err(|_| bad_request("can not deserialize request"))?;
 
         if let Some(owner) = request.user {
-            let _pubkey = verify_signature(&owner, headers, &payload)?;
+            verify_signature(&owner, headers, &payload)?;
             //verify_stack_ownership(&stack_id, &pubkey, &dependency_accessor).await?; //TODO
-            verify_escrow_account_balance(dependency_accessor.blockchain_monitor.clone(), &owner)
-                .await?;
+            //verify_escrow_account_balance(dependency_accessor.blockchain_monitor.clone(), &owner)
+            //    .await?;
         } else {
             return Err(bad_request("invalid signature"));
         }
@@ -87,61 +89,57 @@ async fn handle_request(
     }
 }
 
-fn verify_signature(
-    user: &StackOwner,
-    headers: &HeaderMap,
-    payload: &String,
-) -> Result<ed25519_dalek::PublicKey, Error> {
+fn verify_signature(user: &StackOwner, headers: &HeaderMap, payload: &String) -> Result<(), Error> {
     let pubkey = match user {
-        StackOwner::Solana(pk) => ed25519_dalek::PublicKey::from_bytes(pk)
-            .map_err(|_| internal_server_error("parsing pubkey"))?,
+        StackOwner::PWR(pk) => pk,
     };
 
     let signature_header = headers
         .get(SIGNATURE_HEADER_NAME)
         .ok_or_else(|| bad_request("signature header not found"))?;
 
-    let signature_bytes = base64::decode(signature_header)
+    let signature_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(signature_header)
         .map_err(|_| bad_request("invalid base64 encoded signature"))?;
 
-    let signature = ed25519_dalek::Signature::from_bytes(&signature_bytes[..])
+    let signature_bytes: [u8; 65] = signature_bytes
+        .try_into()
         .map_err(|_| bad_request("invalid signature"))?;
 
     pubkey
-        .verify_strict(payload.as_bytes(), &signature)
+        .verify_signature(payload.as_bytes(), &signature_bytes)
         .map_err(|_| bad_request("invalid signature"))?;
-
-    Ok(pubkey)
+    Ok(())
 }
 
-async fn verify_escrow_account_balance(
-    blockchain_monitor: Box<dyn BlockchainMonitor>,
-    owner: &StackOwner,
-) -> Result<(), Error> {
-    match blockchain_monitor.get_escrow_balance(*owner).await {
-        Ok(Some(balance)) => {
-            if balance.is_over_minimum() {
-                Ok(())
-            } else {
-                error!(
-                    "Escrow account does not have enough balance, was: {}, minimum needed: {}",
-                    balance.user_balance, balance.min_balance
-                );
-                Err(bad_request("Escrow account does not have enough balance"))
-            }
-        }
-
-        Ok(None) => {
-            error!("escrow account is not created yet");
-            Err(bad_request("Escrow account is not created yet"))
-        }
-
-        Err(e) => {
-            error!("can not check for escrow account balance: {e:?}");
-            Err(internal_server_error("can not check escrow account"))
-        }
-    }
-}
+//async fn verify_escrow_account_balance(
+//    blockchain_monitor: Box<dyn BlockchainMonitor>,
+//    owner: &StackOwner,
+//) -> Result<(), Error> {
+//    match blockchain_monitor.get_escrow_balance(*owner).await {
+//        Ok(Some(balance)) => {
+//            if balance.is_over_minimum() {
+//                Ok(())
+//            } else {
+//                error!(
+//                    "Escrow account does not have enough balance, was: {}, minimum needed: {}",
+//                    balance.user_balance, balance.min_balance
+//                );
+//                Err(bad_request("Escrow account does not have enough balance"))
+//            }
+//        }
+//
+//        Ok(None) => {
+//            error!("escrow account is not created yet");
+//            Err(bad_request("Escrow account is not created yet"))
+//        }
+//
+//        Err(e) => {
+//            error!("can not check for escrow account balance: {e:?}");
+//            Err(internal_server_error("can not check escrow account"))
+//        }
+//    }
+//}
 
 fn handle_bad_request() -> (Json<serde_json::Value>, http::StatusCode) {
     let (j, s) = bad_request("bad request");
@@ -218,14 +216,12 @@ async fn execute_upload_function(
     let req = serde_json::from_value::<UploadFunctionRequest>(params)
         .map_err(|_| bad_request("invalid input"))?;
 
-    let Ok(bytes) = base64::decode(req.bytes) else {
+    let Ok(bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(req.bytes) else {
         return Err(bad_request("invalid base64 encoded bytes"));
     };
 
-    let file_id = base64::encode_config(
-        stable_hash::fast_stable_hash(&bytes).to_be_bytes(),
-        base64::URL_SAFE_NO_PAD,
-    );
+    let file_id = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(stable_hash::fast_stable_hash(&bytes).to_be_bytes());
     let storage_owner = mu_storage::Owner::User(user);
 
     match storage_client

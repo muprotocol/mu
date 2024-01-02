@@ -9,7 +9,7 @@ include!(concat!(env!("OUT_DIR"), "/protos/rpc/mod.rs"));
 
 impl From<mu_stack::FunctionID> for rpc::FunctionID {
     fn from(id: mu_stack::FunctionID) -> Self {
-        let StackID::SolanaPublicKey(pk) = id.assembly_id.stack_id;
+        let StackID::PWRStackID(pk) = id.assembly_id.stack_id;
         Self {
             stack_id: MessageField(Some(Box::new(rpc::StackID {
                 id: Some(rpc::stack_id::Id::Solana(pk.into())),
@@ -28,7 +28,7 @@ impl TryFrom<rpc::FunctionID> for mu_stack::FunctionID {
     fn try_from(id: rpc::FunctionID) -> Result<Self, Self::Error> {
         let stack_id = id.stack_id.0.ok_or_else(|| anyhow!("Empty stack ID"))?;
         let stack_id = match stack_id.id {
-            Some(rpc::stack_id::Id::Solana(bytes)) => StackID::SolanaPublicKey(
+            Some(rpc::stack_id::Id::Solana(bytes)) => StackID::PWRStackID(
                 bytes
                     .try_into()
                     .map_err(|_| anyhow!("Incorrect stack ID length"))?,
@@ -176,7 +176,7 @@ impl TryFrom<rpc::Response> for musdk_common::Response<'static> {
     fn try_from(response: rpc::Response) -> Result<Self, Self::Error> {
         let status_code: u16 = response.status.try_into().context("status_code")?;
 
-        if status_code < 100 && status_code > 600 {
+        if !(100..=600).contains(&status_code) {
             bail!("{} is out of range for HTTP response status", status_code)
         }
 
