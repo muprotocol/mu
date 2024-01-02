@@ -1,0 +1,26 @@
+[package]
+name = "storage-embedded-juicefs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mailbox_processor.workspace = true
+mu-common.workspace = true
+serde.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+dyn-clone.workspace = true
+dyn-clonable.workspace = true
+rust-embed.workspace = true
+log.workspace = true
+rand.workspace = true
+base64.workspace = true
+
+tokio = { workspace = true, features = ["fs", "io-util"] }
+nix = "0.26"
+
+[build-dependencies]
+reqwest.workspace = true
+anyhow.workspace = true
+flate2 = "1.0.25"
+tar = "0.4.38"

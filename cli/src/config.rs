@@ -6,7 +6,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use solana_remote_wallet::remote_wallet::RemoteWalletManager;
-use std::{cell::RefCell, fs, path::Path, rc::Rc, str::FromStr, sync::Arc};
+use std::{cell::RefCell, fs, path::Path, rc::Rc, str::FromStr};
 
 use crate::{marketplace_client::MarketplaceClient, signer};
 
@@ -41,7 +41,7 @@ pub struct Config {
     confirm_key: bool,
 
     signer: RefCell<Option<Rc<dyn Signer>>>,
-    wallet_manager: RefCell<Option<Arc<RemoteWalletManager>>>,
+    wallet_manager: RefCell<Option<Rc<RemoteWalletManager>>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -178,7 +178,7 @@ impl Config {
         url: Option<&String>,
         skip_seed_phrase_validation: bool,
         confirm_key: bool,
-    ) -> Result<(Rc<dyn Signer>, Option<Arc<RemoteWalletManager>>)> {
+    ) -> Result<(Rc<dyn Signer>, Option<Rc<RemoteWalletManager>>)> {
         fn read_default_keypair_file() -> Result<Rc<dyn Signer>> {
             let default_keypair_path = shellexpand::tilde("~/.config/solana/id.json");
             match fs::metadata(&*default_keypair_path) {

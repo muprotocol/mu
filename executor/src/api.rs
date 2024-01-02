@@ -10,6 +10,7 @@ use api_common::{
     requests::{UploadFunctionRequest, UploadFunctionResponse},
     ApiRequestTemplate, SIGNATURE_HEADER_NAME,
 };
+use base64::Engine;
 use log::error;
 use mu_gateway::HttpServiceFactoryBuilder;
 use mu_stack::StackOwner;
@@ -101,7 +102,8 @@ fn verify_signature(
         .get(SIGNATURE_HEADER_NAME)
         .ok_or_else(|| bad_request("signature header not found"))?;
 
-    let signature_bytes = base64::decode(signature_header)
+    let signature_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(signature_header)
         .map_err(|_| bad_request("invalid base64 encoded signature"))?;
 
     let signature = ed25519_dalek::Signature::from_bytes(&signature_bytes[..])
@@ -218,14 +220,12 @@ async fn execute_upload_function(
     let req = serde_json::from_value::<UploadFunctionRequest>(params)
         .map_err(|_| bad_request("invalid input"))?;
 
-    let Ok(bytes) = base64::decode(req.bytes) else {
+    let Ok(bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(req.bytes) else {
         return Err(bad_request("invalid base64 encoded bytes"));
     };
 
-    let file_id = base64::encode_config(
-        stable_hash::fast_stable_hash(&bytes).to_be_bytes(),
-        base64::URL_SAFE_NO_PAD,
-    );
+    let file_id = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(stable_hash::fast_stable_hash(&bytes).to_be_bytes());
     let storage_owner = mu_storage::Owner::User(user);
 
     match storage_client

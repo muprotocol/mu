@@ -4,26 +4,22 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0"
-actix-web = "4"
-config = "0.13"
-serde = { version = "1.0", features = ["serde_derive"] }
-serde_json = "1.0"
+anyhow.workspace = true
+actix-web.workspace = true
+config.workspace= true
+serde.workspace = true
+serde_json.workspace= true
+marketplace.workspace= true
+log.workspace = true
+env_logger.workspace = true
 
 rusqlite = { version = "0.28", features = ["bundled"] }
+email_address = "0.2.4"
+actix-cors = "0.6.4"
 
 anchor-client = "0.26"
 spl-token = "3.5"
 solana-sdk = "1.15"
 spl-associated-token-account = "1.1"
 solana-client = "1.15"
-marketplace = { path = "../marketplace/programs/marketplace/", features = [
-    "no-entrypoint",
-] }
 solana-account-decoder = "1.15"
-
-log = "0.4"
-env_logger = "0.10"
-email_address = "0.2.4"
-actix-cors = "0.6.4"
-

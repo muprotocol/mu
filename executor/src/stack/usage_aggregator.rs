@@ -157,7 +157,7 @@ async fn mailbox_step(
 ) -> State {
     match msg {
         Message::RegisterUsage(stack_id, usage) => {
-            let stack_usage_map = state.usages.entry(stack_id).or_insert_with(HashMap::new);
+            let stack_usage_map = state.usages.entry(stack_id).or_default();
 
             for usage in usage {
                 let (category, amount) = usage.into_category();

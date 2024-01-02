@@ -2,13 +2,12 @@ use std::collections::HashMap;
 
 use super::{
     error::{Error, FunctionLoadingError, FunctionRuntimeError, Result},
-    pipe::Pipe,
     types::{FunctionHandle, FunctionIO},
 };
 
 use wasmer::{Instance, Module, Store};
 use wasmer_middlewares::metering::{get_remaining_points, MeteringPoints};
-use wasmer_wasi::WasiState;
+use wasmer_wasix::{Pipe, WasiEnv};
 
 pub fn start(
     mut store: Store,
@@ -18,15 +17,15 @@ pub fn start(
 ) -> Result<FunctionHandle> {
     //TODO: Check wasi version specified in this module and if we can run it!
 
-    let stdin = Pipe::new();
-    let stdout = Pipe::new();
-    let stderr = Pipe::new();
+    let (stdin_tx, stdin_rx) = Pipe::channel();
+    let (stdout_tx, stdout_rx) = Pipe::channel();
+    let (stderr_tx, stderr_rx) = Pipe::channel();
 
     let program_name = module.name().unwrap_or("module");
-    let wasi_env = WasiState::new(program_name)
-        .stdin(Box::new(stdin.clone()))
-        .stdout(Box::new(stdout.clone()))
-        .stderr(Box::new(stderr.clone()))
+    let wasi_env = WasiEnv::builder(program_name)
+        .stdin(Box::new(stdin_rx))
+        .stdout(Box::new(stdout_tx))
+        .stderr(Box::new(stderr_tx))
         .envs(envs)
         .finalize(&mut store)
         .map_err(|e| Error::FunctionLoadingError(FunctionLoadingError::FailedToBuildWasmEnv(e)))?;
@@ -52,17 +51,6 @@ pub fn start(
             )),
         }
     })?;
-
-    let memory = instance
-        .exports
-        .get_memory("memory")
-        .map_err(|e| Error::FunctionLoadingError(FunctionLoadingError::FailedToGetMemory(e)))?;
-
-    wasi_env.data_mut(&mut store).set_memory(memory.clone());
-
-    let mut stdin_clone = stdin.clone();
-    let mut stdout_clone = stdout.clone();
-    let mut stderr_clone = stderr.clone();
 
     // If this module exports an _initialize function, run that first.
     let join_handle = tokio::task::spawn_blocking(move || {
@@ -95,10 +83,6 @@ pub fn start(
             .map(|_| get_remaining_points(&mut store, &instance))
             .map_err(|e| (e, get_remaining_points(&mut store, &instance)));
 
-        stdin_clone.close();
-        stdout_clone.close();
-        stderr_clone.close();
-
         match (result, giga_instructions_limit) {
             (Ok(points), limit) => Ok(points_to_instruction_count(points, limit)),
 
@@ -117,9 +101,9 @@ pub fn start(
     Ok(FunctionHandle::new(
         join_handle,
         FunctionIO {
-            stdin,
-            stdout,
-            stderr,
+            stdin: stdin_tx,
+            stdout: stdout_rx,
+            stderr: stderr_rx,
         },
     ))
 }
