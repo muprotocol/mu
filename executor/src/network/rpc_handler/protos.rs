@@ -176,7 +176,7 @@ impl TryFrom<rpc::Response> for musdk_common::Response<'static> {
     fn try_from(response: rpc::Response) -> Result<Self, Self::Error> {
         let status_code: u16 = response.status.try_into().context("status_code")?;
 
-        if status_code < 100 && status_code > 600 {
+        if !(100..=600).contains(&status_code) {
             bail!("{} is out of range for HTTP response status", status_code)
         }
 

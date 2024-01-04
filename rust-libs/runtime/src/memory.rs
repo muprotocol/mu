@@ -5,12 +5,20 @@ use wasmer::{
     BaseTunables, MemoryType, Pages, TableType, Target, Tunables,
 };
 
-pub struct LimitedMemory<T: Tunables> {
+/// A custom tunables that allows you to set a memory limit.
+///
+/// After adjusting the memory limits, it delegates all other logic
+/// to the base tunables.
+pub struct LimitingTunables<T: Tunables> {
+    /// The maximum a linear memory is allowed to be (in Wasm pages, 64 KiB each).
+    /// Since Wasmer ensures there is only none or one memory, this is practically
+    /// an upper limit for the guest memory.
     limit: Pages,
+    /// The base implementation we delegate all the logic to
     base: T,
 }
 
-impl<T: Tunables> LimitedMemory<T> {
+impl<T: Tunables> LimitingTunables<T> {
     pub fn new(base: T, limit: Pages) -> Self {
         Self { limit, base }
     }
@@ -20,29 +28,27 @@ impl<T: Tunables> LimitedMemory<T> {
     /// valid. However, this can produce invalid types, such that
     /// validate_memory must be called before creating the memory.
     fn adjust_memory(&self, requested: &MemoryType) -> MemoryType {
-        let mut adjusted = *requested;
+        let mut adjusted = requested.clone();
         if requested.maximum.is_none() {
             adjusted.maximum = Some(self.limit);
         }
         adjusted
     }
 
-    /// Ensures that a given memory type does not exceed the memory limit.
+    /// Ensures the a given memory type does not exceed the memory limit.
     /// Call this after adjusting the memory.
     fn validate_memory(&self, ty: &MemoryType) -> Result<(), MemoryError> {
         if ty.minimum > self.limit {
-            return Err(MemoryError::MinimumMemoryTooLarge {
-                min_requested: ty.minimum,
-                max_allowed: self.limit,
-            });
+            return Err(MemoryError::Generic(
+                "Minimum exceeds the allowed memory limit".to_string(),
+            ));
         }
 
         if let Some(max) = ty.maximum {
             if max > self.limit {
-                return Err(MemoryError::MaximumMemoryTooLarge {
-                    max_requested: max,
-                    max_allowed: self.limit,
-                });
+                return Err(MemoryError::Generic(
+                    "Maximum exceeds the allowed memory limit".to_string(),
+                ));
             }
         } else {
             return Err(MemoryError::Generic("Maximum unset".to_string()));
@@ -51,7 +57,8 @@ impl<T: Tunables> LimitedMemory<T> {
         Ok(())
     }
 }
-impl<T: Tunables> Tunables for LimitedMemory<T> {
+
+impl<T: Tunables> Tunables for LimitingTunables<T> {
     /// Construct a `MemoryStyle` for the provided `MemoryType`
     ///
     /// Delegated to base.
@@ -115,9 +122,9 @@ impl<T: Tunables> Tunables for LimitedMemory<T> {
     }
 }
 
-pub fn create_memory(
+pub fn create_tunables(
     max_size: byte_unit::Byte,
-) -> Result<LimitedMemory<BaseTunables>, MemoryError> {
+) -> Result<LimitingTunables<BaseTunables>, MemoryError> {
     // Each page is 64 kb
     let pages_count = max_size.get_bytes() / byte_unit::n_kib_bytes(64);
 
@@ -126,5 +133,5 @@ pub fn create_memory(
         .map_err(|e| MemoryError::Generic(format!("Requested Memory size is out of bound: {e}")))?;
 
     let base = BaseTunables::for_target(&Target::default());
-    Ok(LimitedMemory::new(base, Pages(pages_count)))
+    Ok(LimitingTunables::new(base, Pages(pages_count)))
 }

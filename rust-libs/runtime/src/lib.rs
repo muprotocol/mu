@@ -2,7 +2,6 @@ pub mod error;
 pub mod function;
 pub mod instance;
 pub mod memory;
-mod pipe;
 pub mod providers;
 mod types;
 

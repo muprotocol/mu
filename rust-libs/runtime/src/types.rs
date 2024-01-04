@@ -1,9 +1,6 @@
 use crate::FunctionLoadingError;
 
-use super::{
-    error::{Error, Result},
-    pipe::Pipe,
-};
+use super::error::{Error, Result};
 
 use mu_stack::{AssemblyID, AssemblyRuntime};
 
@@ -12,6 +9,7 @@ use mailbox_processor::ReplyChannel;
 use serde::Deserialize;
 use std::{collections::HashMap, fmt::Display, marker::PhantomData, path::PathBuf};
 use tokio::task::JoinHandle;
+use wasmer_wasix::Pipe;
 
 pub(super) type ExecuteFunctionRequest<'a> = musdk_common::incoming_message::ExecuteFunction<'a>;
 pub(super) type ExecuteFunctionResponse = musdk_common::outgoing_message::FunctionResult<'static>;

@@ -1,7 +1,8 @@
 use mu_stack::AssemblyID;
 use thiserror::Error;
-use wasmer::{CompileError, ExportError, InstantiationError, RuntimeError, SerializeError};
-use wasmer_wasi::{WasiError, WasiStateCreationError};
+use wasmer::{CompileError, ExportError, InstantiationError, RuntimeError};
+use wasmer_cache::SerializeError;
+use wasmer_wasix::{WasiError, WasiRuntimeError};
 
 //TODO: This enum is a mess, convert it to a struct with some kind and other fields to explain
 //them.
@@ -65,7 +66,7 @@ pub enum FunctionLoadingError {
     InvalidAssembly(AssemblyID),
 
     #[error("Failed to build Wasi Env: {0:?}")]
-    FailedToBuildWasmEnv(WasiStateCreationError),
+    FailedToBuildWasmEnv(WasiRuntimeError),
 
     #[error("Failed to get Wasi import object: {0:?}")]
     FailedToGetImportObject(WasiError),

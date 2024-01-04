@@ -9,7 +9,7 @@ name = "mu_db"
 [dependencies]
 anyhow = "1.0"
 thiserror = "1.0"
-tikv-client = "0.1"
+tikv-client = "0.3"
 async-trait = "0.1"
 dyn-clone = "1.0"
 dyn-clonable = "0.9"

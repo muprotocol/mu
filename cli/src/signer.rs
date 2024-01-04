@@ -10,7 +10,7 @@
 // TODO: display the transaction hash so users can cross-reference with the
 // one displayed on the device
 
-use std::sync::Arc;
+use std::rc::Rc;
 
 use anchor_client::solana_sdk::{
     derivation_path::{DerivationPath, DerivationPathError},
@@ -35,7 +35,7 @@ pub struct SignerFromPathConfig {
 pub fn signer_from_path(
     path: &str,
     keypair_name: &str,
-    wallet_manager: &mut Option<Arc<RemoteWalletManager>>,
+    wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
     config: &SignerFromPathConfig,
 ) -> Result<Box<dyn Signer>> {
     let SignerSource {

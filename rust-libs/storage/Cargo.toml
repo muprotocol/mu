@@ -3,27 +3,24 @@ name = "mu-storage"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-name = "mu_storage"
-
 [dependencies]
-rust-s3 = "0.32.3"
-anyhow = "1.0"
-thiserror = "1.0"
-async-trait = "0.1"
-dyn-clone = "1.0"
-dyn-clonable = "0.9"
-pin-project-lite = "0.2"
-serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
+anyhow.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+dyn-clone.workspace = true
+dyn-clonable.workspace = true
+serde.workspace = true
+tokio.workspace = true
 
+rust-s3 = "0.32.3"
+pin-project-lite = "0.2"
 solana-program = { version = "1.15"}
 
-mailbox_processor = { path = "../mailbox_processor" }
-mu_stack = { path = "../mu_stack" }
-storage_embedded_juicefs = { path = "../storage_embedded_juicefs" }
+mailbox_processor.workspace = true
+mu_stack.workspace = true
+storage-embedded-juicefs.workspace = true
 tailcall = "0.1.6"
-log = "0.4.17"
+log.workspace = true
 
 [dev-dependencies]
-mu-common = { path = "../common" }
+mu-common.workspace = true

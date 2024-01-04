@@ -1,0 +1,78 @@
+
+[workspace]
+resolver = "2"
+members = [
+    "executor",
+    "sdk/common",
+    "rust-libs/*",
+    "marketplace/programs/marketplace",
+    "airdrop",
+    "cli",
+]
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+futures = "0.3"
+pin-project = "1.0"
+rand = "0.8"
+uuid = { version = "1.1", features = ["fast-rng", "v4", "serde"] }
+anyhow = "1.0"
+thiserror = "1.0"
+log = { version = "0.4", features = [
+    "serde",
+    "release_max_level_debug",
+    "max_level_trace",
+] }
+env_logger = "0.10"
+config = { version = "0.13", features = ["yaml"], default-features = false }
+async-trait = "0.1"
+bytes = "1.2"
+reqwest = "0.11"
+dyn-clone = "1.0"
+dyn-clonable = "0.9"
+itertools = "0.10"
+base64 = "0.21"
+base58 = "0.2"
+chrono = "0.4"
+protobuf = "3.2"
+actix-web = "4.2"
+byte-unit = { version = "4.0", default-features = false, features = ["serde"] }
+ed25519-dalek = "1"
+anchor-client = "0.26"
+solana-account-decoder = "1.10"
+solana-client = "1.14"
+solana-sdk = "1.13"
+spl-token = "3.5"
+rust-embed = "6"
+tikv-client = "0.3"
+serial_test = "0.8"
+test-context = "0.1.4"
+
+sled = "0.34"
+assert_matches = "1.5"
+quinn = "0.8"
+rustls = { version = "0.20", features = ["dangerous_configuration"] }
+rcgen = "0.9"
+ctrlc = "3.2"
+stable-hash = "0.4"
+http = "0.2"
+validator = { version = "0.16", features = ["derive"] }
+num = "0.4"
+dns-lookup = "1.0"
+
+musdk-common = { path = "sdk/common" }
+mu-common = { path = "rust-libs/common" }
+mu-runtime = { path = "rust-libs/runtime" }
+mu-gateway = { path = "rust-libs/gateway" }
+mu-db = { path = "rust-libs/db" }
+mu-storage = { path = "rust-libs/storage" }
+mu_stack = { path = "rust-libs/mu_stack" }
+marketplace = { path = "marketplace/programs/marketplace" }
+mailbox_processor = { path = "rust-libs/mailbox_processor" }
+api_common = { path = "rust-libs/api_common", default_features = false }
+db-embedded-tikv = { path = "rust-libs/db-embedded-tikv", default_features = false }
+storage-embedded-juicefs = { path = "rust-libs/storage-embedded-juicefs" }

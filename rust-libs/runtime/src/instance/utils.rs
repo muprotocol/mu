@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use crate::{memory::create_memory, Error, FunctionLoadingError, Result, Usage};
+use crate::{error::FunctionLoadingError, memory::create_tunables, Error, Result, Usage};
 
-use wasmer::{CompilerConfig, Store};
-use wasmer_compiler_llvm::LLVM;
+use wasmer::{CompilerConfig, EngineBuilder, Store};
+use wasmer_compiler_cranelift::Cranelift;
 use wasmer_middlewares::Metering;
 
 #[inline]
@@ -11,18 +11,19 @@ pub fn create_store(
     memory_limit: byte_unit::Byte,
     giga_instructions_limit: Option<u32>,
 ) -> Result<Store> {
-    let mut compiler_config = LLVM::default();
-
+    let mut compiler_config = Cranelift::default();
     let metering_points = giga_instructions_limit.unwrap_or(u32::MAX) as u64 * 1_000_000_000;
 
     let metering = Arc::new(Metering::new(metering_points, |_| 1));
     compiler_config.push_middleware(metering);
 
-    let memory = create_memory(memory_limit).map_err(|_| {
+    let mut engine = EngineBuilder::new(compiler_config).engine();
+    let tunables = create_tunables(memory_limit).map_err(|_| {
         Error::FunctionLoadingError(FunctionLoadingError::RequestedMemorySizeTooBig)
     })?;
+    engine.set_tunables(tunables);
 
-    Ok(Store::new_with_tunables(compiler_config, memory))
+    Ok(Store::new(engine))
 }
 
 #[inline]
