@@ -5,7 +5,7 @@ use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose, Engine};
 use clap::Parser;
 
-use crate::{config::Config, marketplace_client};
+use crate::{config::Config, pwr_client};
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -64,7 +64,7 @@ fn execute_create(config: Config, args: SignerSpecificationCommand) -> Result<()
         args.signer_confirm_key,
     )?;
 
-    marketplace_client::request_signer::create(
+    pwr_client::request_signer::create(
         &client,
         user_wallet.as_ref(),
         signer.as_ref(),
@@ -85,7 +85,7 @@ fn execute_activate(config: Config, args: SignerSpecificationCommand) -> Result<
         args.signer_confirm_key,
     )?;
 
-    marketplace_client::request_signer::activate(
+    pwr_client::request_signer::activate(
         &client,
         user_wallet.as_ref(),
         signer.as_ref(),
@@ -106,7 +106,7 @@ fn execute_deactivate(config: Config, args: SignerSpecificationCommand) -> Resul
         args.signer_confirm_key,
     )?;
 
-    marketplace_client::request_signer::deactivate(
+    pwr_client::request_signer::deactivate(
         &client,
         user_wallet.as_ref(),
         &signer.pubkey(),

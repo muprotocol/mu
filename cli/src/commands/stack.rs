@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser};
 use marketplace::StackState;
 
-use crate::{config::Config, marketplace_client};
+use crate::{config::Config, pwr_client};
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -149,5 +149,5 @@ pub fn execute_delete(config: Config, cmd: DeleteStackCommand) -> Result<()> {
         }
     };
 
-    marketplace_client::stack::delete(&client, user_wallet, &cmd.stack, region.as_ref())
+    pwr_client::stack::delete(&client, user_wallet, &cmd.stack, region.as_ref())
 }

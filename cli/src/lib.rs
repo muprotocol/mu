@@ -1,8 +1,8 @@
 mod commands;
 pub mod config;
 mod error;
-mod marketplace_client;
 mod mu_manifest;
+mod pwr_client;
 mod signer;
 mod token_utils;
 

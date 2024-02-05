@@ -1,86 +1,54 @@
-use anchor_client::{
-    solana_sdk::{pubkey::Pubkey, signature::read_keypair_file, signer::Signer},
-    Cluster,
-};
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
+use mu_common::pwr::VM_ID;
+use pwr_rs::PrivateKey;
 use serde::{Deserialize, Serialize};
-use solana_remote_wallet::remote_wallet::RemoteWalletManager;
-use std::{cell::RefCell, fs, path::Path, rc::Rc, str::FromStr};
+use std::{
+    fs::{self, read_to_string},
+    path::Path,
+};
 
-use crate::{marketplace_client::MarketplaceClient, signer};
+use crate::pwr_client::PWRClient;
 
 #[derive(Default, Debug, Parser)]
 pub struct ConfigOverride {
-    /// Program ID override.
-    #[clap(global = true, long = "program-id")]
-    pub program_id: Option<Pubkey>,
+    /// VM ID override.
+    #[clap(global = true, long = "vm-id")]
+    pub vm_id: Option<u64>,
 
-    /// Cluster override.
-    #[clap(global = true, long = "cluster", short = 'u')]
-    pub cluster: Option<Cluster>,
-
-    /// User keypair override. This wallet will be the owner of any accounts created
-    /// during execution of commands (providers, stacks, etc.)
+    /// User private key file override. This wallet will be the owner of any stacks deployed
+    /// during execution of commands (stacks, etc.)
     #[clap(global = true, long = "keypair", short = 'k')]
-    pub keypair: Option<String>,
-
-    #[clap(global = true, long = "skip-seed-phrase-validation")]
-    pub skip_seed_phrase_validation: bool,
-
-    #[clap(global = true, long = "confirm-key")]
-    pub confirm_key: bool,
+    pub private_key: Option<String>,
 }
 
 pub struct Config {
-    pub program_id: Pubkey,
-    pub cluster: Cluster,
-    pub keypair: Option<String>,
+    pub vm_id: u64,
+    pub private_key: Option<String>,
 
-    skip_seed_phrase_validation: bool,
-    confirm_key: bool,
-
-    signer: RefCell<Option<Rc<dyn Signer>>>,
-    wallet_manager: RefCell<Option<Rc<RemoteWalletManager>>>,
+    signer: Option<PrivateKey>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct SerializedConfig {
-    program_id: String,
-    cluster: String,
-    keypair: String,
-    skip_seed_phrase_validation: bool,
-    confirm_key: bool,
+    vm_id: String,
+    private_key: String,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            program_id: marketplace::id(),
-            cluster: {
-                #[cfg(debug_assertions)]
-                {
-                    Cluster::Localnet
-                }
-
-                #[cfg(not(debug_assertions))]
-                {
-                    Cluster::Mainnet
-                }
-            },
-            keypair: None,
-            skip_seed_phrase_validation: false,
-            confirm_key: false,
-            signer: RefCell::new(None),
-            wallet_manager: RefCell::new(None),
+            vm_id: VM_ID,
+            private_key: None,
+            signer: None,
         }
     }
 }
 
 impl Config {
-    pub fn build_marketplace_client(&self) -> Result<MarketplaceClient> {
-        MarketplaceClient::new(self)
+    pub fn build_pwr_client(&self) -> Result<PWRClient> {
+        PWRClient::new(self)
     }
 
     pub fn discover(cfg_override: ConfigOverride) -> Result<Config> {
@@ -115,18 +83,12 @@ impl Config {
         }?
         .unwrap_or_default();
 
-        if let Some(program_id) = cfg_override.program_id {
-            cfg.program_id = program_id;
+        if let Some(vm_id) = cfg_override.vm_id {
+            cfg.vm_id = vm_id;
         }
-        if let Some(cluster) = cfg_override.cluster {
-            cfg.cluster = cluster;
+        if let Some(private_key) = cfg_override.private_key {
+            cfg.private_key = Some(private_key);
         }
-        if let Some(keypair) = cfg_override.keypair {
-            cfg.keypair = Some(keypair);
-        }
-
-        cfg.skip_seed_phrase_validation = cfg_override.skip_seed_phrase_validation;
-        cfg.confirm_key = cfg_override.confirm_key;
 
         Ok(cfg)
     }
@@ -142,68 +104,34 @@ impl Config {
         let cfg: SerializedConfig = serde_yaml::from_str(yaml)
             .map_err(|e| anyhow::format_err!("Unable to deserialize config: {}", e.to_string()))?;
         Ok(Config {
-            cluster: cfg.cluster.parse()?,
-            keypair: Some(shellexpand::tilde(&cfg.keypair).into_owned()),
-            program_id: Pubkey::from_str(&cfg.program_id)?,
-            skip_seed_phrase_validation: false,
-            confirm_key: false,
-            signer: RefCell::new(None),
-            wallet_manager: RefCell::new(None),
+            vm_id: cfg.program_id,
+            private_key: Some(shellexpand::tilde(&cfg.private_key).into_owned()),
+            signer: None,
         })
     }
 
-    pub fn get_signer(&self) -> Result<Rc<dyn Signer>> {
-        let signer_ref = self.signer.borrow();
-        match signer_ref.as_ref() {
+    pub fn get_signer(&self) -> Result<PrivateKey> {
+        match self.private_key {
             Some(x) => Ok(x.clone()),
             None => {
-                // Drop the ref so we can re-borrow down below
-                drop(signer_ref);
+                let signer = Self::read_private_key_from_url(self.private_key.as_ref())?;
 
-                let (signer, wallet_manager) = Self::read_keypair_from_url(
-                    self.keypair.as_ref(),
-                    self.skip_seed_phrase_validation,
-                    self.confirm_key,
-                )?;
-
-                *self.signer.borrow_mut() = Some(signer.clone());
-                *self.wallet_manager.borrow_mut() = wallet_manager;
+                self.signer = Some(signer.clone());
                 Ok(signer)
             }
         }
     }
 
-    #[allow(clippy::type_complexity)]
-    pub fn read_keypair_from_url(
-        url: Option<&String>,
-        skip_seed_phrase_validation: bool,
-        confirm_key: bool,
-    ) -> Result<(Rc<dyn Signer>, Option<Rc<RemoteWalletManager>>)> {
-        fn read_default_keypair_file() -> Result<Rc<dyn Signer>> {
-            let default_keypair_path = shellexpand::tilde("~/.config/solana/id.json");
-            match fs::metadata(&*default_keypair_path) {
+    pub fn read_private_key_from_url(url: Option<&String>) -> Result<PrivateKey> {
+        let default_keypair_path = shellexpand::tilde("~/.config/pwr/id.json");
+        match fs::metadata(&*default_keypair_path) {
                 Ok(x) if x.is_file() => {
-                    let keypair = read_keypair_file(&*default_keypair_path)
+                    let content = read_to_string(default_keypair_path)?;
+                    let private_key = PrivateKey::try_from(content)
                         .map_err(|f| anyhow!("Unable to read keypair file: {f}"))?;
-                    let rc: Rc<dyn Signer> = Rc::new(keypair);
-                    Ok(rc)
+                    Ok(private_key)
                 }
-                _ => bail!("No keypair specified on command line and default keypair does not exist at ~/.config/solana/id.json, use `solana-keygen new` to generate a keypair"),
+                _ => bail!("No private_key specified on command line and default private_key does not exist at ~/.config/pwr/id.json, Generate a private_key and store it in one of these locations"),
             }
-        }
-
-        match &url {
-            None => read_default_keypair_file().map(|x| (x, None)),
-            Some(keypair) => {
-                let mut wallet_manager = None;
-                let config = signer::SignerFromPathConfig {
-                    skip_seed_phrase_validation,
-                    confirm_key,
-                };
-                signer::signer_from_path(keypair.as_str(), "keypair", &mut wallet_manager, &config)
-                    .context("Failed to read keypair")
-                    .map(|b| (b.into(), wallet_manager))
-            }
-        }
     }
 }

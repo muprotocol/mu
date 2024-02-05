@@ -2,7 +2,7 @@ use anchor_client::solana_sdk::signature::read_keypair_file;
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser};
 
-use crate::{config::Config, marketplace_client};
+use crate::{config::Config, pwr_client};
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -50,12 +50,8 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
     )
     .context("Failed to read signer keypair")?;
 
-    let result = marketplace_client::signer::create(
-        &client,
-        provider_keypair,
-        signer_keypair,
-        args.region_num,
-    );
+    let result =
+        pwr_client::signer::create(&client, provider_keypair, signer_keypair, args.region_num);
 
     drop(wallet_manager);
 

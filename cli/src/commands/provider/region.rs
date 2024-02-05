@@ -2,7 +2,7 @@ use anchor_client::solana_sdk::system_program;
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser};
 
-use crate::{config::Config, marketplace_client, token_utils::ui_amount_to_token_amount};
+use crate::{config::Config, pwr_client, token_utils::ui_amount_to_token_amount};
 
 #[derive(Debug, Parser)]
 pub enum Command {
@@ -116,7 +116,7 @@ fn create(config: Config, args: CreateArgs) -> Result<()> {
         rates,
     };
 
-    marketplace_client::region::create(&client, accounts, instruction, provider_keypair)
+    pwr_client::region::create(&client, accounts, instruction, provider_keypair)
 }
 
 fn validate_base_url(url: &str) -> Result<uriparse::uri::URI> {

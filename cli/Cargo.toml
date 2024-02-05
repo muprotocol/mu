@@ -7,6 +7,7 @@ description = "Mu CLI"
 default-run = "mu"
 
 [features]
+default = ["admin", "dev-env"]
 admin = []
 dev-env = ["mu-runtime", "mu-gateway", "mu-db", "db-embedded-tikv",
 		"mu-storage", "storage-embedded-juicefs"]

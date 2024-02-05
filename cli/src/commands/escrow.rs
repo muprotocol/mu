@@ -5,7 +5,7 @@ use spl_associated_token_account::get_associated_token_address;
 
 use crate::{
     config::Config,
-    marketplace_client::{
+    pwr_client::{
         self,
         escrow::{get_escrow_balance, get_regions_where_balance_is_below_minimum},
     },
@@ -76,7 +76,7 @@ pub fn execute_create(config: Config, cmd: CreateEscrowCommand) -> Result<()> {
     let client = config.build_marketplace_client()?;
     let user_wallet = config.get_signer()?;
 
-    marketplace_client::escrow::create(&client, user_wallet, cmd.provider)
+    pwr_client::escrow::create(&client, user_wallet, cmd.provider)
 }
 
 pub fn execute_recharge(config: Config, cmd: RechargeEscrowCommand) -> Result<()> {
@@ -90,7 +90,7 @@ pub fn execute_recharge(config: Config, cmd: RechargeEscrowCommand) -> Result<()
     let user_wallet = config.get_signer()?;
     let user_token_account = get_associated_token_address(&user_wallet.pubkey(), &mu_state.mint);
 
-    marketplace_client::escrow::recharge(
+    pwr_client::escrow::recharge(
         &client,
         user_wallet,
         recharge_amount,
@@ -104,7 +104,7 @@ pub fn execute_withdraw(config: Config, cmd: WithdrawEscrowCommand) -> Result<()
 
     let user_wallet = config.get_signer()?;
 
-    marketplace_client::escrow::withdraw(
+    pwr_client::escrow::withdraw(
         &client,
         user_wallet,
         &cmd.provider,

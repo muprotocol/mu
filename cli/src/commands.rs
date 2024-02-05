@@ -4,7 +4,7 @@ use clap::{Args, Parser};
 
 use crate::{
     config::{Config, ConfigOverride},
-    marketplace_client,
+    pwr_client,
 };
 
 pub mod escrow;
@@ -134,8 +134,7 @@ pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
     let marketplace_client = config.build_marketplace_client()?;
     let user_wallet = config.get_signer()?;
 
-    let region_base_url =
-        marketplace_client::region::get_base_url(&marketplace_client, cmd.region)?;
+    let region_base_url = pwr_client::region::get_base_url(&marketplace_client, cmd.region)?;
 
     let region_api_client = api_common::client::ApiClient::new(region_base_url);
 
@@ -145,9 +144,9 @@ pub fn execute_deploy(config: Config, cmd: DeployStackCommand) -> Result<()> {
         &project_root,
     )?;
 
-    let deploy_mode = marketplace_client::stack::get_deploy_mode(cmd.init, cmd.update)?;
+    let deploy_mode = pwr_client::stack::get_deploy_mode(cmd.init, cmd.update)?;
 
-    marketplace_client::stack::deploy(
+    pwr_client::stack::deploy(
         &marketplace_client,
         user_wallet,
         &cmd.region,
