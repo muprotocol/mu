@@ -1,0 +1,84 @@
+name: Build and Upload on Amazon S3
+
+on:
+  push:
+    
+env:
+  LLVM_SYS_120_PREFIX: /usr/lib/llvm-12/
+  RUST_BACKTRACE: full
+
+jobs:
+  lint_and_test:
+    runs-on: [self-hosted, linux, X64]
+    strategy:
+      matrix:
+        dir:
+          - executor
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      
+      - name: Restore dependencies cache
+        uses: actions/cache@v3
+        if: success()
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            executor/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl libssl-dev libudev-dev pkg-config zlib1g-dev clang cmake make language-pack-en libclang-common-12-dev llvm-12-dev protobuf-compiler unzip
+      
+      - name: Install rust stable
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: 1.65.0
+          override: true
+          components: rustfmt, clippy
+          target: wasm32-wasi
+
+      - name: Check style
+        run: cargo fmt -- --check
+        working-directory: ${{ matrix.dir }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}  
+          aws-region: eu-central-1
+
+      - name: Build Release
+        if: success()
+        run: cargo build --release
+        working-directory: ${{ matrix.dir }}
+
+      - name: Install aws
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+          unzip -q /tmp/awscliv2.zip -d /tmp
+          rm /tmp/awscliv2.zip
+          sudo /tmp/aws/install --update
+          rm -rf /tmp/aws/
+      
+      - name: Upload to S3 
+        run: aws s3 sync . s3://repo.030labs.org --delete
+        working-directory: ${{ matrix.dir }}/target/release
+      
+      - name: Save dependencies cache
+        uses: actions/cache@v3
+        if: success()
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            executor/target/ 
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
